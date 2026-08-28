@@ -10,7 +10,7 @@ class UniversalAccountingApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Universal Business Accountant',
+      title: 'Business Accountant & Ledger',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -133,7 +133,6 @@ class AppState {
         break;
     }
     
-    // Default Global Ledgers
     chartOfAccounts.addAll([
       LedgerAccount(id: '100', name: 'Cash Account', nature: AccountNature.asset),
       LedgerAccount(id: '101', name: 'Accounts Receivable', nature: AccountNature.asset),
@@ -304,7 +303,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ============================================================================
-// 5. DASHBOARD & FINANCIAL REPORTS VIEW
+// DASHBOARD VIEW
 // ============================================================================
 
 class DashboardView extends StatefulWidget {
@@ -426,10 +425,6 @@ class _DashboardViewState extends State<DashboardView> {
     return isFullWidth ? SizedBox(width: double.infinity, child: card) : Expanded(child: card);
   }
 
-  // ============================================================================
-  // 3. ACCOUNTING RULE GUIDANCE & SMART SUGGESTIONS (VOUCHER DIALOG)
-  // ============================================================================
-
   Future<void> _showNewVoucherDialog(BuildContext context) async {
     final partyCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
@@ -546,7 +541,7 @@ class _DashboardViewState extends State<DashboardView> {
 }
 
 // ============================================================================
-// 2. LEDGER CUSTOMIZATION & EDITING VIEW
+// LEDGER CUSTOMIZATION VIEW
 // ============================================================================
 
 class ChartOfAccountsView extends StatefulWidget {
@@ -705,7 +700,7 @@ class _ChartOfAccountsViewState extends State<ChartOfAccountsView> {
 }
 
 // ============================================================================
-// 4. MULTI-GST INVOICING & BILLING MODULE
+// MULTI-GST INVOICING VIEW
 // ============================================================================
 
 class InvoicingView extends StatefulWidget {
@@ -722,8 +717,8 @@ class _InvoicingViewState extends State<InvoicingView> {
   final _quantityController = TextEditingController();
   final _rateController = TextEditingController();
 
-  double _selectedGstSlab = 18.0; // Standard GST percentages: 0, 5, 12, 18, 28
-  bool _isInterState = false; // False = Intra-State (CGST+SGST), True = Inter-State (IGST)
+  double _selectedGstSlab = 18.0;
+  bool _isInterState = false;
 
   double get subtotal {
     double qty = double.tryParse(_quantityController.text) ?? 0.0;
@@ -878,12 +873,10 @@ class _InvoicingViewState extends State<InvoicingView> {
       return;
     }
 
-    // Auto-Post Double Entry to Journal Day Book
-    // 1. Debit Customer Receivable
     AppState.dayBook.add(TransactionEntry(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       partyName: _customerNameController.text,
-      accountId: '101', // Accounts Receivable Ledger
+      accountId: '101',
       amount: grandTotal,
       type: EntryType.debit,
       narration: 'Invoice Bill generated for ${_itemNameController.text} (HSN: ${_hsnController.text})',
@@ -894,7 +887,6 @@ class _InvoicingViewState extends State<InvoicingView> {
       SnackBar(content: Text('Invoice posted successfully! Amount ₹${grandTotal.toStringAsFixed(2)} recorded.')),
     );
 
-    // Reset Form
     _customerNameController.clear();
     _itemNameController.clear();
     _hsnController.clear();
