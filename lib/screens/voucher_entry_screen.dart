@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class VoucherEntryScreen extends StatefulWidget {
-  const VoucherEntryScreen({Key? key}) : super(key: Key);
+  const VoucherEntryScreen({super.key});
 
   @override
   State<VoucherEntryScreen> createState() => _VoucherEntryScreenState();
@@ -25,6 +25,8 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const Color emeraldColor = Color(0xFF10B981);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
@@ -38,16 +40,16 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _isBalanced ? Colors.emerald.withOpacity(0.15) : Colors.amber.withOpacity(0.15),
+                color: _isBalanced ? emeraldColor.withOpacity(0.15) : Colors.amber.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _isBalanced ? Colors.emerald : Colors.amber),
+                border: Border.all(color: _isBalanced ? emeraldColor : Colors.amber),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     _isBalanced ? '✓ Journal Balanced' : '⚠ Difference: ₹${(_totalDebit - _totalCredit).abs().toStringAsFixed(2)}',
-                    style: TextStyle(color: _isBalanced ? Colors.emeraldAccent : Colors.amberAccent, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: _isBalanced ? emeraldColor : Colors.amberAccent, fontWeight: FontWeight.bold),
                   ),
                   Text('Dr: ₹${_totalDebit.toStringAsFixed(2)} | Cr: ₹${_totalCredit.toStringAsFixed(2)}',
                       style: const TextStyle(color: Colors.white, fontFamily: 'monospace')),
@@ -115,7 +117,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
             ElevatedButton(
               onPressed: _isBalanced ? () {} : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.emerald,
+                backgroundColor: emeraldColor,
                 minimumSize: const Size.fromHeight(48),
               ),
               child: const Text('Post Journal Voucher', style: TextStyle(color: Colors.white)),
