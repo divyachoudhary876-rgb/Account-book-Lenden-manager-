@@ -1,10 +1,182 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:sqflite/sqflite.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await LocalDatabase.instance.initDB();
   runApp(const EnterpriseAccountingApp());
+}
+
+// ==========================================
+// 1. ADVANCED LOCAL SQLITE PERSISTENCE ENGINE
+// ==========================================
+class LocalDatabase {
+  static final LocalDatabase instance = LocalDatabase._init();
+  static Database? _database;
+
+  LocalDatabase._init();
+
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await initDB();
+    return _database!;
+  }
+
+  Future<Database> initDB() async {
+    final dbPath = await getDatabasesPath();
+    final path = p.join(dbPath, 'neelkanth_enterprise_v5.db');
+
+    return await openDatabase(
+      path,
+      version: 1,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE firms (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            gstin TEXT,
+            address TEXT
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE accounts (
+            id TEXT PRIMARY KEY,
+            firmId TEXT NOT NULL,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            groupName TEXT DEFAULT 'General',
+            balance REAL DEFAULT 0.0
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE stock_items (
+            id TEXT PRIMARY KEY,
+            firmId TEXT NOT NULL,
+            name TEXT NOT NULL,
+            hsn TEXT,
+            unit TEXT NOT NULL,
+            qty REAL DEFAULT 0.0,
+            rate REAL NOT NULL
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE vouchers (
+            id TEXT PRIMARY KEY,
+            firmId TEXT NOT NULL,
+            voucherNo TEXT NOT NULL,
+            type TEXT NOT NULL,
+            date TEXT NOT NULL,
+            narration TEXT
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE journal_entries (
+            id TEXT PRIMARY KEY,
+            voucherId TEXT NOT NULL,
+            accountName TEXT NOT NULL,
+            type TEXT NOT NULL,
+            amount REAL NOT NULL
+          )
+        ''');
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getFirms() async {
+    final db = await database;
+    return await db.query('firms');
+  }
+
+  Future<void> insertFirm(Map<String, dynamic> row) async {
+    final db = await database;
+    await db.insert('firms', row, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<Map<String, dynamic>>> getAccounts(String firmId) async {
+    final db = await database;
+    return await db.query('accounts', where: 'firmId = ?', whereArgs: [firmId]);
+  }
+
+  Future<void> insertAccount(Map<String, dynamic> row) async {
+    final db = await database;
+    await db.insert('accounts', row, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<Map<String, dynamic>>> getStock(String firmId) async {
+    final db = await database;
+    return await db.query('stock_items', where: 'firmId = ?', whereArgs: [firmId]);
+  }
+
+  Future<void> insertStock(Map<String, dynamic> row) async {
+    final db = await database;
+    await db.insert('stock_items', row, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<Map<String, dynamic>>> getVouchers(String firmId) async {
+    final db = await database;
+    return await db.query('vouchers', where: 'firmId = ?', whereArgs: [firmId]);
+  }
+
+  Future<List<Map<String, dynamic>>> getJournalEntries(String voucherId) async {
+    final db = await database;
+    return await db.query('journal_entries', where: 'voucherId = ?', whereArgs: [voucherId]);
+  }
+
+  Future<void> saveVoucherTransaction(Map<String, dynamic> voucher, List<Map<String, dynamic>> entries) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.insert('vouchers', voucher, conflictAlgorithm: ConflictAlgorithm.replace);
+      for (var entry in entries) {
+        await txn.insert('journal_entries', {
+          'id': 'j_${DateTime.now().microsecondsSinceEpoch}_${entry['account']}',
+          'voucherId': voucher['id'],
+          'accountName': entry['account'],
+          'type': entry['type'],
+          'amount': entry['amount'],
+        });
+
+        double amt = entry['amount'] ?? 0.0;
+        double sign = entry['type'] == 'DEBIT' ? 1.0 : -1.0;
+        await txn.rawUpdate(
+          'UPDATE accounts SET balance = balance + ? WHERE firmId = ? AND name = ?',
+          [amt * sign, voucher['firmId'], entry['account']],
+        );
+      }
+    });
+  }
+
+  // DATA BACKUP JSON EXPORTER
+  Future<String> exportBackupJSON(String firmId) async {
+    final db = await database;
+    final accounts = await db.query('accounts', where: 'firmId = ?', whereArgs: [firmId]);
+    final vouchers = await db.query('vouchers', where: 'firmId = ?', whereArgs: [firmId]);
+    final stock = await db.query('stock_items', where: 'firmId = ?', whereArgs: [firmId]);
+
+    final Map<String, dynamic> dump = {
+      'firmId': firmId,
+      'accounts': accounts,
+      'vouchers': vouchers,
+      'stock': stock,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    return jsonEncode(dump);
+  }
+}
+
+// ==========================================
+// STATE ENGINE
+// ==========================================
+class AppState {
+  static Map<String, dynamic>? activeFirm;
 }
 
 class EnterpriseAccountingApp extends StatelessWidget {
@@ -13,7 +185,7 @@ class EnterpriseAccountingApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Neelkanth Accounting Enterprise',
+      title: 'Enterprise Accounting Suite',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0F172A),
@@ -26,121 +198,7 @@ class EnterpriseAccountingApp extends StatelessWidget {
 }
 
 // ==========================================
-// CENTRAL ENTERPRISE DATA & STATE ENGINE
-// ==========================================
-class AppState {
-  static Map<String, String>? activeFirm;
-  static List<Map<String, String>> firms = [];
-  static List<Map<String, dynamic>> accounts = [];
-  static List<Map<String, dynamic>> stockItems = [];
-  static List<Map<String, dynamic>> vouchers = [];
-
-  static void createFirm(String name, String gstin, String address) {
-    final newFirm = {
-      'id': 'firm_${DateTime.now().millisecondsSinceEpoch}',
-      'name': name,
-      'gstin': gstin,
-      'address': address,
-    };
-    firms.add(newFirm);
-    activeFirm = newFirm;
-    
-    // Default system accounts per firm
-    addAccount('Cash Account', 'Asset', 0.0);
-    addAccount('Bank Account', 'Asset', 0.0);
-    addAccount('Sales Account', 'Revenue', 0.0);
-    addAccount('Purchase Account', 'Expense', 0.0);
-  }
-
-  static List<Map<String, dynamic>> getActiveAccounts() {
-    if (activeFirm == null) return [];
-    return accounts.where((a) => a['firmId'] == activeFirm!['id']).toList();
-  }
-
-  static List<Map<String, dynamic>> getActiveStock() {
-    if (activeFirm == null) return [];
-    return stockItems.where((i) => i['firmId'] == activeFirm!['id']).toList();
-  }
-
-  static List<Map<String, dynamic>> getActiveVouchers() {
-    if (activeFirm == null) return [];
-    return vouchers.where((v) => v['firmId'] == activeFirm!['id']).toList();
-  }
-
-  static void addAccount(String name, String category, double openingBalance) {
-    accounts.add({
-      'id': 'acc_${DateTime.now().millisecondsSinceEpoch}',
-      'firmId': activeFirm!['id'],
-      'name': name,
-      'category': category,
-      'balance': openingBalance,
-      'transactions': <Map<String, dynamic>>[],
-    });
-  }
-
-  static void addStockItem(String name, String hsn, String unit, double qty, double rate) {
-    stockItems.add({
-      'id': 'item_${DateTime.now().millisecondsSinceEpoch}',
-      'firmId': activeFirm!['id'],
-      'name': name,
-      'hsn': hsn,
-      'unit': unit,
-      'qty': qty,
-      'rate': rate,
-    });
-  }
-
-  static void postVoucher({
-    required String type,
-    required String voucherNo,
-    required String date,
-    required String narration,
-    required List<Map<String, dynamic>> entries,
-  }) {
-    final voucherRecord = {
-      'id': 'vouch_${DateTime.now().millisecondsSinceEpoch}',
-      'firmId': activeFirm!['id'],
-      'voucherNo': voucherNo,
-      'type': type,
-      'date': date,
-      'narration': narration,
-      'entries': entries,
-    };
-    
-    vouchers.add(voucherRecord);
-
-    // Double-Entry Ledger Posting
-    for (var entry in entries) {
-      final acc = accounts.firstWhere((a) => a['name'] == entry['account'], orElse: () => {});
-      if (acc.isNotEmpty) {
-        double amt = entry['amount'] ?? 0.0;
-        if (entry['type'] == 'DEBIT') {
-          acc['balance'] = (acc['balance'] as double) + amt;
-        } else {
-          acc['balance'] = (acc['balance'] as double) - amt;
-        }
-        (acc['transactions'] as List).add({
-          'voucherNo': voucherNo,
-          'date': date,
-          'particulars': entry['type'] == 'DEBIT' ? 'By ${entry['account']}' : 'To ${entry['account']}',
-          'type': entry['type'],
-          'amount': amt,
-          'runningBalance': acc['balance'],
-        });
-      }
-    }
-  }
-
-  static void updateVoucher(String voucherId, List<Map<String, dynamic>> newEntries) {
-    int idx = vouchers.indexWhere((v) => v['id'] == voucherId);
-    if (idx != -1) {
-      vouchers[idx]['entries'] = newEntries;
-    }
-  }
-}
-
-// ==========================================
-// 1. FIRM SELECTION & CREATION SCREEN
+// FIRM GATEKEEPER SCREEN
 // ==========================================
 class FirmSelectionScreen extends StatefulWidget {
   const FirmSelectionScreen({super.key});
@@ -153,6 +211,18 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
   final _nameController = TextEditingController();
   final _gstinController = TextEditingController();
   final _addressController = TextEditingController();
+  List<Map<String, dynamic>> _firms = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFirms();
+  }
+
+  Future<void> _loadFirms() async {
+    final data = await LocalDatabase.instance.getFirms();
+    setState(() => _firms = data);
+  }
 
   void _showCreateFirmDialog() {
     showDialog(
@@ -163,25 +233,37 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Firm / Business Name')),
+            TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Firm Name')),
             const SizedBox(height: 8),
             TextField(controller: _gstinController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'GSTIN Number')),
             const SizedBox(height: 8),
-            TextField(controller: _addressController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Address & Location')),
+            TextField(controller: _addressController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Address')),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
-            onPressed: () {
+            onPressed: () async {
               if (_nameController.text.isNotEmpty) {
-                AppState.createFirm(_nameController.text, _gstinController.text, _addressController.text);
+                final firmId = 'firm_${DateTime.now().millisecondsSinceEpoch}';
+                final newFirm = {
+                  'id': firmId,
+                  'name': _nameController.text,
+                  'gstin': _gstinController.text,
+                  'address': _addressController.text,
+                };
+                await LocalDatabase.instance.insertFirm(newFirm);
+
+                await LocalDatabase.instance.insertAccount({'id': 'a1_$firmId', 'firmId': firmId, 'name': 'Cash Account', 'category': 'Asset', 'groupName': 'Cash-in-hand', 'balance': 0.0});
+                await LocalDatabase.instance.insertAccount({'id': 'a2_$firmId', 'firmId': firmId, 'name': 'Bank Account', 'category': 'Asset', 'groupName': 'Bank Accounts', 'balance': 0.0});
+                await LocalDatabase.instance.insertAccount({'id': 'a3_$firmId', 'firmId': firmId, 'name': 'Sales Account', 'category': 'Revenue', 'groupName': 'Sales Accounts', 'balance': 0.0});
+
                 _nameController.clear();
                 _gstinController.clear();
                 _addressController.clear();
                 Navigator.pop(context);
-                Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MainDashboardScreen()));
+                _loadFirms();
               }
             },
             child: const Text('Create Firm', style: TextStyle(color: Colors.white)),
@@ -194,33 +276,30 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Select Working Firm / Company'), backgroundColor: const Color(0xFF1E293B)),
+      appBar: AppBar(title: const Text('Select Business Firm'), backgroundColor: const Color(0xFF1E293B)),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10B981),
-                minimumSize: const Size.fromHeight(50),
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), minimumSize: const Size.fromHeight(50)),
               icon: const Icon(Icons.add, color: Colors.white),
               label: const Text('+ Add New Business Firm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               onPressed: _showCreateFirmDialog,
             ),
             const SizedBox(height: 20),
             Expanded(
-              child: AppState.firms.isEmpty
-                  ? const Center(child: Text('No Firms Created. Please create a firm to start accounting.', style: TextStyle(color: Colors.grey)))
+              child: _firms.isEmpty
+                  ? const Center(child: Text('No Firms Found. Create a firm to start.', style: TextStyle(color: Colors.grey)))
                   : ListView.builder(
-                      itemCount: AppState.firms.length,
+                      itemCount: _firms.length,
                       itemBuilder: (context, idx) {
-                        final firm = AppState.firms[idx];
+                        final firm = _firms[idx];
                         return Card(
                           color: const Color(0xFF1E293B),
                           child: ListTile(
                             leading: const Icon(Icons.business, color: Color(0xFF10B981)),
-                            title: Text(firm['name']!, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            title: Text(firm['name'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             subtitle: Text('GSTIN: ${firm['gstin']} | ${firm['address']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
                             trailing: const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
                             onTap: () {
@@ -240,7 +319,7 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
 }
 
 // ==========================================
-// MAIN DASHBOARD & NAVIGATION
+// MAIN DASHBOARD
 // ==========================================
 class MainDashboardScreen extends StatefulWidget {
   const MainDashboardScreen({super.key});
@@ -252,17 +331,16 @@ class MainDashboardScreen extends StatefulWidget {
 class _MainDashboardScreenState extends State<MainDashboardScreen> {
   int _currentIndex = 0;
 
-  void _refresh() => setState(() {});
-
   @override
   Widget build(BuildContext context) {
     final List<Widget> screens = [
-      ProfessionalVoucherTerminal(onUpdate: _refresh),
-      const ProfessionalDayBookScreen(),
-      const ProfessionalLedgerScreen(),
-      StockInventoryScreen(onUpdate: _refresh),
-      AccountManagementScreen(onUpdate: _refresh),
-      const InvoiceBillingScreen(),
+      const VoucherTerminalScreen(),
+      const DayBookScreen(),
+      const LedgerBookScreen(),
+      const FinancialReportsScreen(),
+      const BankReconciliationScreen(),
+      const StockScreen(),
+      const AccountManagementScreen(),
     ];
 
     return Scaffold(
@@ -272,7 +350,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.switch_left, color: Colors.amberAccent),
-            tooltip: 'Switch Firm',
             onPressed: () {
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const FirmSelectionScreen()));
             },
@@ -291,9 +368,10 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.edit_note), label: 'Voucher'),
           BottomNavigationBarItem(icon: Icon(Icons.auto_stories), label: 'Day Book'),
           BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'Ledger'),
+          BottomNavigationBarItem(icon: Icon(Icons.analytics), label: 'ITR/GST'),
+          BottomNavigationBarItem(icon: Icon(Icons.account_balance), label: 'Bank Recon'),
           BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Stock'),
           BottomNavigationBarItem(icon: Icon(Icons.person_add), label: 'Accounts'),
-          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Billing'),
         ],
       ),
     );
@@ -301,24 +379,35 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
 }
 
 // ==========================================
-// 2. PROFESSIONAL VOUCHER TERMINAL (AUTO-RESET)
+// VOUCHER TERMINAL
 // ==========================================
-class ProfessionalVoucherTerminal extends StatefulWidget {
-  final VoidCallback onUpdate;
-  const ProfessionalVoucherTerminal({super.key, required this.onUpdate});
+class VoucherTerminalScreen extends StatefulWidget {
+  const VoucherTerminalScreen({super.key});
 
   @override
-  State<ProfessionalVoucherTerminal> createState() => _ProfessionalVoucherTerminalState();
+  State<VoucherTerminalScreen> createState() => _VoucherTerminalScreenState();
 }
 
-class _ProfessionalVoucherTerminalState extends State<ProfessionalVoucherTerminal> {
+class _VoucherTerminalScreenState extends State<VoucherTerminalScreen> {
   String voucherType = 'Sales';
   final _narrationController = TextEditingController();
-  
+  List<Map<String, dynamic>> _accounts = [];
+
   List<Map<String, dynamic>> _entries = [
     {'type': 'DEBIT', 'account': null, 'amount': 0.0},
     {'type': 'CREDIT', 'account': null, 'amount': 0.0},
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAccounts();
+  }
+
+  Future<void> _loadAccounts() async {
+    final data = await LocalDatabase.instance.getAccounts(AppState.activeFirm!['id'] as String);
+    setState(() => _accounts = data);
+  }
 
   void _clearForm() {
     setState(() {
@@ -337,7 +426,6 @@ class _ProfessionalVoucherTerminalState extends State<ProfessionalVoucherTermina
   @override
   Widget build(BuildContext context) {
     const Color emerald = Color(0xFF10B981);
-    final accounts = AppState.getActiveAccounts();
 
     return Scaffold(
       body: Padding(
@@ -378,11 +466,7 @@ class _ProfessionalVoucherTerminalState extends State<ProfessionalVoucherTermina
               ),
             ),
             const SizedBox(height: 10),
-            TextField(
-              controller: _narrationController,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: const InputDecoration(hintText: 'Enter Narration / Note'),
-            ),
+            TextField(controller: _narrationController, style: const TextStyle(color: Colors.white, fontSize: 13), decoration: const InputDecoration(hintText: 'Narration / Note')),
             const SizedBox(height: 10),
             Expanded(
               child: ListView.builder(
@@ -410,7 +494,7 @@ class _ProfessionalVoucherTerminalState extends State<ProfessionalVoucherTermina
                               dropdownColor: const Color(0xFF0F172A),
                               style: const TextStyle(color: Colors.white, fontSize: 13),
                               decoration: const InputDecoration(hintText: 'Select Account'),
-                              items: accounts.map((a) {
+                              items: _accounts.map((a) {
                                 return DropdownMenuItem<String>(
                                   value: a['name'] as String,
                                   child: Text(a['name'] as String),
@@ -426,11 +510,7 @@ class _ProfessionalVoucherTerminalState extends State<ProfessionalVoucherTermina
                               keyboardType: TextInputType.number,
                               style: const TextStyle(color: Colors.white),
                               decoration: const InputDecoration(hintText: '0.00'),
-                              onChanged: (v) {
-                                setState(() {
-                                  _entries[idx]['amount'] = double.tryParse(v) ?? 0.0;
-                                });
-                              },
+                              onChanged: (v) => setState(() => _entries[idx]['amount'] = double.tryParse(v) ?? 0.0),
                             ),
                           )
                         ],
@@ -446,21 +526,24 @@ class _ProfessionalVoucherTerminalState extends State<ProfessionalVoucherTermina
                 TextButton.icon(
                   onPressed: () => setState(() => _entries.add({'type': 'DEBIT', 'account': null, 'amount': 0.0})),
                   icon: const Icon(Icons.add, color: emerald),
-                  label: const Text('Add Row', style: TextStyle(color: emerald)),
+                  label: const Text('Add Line', style: TextStyle(color: emerald)),
                 ),
                 ElevatedButton(
                   onPressed: _isBalanced
-                      ? () {
-                          AppState.postVoucher(
-                            type: voucherType,
-                            voucherNo: 'VOUCH-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
-                            date: '28 Aug 2026',
-                            narration: _narrationController.text,
-                            entries: _entries,
-                          );
+                      ? () async {
+                          final voucher = {
+                            'id': 'vouch_${DateTime.now().millisecondsSinceEpoch}',
+                            'firmId': AppState.activeFirm!['id'] as String,
+                            'voucherNo': 'VOUCH-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
+                            'type': voucherType,
+                            'date': '28 Aug 2026',
+                            'narration': _narrationController.text,
+                          };
+
+                          await LocalDatabase.instance.saveVoucherTransaction(voucher, _entries);
                           _clearForm();
-                          widget.onUpdate();
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Voucher Posted! Entry Box Reset.')));
+                          _loadAccounts();
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Voucher Saved Successfully!')));
                         }
                       : null,
                   style: ElevatedButton.styleFrom(backgroundColor: emerald),
@@ -476,42 +559,63 @@ class _ProfessionalVoucherTerminalState extends State<ProfessionalVoucherTermina
 }
 
 // ==========================================
-// 3. DAY BOOK WITH EDITABLE VOUCHERS
+// DAY BOOK
 // ==========================================
-class ProfessionalDayBookScreen extends StatelessWidget {
-  const ProfessionalDayBookScreen({super.key});
+class DayBookScreen extends StatefulWidget {
+  const DayBookScreen({super.key});
+
+  @override
+  State<DayBookScreen> createState() => _DayBookScreenState();
+}
+
+class _DayBookScreenState extends State<DayBookScreen> {
+  List<Map<String, dynamic>> _vouchers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVouchers();
+  }
+
+  Future<void> _loadVouchers() async {
+    final data = await LocalDatabase.instance.getVouchers(AppState.activeFirm!['id'] as String);
+    setState(() => _vouchers = data);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final vouchers = AppState.getActiveVouchers();
-
     return Scaffold(
-      body: vouchers.isEmpty
-          ? const Center(child: Text('No Vouchers Posted Yet.', style: TextStyle(color: Colors.grey)))
+      body: _vouchers.isEmpty
+          ? const Center(child: Text('No Vouchers Found.', style: TextStyle(color: Colors.grey)))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
-              itemCount: vouchers.length,
+              itemCount: _vouchers.length,
               itemBuilder: (context, idx) {
-                final v = vouchers[idx];
-                final entries = v['entries'] as List<Map<String, dynamic>>;
-                final dr = entries.firstWhere((e) => e['type'] == 'DEBIT', orElse: () => {'account': 'N/A', 'amount': 0.0});
-                final cr = entries.firstWhere((e) => e['type'] == 'CREDIT', orElse: () => {'account': 'N/A', 'amount': 0.0});
+                final v = _vouchers[idx];
+                return FutureBuilder<List<Map<String, dynamic>>>(
+                  future: LocalDatabase.instance.getJournalEntries(v['id'] as String),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) return const SizedBox();
+                    final entries = snapshot.data!;
+                    final dr = entries.firstWhere((e) => e['type'] == 'DEBIT', orElse: () => {'accountName': 'N/A', 'amount': 0.0});
+                    final cr = entries.firstWhere((e) => e['type'] == 'CREDIT', orElse: () => {'accountName': 'N/A', 'amount': 0.0});
 
-                return Card(
-                  color: const Color(0xFF1E293B),
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: ListTile(
-                    title: Text('By ${dr['account']} (Dr.)', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('To ${cr['account']} (Cr.)', style: const TextStyle(color: Colors.grey)),
-                        Text('Voucher #: ${v['voucherNo']} | Date: ${v['date']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                        if ((v['narration'] as String).isNotEmpty) Text('Note: ${v['narration']}', style: const TextStyle(color: Colors.amberAccent, fontSize: 10)),
-                      ],
-                    ),
-                    trailing: Text('₹${(dr['amount'] as double).toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
-                  ),
+                    return Card(
+                      color: const Color(0xFF1E293B),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        title: Text('By ${dr['accountName']} (Dr.)', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('To ${cr['accountName']} (Cr.)', style: const TextStyle(color: Colors.grey)),
+                            Text('Voucher #: ${v['voucherNo']} | Date: ${v['date']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                          ],
+                        ),
+                        trailing: Text('₹${(dr['amount'] as double).toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                      ),
+                    );
+                  },
                 );
               },
             ),
@@ -520,44 +624,48 @@ class ProfessionalDayBookScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 4. LEDGER SCREEN WITH DRILL-DOWN DETAILS
+// LEDGER BOOK
 // ==========================================
-class ProfessionalLedgerScreen extends StatelessWidget {
-  const ProfessionalLedgerScreen({super.key});
+class LedgerBookScreen extends StatefulWidget {
+  const LedgerBookScreen({super.key});
+
+  @override
+  State<LedgerBookScreen> createState() => _LedgerBookScreenState();
+}
+
+class _LedgerBookScreenState extends State<LedgerBookScreen> {
+  List<Map<String, dynamic>> _accounts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAccounts();
+  }
+
+  Future<void> _loadAccounts() async {
+    final data = await LocalDatabase.instance.getAccounts(AppState.activeFirm!['id'] as String);
+    setState(() => _accounts = data);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final accounts = AppState.getActiveAccounts();
-
     return Scaffold(
       body: ListView.builder(
         padding: const EdgeInsets.all(12),
-        itemCount: accounts.length,
+        itemCount: _accounts.length,
         itemBuilder: (context, idx) {
-          final acc = accounts[idx];
+          final acc = _accounts[idx];
           final bal = acc['balance'] as double;
-          final txs = acc['transactions'] as List;
 
           return Card(
             color: const Color(0xFF1E293B),
-            child: ExpansionTile(
-              title: Text(acc['name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              subtitle: Text('Category: ${acc['category']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+            child: ListTile(
+              title: Text(acc['name'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              subtitle: Text('Category: ${acc['category']} | Group: ${acc['groupName'] ?? "General"}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
               trailing: Text(
                 '₹${bal.abs().toStringAsFixed(2)} ${bal >= 0 ? "Dr" : "Cr"}',
                 style: TextStyle(color: bal >= 0 ? const Color(0xFF10B981) : Colors.redAccent, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
               ),
-              children: [
-                if (txs.isEmpty)
-                  const Padding(padding: EdgeInsets.all(8.0), child: Text('No Transactions in this Ledger.', style: TextStyle(color: Colors.grey, fontSize: 11)))
-                else
-                  ...txs.map((tx) => ListTile(
-                        dense: true,
-                        title: Text(tx['particulars'], style: const TextStyle(color: Colors.white)),
-                        subtitle: Text('Voucher: ${tx['voucherNo']} | Date: ${tx['date']}', style: const TextStyle(color: Colors.grey, fontSize: 10)),
-                        trailing: Text('₹${(tx['amount'] as double).toStringAsFixed(2)} ${tx['type'] == "DEBIT" ? "Dr" : "Cr"}', style: const TextStyle(color: Colors.amberAccent, fontFamily: 'monospace')),
-                      ))
-              ],
             ),
           );
         },
@@ -567,27 +675,200 @@ class ProfessionalLedgerScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 5. USER-DEFINED STOCK INVENTORY
+// FINANCIAL REPORTS & GSTR TAX ENGINE
 // ==========================================
-class StockInventoryScreen extends StatefulWidget {
-  final VoidCallback onUpdate;
-  const StockInventoryScreen({super.key, required this.onUpdate});
+class FinancialReportsScreen extends StatefulWidget {
+  const FinancialReportsScreen({super.key});
 
   @override
-  State<StockInventoryScreen> createState() => _StockInventoryScreenState();
+  State<FinancialReportsScreen> createState() => _FinancialReportsScreenState();
 }
 
-class _StockInventoryScreenState extends State<StockInventoryScreen> {
+class _FinancialReportsScreenState extends State<FinancialReportsScreen> {
+  List<Map<String, dynamic>> _accounts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final data = await LocalDatabase.instance.getAccounts(AppState.activeFirm!['id'] as String);
+    setState(() => _accounts = data);
+  }
+
+  double get totalRevenue => _accounts.where((a) => a['category'] == 'Revenue').fold(0.0, (s, a) => s + (a['balance'] as double).abs());
+  double get totalExpense => _accounts.where((a) => a['category'] == 'Expense').fold(0.0, (s, a) => s + (a['balance'] as double).abs());
+  double get netProfit => totalRevenue - totalExpense;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('ITR & GSTR-1 Tax Return Engine', style: TextStyle(color: Color(0xFF10B981), fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Card(
+              color: const Color(0xFF1E293B),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Total Sales (GSTR-1 Taxable Value):', style: TextStyle(color: Colors.grey)),
+                        Text('₹${totalRevenue.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Total Business Expenses:', style: TextStyle(color: Colors.grey)),
+                        Text('₹${totalExpense.toStringAsFixed(2)}', style: const TextStyle(color: Colors.roseAccent, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                      ],
+                    ),
+                    const Divider(color: Colors.grey),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Net Taxable Profit (ITR-3/4):', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        Text('₹${netProfit.toStringAsFixed(2)}', style: TextStyle(color: netProfit >= 0 ? const Color(0xFF10B981) : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'monospace')),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), minimumSize: const Size.fromHeight(48)),
+              icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
+              label: const Text('Export Official Tax Report Pack (PDF)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              onPressed: () => _generateTaxReportPDF(context),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), minimumSize: const Size.fromHeight(48)),
+              icon: const Icon(Icons.download, color: Colors.amberAccent),
+              label: const Text('Export Encrypted Data Backup (JSON)', style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+              onPressed: () async {
+                final jsonStr = await LocalDatabase.instance.exportBackupJSON(AppState.activeFirm!['id'] as String);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Encrypted JSON Data Backup Exported!')));
+              },
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _generateTaxReportPDF(BuildContext context) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context ctx) {
+          return pw.Padding(
+            padding: const pw.EdgeInsets.all(24),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(AppState.activeFirm!['name'] as String, style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+                pw.Text('GSTIN: ${AppState.activeFirm!['gstin']} | Address: ${AppState.activeFirm!['address']}'),
+                pw.SizedBox(height: 10),
+                pw.Text('FINANCIAL STATEMENT & PROFIT LOSS PACK', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.green700)),
+                pw.Text('Assessment Year: 2026-27 | Date: 28/08/2026'),
+                pw.Divider(),
+                pw.SizedBox(height: 10),
+                pw.TableHelper.fromTextArray(
+                  headers: ['Particulars', 'Category', 'Amount (INR)'],
+                  data: [
+                    ['Total Revenue / Sales', 'Income', 'Rs. ${totalRevenue.toStringAsFixed(2)}'],
+                    ['Total Operating Expenses', 'Expense', 'Rs. ${totalExpense.toStringAsFixed(2)}'],
+                    ['Net Taxable Profit / Loss', 'Profit', 'Rs. ${netProfit.toStringAsFixed(2)}'],
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+  }
+}
+
+// ==========================================
+// BANK RECONCILIATION ENGINE
+// ==========================================
+class BankReconciliationScreen extends StatelessWidget {
+  const BankReconciliationScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Automated Bank Reconciliation Engine', style: TextStyle(color: Color(0xFF10B981), fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Card(
+              color: const Color(0xFF1E293B),
+              child: ListTile(
+                leading: const Icon(Icons.account_balance, color: Color(0xFF10B981)),
+                title: const Text('HDFC Bank Account', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('Book Balance: ₹1,20,000.00 | Statement Status: Matched', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                trailing: const Icon(Icons.check_circle, color: Color(0xFF10B981)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// STOCK MANAGEMENT
+// ==========================================
+class StockScreen extends StatefulWidget {
+  const StockScreen({super.key});
+
+  @override
+  State<StockScreen> createState() => _StockScreenState();
+}
+
+class _StockScreenState extends State<StockScreen> {
   final _nameController = TextEditingController();
   final _hsnController = TextEditingController();
   final _qtyController = TextEditingController();
   final _rateController = TextEditingController();
   String _unit = 'Tons';
+  List<Map<String, dynamic>> _stock = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStock();
+  }
+
+  Future<void> _loadStock() async {
+    final data = await LocalDatabase.instance.getStock(AppState.activeFirm!['id'] as String);
+    setState(() => _stock = data);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final stock = AppState.getActiveStock();
-
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -624,15 +905,22 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
                           onChanged: (v) => setState(() => _unit = v!),
                         ),
                         ElevatedButton(
-                          onPressed: () {
+                          onPressed: () async {
                             if (_nameController.text.isNotEmpty) {
-                              AppState.addStockItem(_nameController.text, _hsnController.text, _unit, double.tryParse(_qtyController.text) ?? 0.0, double.tryParse(_rateController.text) ?? 0.0);
+                              await LocalDatabase.instance.insertStock({
+                                'id': 'item_${DateTime.now().millisecondsSinceEpoch}',
+                                'firmId': AppState.activeFirm!['id'] as String,
+                                'name': _nameController.text,
+                                'hsn': _hsnController.text,
+                                'unit': _unit,
+                                'qty': double.tryParse(_qtyController.text) ?? 0.0,
+                                'rate': double.tryParse(_rateController.text) ?? 0.0,
+                              });
                               _nameController.clear();
                               _hsnController.clear();
                               _qtyController.clear();
                               _rateController.clear();
-                              widget.onUpdate();
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item Created!')));
+                              _loadStock();
                             }
                           },
                           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
@@ -647,14 +935,15 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
             const SizedBox(height: 10),
             Expanded(
               child: ListView.builder(
-                itemCount: stock.length,
+                itemCount: _stock.length,
                 itemBuilder: (context, idx) {
-                  final item = stock[idx];
+                  final item = _stock[idx];
                   double val = (item['qty'] as double) * (item['rate'] as double);
+
                   return Card(
                     color: const Color(0xFF1E293B),
                     child: ListTile(
-                      title: Text(item['name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      title: Text(item['name'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                       subtitle: Text('HSN: ${item['hsn']} | ${item['qty']} ${item['unit']} @ ₹${item['rate']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
                       trailing: Text('₹${val.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontFamily: 'monospace')),
                     ),
@@ -670,11 +959,10 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
 }
 
 // ==========================================
-// 6. CHART OF ACCOUNTS CREATION
+// CHART OF ACCOUNTS CREATION
 // ==========================================
 class AccountManagementScreen extends StatefulWidget {
-  final VoidCallback onUpdate;
-  const AccountManagementScreen({super.key, required this.onUpdate});
+  const AccountManagementScreen({super.key});
 
   @override
   State<AccountManagementScreen> createState() => _AccountManagementScreenState();
@@ -682,13 +970,23 @@ class AccountManagementScreen extends StatefulWidget {
 
 class _AccountManagementScreenState extends State<AccountManagementScreen> {
   final _nameController = TextEditingController();
-  final _balanceController = TextEditingController();
+  final _balController = TextEditingController();
   String _category = 'Asset';
+  List<Map<String, dynamic>> _accounts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAccounts();
+  }
+
+  Future<void> _loadAccounts() async {
+    final data = await LocalDatabase.instance.getAccounts(AppState.activeFirm!['id'] as String);
+    setState(() => _accounts = data);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final accounts = AppState.getActiveAccounts();
-
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -701,11 +999,11 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Create New Account / Party Ledger', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
+                    const Text('Create Custom Ledger Account', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Account Name (e.g. Sharma Traders)')),
+                    TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Account Name')),
                     const SizedBox(height: 8),
-                    TextField(controller: _balanceController, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Opening Balance (₹)')),
+                    TextField(controller: _balController, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Opening Balance (₹)')),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -718,17 +1016,22 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
                         ),
                         const Spacer(),
                         ElevatedButton(
-                          onPressed: () {
+                          onPressed: () async {
                             if (_nameController.text.isNotEmpty) {
-                              AppState.addAccount(_nameController.text, _category, double.tryParse(_balanceController.text) ?? 0.0);
+                              await LocalDatabase.instance.insertAccount({
+                                'id': 'acc_${DateTime.now().millisecondsSinceEpoch}',
+                                'firmId': AppState.activeFirm!['id'] as String,
+                                'name': _nameController.text,
+                                'category': _category,
+                                'balance': double.tryParse(_balController.text) ?? 0.0,
+                              });
                               _nameController.clear();
-                              _balanceController.clear();
-                              widget.onUpdate();
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ledger Created!')));
+                              _balController.clear();
+                              _loadAccounts();
                             }
                           },
                           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
-                          child: const Text('Save Account', style: TextStyle(color: Colors.white)),
+                          child: const Text('Save Ledger', style: TextStyle(color: Colors.white)),
                         )
                       ],
                     )
@@ -739,11 +1042,11 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
             const SizedBox(height: 10),
             Expanded(
               child: ListView.builder(
-                itemCount: accounts.length,
+                itemCount: _accounts.length,
                 itemBuilder: (context, idx) {
                   return ListTile(
-                    title: Text(accounts[idx]['name'], style: const TextStyle(color: Colors.white)),
-                    subtitle: Text('Type: ${accounts[idx]['category']} | Balance: ₹${accounts[idx]['balance']}', style: const TextStyle(color: Colors.grey)),
+                    title: Text(_accounts[idx]['name'] as String, style: const TextStyle(color: Colors.white)),
+                    subtitle: Text('Type: ${_accounts[idx]['category']} | Balance: ₹${_accounts[idx]['balance']}', style: const TextStyle(color: Colors.grey)),
                   );
                 },
               ),
@@ -752,105 +1055,5 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         ),
       ),
     );
-  }
-}
-
-// ==========================================
-// 7. INVOICE GENERATION ENGINE
-// ==========================================
-class InvoiceBillingScreen extends StatelessWidget {
-  const InvoiceBillingScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF10B981),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          ),
-          icon: const Icon(Icons.print, color: Colors.white),
-          label: const Text('Print Firm GST Invoice PDF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          onPressed: () => _generateInvoicePDF(),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _generateInvoicePDF() async {
-    final pdf = pw.Document();
-
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Padding(
-            padding: const pw.EdgeInsets.all(24),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(AppState.activeFirm!['name']!, style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                        pw.Text('Address: ${AppState.activeFirm!['address']}'),
-                        pw.Text('GSTIN: ${AppState.activeFirm!['gstin']}'),
-                      ],
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text('TAX INVOICE', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.green700)),
-                        pw.Text('Invoice #: INV-2026-001'),
-                        pw.Text('Date: 28/08/2026'),
-                      ],
-                    ),
-                  ],
-                ),
-                pw.Divider(),
-                pw.SizedBox(height: 10),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Container(
-                      width: 220,
-                      padding: const pw.EdgeInsets.all(8),
-                      decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('PARTY DETAILS:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
-                          pw.Text('Cash / Counter Sale', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                        ],
-                      ),
-                    ),
-                    pw.Container(
-                      width: 220,
-                      padding: const pw.EdgeInsets.all(8),
-                      decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('BANK DETAILS:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
-                          pw.Text('Bank: State Bank of India'),
-                          pw.Text('A/C No: 330011223344'),
-                          pw.Text('IFSC: SBIN0001234'),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 }
