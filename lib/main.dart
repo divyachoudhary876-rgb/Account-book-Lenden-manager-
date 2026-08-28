@@ -13,7 +13,7 @@ class AccountingApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Neelkanth Account Book',
+      title: 'Neelkanth Accounting Enterprise',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0F172A),
@@ -25,6 +25,72 @@ class AccountingApp extends StatelessWidget {
   }
 }
 
+// ==========================================
+// CENTRAL STATE ENGINE (MULTI-FIRM & LEDGER SYNC)
+// ==========================================
+class AppState {
+  static String activeFirmId = 'firm_1';
+
+  static List<Map<String, String>> firms = [
+    {'id': 'firm_1', 'name': 'Neelkanth Biomass Briquettes'},
+    {'id': 'firm_2', 'name': 'Neelkanth Brick Kiln (Int Bhatta)'},
+  ];
+
+  static List<Map<String, dynamic>> accounts = [
+    {'id': 'acc_1', 'firmId': 'firm_1', 'name': 'Cash in Hand', 'category': 'Asset', 'balance': 50000.0},
+    {'id': 'acc_2', 'firmId': 'firm_1', 'name': 'Sales Account', 'category': 'Revenue', 'balance': 0.0},
+    {'id': 'acc_3', 'firmId': 'firm_1', 'name': 'HDFC Bank A/c', 'category': 'Asset', 'balance': 120000.0},
+    {'id': 'acc_4', 'firmId': 'firm_2', 'name': 'Cash Account Bhatta', 'category': 'Asset', 'balance': 25000.0},
+  ];
+
+  static List<Map<String, dynamic>> vouchers = [];
+
+  static List<Map<String, dynamic>> getActiveAccounts() {
+    return accounts.where((a) => a['firmId'] == activeFirmId).toList();
+  }
+
+  static List<Map<String, dynamic>> getActiveVouchers() {
+    return vouchers.where((v) => v['firmId'] == activeFirmId).toList();
+  }
+
+  static void addAccount(String name, String category) {
+    accounts.add({
+      'id': 'acc_${DateTime.now().millisecondsSinceEpoch}',
+      'firmId': activeFirmId,
+      'name': name,
+      'category': category,
+      'balance': 0.0,
+    });
+  }
+
+  static void postVoucher(String type, String voucherNo, List<Map<String, dynamic>> entries) {
+    vouchers.add({
+      'id': 'vouch_${DateTime.now().millisecondsSinceEpoch}',
+      'firmId': activeFirmId,
+      'voucherNo': voucherNo,
+      'type': type,
+      'date': '28 Aug 2026',
+      'entries': entries,
+    });
+
+    // Auto-reflect in Ledger Balances
+    for (var entry in entries) {
+      final acc = accounts.firstWhere((a) => a['name'] == entry['account'], orElse: () => {});
+      if (acc.isNotEmpty) {
+        double amt = entry['amount'] ?? 0.0;
+        if (entry['type'] == 'DEBIT') {
+          acc['balance'] = (acc['balance'] as double) + amt;
+        } else {
+          acc['balance'] = (acc['balance'] as double) - amt;
+        }
+      }
+    }
+  }
+}
+
+// ==========================================
+// MAIN NAVIGATION WITH MULTI-FIRM SWITCHER
+// ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -35,17 +101,44 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
-    const VoucherEntryScreen(),
-    const DayBookScreen(),
-    const LedgerBookScreen(),
-    const InvoiceScreen(),
-  ];
+  void _refreshState() {
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> screens = [
+      VoucherEntryScreen(onUpdate: _refreshState),
+      const DayBookScreen(),
+      const LedgerBookScreen(),
+      AccountManagementScreen(onUpdate: _refreshState),
+      const InvoiceScreen(),
+    ];
+
+    final activeFirm = AppState.firms.firstWhere((f) => f['id'] == AppState.activeFirmId);
+
     return Scaffold(
-      body: _screens[_currentIndex],
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1E293B),
+        title: DropdownButton<String>(
+          value: AppState.activeFirmId,
+          dropdownColor: const Color(0xFF0F172A),
+          underline: const SizedBox(),
+          style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 16),
+          items: AppState.firms.map((firm) {
+            return DropdownMenuItem<String>(
+              value: firm['id'],
+              child: Text('🏢 ${firm['name']}'),
+            );
+          }).toList(),
+          onChanged: (val) {
+            setState(() {
+              AppState.activeFirmId = val!;
+            });
+          },
+        ),
+      ),
+      body: screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
@@ -54,19 +147,23 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         unselectedItemColor: Colors.grey,
         type: BottomNavigationBarType.fixed,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.edit_document), label: 'Voucher'),
-          BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Day Book'),
+          BottomNavigationBarItem(icon: Icon(Icons.edit_note), label: 'Voucher'),
+          BottomNavigationBarItem(icon: Icon(Icons.auto_stories), label: 'Day Book'),
           BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'Ledger'),
-          BottomNavigationBarItem(icon: Icon(Icons.picture_as_pdf), label: 'Invoice'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_add), label: 'Accounts'),
+          BottomNavigationBarItem(icon: Icon(Icons.print), label: 'Invoice'),
         ],
       ),
     );
   }
 }
 
-// 1. VOUCHER ENTRY TERMINAL
+// ==========================================
+// 1. VOUCHER ENTRY (USES CREATED ACCOUNTS)
+// ==========================================
 class VoucherEntryScreen extends StatefulWidget {
-  const VoucherEntryScreen({super.key});
+  final VoidCallback onUpdate;
+  const VoucherEntryScreen({super.key, required this.onUpdate});
 
   @override
   State<VoucherEntryScreen> createState() => _VoucherEntryScreenState();
@@ -75,8 +172,8 @@ class VoucherEntryScreen extends StatefulWidget {
 class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
   String voucherType = 'Sales';
   final List<Map<String, dynamic>> _entries = [
-    {'type': 'DEBIT', 'account': 'Cash in Hand', 'amount': 0.0},
-    {'type': 'CREDIT', 'account': 'Sales Account', 'amount': 0.0},
+    {'type': 'DEBIT', 'account': '', 'amount': 0.0},
+    {'type': 'CREDIT', 'account': '', 'amount': 0.0},
   ];
 
   double get _totalDebit => _entries
@@ -92,12 +189,9 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
   @override
   Widget build(BuildContext context) {
     const Color emeraldColor = Color(0xFF10B981);
+    final activeAccounts = AppState.getActiveAccounts();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Voucher & Journal Entry'),
-        backgroundColor: const Color(0xFF1E293B),
-      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -119,7 +213,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                 }).toList(),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -131,7 +225,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    _isBalanced ? '✓ Journal Balanced' : '⚠ Diff: ₹${(_totalDebit - _totalCredit).abs().toStringAsFixed(2)}',
+                    _isBalanced ? '✓ Balanced' : '⚠ Diff: ₹${(_totalDebit - _totalCredit).abs().toStringAsFixed(2)}',
                     style: TextStyle(color: _isBalanced ? emeraldColor : Colors.amberAccent, fontWeight: FontWeight.bold),
                   ),
                   Text('Dr: ₹${_totalDebit.toStringAsFixed(2)} | Cr: ₹${_totalCredit.toStringAsFixed(2)}',
@@ -139,7 +233,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Expanded(
               child: ListView.builder(
                 itemCount: _entries.length,
@@ -148,59 +242,47 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                     color: const Color(0xFF1E293B),
                     child: Padding(
                       padding: const EdgeInsets.all(8.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              DropdownButton<String>(
-                                value: _entries[index]['type'],
-                                dropdownColor: const Color(0xFF0F172A),
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                items: const [
-                                  DropdownMenuItem(value: 'DEBIT', child: Text('By (Dr.)')),
-                                  DropdownMenuItem(value: 'CREDIT', child: Text('To (Cr.)')),
-                                ],
-                                onChanged: (val) => setState(() => _entries[index]['type'] = val),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: TextEditingController(text: _entries[index]['account']),
-                                  style: const TextStyle(color: Colors.white),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Account ID/Name',
-                                    hintStyle: TextStyle(color: Colors.grey),
-                                  ),
-                                  onChanged: (val) => _entries[index]['account'] = val,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 90,
-                                child: TextField(
-                                  keyboardType: TextInputType.number,
-                                  style: const TextStyle(color: Colors.white),
-                                  decoration: const InputDecoration(
-                                    hintText: '0.00',
-                                    hintStyle: TextStyle(color: Colors.grey),
-                                  ),
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _entries[index]['amount'] = double.tryParse(val) ?? 0.0;
-                                    });
-                                  },
-                                ),
-                              ),
+                          DropdownButton<String>(
+                            value: _entries[index]['type'],
+                            dropdownColor: const Color(0xFF0F172A),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            items: const [
+                              DropdownMenuItem(value: 'DEBIT', child: Text('By (Dr.)')),
+                              DropdownMenuItem(value: 'CREDIT', child: Text('To (Cr.)')),
                             ],
+                            onChanged: (val) => setState(() => _entries[index]['type'] = val),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4.0, left: 4.0),
-                            child: Text(
-                              '💡 Suggestion: Select account to ${_entries[index]['type'].toString().toLowerCase()}',
-                              style: const TextStyle(color: Colors.grey, fontSize: 10),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              dropdownColor: const Color(0xFF0F172A),
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              decoration: const InputDecoration(hintText: 'Select Account', hintStyle: TextStyle(color: Colors.grey)),
+                              items: activeAccounts.map((acc) {
+                                return DropdownMenuItem<String>(
+                                  value: acc['name'] as String,
+                                  child: Text(acc['name'] as String),
+                                );
+                              }).toList(),
+                              onChanged: (val) => setState(() => _entries[index]['account'] = val!),
                             ),
-                          )
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 85,
+                            child: TextField(
+                              keyboardType: TextInputType.number,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: const InputDecoration(hintText: '0.00'),
+                              onChanged: (val) {
+                                setState(() {
+                                  _entries[index]['amount'] = double.tryParse(val) ?? 0.0;
+                                });
+                              },
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -212,25 +294,22 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 TextButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _entries.add({'type': 'DEBIT', 'account': '', 'amount': 0.0});
-                    });
-                  },
+                  onPressed: () => setState(() => _entries.add({'type': 'DEBIT', 'account': '', 'amount': 0.0})),
                   icon: const Icon(Icons.add, color: emeraldColor),
-                  label: const Text('Add Line', style: TextStyle(color: emeraldColor)),
+                  label: const Text('Add Row', style: TextStyle(color: emeraldColor)),
                 ),
                 ElevatedButton(
-                  onPressed: _isBalanced ? () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('$voucherType Voucher Posted Successfully!')),
-                    );
-                  } : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: emeraldColor,
-                    disabledBackgroundColor: Colors.grey.withOpacity(0.2),
-                  ),
-                  child: Text('Post $voucherType Voucher', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: _isBalanced
+                      ? () {
+                          AppState.postVoucher(voucherType, 'VOUCH-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}', _entries);
+                          widget.onUpdate();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('$voucherType Voucher Posted! Reflecting in Ledger & Daybook.')),
+                          );
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(backgroundColor: emeraldColor),
+                  child: const Text('Post Voucher', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ],
             )
@@ -241,96 +320,188 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
   }
 }
 
-// 2. DAY BOOK SCREEN
+// ==========================================
+// 2. DAY BOOK (AUTOMATICALLY POPULATED)
+// ==========================================
 class DayBookScreen extends StatelessWidget {
   const DayBookScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Day Book (Double Entry)'), backgroundColor: const Color(0xFF1E293B)),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          _buildDayBookTile('VOUCH-1001', 'By Cash in Hand (Dr.)', 'To Sales Account (Cr.)', '15,000.00', '28 Aug 2026'),
-          _buildDayBookTile('VOUCH-1002', 'By Office Stationery (Dr.)', 'To HDFC Bank A/c (Cr.)', '1,200.00', '28 Aug 2026'),
-        ],
-      ),
-    );
-  }
+    final activeVouchers = AppState.getActiveVouchers();
 
-  Widget _buildDayBookTile(String vouchNo, String dr, String cr, String amount, String date) {
-    return Card(
-      color: const Color(0xFF1E293B),
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        title: Text(dr, style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(cr, style: const TextStyle(color: Colors.grey)),
-            Text('Voucher #: $vouchNo | Date: $date', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-          ],
-        ),
-        trailing: Text('₹$amount', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15, fontFamily: 'monospace')),
-      ),
+    return Scaffold(
+      body: activeVouchers.isEmpty
+          ? const Center(child: Text('No Vouchers Posted for this Firm Yet.', style: TextStyle(color: Colors.grey)))
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: activeVouchers.length,
+              itemBuilder: (context, index) {
+                final v = activeVouchers[index];
+                final entries = v['entries'] as List<Map<String, dynamic>>;
+                final dr = entries.firstWhere((e) => e['type'] == 'DEBIT', orElse: () => {'account': 'N/A', 'amount': 0.0});
+                final cr = entries.firstWhere((e) => e['type'] == 'CREDIT', orElse: () => {'account': 'N/A', 'amount': 0.0});
+
+                return Card(
+                  color: const Color(0xFF1E293B),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ListTile(
+                    title: Text('By ${dr['account']} (Dr.)', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('To ${cr['account']} (Cr.)', style: const TextStyle(color: Colors.grey)),
+                        Text('Voucher #: ${v['voucherNo']} | Date: ${v['date']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                      ],
+                    ),
+                    trailing: Text('₹${(dr['amount'] as double).toStringAsFixed(2)}',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15, fontFamily: 'monospace')),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
 
-// 3. LEDGER BOOK SCREEN
+// ==========================================
+// 3. LEDGER BOOK (AUTOMATIC BALANCES)
+// ==========================================
 class LedgerBookScreen extends StatelessWidget {
   const LedgerBookScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final activeAccounts = AppState.getActiveAccounts();
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Account Ledger Book'), backgroundColor: const Color(0xFF1E293B)),
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: activeAccounts.length,
+        itemBuilder: (context, index) {
+          final acc = activeAccounts[index];
+          final bal = acc['balance'] as double;
+
+          return Card(
             color: const Color(0xFF1E293B),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text('Account: Cash in Hand', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                Text('Balance: ₹58,800.00 Dr', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'monospace')),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(12),
-              children: const [
-                ListTile(
-                  title: Text('To Sales Account', style: TextStyle(color: Colors.white)),
-                  subtitle: Text('28 Aug 2026 | Voucher #VOUCH-1001', style: TextStyle(color: Colors.grey)),
-                  trailing: Text('+ ₹15,000.00', style: TextStyle(color: Color(0xFF10B981), fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+            child: ListTile(
+              title: Text(acc['name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              subtitle: Text('Category: ${acc['category']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+              trailing: Text(
+                '₹${bal.abs().toStringAsFixed(2)} ${bal >= 0 ? "Dr" : "Cr"}',
+                style: TextStyle(
+                  color: bal >= 0 ? const Color(0xFF10B981) : Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace',
+                  fontSize: 15,
                 ),
-                Divider(color: Colors.grey),
-                ListTile(
-                  title: Text('By Office Expense', style: TextStyle(color: Colors.white)),
-                  subtitle: Text('28 Aug 2026 | Voucher #VOUCH-1002', style: TextStyle(color: Colors.grey)),
-                  trailing: Text('- ₹1,200.00', style: TextStyle(color: Colors.redAccent, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-                ),
-              ],
+              ),
             ),
-          )
-        ],
+          );
+        },
       ),
     );
   }
 }
 
-// 4. TAX INVOICE PDF GENERATOR
+// ==========================================
+// 4. CHART OF ACCOUNTS (CREATE NEW ACCOUNTS)
+// ==========================================
+class AccountManagementScreen extends StatefulWidget {
+  final VoidCallback onUpdate;
+  const AccountManagementScreen({super.key, required this.onUpdate});
+
+  @override
+  State<AccountManagementScreen> createState() => _AccountManagementScreenState();
+}
+
+class _AccountManagementScreenState extends State<AccountManagementScreen> {
+  final _nameController = TextEditingController();
+  String _category = 'Asset';
+
+  @override
+  Widget build(BuildContext context) {
+    final activeAccounts = AppState.getActiveAccounts();
+
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Card(
+              color: const Color(0xFF1E293B),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Create New Ledger Account / Party', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(hintText: 'Account / Party Name (e.g. Sharma Traders)'),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Text('Category: ', style: TextStyle(color: Colors.grey)),
+                        DropdownButton<String>(
+                          value: _category,
+                          dropdownColor: const Color(0xFF0F172A),
+                          style: const TextStyle(color: Colors.white),
+                          items: ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'].map((cat) {
+                            return DropdownMenuItem(value: cat, child: Text(cat));
+                          }).toList(),
+                          onChanged: (val) => setState(() => _category = val!),
+                        ),
+                        const Spacer(),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (_nameController.text.isNotEmpty) {
+                              AppState.addAccount(_nameController.text, _category);
+                              _nameController.clear();
+                              widget.onUpdate();
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account Created Successfully!')));
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+                          child: const Text('Save Account', style: TextStyle(color: Colors.white)),
+                        )
+                      ],
+                    )
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.builder(
+                itemCount: activeAccounts.length,
+                itemBuilder: (context, idx) {
+                  return ListTile(
+                    title: Text(activeAccounts[idx]['name'], style: const TextStyle(color: Colors.white)),
+                    subtitle: Text(activeAccounts[idx]['category'], style: const TextStyle(color: Colors.grey)),
+                  );
+                },
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// 5. TAX INVOICE ENGINE
+// ==========================================
 class InvoiceScreen extends StatelessWidget {
   const InvoiceScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Tax Invoice Engine'), backgroundColor: const Color(0xFF1E293B)),
       body: Center(
         child: ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
@@ -338,7 +509,7 @@ class InvoiceScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           ),
           icon: const Icon(Icons.print, color: Colors.white),
-          label: const Text('Generate Professional PDF Invoice', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          label: const Text('Print Professional Firm GST Invoice PDF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           onPressed: () => _generateInvoicePDF(),
         ),
       ),
@@ -361,7 +532,7 @@ class InvoiceScreen extends StatelessWidget {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      cross: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text('NEELKANTH GROUPS', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
                         pw.Text('Industrial Area, Rajasthan, India'),
@@ -369,7 +540,7 @@ class InvoiceScreen extends StatelessWidget {
                       ],
                     ),
                     pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      cross: pw.CrossAxisAlignment.end,
                       children: [
                         pw.Text('TAX INVOICE', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.green700)),
                         pw.Text('Invoice #: INV-2026-001'),
@@ -388,7 +559,7 @@ class InvoiceScreen extends StatelessWidget {
                       padding: const pw.EdgeInsets.all(8),
                       decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
                       child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        cross: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Text('BILLED TO (PARTY):', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
                           pw.Text('M/s Sharma & Sons', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
@@ -402,7 +573,7 @@ class InvoiceScreen extends StatelessWidget {
                       padding: const pw.EdgeInsets.all(8),
                       decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
                       child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        cross: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Text('BANK DETAILS:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
                           pw.Text('Bank: State Bank of India'),
