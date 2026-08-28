@@ -13,7 +13,7 @@ void main() async {
 }
 
 // ==========================================
-// 1. ADVANCED LOCAL SQLITE PERSISTENCE ENGINE
+// 1. LOCAL SQLITE PERSISTENCE ENGINE
 // ==========================================
 class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._init();
@@ -29,7 +29,7 @@ class LocalDatabase {
 
   Future<Database> initDB() async {
     final dbPath = await getDatabasesPath();
-    final path = p.join(dbPath, 'neelkanth_enterprise_v5.db');
+    final path = p.join(dbPath, 'neelkanth_enterprise_v6.db');
 
     return await openDatabase(
       path,
@@ -50,7 +50,6 @@ class LocalDatabase {
             firmId TEXT NOT NULL,
             name TEXT NOT NULL,
             category TEXT NOT NULL,
-            groupName TEXT DEFAULT 'General',
             balance REAL DEFAULT 0.0
           )
         ''');
@@ -154,7 +153,6 @@ class LocalDatabase {
     });
   }
 
-  // DATA BACKUP JSON EXPORTER
   Future<String> exportBackupJSON(String firmId) async {
     final db = await database;
     final accounts = await db.query('accounts', where: 'firmId = ?', whereArgs: [firmId]);
@@ -173,7 +171,7 @@ class LocalDatabase {
 }
 
 // ==========================================
-// STATE ENGINE
+// CENTRAL STATE
 // ==========================================
 class AppState {
   static Map<String, dynamic>? activeFirm;
@@ -198,7 +196,7 @@ class EnterpriseAccountingApp extends StatelessWidget {
 }
 
 // ==========================================
-// FIRM GATEKEEPER SCREEN
+// 2. FIRM SELECTION SCREEN
 // ==========================================
 class FirmSelectionScreen extends StatefulWidget {
   const FirmSelectionScreen({super.key});
@@ -255,9 +253,10 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
                 };
                 await LocalDatabase.instance.insertFirm(newFirm);
 
-                await LocalDatabase.instance.insertAccount({'id': 'a1_$firmId', 'firmId': firmId, 'name': 'Cash Account', 'category': 'Asset', 'groupName': 'Cash-in-hand', 'balance': 0.0});
-                await LocalDatabase.instance.insertAccount({'id': 'a2_$firmId', 'firmId': firmId, 'name': 'Bank Account', 'category': 'Asset', 'groupName': 'Bank Accounts', 'balance': 0.0});
-                await LocalDatabase.instance.insertAccount({'id': 'a3_$firmId', 'firmId': firmId, 'name': 'Sales Account', 'category': 'Revenue', 'groupName': 'Sales Accounts', 'balance': 0.0});
+                await LocalDatabase.instance.insertAccount({'id': 'a1_$firmId', 'firmId': firmId, 'name': 'Cash Account', 'category': 'Asset', 'balance': 0.0});
+                await LocalDatabase.instance.insertAccount({'id': 'a2_$firmId', 'firmId': firmId, 'name': 'Bank Account', 'category': 'Asset', 'balance': 0.0});
+                await LocalDatabase.instance.insertAccount({'id': 'a3_$firmId', 'firmId': firmId, 'name': 'Sales Account', 'category': 'Revenue', 'balance': 0.0});
+                await LocalDatabase.instance.insertAccount({'id': 'a4_$firmId', 'firmId': firmId, 'name': 'Purchase Account', 'category': 'Expense', 'balance': 0.0});
 
                 _nameController.clear();
                 _gstinController.clear();
@@ -276,7 +275,7 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Select Business Firm'), backgroundColor: const Color(0xFF1E293B)),
+      appBar: AppBar(title: const Text('Select Working Firm'), backgroundColor: const Color(0xFF1E293B)),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -290,7 +289,7 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
             const SizedBox(height: 20),
             Expanded(
               child: _firms.isEmpty
-                  ? const Center(child: Text('No Firms Found. Create a firm to start.', style: TextStyle(color: Colors.grey)))
+                  ? const Center(child: Text('No Firms Found. Please Create a Firm.', style: TextStyle(color: Colors.grey)))
                   : ListView.builder(
                       itemCount: _firms.length,
                       itemBuilder: (context, idx) {
@@ -319,7 +318,7 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
 }
 
 // ==========================================
-// MAIN DASHBOARD
+// 3. MAIN DASHBOARD
 // ==========================================
 class MainDashboardScreen extends StatefulWidget {
   const MainDashboardScreen({super.key});
@@ -338,7 +337,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
       const DayBookScreen(),
       const LedgerBookScreen(),
       const FinancialReportsScreen(),
-      const BankReconciliationScreen(),
       const StockScreen(),
       const AccountManagementScreen(),
     ];
@@ -368,8 +366,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.edit_note), label: 'Voucher'),
           BottomNavigationBarItem(icon: Icon(Icons.auto_stories), label: 'Day Book'),
           BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'Ledger'),
-          BottomNavigationBarItem(icon: Icon(Icons.analytics), label: 'ITR/GST'),
-          BottomNavigationBarItem(icon: Icon(Icons.account_balance), label: 'Bank Recon'),
+          BottomNavigationBarItem(icon: Icon(Icons.analytics), label: 'ITR Reports'),
           BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Stock'),
           BottomNavigationBarItem(icon: Icon(Icons.person_add), label: 'Accounts'),
         ],
@@ -379,7 +376,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
 }
 
 // ==========================================
-// VOUCHER TERMINAL
+// 4. VOUCHER TERMINAL
 // ==========================================
 class VoucherTerminalScreen extends StatefulWidget {
   const VoucherTerminalScreen({super.key});
@@ -559,7 +556,7 @@ class _VoucherTerminalScreenState extends State<VoucherTerminalScreen> {
 }
 
 // ==========================================
-// DAY BOOK
+// 5. DAY BOOK
 // ==========================================
 class DayBookScreen extends StatefulWidget {
   const DayBookScreen({super.key});
@@ -624,7 +621,7 @@ class _DayBookScreenState extends State<DayBookScreen> {
 }
 
 // ==========================================
-// LEDGER BOOK
+// 6. LEDGER BOOK
 // ==========================================
 class LedgerBookScreen extends StatefulWidget {
   const LedgerBookScreen({super.key});
@@ -661,7 +658,7 @@ class _LedgerBookScreenState extends State<LedgerBookScreen> {
             color: const Color(0xFF1E293B),
             child: ListTile(
               title: Text(acc['name'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              subtitle: Text('Category: ${acc['category']} | Group: ${acc['groupName'] ?? "General"}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+              subtitle: Text('Category: ${acc['category']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
               trailing: Text(
                 '₹${bal.abs().toStringAsFixed(2)} ${bal >= 0 ? "Dr" : "Cr"}',
                 style: TextStyle(color: bal >= 0 ? const Color(0xFF10B981) : Colors.redAccent, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
@@ -675,7 +672,7 @@ class _LedgerBookScreenState extends State<LedgerBookScreen> {
 }
 
 // ==========================================
-// FINANCIAL REPORTS & GSTR TAX ENGINE
+// 7. FINANCIAL REPORTS (REPLACED ROSENACCENT WITH REDACCENT)
 // ==========================================
 class FinancialReportsScreen extends StatefulWidget {
   const FinancialReportsScreen({super.key});
@@ -710,7 +707,7 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('ITR & GSTR-1 Tax Return Engine', style: TextStyle(color: Color(0xFF10B981), fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('Income Tax Filing Reports Engine', style: TextStyle(color: Color(0xFF10B981), fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Card(
               color: const Color(0xFF1E293B),
@@ -721,7 +718,7 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Total Sales (GSTR-1 Taxable Value):', style: TextStyle(color: Colors.grey)),
+                        const Text('Total Gross Revenue:', style: TextStyle(color: Colors.grey)),
                         Text('₹${totalRevenue.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontFamily: 'monospace')),
                       ],
                     ),
@@ -729,27 +726,35 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Total Business Expenses:', style: TextStyle(color: Colors.grey)),
-                        Text('₹${totalExpense.toStringAsFixed(2)}', style: const TextStyle(color: Colors.roseAccent, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                        const Text('Total Operating Expenses:', style: TextStyle(color: Colors.grey)),
+                        Text('₹${totalExpense.toStringAsFixed(2)}', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
                       ],
                     ),
                     const Divider(color: Colors.grey),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Net Taxable Profit (ITR-3/4):', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        Text('₹${netProfit.toStringAsFixed(2)}', style: TextStyle(color: netProfit >= 0 ? const Color(0xFF10B981) : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'monospace')),
+                        const Text('Net Taxable Profit (P&L):', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        Text(
+                          '₹${netProfit.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: netProfit >= 0 ? const Color(0xFF10B981) : Colors.redAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
                       ],
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), minimumSize: const Size.fromHeight(48)),
               icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
-              label: const Text('Export Official Tax Report Pack (PDF)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              label: const Text('Export Official Income Tax Statement Pack (PDF)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               onPressed: () => _generateTaxReportPDF(context),
             ),
             const SizedBox(height: 10),
@@ -807,39 +812,7 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> {
 }
 
 // ==========================================
-// BANK RECONCILIATION ENGINE
-// ==========================================
-class BankReconciliationScreen extends StatelessWidget {
-  const BankReconciliationScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Automated Bank Reconciliation Engine', style: TextStyle(color: Color(0xFF10B981), fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            Card(
-              color: const Color(0xFF1E293B),
-              child: ListTile(
-                leading: const Icon(Icons.account_balance, color: Color(0xFF10B981)),
-                title: const Text('HDFC Bank Account', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                subtitle: const Text('Book Balance: ₹1,20,000.00 | Statement Status: Matched', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                trailing: const Icon(Icons.check_circle, color: Color(0xFF10B981)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ==========================================
-// STOCK MANAGEMENT
+// 8. STOCK MANAGEMENT
 // ==========================================
 class StockScreen extends StatefulWidget {
   const StockScreen({super.key});
@@ -959,7 +932,7 @@ class _StockScreenState extends State<StockScreen> {
 }
 
 // ==========================================
-// CHART OF ACCOUNTS CREATION
+// CHART OF ACCOUNTS
 // ==========================================
 class AccountManagementScreen extends StatefulWidget {
   const AccountManagementScreen({super.key});
