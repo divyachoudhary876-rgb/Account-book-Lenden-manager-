@@ -26,7 +26,7 @@ class AccountingApp extends StatelessWidget {
 }
 
 // ==========================================
-// CENTRAL STATE ENGINE (MULTI-FIRM & LEDGER SYNC)
+// CENTRAL STATE & INVENTORY ENGINE
 // ==========================================
 class AppState {
   static String activeFirmId = 'firm_1';
@@ -43,10 +43,19 @@ class AppState {
     {'id': 'acc_4', 'firmId': 'firm_2', 'name': 'Cash Account Bhatta', 'category': 'Asset', 'balance': 25000.0},
   ];
 
+  static List<Map<String, dynamic>> stockItems = [
+    {'id': 'item_1', 'firmId': 'firm_1', 'name': 'Mustard Briquettes', 'hsn': '4401', 'unit': 'Tons', 'qty': 150.0, 'rate': 4500.0},
+    {'id': 'item_2', 'firmId': 'firm_2', 'name': 'First Class Bricks (Int)', 'hsn': '6901', 'unit': 'Thousands', 'qty': 80.0, 'rate': 5500.0},
+  ];
+
   static List<Map<String, dynamic>> vouchers = [];
 
   static List<Map<String, dynamic>> getActiveAccounts() {
     return accounts.where((a) => a['firmId'] == activeFirmId).toList();
+  }
+
+  static List<Map<String, dynamic>> getActiveStock() {
+    return stockItems.where((i) => i['firmId'] == activeFirmId).toList();
   }
 
   static List<Map<String, dynamic>> getActiveVouchers() {
@@ -63,6 +72,18 @@ class AppState {
     });
   }
 
+  static void addStockItem(String name, String hsn, String unit, double qty, double rate) {
+    stockItems.add({
+      'id': 'item_${DateTime.now().millisecondsSinceEpoch}',
+      'firmId': activeFirmId,
+      'name': name,
+      'hsn': hsn,
+      'unit': unit,
+      'qty': qty,
+      'rate': rate,
+    });
+  }
+
   static void postVoucher(String type, String voucherNo, List<Map<String, dynamic>> entries) {
     vouchers.add({
       'id': 'vouch_${DateTime.now().millisecondsSinceEpoch}',
@@ -73,7 +94,6 @@ class AppState {
       'entries': entries,
     });
 
-    // Auto-reflect in Ledger Balances
     for (var entry in entries) {
       final acc = accounts.firstWhere((a) => a['name'] == entry['account'], orElse: () => {});
       if (acc.isNotEmpty) {
@@ -89,7 +109,7 @@ class AppState {
 }
 
 // ==========================================
-// MAIN NAVIGATION WITH MULTI-FIRM SWITCHER
+// NAVIGATION CONTROLLER
 // ==========================================
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -111,11 +131,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       VoucherEntryScreen(onUpdate: _refreshState),
       const DayBookScreen(),
       const LedgerBookScreen(),
+      StockInventoryScreen(onUpdate: _refreshState),
       AccountManagementScreen(onUpdate: _refreshState),
       const InvoiceScreen(),
     ];
-
-    final activeFirm = AppState.firms.firstWhere((f) => f['id'] == AppState.activeFirmId);
 
     return Scaffold(
       appBar: AppBar(
@@ -124,7 +143,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           value: AppState.activeFirmId,
           dropdownColor: const Color(0xFF0F172A),
           underline: const SizedBox(),
-          style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 16),
+          style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 15),
           items: AppState.firms.map((firm) {
             return DropdownMenuItem<String>(
               value: firm['id'],
@@ -150,6 +169,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.edit_note), label: 'Voucher'),
           BottomNavigationBarItem(icon: Icon(Icons.auto_stories), label: 'Day Book'),
           BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'Ledger'),
+          BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Stock'),
           BottomNavigationBarItem(icon: Icon(Icons.person_add), label: 'Accounts'),
           BottomNavigationBarItem(icon: Icon(Icons.print), label: 'Invoice'),
         ],
@@ -159,7 +179,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // ==========================================
-// 1. VOUCHER ENTRY (USES CREATED ACCOUNTS)
+// 1. VOUCHER ENTRY TERMINAL
 // ==========================================
 class VoucherEntryScreen extends StatefulWidget {
   final VoidCallback onUpdate;
@@ -304,7 +324,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                           AppState.postVoucher(voucherType, 'VOUCH-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}', _entries);
                           widget.onUpdate();
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('$voucherType Voucher Posted! Reflecting in Ledger & Daybook.')),
+                            SnackBar(content: Text('$voucherType Voucher Posted & Ledger Updated!')),
                           );
                         }
                       : null,
@@ -321,7 +341,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
 }
 
 // ==========================================
-// 2. DAY BOOK (AUTOMATICALLY POPULATED)
+// 2. DAY BOOK SCREEN
 // ==========================================
 class DayBookScreen extends StatelessWidget {
   const DayBookScreen({super.key});
@@ -365,7 +385,7 @@ class DayBookScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 3. LEDGER BOOK (AUTOMATIC BALANCES)
+// 3. LEDGER BOOK SCREEN
 // ==========================================
 class LedgerBookScreen extends StatelessWidget {
   const LedgerBookScreen({super.key});
@@ -405,7 +425,144 @@ class LedgerBookScreen extends StatelessWidget {
 }
 
 // ==========================================
-// 4. CHART OF ACCOUNTS (CREATE NEW ACCOUNTS)
+// 4. INVENTORY & STOCK MANAGEMENT
+// ==========================================
+class StockInventoryScreen extends StatefulWidget {
+  final VoidCallback onUpdate;
+  const StockInventoryScreen({super.key, required this.onUpdate});
+
+  @override
+  State<StockInventoryScreen> createState() => _StockInventoryScreenState();
+}
+
+class _StockInventoryScreenState extends State<StockInventoryScreen> {
+  final _nameController = TextEditingController();
+  final _hsnController = TextEditingController();
+  final _qtyController = TextEditingController();
+  final _rateController = TextEditingController();
+  String _unit = 'Tons';
+
+  @override
+  Widget build(BuildContext context) {
+    final activeStock = AppState.getActiveStock();
+
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Card(
+              color: const Color(0xFF1E293B),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Add New Stock / Inventory Item', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(hintText: 'Item Name (e.g. Mustard Briquettes / Bricks)'),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _hsnController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(hintText: 'HSN Code'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _qtyController,
+                            keyboardType: TextInputType.number,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(hintText: 'Qty'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _rateController,
+                            keyboardType: TextInputType.number,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(hintText: 'Rate (₹)'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        DropdownButton<String>(
+                          value: _unit,
+                          dropdownColor: const Color(0xFF0F172A),
+                          style: const TextStyle(color: Colors.white),
+                          items: ['Tons', 'Thousands', 'Kg', 'Bags', 'Pcs'].map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                          onChanged: (val) => setState(() => _unit = val!),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (_nameController.text.isNotEmpty) {
+                              AppState.addStockItem(
+                                _nameController.text,
+                                _hsnController.text,
+                                _unit,
+                                double.tryParse(_qtyController.text) ?? 0.0,
+                                double.tryParse(_rateController.text) ?? 0.0,
+                              );
+                              _nameController.clear();
+                              _hsnController.clear();
+                              _qtyController.clear();
+                              _rateController.clear();
+                              widget.onUpdate();
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Stock Item Added Successfully!')));
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+                          child: const Text('Save Stock Item', style: TextStyle(color: Colors.white)),
+                        )
+                      ],
+                    )
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.builder(
+                itemCount: activeStock.length,
+                itemBuilder: (context, idx) {
+                  final item = activeStock[idx];
+                  double val = (item['qty'] as double) * (item['rate'] as double);
+
+                  return Card(
+                    color: const Color(0xFF1E293B),
+                    child: ListTile(
+                      title: Text(item['name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      subtitle: Text('HSN: ${item['hsn']} | Stock: ${item['qty']} ${item['unit']} @ ₹${item['rate']}',
+                          style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                      trailing: Text('₹${val.toStringAsFixed(2)}',
+                          style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                    ),
+                  );
+                },
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// 5. CHART OF ACCOUNTS (MANAGE PARTIES)
 // ==========================================
 class AccountManagementScreen extends StatefulWidget {
   final VoidCallback onUpdate;
@@ -440,12 +597,12 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
                     TextField(
                       controller: _nameController,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(hintText: 'Account / Party Name (e.g. Sharma Traders)'),
+                      decoration: const InputDecoration(hintText: 'Party / Account Name (e.g. Sharma Traders)'),
                     ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Text('Category: ', style: TextStyle(color: Colors.grey)),
+                        const Text('Type: ', style: TextStyle(color: Colors.grey)),
                         DropdownButton<String>(
                           value: _category,
                           dropdownColor: const Color(0xFF0F172A),
@@ -494,7 +651,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 }
 
 // ==========================================
-// 5. TAX INVOICE ENGINE
+// 6. TAX INVOICE ENGINE
 // ==========================================
 class InvoiceScreen extends StatelessWidget {
   const InvoiceScreen({super.key});
