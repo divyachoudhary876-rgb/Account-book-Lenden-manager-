@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 void main() {
   runApp(const AccountingApp());
@@ -22,17 +21,15 @@ class AccountingApp extends StatelessWidget {
   }
 }
 
-// Transaction Model following Accounting Principles
-enum EntryType { debit, credit } // Debit = Cash In/Asset Increase, Credit = Cash Out/Liability
+enum EntryType { debit, credit } // Debit = Cash In/Receivable, Credit = Cash Out/Payable
 
 class JournalEntry {
   final String id;
   final String partyName;
-  final String accountCategory; // e.g., Sales, Purchase, Pathai, Transport
+  final String accountCategory;
   final double amount;
   final EntryType type;
   final String narration;
-  final DateTime date;
 
   JournalEntry({
     required this.id,
@@ -41,7 +38,6 @@ class JournalEntry {
     required this.amount,
     required this.type,
     required this.narration,
-    required this.date,
   });
 }
 
@@ -56,7 +52,6 @@ class _MainDashboardState extends State<MainDashboard> {
   int _selectedIndex = 0;
   final List<JournalEntry> _journal = [];
 
-  // Business Balances
   double get totalReceivable => _journal
       .where((e) => e.type == EntryType.debit)
       .fold(0.0, (sum, e) => sum + e.amount);
@@ -85,7 +80,6 @@ class _MainDashboardState extends State<MainDashboard> {
       appBar: AppBar(
         title: const Text('Pro Business Accountant', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.indigo.shade900,
-        elevation: 4,
       ),
       body: pages[_selectedIndex],
       bottomNavigationBar: NavigationBar(
@@ -100,12 +94,11 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
-  // 1. Executive Dashboard Screen
   Widget _buildDashboardView() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
-        crossAxisAlignment: CrossAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Financial Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
@@ -122,7 +115,7 @@ class _MainDashboardState extends State<MainDashboard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Recent Vouchers & Entries', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const Text('Voucher Entries', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ElevatedButton.icon(
                 onPressed: () => _showNewVoucherDialog(context),
                 icon: const Icon(Icons.add),
@@ -133,7 +126,7 @@ class _MainDashboardState extends State<MainDashboard> {
           ),
           const SizedBox(height: 12),
           _journal.isEmpty
-              ? const Center(child: Padding(padding: EdgeInsets.all(32.0), child: Text('No Journal Entries Recorded Yet.')))
+              ? const Center(child: Padding(padding: EdgeInsets.all(32.0), child: Text('No Entries Recorded Yet.')))
               : ListView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -142,14 +135,13 @@ class _MainDashboardState extends State<MainDashboard> {
                     final e = _journal.reversed.toList()[i];
                     final isDebit = e.type == EntryType.debit;
                     return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
                         leading: CircleAvatar(
                           backgroundColor: isDebit ? Colors.green.shade100 : Colors.red.shade100,
                           child: Icon(isDebit ? Icons.arrow_downward : Icons.arrow_upward, color: isDebit ? Colors.green : Colors.red),
                         ),
                         title: Text(e.partyName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${e.accountCategory} • ${DateFormat('dd MMM yyyy').format(e.date)}\nNote: ${e.narration}'),
+                        subtitle: Text('${e.accountCategory}\nNote: ${e.narration}'),
                         trailing: Text(
                           '${isDebit ? "Dr" : "Cr"} ₹${e.amount.toStringAsFixed(2)}',
                           style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isDebit ? Colors.green.shade800 : Colors.red.shade800),
@@ -163,7 +155,6 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
-  // 2. Ledger View
   Widget _buildLedgerView() {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -172,29 +163,29 @@ class _MainDashboardState extends State<MainDashboard> {
         const SizedBox(height: 12),
         Card(
           child: ListTile(
-            title: const Text('Pathai & Labour Expenses Account'),
-            subtitle: const Text('Category: Direct Expense'),
+            title: const Text('Pathai & Labour Expenses'),
+            subtitle: const Text('Direct Expense Account'),
             trailing: Text('₹ ${_calculateCategoryTotal("Pathai Majdoori")}', style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),
         Card(
           child: ListTile(
-            title: const Text('Raw Material & Fuel (Koyla) Account'),
-            subtitle: const Text('Category: Direct Expense'),
+            title: const Text('Raw Material & Fuel (Koyla)'),
+            subtitle: const Text('Direct Expense Account'),
             trailing: Text('₹ ${_calculateCategoryTotal("Koyla Kharid")}', style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),
         Card(
           child: ListTile(
             title: const Text('Transport & Freight Account'),
-            subtitle: const Text('Category: Indirect Expense'),
+            subtitle: const Text('Expense Account'),
             trailing: Text('₹ ${_calculateCategoryTotal("Transport")}', style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),
         Card(
           child: ListTile(
-            title: const Text('Sales & Revenues Account'),
-            subtitle: const Text('Category: Income'),
+            title: const Text('Sales & Revenue Account'),
+            subtitle: const Text('Income Account'),
             trailing: Text('₹ ${_calculateCategoryTotal("Customer Sales")}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
           ),
         ),
@@ -202,7 +193,6 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
-  // 3. Billing & Invoicing View
   Widget _buildBillingView() {
     final partyController = TextEditingController();
     final itemController = TextEditingController();
@@ -213,11 +203,11 @@ class _MainDashboardState extends State<MainDashboard> {
       padding: const EdgeInsets.all(16.0),
       child: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Generate Business Invoice / Bill', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Create Business Bill / Invoice', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-            TextField(controller: partyController, decoration: const InputDecoration(labelText: 'Customer / Business Name', border: OutlineInputBorder())),
+            TextField(controller: partyController, decoration: const InputDecoration(labelText: 'Customer Name', border: OutlineInputBorder())),
             const SizedBox(height: 12),
             TextField(controller: itemController, decoration: const InputDecoration(labelText: 'Item Description (e.g., Eent - 1st Class)', border: OutlineInputBorder())),
             const SizedBox(height: 12),
@@ -225,7 +215,7 @@ class _MainDashboardState extends State<MainDashboard> {
               children: [
                 Expanded(child: TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantity', border: OutlineInputBorder()))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: rateController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Rate (per unit)', border: OutlineInputBorder()))),
+                Expanded(child: TextField(controller: rateController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Rate (₹)', border: OutlineInputBorder()))),
               ],
             ),
             const SizedBox(height: 20),
@@ -246,12 +236,11 @@ class _MainDashboardState extends State<MainDashboard> {
                       accountCategory: 'Customer Sales',
                       amount: total,
                       type: EntryType.debit,
-                      narration: 'Invoice Generated: ${itemController.text} (Qty: $qty @ ₹$rate)',
-                      date: DateTime.now(),
+                      narration: 'Bill: ${itemController.text} (Qty: $qty @ ₹$rate)',
                     ));
 
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Invoice Created & Recorded! Total: ₹$total')),
+                      SnackBar(content: Text('Invoice Recorded! Total Amount: ₹$total')),
                     );
 
                     partyController.clear();
@@ -262,7 +251,7 @@ class _MainDashboardState extends State<MainDashboard> {
                   }
                 },
                 icon: const Icon(Icons.receipt),
-                label: const Text('Save Transaction & Add to Ledger', style: TextStyle(fontSize: 16)),
+                label: const Text('Save & Post Bill to Ledger', style: TextStyle(fontSize: 16)),
               ),
             )
           ],
@@ -287,7 +276,7 @@ class _MainDashboardState extends State<MainDashboard> {
         border: Border.all(color: color.withOpacity(0.4)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),
@@ -306,7 +295,7 @@ class _MainDashboardState extends State<MainDashboard> {
     String narration = '';
     EntryType type = EntryType.debit;
 
-    final categories = ['Pathai Majdoori', 'Koyla Kharid', 'Transport', 'Customer Sales', 'Other Office Expense'];
+    final categories = ['Pathai Majdoori', 'Koyla Kharid', 'Transport', 'Customer Sales', 'Other Expense'];
 
     showDialog(
       context: context,
@@ -352,7 +341,6 @@ class _MainDashboardState extends State<MainDashboard> {
                         amount: double.tryParse(amount) ?? 0.0,
                         type: type,
                         narration: narration,
-                        date: DateTime.now(),
                       ));
                       Navigator.pop(ctx);
                     }
