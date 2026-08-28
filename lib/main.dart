@@ -3,178 +3,384 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Phone me Local Database initialize ho raha hai
   await Hive.initFlutter();
-  await Hive.openBox('khatabook_box');
-  runApp(const SafeKhatabookApp());
+  await Hive.openBox('global_accounting_box');
+  runApp(const ProAccountingApp());
 }
 
-class SafeKhatabookApp extends StatelessWidget {
-  const SafeKhatabookApp({super.key});
+class ProAccountingApp extends StatelessWidget {
+  const ProAccountingApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Permanent Ledger App',
+      title: 'Professional Accounting',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(primarySwatch: Colors.teal, useMaterial3: true),
-      home: const LedgerHomeScreen(),
+      theme: ThemeData(
+        useMaterial3: true,
+        primaryColor: const Color(0xFF0D47A1),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0D47A1)),
+      ),
+      home: const FirmSelectionScreen(),
     );
   }
 }
 
-class LedgerHomeScreen extends StatefulWidget {
-  const LedgerHomeScreen({super.key});
+// ============================================================================
+// 1. MULTI-FIRM SELECTION SCREEN
+// ============================================================================
+class FirmSelectionScreen extends StatefulWidget {
+  const FirmSelectionScreen({super.key});
 
   @override
-  State<LedgerHomeScreen> createState() => _LedgerHomeScreenState();
+  State<FirmSelectionScreen> createState() => _FirmSelectionScreenState();
 }
 
-class _LedgerHomeScreenState extends State<LedgerHomeScreen> {
-  final Box _myBox = Hive.box('khatabook_box');
-  final _nameController = TextEditingController();
-  final _amountController = TextEditingController();
+class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
+  final Box _box = Hive.box('global_accounting_box');
 
-  // Data Save karne ka function (Permanent Storage)
-  void _addTransaction(String type) {
-    final name = _nameController.text;
-    final amount = double.tryParse(_amountController.text) ?? 0.0;
+  void _showAddFirmDialog() {
+    final nameCtrl = TextEditingController();
+    final gstCtrl = TextEditingController();
 
-    if (name.isNotEmpty && amount > 0) {
-      final newEntry = {
-        'name': name,
-        'amount': amount,
-        'type': type, // 'GAVE' (Udhaar) ya 'GOT' (Jama)
-        'date': DateTime.now().toString().substring(0, 10),
-      };
-
-      List history = _myBox.get('transactions', defaultValue: []);
-      history.add(newEntry);
-      
-      // Permanent phone storage me write ho raha hai
-      _myBox.put('transactions', history);
-
-      _nameController.clear();
-      _amountController.clear();
-      Navigator.pop(context);
-      setState(() {});
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    List history = _myBox.get('transactions', defaultValue: []);
-    
-    double totalGave = 0;
-    double totalGot = 0;
-
-    for (var item in history) {
-      if (item['type'] == 'GAVE') {
-        totalGave += item['amount'];
-      } else {
-        totalGot += item['amount'];
-      }
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Safe Khatabook', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.teal,
-      ),
-      body: Column(
-        children: [
-          // Total Balance Card
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.teal.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Column(
-                  children: [
-                    const Text('Aapne Diye (Udhaar)', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                    Text('₹ $totalGave', style: const TextStyle(fontSize: 18, color: Colors.red, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                Column(
-                  children: [
-                    const Text('Aapko Mile (Jama)', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                    Text('₹ $totalGot', style: const TextStyle(fontSize: 18, color: Colors.green, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          // History List
-          Expanded(
-            child: history.isEmpty
-                ? const Center(child: Text('Koi entry nahi hai. Niche button se add karein.'))
-                : ListView.builder(
-                    itemCount: history.length,
-                    itemBuilder: (ctx, index) {
-                      final item = history[index];
-                      final isGave = item['type'] == 'GAVE';
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        child: ListTile(
-                          title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(item['date']),
-                          trailing: Text(
-                            '₹ ${item['amount']}',
-                            style: TextStyle(
-                              color: isGave ? Colors.red : Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(10),
-        child: Row(
-          children: [
-            Expanded(
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                onPressed: () => _showAddDialog('GAVE'),
-                child: const Text('Aapne Diye (₹)'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                onPressed: () => _showAddDialog('GOT'),
-                child: const Text('Aapko Mile (₹)'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showAddDialog(String type) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(type == 'GAVE' ? 'Udhaar Diya' : 'Paisa Mila'),
+        title: const Text('Create New Firm / Business'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'Customer Ka Naam')),
-            TextField(controller: _amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount (₹)')),
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Firm Name *', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: gstCtrl, decoration: const InputDecoration(labelText: 'GSTIN / Reg No.', border: OutlineInputBorder())),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => _addTransaction(type), child: const Text('Save')),
+          ElevatedButton(
+            onPressed: () {
+              if (nameCtrl.text.isNotEmpty) {
+                String firmId = DateTime.now().millisecondsSinceEpoch.toString();
+                List firms = _box.get('firms_list', defaultValue: []);
+                firms.add({
+                  'id': firmId,
+                  'name': nameCtrl.text,
+                  'gst': gstCtrl.text,
+                });
+                _box.put('firms_list', firms);
+                Navigator.pop(ctx);
+                setState(() {});
+              }
+            },
+            child: const Text('Create'),
+          )
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    List firms = _box.get('firms_list', defaultValue: []);
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D47A1),
+        title: const Text('Select Firm / Business', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+      body: firms.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.business, size: 70, color: Colors.grey),
+                  const SizedBox(height: 12),
+                  const Text('Koi Firm bani hui nahi hai', style: TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D47A1), foregroundColor: Colors.white),
+                    onPressed: _showAddFirmDialog,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create First Firm'),
+                  )
+                ],
+              ),
+            )
+          : ListView.builder(
+              itemCount: firms.length,
+              itemBuilder: (ctx, idx) {
+                var firm = firms[idx];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFF0D47A1),
+                      child: Icon(Icons.store, color: Colors.white),
+                    ),
+                    title: Text(firm['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    subtitle: Text('GSTIN: ${firm['gst'].isEmpty ? "N/A" : firm['gst']}'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (ctx) => FirmWorkspaceScreen(firmId: firm['id'], firmName: firm['name']),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: firms.isNotEmpty
+          ? FloatingActionButton.extended(
+              backgroundColor: const Color(0xFF0D47A1),
+              onPressed: _showAddFirmDialog,
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text('Add Firm', style: TextStyle(color: Colors.white)),
+            )
+          : null,
+    );
+  }
+}
+
+// ============================================================================
+// 2. FIRM WORKSPACE (Dashboard for Specific Firm)
+// ============================================================================
+class FirmWorkspaceScreen extends StatelessWidget {
+  final String firmId;
+  final String firmName;
+  const FirmWorkspaceScreen({super.key, required this.firmId, required this.firmName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D47A1),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(firmName, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('Professional Accounting Workspace', style: TextStyle(color: Colors.white70, fontSize: 11)),
+          ],
+        ),
+      ),
+      body: GridView.count(
+        crossAxisCount: 2,
+        padding: const EdgeInsets.all(16),
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        children: [
+          _menuCard(context, 'Parties / Ledgers', Icons.people, Colors.indigo, () {
+            Navigator.push(context, MaterialPageRoute(builder: (ctx) => PartyLedgerScreen(firmId: firmId)));
+          }),
+          _menuCard(context, 'Sales Invoices', Icons.receipt_long, Colors.green, () {
+            Navigator.push(context, MaterialPageRoute(builder: (ctx) => SalesBillingScreen(firmId: firmId)));
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _menuCard(BuildContext context, String title, IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Container(
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: color.withOpacity(0.05)),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 40, color: color),
+              const SizedBox(height: 12),
+              Text(title, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: color)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 3. PARTY LEDGER MANAGEMENT MODULE
+// ============================================================================
+class PartyLedgerScreen extends StatefulWidget {
+  final String firmId;
+  const PartyLedgerScreen({super.key, required this.firmId});
+
+  @override
+  State<PartyLedgerScreen> createState() => _PartyLedgerScreenState();
+}
+
+class _PartyLedgerScreenState extends State<PartyLedgerScreen> {
+  final Box _box = Hive.box('global_accounting_box');
+
+  void _showAddPartyDialog() {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add New Party / Customer'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Party Name *', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Mobile Number', border: OutlineInputBorder())),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              if (nameCtrl.text.isNotEmpty) {
+                List allParties = _box.get('parties_${widget.firmId}', defaultValue: []);
+                allParties.add({
+                  'name': nameCtrl.text,
+                  'phone': phoneCtrl.text,
+                  'balance': 0.0,
+                  'txs': [],
+                });
+                _box.put('parties_${widget.firmId}', allParties);
+                Navigator.pop(ctx);
+                setState(() {});
+              }
+            },
+            child: const Text('Save'),
+          )
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    List parties = _box.get('parties_${widget.firmId}', defaultValue: []);
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D47A1),
+        title: const Text('Parties & Accounts Ledger', style: TextStyle(color: Colors.white)),
+      ),
+      body: parties.isEmpty
+          ? const Center(child: Text('Koi Party add nahi hai.'))
+          : ListView.builder(
+              itemCount: parties.length,
+              itemBuilder: (ctx, i) {
+                var p = parties[i];
+                double bal = (p['balance'] ?? 0.0).toDouble();
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: ListTile(
+                    title: Text(p['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(p['phone']),
+                    trailing: Text(
+                      '₹ ${bal.abs()} ${bal >= 0 ? "Dr" : "Cr"}',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: bal >= 0 ? Colors.green : Colors.red),
+                    ),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: const Color(0xFF0D47A1),
+        onPressed: _showAddPartyDialog,
+        icon: const Icon(Icons.person_add, color: Colors.white),
+        label: const Text('Add Party', style: TextStyle(color: Colors.white)),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 4. SALES BILLING SYSTEM MODULE
+// ============================================================================
+class SalesBillingScreen extends StatefulWidget {
+  final String firmId;
+  const SalesBillingScreen({super.key, required this.firmId});
+
+  @override
+  State<SalesBillingScreen> createState() => _SalesBillingScreenState();
+}
+
+class _SalesBillingScreenState extends State<SalesBillingScreen> {
+  final Box _box = Hive.box('global_accounting_box');
+
+  void _showCreateBillDialog() {
+    final itemCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Create Sales Invoice'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: itemCtrl, decoration: const InputDecoration(labelText: 'Item / Service Name *', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Total Amount (₹) *', border: OutlineInputBorder())),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              double amt = double.tryParse(amountCtrl.text) ?? 0;
+              if (itemCtrl.text.isNotEmpty && amt > 0) {
+                List bills = _box.get('bills_${widget.firmId}', defaultValue: []);
+                bills.add({
+                  'item': itemCtrl.text,
+                  'amount': amt,
+                  'date': DateTime.now().toString().substring(0, 10),
+                });
+                _box.put('bills_${widget.firmId}', bills);
+                Navigator.pop(ctx);
+                setState(() {});
+              }
+            },
+            child: const Text('Generate Bill'),
+          )
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    List bills = _box.get('bills_${widget.firmId}', defaultValue: []);
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D47A1),
+        title: const Text('Sales Invoices / Billing', style: TextStyle(color: Colors.white)),
+      ),
+      body: bills.isEmpty
+          ? const Center(child: Text('Koi Sales Bill nahi bana hai.'))
+          : ListView.builder(
+              itemCount: bills.length,
+              itemBuilder: (ctx, i) {
+                var b = bills[i];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: ListTile(
+                    title: Text(b['item'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('Date: ${b['date']}'),
+                    trailing: Text('₹ ${b['amount']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: const Color(0xFF0D47A1),
+        onPressed: _showCreateBillDialog,
+        icon: const Icon(Icons.receipt, color: Colors.white),
+        label: const Text('New Invoice', style: TextStyle(color: Colors.white)),
       ),
     );
   }
