@@ -1,7 +1,8 @@
-name: pro_accounting_app
-description: Complete Professional Multi-Firm Double-Entry Accounting Engine
+name: account_book_lenden_manager
+description: "Enterprise Double-Entry Accounting & GST Billing Engine"
 publish_to: 'none'
-version: 1.1.0+1
+
+version: 1.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,15 +10,21 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # Local NoSQL Offline Storage
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-  path_provider: ^2.1.2
+
+  # Date Formatting & Currency Utilities
   intl: ^0.19.0
+
+  # UI Enhancement Icons
+  cupertino_icons: ^1.0.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^2.0.0
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
