@@ -1,13 +1,13 @@
-enum VoucherType { sales, purchase, payment, receipt, journal }
 enum EntryType { debit, credit }
+enum VoucherType { sales, purchase, payment, receipt, journal }
 
-class JournalEntryItem {
+class JournalEntryModel {
   final String accountId;
   final String accountName;
   final EntryType type;
   final double amount;
 
-  JournalEntryItem({
+  JournalEntryModel({
     required this.accountId,
     required this.accountName,
     required this.type,
@@ -15,24 +15,22 @@ class JournalEntryItem {
   });
 }
 
-class VoucherRecord {
-  final String id;
+class VoucherModel {
   final String voucherNumber;
-  final VoucherType voucherType;
+  final VoucherType type;
   final DateTime date;
-  final List<JournalEntryItem> entries;
+  final List<JournalEntryModel> entries;
 
-  VoucherRecord({
-    required this.id,
+  VoucherModel({
     required this.voucherNumber,
-    required this.voucherType,
+    required this.type,
     required this.date,
     required this.entries,
   });
 
   bool get isBalanced {
-    double dr = entries.where((e) => e.type == EntryType.debit).fold(0.0, (s, e) => s + e.amount);
-    double cr = entries.where((e) => e.type == EntryType.credit).fold(0.0, (s, e) => s + e.amount);
-    return (dr - cr).abs() < 0.001 && dr > 0;
+    double totalDr = entries.where((e) => e.type == EntryType.debit).fold(0, (sum, e) => sum + e.amount);
+    double totalCr = entries.where((e) => e.type == EntryType.credit).fold(0, (sum, e) => sum + e.amount);
+    return (totalDr - totalCr).abs() < 0.001 && totalDr > 0;
   }
 }
