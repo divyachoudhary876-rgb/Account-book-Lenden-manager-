@@ -1,5 +1,5 @@
 name: business_book
-description: Business Book App
+description: Professional Business Accounting & Billing App
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  intl: ^0.19.0
+  pdf: ^3.10.8
+  printing: ^5.11.0
 
 dev_dependencies:
   flutter_test:
