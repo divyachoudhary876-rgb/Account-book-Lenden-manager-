@@ -1,31 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await Hive.openBox('app_user_session');
   await Hive.openBox('master_accounting_db');
-  runApp(const EnterpriseAccountingApp());
+  runApp(const TallyProAccountingApp());
 }
 
 // ============================================================================
-// 1. ENUMS & CORE DOMAIN MODELS
+// 1. DATA MODELS & ENUMS
 // ============================================================================
-enum FirmType { manufacturing, retail, service, trader, other }
+enum FirmType { manufacturing, retail, service, trader, custom }
 enum AccountGroupType { asset, liability, equity, revenue, expense }
 
 class LedgerAccount {
   final String id;
   final String firmId;
-  final String name;
-  final AccountGroupType groupType;
-  final String subGroup;
-  final String? hsnCode;
-  final double gstRate;
-  final double openingBalance;
-  final String opType; // 'Dr' or 'Cr'
+  String name;
+  AccountGroupType groupType;
+  String subGroup;
+  String? hsnCode;
+  double gstRate;
+  double openingBalance;
+  String opType; // 'Dr' or 'Cr'
 
   LedgerAccount({
     required this.id,
@@ -64,11 +68,85 @@ class LedgerAccount {
       );
 }
 
+class JournalEntryLine {
+  final String accountId;
+  final String accountName;
+  final double debit;
+  final double credit;
+
+  JournalEntryLine({
+    required this.accountId,
+    required this.accountName,
+    required this.debit,
+    required this.credit,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'accountId': accountId,
+        'accountName': accountName,
+        'debit': debit,
+        'credit': credit,
+      };
+
+  factory JournalEntryLine.fromMap(Map<String, dynamic> map) => JournalEntryLine(
+        accountId: map['accountId'],
+        accountName: map['accountName'] ?? '',
+        debit: (map['debit'] ?? 0.0).toDouble(),
+        credit: (map['credit'] ?? 0.0).toDouble(),
+      );
+}
+
+class FinancialVoucher {
+  final String id;
+  final String firmId;
+  final String voucherType;
+  final String voucherNo;
+  final String date;
+  final String narration;
+  final List<JournalEntryLine> lines;
+
+  FinancialVoucher({
+    required this.id,
+    required this.firmId,
+    required this.voucherType,
+    required this.voucherNo,
+    required this.date,
+    required this.narration,
+    required this.lines,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'firmId': firmId,
+        'voucherType': voucherType,
+        'voucherNo': voucherNo,
+        'date': date,
+        'narration': narration,
+        'lines': lines.map((x) => x.toMap()).toList(),
+      };
+
+  factory FinancialVoucher.fromMap(Map<String, dynamic> map) => FinancialVoucher(
+        id: map['id'],
+        firmId: map['firmId'],
+        voucherType: map['voucherType'],
+        voucherNo: map['voucherNo'],
+        date: map['date'],
+        narration: map['narration'] ?? '',
+        lines: (map['lines'] as List).map((x) => JournalEntryLine.fromMap(Map<String, dynamic>.from(x))).toList(),
+      );
+
+  bool get isBalanced {
+    double dr = lines.fold(0.0, (s, l) => s + l.debit);
+    double cr = lines.fold(0.0, (s, l) => s + l.credit);
+    return (dr - cr).abs() < 0.001 && dr > 0;
+  }
+}
+
 // ============================================================================
-// 2. MAIN APP ROUTER
+// 2. ROOT APPLICATION
 // ============================================================================
-class EnterpriseAccountingApp extends StatelessWidget {
-  const EnterpriseAccountingApp({super.key});
+class TallyProAccountingApp extends StatelessWidget {
+  const TallyProAccountingApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -76,14 +154,14 @@ class EnterpriseAccountingApp extends StatelessWidget {
     bool isLoggedIn = sessionBox.get('is_logged_in', defaultValue: false);
 
     return MaterialApp(
-      title: 'Lenden Manager Engine',
+      title: 'TallyPro Accounting Engine',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        primaryColor: const Color(0xFF1B365D),
+        primaryColor: const Color(0xFF005A9C),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1B365D),
-          primary: const Color(0xFF1B365D),
+          seedColor: const Color(0xFF005A9C),
+          primary: const Color(0xFF005A9C),
           secondary: const Color(0xFF008080),
         ),
       ),
@@ -93,7 +171,7 @@ class EnterpriseAccountingApp extends StatelessWidget {
 }
 
 // ============================================================================
-// 3. MOBILE OTP AUTHENTICATION SCREEN
+// 3. AUTHENTICATION (MOBILE OTP)
 // ============================================================================
 class MobileAuthScreen extends StatefulWidget {
   const MobileAuthScreen({super.key});
@@ -107,20 +185,16 @@ class _MobileAuthScreenState extends State<MobileAuthScreen> {
   final _otpController = TextEditingController();
   bool _otpSent = false;
 
-  void _sendOtp() {
+  void _handleSendOtp() {
     if (_phoneController.text.trim().length == 10) {
       setState(() => _otpSent = true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('OTP sent successfully: Use 123456 for testing.')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 10-digit mobile number.')),
+        const SnackBar(content: Text('OTP sent successfully. Demo Code: 123456')),
       );
     }
   }
 
-  void _verifyOtp() {
+  void _handleVerifyOtp() {
     if (_otpController.text.trim() == "123456") {
       final sessionBox = Hive.box('app_user_session');
       sessionBox.put('is_logged_in', true);
@@ -130,28 +204,21 @@ class _MobileAuthScreenState extends State<MobileAuthScreen> {
         context,
         MaterialPageRoute(builder: (ctx) => const MultiFirmSelectorScreen()),
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid OTP. Enter 123456')),
-      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Account Book Authentication', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1B365D),
-      ),
+      appBar: AppBar(title: const Text('TallyPro ERP Login', style: TextStyle(color: Colors.white)), backgroundColor: const Color(0xFF005A9C)),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.security, size: 70, color: Color(0xFF1B365D)),
+            const Icon(Icons.account_balance_wallet, size: 70, color: Color(0xFF005A9C)),
             const SizedBox(height: 16),
-            const Text('Mobile Verification', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const Text('Secure Mobile Login', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 20),
             TextField(
               controller: _phoneController,
@@ -164,7 +231,7 @@ class _MobileAuthScreenState extends State<MobileAuthScreen> {
               TextField(
                 controller: _otpController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Enter OTP (123456)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'OTP (123456)', border: OutlineInputBorder()),
               ),
             ],
             const SizedBox(height: 20),
@@ -172,9 +239,9 @@ class _MobileAuthScreenState extends State<MobileAuthScreen> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
-                onPressed: _otpSent ? _verifyOtp : _sendOtp,
-                child: Text(_otpSent ? 'Verify & Login' : 'Send OTP'),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF005A9C), foregroundColor: Colors.white),
+                onPressed: _otpSent ? _handleVerifyOtp : _handleSendOtp,
+                child: Text(_otpSent ? 'Verify OTP' : 'Send Verification OTP'),
               ),
             ),
           ],
@@ -185,7 +252,7 @@ class _MobileAuthScreenState extends State<MobileAuthScreen> {
 }
 
 // ============================================================================
-// 4. MULTI-FIRM ONBOARDING WITH DYNAMIC COA
+// 4. MULTI-FIRM SELECTOR & TEMPLATE SEEDING
 // ============================================================================
 class MultiFirmSelectorScreen extends StatefulWidget {
   const MultiFirmSelectorScreen({super.key});
@@ -207,7 +274,7 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
-          title: const Text('Create New Business Firm', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text('Register New Company / Firm'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -216,12 +283,12 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
                 const SizedBox(height: 10),
                 DropdownButtonFormField<FirmType>(
                   value: selectedType,
-                  decoration: const InputDecoration(labelText: 'Business Category *', border: OutlineInputBorder()),
-                  items: FirmType.values.map((type) => DropdownMenuItem(value: type, child: Text(type.name.toUpperCase()))).toList(),
-                  onChanged: (val) => setDlgState(() => selectedType = val!),
+                  decoration: const InputDecoration(labelText: 'Business Nature *', border: OutlineInputBorder()),
+                  items: FirmType.values.map((t) => DropdownMenuItem(value: t, child: Text(t.name.toUpperCase()))).toList(),
+                  onChanged: (v) => setDlgState(() => selectedType = v!),
                 ),
                 const SizedBox(height: 10),
-                TextField(controller: gstCtrl, decoration: const InputDecoration(labelText: 'GSTIN Number', border: OutlineInputBorder())),
+                TextField(controller: gstCtrl, decoration: const InputDecoration(labelText: 'GSTIN (Optional)', border: OutlineInputBorder())),
                 const SizedBox(height: 10),
                 TextField(controller: stateCodeCtrl, decoration: const InputDecoration(labelText: 'State Code (e.g. 08)', border: OutlineInputBorder())),
               ],
@@ -230,12 +297,11 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF005A9C), foregroundColor: Colors.white),
               onPressed: () {
                 if (nameCtrl.text.trim().isNotEmpty) {
                   String firmId = 'firm_${DateTime.now().millisecondsSinceEpoch}';
                   List firms = _db.get('firms_registry', defaultValue: []);
-
                   firms.add({
                     'id': firmId,
                     'name': nameCtrl.text.trim(),
@@ -244,7 +310,7 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
                     'stateCode': stateCodeCtrl.text.trim(),
                   });
                   _db.put('firms_registry', firms);
-                  _seedSuggestedChartOfAccounts(firmId, selectedType);
+                  _seedChartOfAccounts(firmId, selectedType);
 
                   Navigator.pop(ctx);
                   setState(() {});
@@ -258,33 +324,30 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
     );
   }
 
-  void _seedSuggestedChartOfAccounts(String firmId, FirmType type) {
-    List<LedgerAccount> accounts = [
+  void _seedChartOfAccounts(String firmId, FirmType type) {
+    List<LedgerAccount> baseCOA = [
       LedgerAccount(id: 'acc_cash', firmId: firmId, name: 'Cash-in-Hand', groupType: AccountGroupType.asset, subGroup: 'Cash Equivalents', openingBalance: 0, opType: 'Dr'),
       LedgerAccount(id: 'acc_bank', firmId: firmId, name: 'Main Operating Bank', groupType: AccountGroupType.asset, subGroup: 'Bank Accounts', openingBalance: 0, opType: 'Dr'),
-      LedgerAccount(id: 'acc_capital', firmId: firmId, name: 'Owner Capital Account', groupType: AccountGroupType.equity, subGroup: 'Capital', openingBalance: 0, opType: 'Cr'),
-      LedgerAccount(id: 'acc_cgst', firmId: firmId, name: 'Output CGST Account', groupType: AccountGroupType.liability, subGroup: 'Duties & Taxes', openingBalance: 0, opType: 'Cr'),
-      LedgerAccount(id: 'acc_sgst', firmId: firmId, name: 'Output SGST Account', groupType: AccountGroupType.liability, subGroup: 'Duties & Taxes', openingBalance: 0, opType: 'Cr'),
-      LedgerAccount(id: 'acc_igst', firmId: firmId, name: 'Output IGST Account', groupType: AccountGroupType.liability, subGroup: 'Duties & Taxes', openingBalance: 0, opType: 'Cr'),
+      LedgerAccount(id: 'acc_capital', firmId: firmId, name: 'Owner Capital Account', groupType: AccountGroupType.equity, subGroup: 'Capital Account', openingBalance: 0, opType: 'Cr'),
+      LedgerAccount(id: 'acc_cgst', firmId: firmId, name: 'Duties & Taxes (CGST)', groupType: AccountGroupType.liability, subGroup: 'Duties & Taxes', openingBalance: 0, opType: 'Cr'),
+      LedgerAccount(id: 'acc_sgst', firmId: firmId, name: 'Duties & Taxes (SGST)', groupType: AccountGroupType.liability, subGroup: 'Duties & Taxes', openingBalance: 0, opType: 'Cr'),
+      LedgerAccount(id: 'acc_igst', firmId: firmId, name: 'Duties & Taxes (IGST)', groupType: AccountGroupType.liability, subGroup: 'Duties & Taxes', openingBalance: 0, opType: 'Cr'),
     ];
 
     if (type == FirmType.manufacturing) {
-      accounts.addAll([
-        LedgerAccount(id: 'acc_raw_material', firmId: firmId, name: 'Raw Material Inventory', groupType: AccountGroupType.asset, subGroup: 'Stock', openingBalance: 0, opType: 'Dr'),
-        LedgerAccount(id: 'acc_mfg_sales', firmId: firmId, name: 'Manufacturing Sales', groupType: AccountGroupType.revenue, subGroup: 'Sales Accounts', hsnCode: '6810', gstRate: 18.0, openingBalance: 0, opType: 'Cr'),
+      baseCOA.addAll([
+        LedgerAccount(id: 'acc_raw_stock', firmId: firmId, name: 'Raw Material Inventory', groupType: AccountGroupType.asset, subGroup: 'Stock-in-Hand', openingBalance: 0, opType: 'Dr'),
+        LedgerAccount(id: 'acc_sales', firmId: firmId, name: 'Manufacturing Sales Account', groupType: AccountGroupType.revenue, subGroup: 'Sales Accounts', hsnCode: '6810', gstRate: 18.0, openingBalance: 0, opType: 'Cr'),
+        LedgerAccount(id: 'acc_purchase', firmId: firmId, name: 'Raw Material Purchase Account', groupType: AccountGroupType.expense, subGroup: 'Purchase Accounts', openingBalance: 0, opType: 'Dr'),
       ]);
-    } else if (type == FirmType.retail || type == FirmType.trader) {
-      accounts.addAll([
-        LedgerAccount(id: 'acc_stock_trade', firmId: firmId, name: 'Stock in Trade', groupType: AccountGroupType.asset, subGroup: 'Stock', openingBalance: 0, opType: 'Dr'),
-        LedgerAccount(id: 'acc_retail_sales', firmId: firmId, name: 'Trading Sales Revenue', groupType: AccountGroupType.revenue, subGroup: 'Sales Accounts', hsnCode: '2710', gstRate: 18.0, openingBalance: 0, opType: 'Cr'),
-      ]);
-    } else if (type == FirmType.service) {
-      accounts.addAll([
-        LedgerAccount(id: 'acc_service_income', firmId: firmId, name: 'Professional Service Revenue', groupType: AccountGroupType.revenue, subGroup: 'Services', hsnCode: '9983', gstRate: 18.0, openingBalance: 0, opType: 'Cr'),
+    } else {
+      baseCOA.addAll([
+        LedgerAccount(id: 'acc_sales', firmId: firmId, name: 'Primary Sales Revenue', groupType: AccountGroupType.revenue, subGroup: 'Sales Accounts', hsnCode: '9983', gstRate: 18.0, openingBalance: 0, opType: 'Cr'),
+        LedgerAccount(id: 'acc_purchase', firmId: firmId, name: 'Direct Expense / Purchase', groupType: AccountGroupType.expense, subGroup: 'Direct Expenses', openingBalance: 0, opType: 'Dr'),
       ]);
     }
 
-    _db.put('accounts_$firmId', accounts.map((a) => a.toMap()).toList());
+    _db.put('accounts_$firmId', baseCOA.map((a) => a.toMap()).toList());
     _db.put('vouchers_$firmId', []);
   }
 
@@ -294,25 +357,16 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Select Business / Firm', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1B365D),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () {
-              Hive.box('app_user_session').clear();
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (ctx) => const MobileAuthScreen()));
-            },
-          )
-        ],
+        title: const Text('Gateway of Tally - Select Company', style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF005A9C),
       ),
       body: firms.isEmpty
           ? Center(
               child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF005A9C), foregroundColor: Colors.white),
                 onPressed: _showCreateFirmDialog,
                 icon: const Icon(Icons.add),
-                label: const Text('Create First Business Profile'),
+                label: const Text('Create Company Profile'),
               ),
             )
           : ListView.builder(
@@ -322,16 +376,14 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
                 var f = firms[i];
                 return Card(
                   child: ListTile(
-                    leading: const CircleAvatar(backgroundColor: Color(0xFF1B365D), child: Icon(Icons.store, color: Colors.white)),
+                    leading: const CircleAvatar(backgroundColor: Color(0xFF005A9C), child: Icon(Icons.business, color: Colors.white)),
                     title: Text(f['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text('Category: ${f['firmType'].toString().toUpperCase()} | GST: ${f['gstin']}'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (ctx) => MainErpDashboard(firmData: Map<String, dynamic>.from(f)),
-                        ),
+                        MaterialPageRoute(builder: (ctx) => MainTallyErpDashboard(firmData: Map<String, dynamic>.from(f))),
                       );
                     },
                   ),
@@ -340,10 +392,10 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
             ),
       floatingActionButton: firms.isNotEmpty
           ? FloatingActionButton.extended(
-              backgroundColor: const Color(0xFF1B365D),
+              backgroundColor: const Color(0xFF005A9C),
               onPressed: _showCreateFirmDialog,
               icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text('Add Firm', style: TextStyle(color: Colors.white)),
+              label: const Text('Add Company', style: TextStyle(color: Colors.white)),
             )
           : null,
     );
@@ -351,47 +403,82 @@ class _MultiFirmSelectorScreenState extends State<MultiFirmSelectorScreen> {
 }
 
 // ============================================================================
-// 5. MAIN ERP WORKSPACE DASHBOARD
+// 5. MAIN WORKSPACE WITH KEYBOARD HOTKEYS SUPPORT
 // ============================================================================
-class MainErpDashboard extends StatefulWidget {
+class MainTallyErpDashboard extends StatefulWidget {
   final Map<String, dynamic> firmData;
-  const MainErpDashboard({super.key, required this.firmData});
+  const MainTallyErpDashboard({super.key, required this.firmData});
 
   @override
-  State<MainErpDashboard> createState() => _MainErpDashboardState();
+  State<MainTallyErpDashboard> createState() => _MainTallyErpDashboardState();
 }
 
-class _MainErpDashboardState extends State<MainErpDashboard> {
-  int _activeTab = 0;
+class _MainTallyErpDashboardState extends State<MainTallyErpDashboard> {
+  int _selectedTab = 0;
 
   @override
   Widget build(BuildContext context) {
     List<Widget> screens = [
       LedgerManagementView(firmId: widget.firmData['id']),
-      ProfessionalGstInvoiceView(firmData: widget.firmData),
+      VoucherPostingView(firmId: widget.firmData['id']),
+      DayBookRegisterScreen(firmId: widget.firmData['id']),
+      GstPdfBillingView(firmData: widget.firmData),
     ];
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1B365D),
-        title: Text(widget.firmData['name'], style: const TextStyle(color: Colors.white)),
-      ),
-      body: screens[_activeTab],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _activeTab,
-        selectedItemColor: const Color(0xFF1B365D),
-        onTap: (index) => setState(() => _activeTab = index),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.account_tree), label: 'Chart of Accounts'),
-          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'GST Sales Invoice'),
-        ],
+    return Shortcuts(
+      shortcuts: <LogicalKeySet, Intent>{
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.keyA): const SelectTabIntent(0),
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.keyV): const SelectTabIntent(1),
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.keyD): const SelectTabIntent(2),
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.keyP): const SelectTabIntent(3),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          SelectTabIntent: CallbackAction<SelectTabIntent>(
+            onInvoke: (intent) => setState(() => _selectedTab = intent.index),
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            appBar: AppBar(
+              backgroundColor: const Color(0xFF005A9C),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.firmData['name'], style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Text('Alt+A: Accounts | Alt+V: Vouchers | Alt+D: DayBook | Alt+P: Print', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                ],
+              ),
+            ),
+            body: screens[_selectedTab],
+            bottomNavigationBar: BottomNavigationBar(
+              currentIndex: _selectedTab,
+              selectedItemColor: const Color(0xFF005A9C),
+              unselectedItemColor: Colors.grey,
+              type: BottomNavigationBarType.fixed,
+              onTap: (index) => setState(() => _selectedTab = index),
+              items: const [
+                BottomNavigationBarItem(icon: Icon(Icons.account_tree), label: 'Accounts (Alt+A)'),
+                BottomNavigationBarItem(icon: Icon(Icons.post_add), label: 'Vouchers (Alt+V)'),
+                BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'DayBook (Alt+D)'),
+                BottomNavigationBarItem(icon: Icon(Icons.picture_as_pdf), label: 'GST Invoice (Alt+P)'),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
+class SelectTabIntent extends Intent {
+  final int index;
+  const SelectTabIntent(this.index);
+}
+
 // ============================================================================
-// 6. LEDGER MANAGEMENT (INCLUDES MANUAL LEDGER CREATION)
+// 6. EDITABLE LEDGER MASTER MANAGEMENT
 // ============================================================================
 class LedgerManagementView extends StatefulWidget {
   final String firmId;
@@ -404,67 +491,96 @@ class LedgerManagementView extends StatefulWidget {
 class _LedgerManagementViewState extends State<LedgerManagementView> {
   final Box _db = Hive.box('master_accounting_db');
 
-  void _showAddManualLedgerDialog() {
-    final nameCtrl = TextEditingController();
-    final hsnCtrl = TextEditingController();
-    final gstRateCtrl = TextEditingController(text: '18.0');
-    final opBalCtrl = TextEditingController(text: '0.0');
-    AccountGroupType selectedGroup = AccountGroupType.asset;
+  void _showLedgerModal({LedgerAccount? accountToEdit}) {
+    final nameCtrl = TextEditingController(text: accountToEdit?.name ?? '');
+    final hsnCtrl = TextEditingController(text: accountToEdit?.hsnCode ?? '');
+    final gstRateCtrl = TextEditingController(text: (accountToEdit?.gstRate ?? 18.0).toString());
+    final opBalCtrl = TextEditingController(text: (accountToEdit?.openingBalance ?? 0.0).toString());
+    AccountGroupType selectedGroup = accountToEdit?.groupType ?? AccountGroupType.asset;
+    String opType = accountToEdit?.opType ?? 'Dr';
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
-          title: const Text('Create Custom Manual Ledger'),
+          title: Text(accountToEdit == null ? 'Create Account Ledger' : 'Edit Account Ledger'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Account / Party Name *', border: OutlineInputBorder())),
+                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Ledger Name *', border: OutlineInputBorder())),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<AccountGroupType>(
                   value: selectedGroup,
-                  decoration: const InputDecoration(labelText: 'Primary Group *', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(labelText: 'Account Group *', border: OutlineInputBorder()),
                   items: AccountGroupType.values.map((g) => DropdownMenuItem(value: g, child: Text(g.name.toUpperCase()))).toList(),
-                  onChanged: (val) => setDlgState(() => selectedGroup = val!),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDlgState(() {
+                        selectedGroup = val;
+                        opType = (val == AccountGroupType.asset || val == AccountGroupType.expense) ? 'Dr' : 'Cr';
+                      });
+                    }
+                  },
                 ),
                 const SizedBox(height: 10),
-                TextField(controller: hsnCtrl, decoration: const InputDecoration(labelText: 'HSN / SAC Code', border: OutlineInputBorder())),
+                TextField(controller: hsnCtrl, decoration: const InputDecoration(labelText: 'HSN/SAC Code', border: OutlineInputBorder())),
                 const SizedBox(height: 10),
                 TextField(controller: gstRateCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'GST Tax Rate (%)', border: OutlineInputBorder())),
                 const SizedBox(height: 10),
-                TextField(controller: opBalCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Opening Balance (₹)', border: OutlineInputBorder())),
+                Row(
+                  children: [
+                    Expanded(child: TextField(controller: opBalCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Opening Balance (₹)', border: OutlineInputBorder()))),
+                    const SizedBox(width: 8),
+                    DropdownButton<String>(
+                      value: opType,
+                      items: ['Dr', 'Cr'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                      onChanged: (v) => setDlgState(() => opType = v!),
+                    )
+                  ],
+                ),
               ],
             ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF005A9C), foregroundColor: Colors.white),
               onPressed: () {
                 if (nameCtrl.text.trim().isNotEmpty) {
-                  List rawAccounts = _db.get('accounts_${widget.firmId}', defaultValue: []);
-                  String accId = 'acc_${DateTime.now().millisecondsSinceEpoch}';
+                  List rawList = _db.get('accounts_${widget.firmId}', defaultValue: []);
+                  List<LedgerAccount> accounts = rawList.map((x) => LedgerAccount.fromMap(Map<String, dynamic>.from(x))).toList();
 
-                  LedgerAccount customAcc = LedgerAccount(
-                    id: accId,
-                    firmId: widget.firmId,
-                    name: nameCtrl.text.trim(),
-                    groupType: selectedGroup,
-                    subGroup: 'Custom Manual',
-                    hsnCode: hsnCtrl.text.trim(),
-                    gstRate: double.tryParse(gstRateCtrl.text) ?? 0.0,
-                    openingBalance: double.tryParse(opBalCtrl.text) ?? 0.0,
-                    opType: (selectedGroup == AccountGroupType.asset || selectedGroup == AccountGroupType.expense) ? 'Dr' : 'Cr',
-                  );
+                  if (accountToEdit == null) {
+                    accounts.add(LedgerAccount(
+                      id: 'acc_${DateTime.now().millisecondsSinceEpoch}',
+                      firmId: widget.firmId,
+                      name: nameCtrl.text.trim(),
+                      groupType: selectedGroup,
+                      subGroup: 'Custom Master',
+                      hsnCode: hsnCtrl.text.trim(),
+                      gstRate: double.tryParse(gstRateCtrl.text) ?? 0.0,
+                      openingBalance: double.tryParse(opBalCtrl.text) ?? 0.0,
+                      opType: opType,
+                    ));
+                  } else {
+                    int index = accounts.indexWhere((a) => a.id == accountToEdit.id);
+                    if (index != -1) {
+                      accounts[index].name = nameCtrl.text.trim();
+                      accounts[index].groupType = selectedGroup;
+                      accounts[index].hsnCode = hsnCtrl.text.trim();
+                      accounts[index].gstRate = double.tryParse(gstRateCtrl.text) ?? 0.0;
+                      accounts[index].openingBalance = double.tryParse(opBalCtrl.text) ?? 0.0;
+                      accounts[index].opType = opType;
+                    }
+                  }
 
-                  rawAccounts.add(customAcc.toMap());
-                  _db.put('accounts_${widget.firmId}', rawAccounts);
+                  _db.put('accounts_${widget.firmId}', accounts.map((a) => a.toMap()).toList());
                   Navigator.pop(ctx);
                   setState(() {});
                 }
               },
-              child: const Text('Save Ledger'),
+              child: const Text('Save Master'),
             )
           ],
         ),
@@ -474,8 +590,8 @@ class _LedgerManagementViewState extends State<LedgerManagementView> {
 
   @override
   Widget build(BuildContext context) {
-    List rawAccounts = _db.get('accounts_${widget.firmId}', defaultValue: []);
-    List<LedgerAccount> accounts = rawAccounts.map((x) => LedgerAccount.fromMap(Map<String, dynamic>.from(x))).toList();
+    List rawList = _db.get('accounts_${widget.firmId}', defaultValue: []);
+    List<LedgerAccount> accounts = rawList.map((x) => LedgerAccount.fromMap(Map<String, dynamic>.from(x))).toList();
 
     return Scaffold(
       body: ListView.builder(
@@ -486,137 +602,257 @@ class _LedgerManagementViewState extends State<LedgerManagementView> {
           return Card(
             child: ListTile(
               title: Text(acc.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text('${acc.groupType.name.toUpperCase()} | HSN: ${acc.hsnCode ?? "N/A"} | GST: ${acc.gstRate}%'),
-              trailing: Text('₹ ${acc.openingBalance.toStringAsFixed(2)} ${acc.opType}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text('Group: ${acc.groupType.name.toUpperCase()} | HSN: ${acc.hsnCode ?? "N/A"}'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('₹ ${acc.openingBalance.toStringAsFixed(2)} ${acc.opType}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  IconButton(
+                    icon: const Icon(Icons.edit, color: Color(0xFF005A9C)),
+                    onPressed: () => _showLedgerModal(accountToEdit: acc),
+                  )
+                ],
+              ),
             ),
           );
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF1B365D),
-        onPressed: _showAddManualLedgerDialog,
+        backgroundColor: const Color(0xFF005A9C),
+        onPressed: () => _showLedgerModal(),
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Manual Custom Account', style: TextStyle(color: Colors.white)),
+        label: const Text('Create Ledger', style: TextStyle(color: Colors.white)),
       ),
     );
   }
 }
 
 // ============================================================================
-// 7. INDIAN GST TAX INVOICE ENGINE
+// 7. TRANSACTION VOUCHER ENTRY
 // ============================================================================
-class ProfessionalGstInvoiceView extends StatefulWidget {
-  final Map<String, dynamic> firmData;
-  const ProfessionalGstInvoiceView({super.key, required this.firmData});
+class VoucherPostingView extends StatefulWidget {
+  final String firmId;
+  const VoucherPostingView({super.key, required this.firmId});
 
   @override
-  State<ProfessionalGstInvoiceView> createState() => _ProfessionalGstInvoiceViewState();
+  State<VoucherPostingView> createState() => _VoucherPostingViewState();
 }
 
-class _ProfessionalGstInvoiceViewState extends State<ProfessionalGstInvoiceView> {
-  final _customerNameCtrl = TextEditingController();
-  final _customerGstinCtrl = TextEditingController();
-  final _customerStateCodeCtrl = TextEditingController(text: '08');
-  final _itemDescriptionCtrl = TextEditingController();
-  final _hsnCtrl = TextEditingController(text: '6810');
-  final _qtyCtrl = TextEditingController(text: '1');
-  final _rateCtrl = TextEditingController(text: '0.00');
-  final double _gstRate = 18.0;
+class _VoucherPostingViewState extends State<VoucherPostingView> {
+  final Box _db = Hive.box('master_accounting_db');
 
-  void _generateInvoice() {
-    double qty = double.tryParse(_qtyCtrl.text) ?? 1.0;
-    double rate = double.tryParse(_rateCtrl.text) ?? 0.0;
-    double taxableValue = qty * rate;
+  void _openVoucherModal(String type) {
+    List rawAccounts = _db.get('accounts_${widget.firmId}', defaultValue: []);
+    List<LedgerAccount> accounts = rawAccounts.map((x) => LedgerAccount.fromMap(Map<String, dynamic>.from(x))).toList();
 
-    String supplierState = widget.firmData['stateCode'] ?? '08';
-    String customerState = _customerStateCodeCtrl.text.trim();
+    if (accounts.length < 2) return;
 
-    bool isIntraState = supplierState == customerState;
-
-    double cgst = 0.0;
-    double sgst = 0.0;
-    double igst = 0.0;
-
-    if (isIntraState) {
-      cgst = taxableValue * (_gstRate / 2) / 100;
-      sgst = taxableValue * (_gstRate / 2) / 100;
-    } else {
-      igst = taxableValue * _gstRate / 100;
-    }
-
-    double totalInvoiceAmount = taxableValue + cgst + sgst + igst;
+    LedgerAccount drAcc = accounts.first;
+    LedgerAccount crAcc = accounts.last;
+    final amtCtrl = TextEditingController();
+    final narCtrl = TextEditingController();
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('TAX INVOICE (Indian GST Rules)', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          title: Text('Post $type Voucher'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Seller: ${widget.firmData['name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text('GSTIN: ${widget.firmData['gstin']} | State Code: $supplierState'),
-              const Divider(),
-              Text('Buyer: ${_customerNameCtrl.text}'),
-              Text('Buyer GSTIN: ${_customerGstinCtrl.text} | State Code: $customerState'),
-              const Divider(),
-              Text('Item: ${_itemDescriptionCtrl.text} (HSN: ${_hsnCtrl.text})'),
-              Text('Taxable Value: ₹ ${taxableValue.toStringAsFixed(2)}'),
-              if (isIntraState) ...[
-                Text('CGST (${_gstRate / 2}%): ₹ ${cgst.toStringAsFixed(2)}'),
-                Text('SGST (${_gstRate / 2}%): ₹ ${sgst.toStringAsFixed(2)}'),
-              ] else ...[
-                Text('IGST ($_gstRate%): ₹ ${igst.toStringAsFixed(2)}'),
-              ],
-              const Divider(),
-              Text('Total Invoice Value: ₹ ${totalInvoiceAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B365D))),
+              DropdownButtonFormField<String>(
+                value: drAcc.id,
+                decoration: const InputDecoration(labelText: 'Debit Account (Dr)', border: OutlineInputBorder()),
+                items: accounts.map((a) => DropdownMenuItem(value: a.id, child: Text(a.name))).toList(),
+                onChanged: (v) => setDlgState(() => drAcc = accounts.firstWhere((a) => a.id == v)),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: crAcc.id,
+                decoration: const InputDecoration(labelText: 'Credit Account (Cr)', border: OutlineInputBorder()),
+                items: accounts.map((a) => DropdownMenuItem(value: a.id, child: Text(a.name))).toList(),
+                onChanged: (v) => setDlgState(() => crAcc = accounts.firstWhere((a) => a.id == v)),
+              ),
+              const SizedBox(height: 10),
+              TextField(controller: amtCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder())),
+              const SizedBox(height: 10),
+              TextField(controller: narCtrl, decoration: const InputDecoration(labelText: 'Narration', border: OutlineInputBorder())),
             ],
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF005A9C), foregroundColor: Colors.white),
+              onPressed: () {
+                double amt = double.tryParse(amtCtrl.text) ?? 0;
+                if (drAcc.id != crAcc.id && amt > 0) {
+                  List vouchers = _db.get('vouchers_${widget.firmId}', defaultValue: []);
+                  vouchers.add(FinancialVoucher(
+                    id: 'vch_${DateTime.now().millisecondsSinceEpoch}',
+                    firmId: widget.firmId,
+                    voucherType: type,
+                    voucherNo: '${vouchers.length + 1}',
+                    date: DateFormat('yyyy-MM-dd').format(DateTime.now()),
+                    narration: narCtrl.text.trim(),
+                    lines: [
+                      JournalEntryLine(accountId: drAcc.id, accountName: drAcc.name, debit: amt, credit: 0.0),
+                      JournalEntryLine(accountId: crAcc.id, accountName: crAcc.name, debit: 0.0, credit: amt),
+                    ],
+                  ).toMap());
+
+                  _db.put('vouchers_${widget.firmId}', vouchers);
+                  Navigator.pop(ctx);
+                  setState(() {});
+                }
+              },
+              child: const Text('Post Voucher'),
+            )
+          ],
         ),
-        actions: [
-          ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close & Print'))
-        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        ListTile(leading: const Icon(Icons.receipt, color: Colors.green), title: const Text('Sales Voucher'), onTap: () => _openVoucherModal('Sales')),
+        ListTile(leading: const Icon(Icons.shopping_cart, color: Colors.orange), title: const Text('Purchase Voucher'), onTap: () => _openVoucherModal('Purchase')),
+        ListTile(leading: const Icon(Icons.upload, color: Colors.red), title: const Text('Payment Voucher'), onTap: () => _openVoucherModal('Payment')),
+        ListTile(leading: const Icon(Icons.download, color: Colors.teal), title: const Text('Receipt Voucher'), onTap: () => _openVoucherModal('Receipt')),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// 8. DAY BOOK REGISTER VIEW
+// ============================================================================
+class DayBookRegisterScreen extends StatelessWidget {
+  final String firmId;
+  const DayBookRegisterScreen({super.key, required this.firmId});
+
+  @override
+  Widget build(BuildContext context) {
+    final Box db = Hive.box('master_accounting_db');
+    List rawList = db.get('vouchers_$firmId', defaultValue: []);
+    List<FinancialVoucher> vouchers = rawList.map((x) => FinancialVoucher.fromMap(Map<String, dynamic>.from(x))).toList().reversed.toList();
+
+    return Scaffold(
+      body: vouchers.isEmpty
+          ? const Center(child: Text('Day Book register is empty.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(8),
+              itemCount: vouchers.length,
+              itemBuilder: (ctx, i) {
+                var v = vouchers[i];
+                double amt = v.lines.fold(0.0, (s, l) => s + l.debit);
+
+                return Card(
+                  child: ExpansionTile(
+                    title: Text('${v.voucherType} Voucher #${v.voucherNo}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('Date: ${v.date} | Ref: ${v.narration}'),
+                    trailing: Text('₹ ${amt.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF005A9C))),
+                    children: v.lines.map((l) => ListTile(
+                      dense: true,
+                      title: Text(l.accountName),
+                      trailing: Text(l.debit > 0 ? 'Dr ₹${l.debit}' : 'Cr ₹${l.credit}', style: TextStyle(color: l.debit > 0 ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
+                    )).toList(),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ============================================================================
+// 9. GST TAX INVOICE & PDF ENGINE
+// ============================================================================
+class GstPdfBillingView extends StatefulWidget {
+  final Map<String, dynamic> firmData;
+  const GstPdfBillingView({super.key, required this.firmData});
+
+  @override
+  State<GstPdfBillingView> createState() => _GstPdfBillingViewState();
+}
+
+class _GstPdfBillingViewState extends State<GstPdfBillingView> {
+  final _customerNameCtrl = TextEditingController();
+  final _customerGstinCtrl = TextEditingController();
+  final _itemCtrl = TextEditingController();
+  final _hsnCtrl = TextEditingController(text: '6810');
+  final _qtyCtrl = TextEditingController(text: '1');
+  final _rateCtrl = TextEditingController(text: '0.00');
+
+  Future<void> _exportPdf() async {
+    final pdf = pw.Document();
+    double qty = double.tryParse(_qtyCtrl.text) ?? 1;
+    double rate = double.tryParse(_rateCtrl.text) ?? 0;
+    double taxable = qty * rate;
+    double tax = taxable * 0.18;
+    double grandTotal = taxable + tax;
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context ctx) => pw.Column(
+          cross: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text('TAX INVOICE', style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Firm: ${widget.firmData['name']} | GSTIN: ${widget.firmData['gstin']}'),
+            pw.Divider(),
+            pw.Text('Customer: ${_customerNameCtrl.text} | GSTIN: ${_customerGstinCtrl.text}'),
+            pw.SizedBox(height: 20),
+            pw.Table.fromTextArray(
+              headers: ['Item', 'HSN', 'Qty', 'Rate', 'Taxable', 'GST', 'Total'],
+              data: [
+                [_itemCtrl.text, _hsnCtrl.text, qty.toString(), rate.toStringAsFixed(2), taxable.toStringAsFixed(2), '18%', grandTotal.toStringAsFixed(2)]
+              ],
+            ),
+            pw.SizedBox(height: 20),
+            pw.Align(alignment: pw.Alignment.centerRight, child: pw.Text('Grand Total: INR ${grandTotal.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold))),
+          ],
+        ),
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(16),
       child: SingleChildScrollView(
         child: Column(
           children: [
-            const Text('New Professional GST Billing Invoice', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            TextField(controller: _customerNameCtrl, decoration: const InputDecoration(labelText: 'Customer/Party Name *', border: OutlineInputBorder())),
+            const Text('Professional Invoice Generator', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            TextField(controller: _customerNameCtrl, decoration: const InputDecoration(labelText: 'Customer Name *', border: OutlineInputBorder())),
             const SizedBox(height: 10),
             TextField(controller: _customerGstinCtrl, decoration: const InputDecoration(labelText: 'Customer GSTIN', border: OutlineInputBorder())),
             const SizedBox(height: 10),
-            TextField(controller: _customerStateCodeCtrl, decoration: const InputDecoration(labelText: 'Customer State Code (e.g. 08)', border: OutlineInputBorder())),
-            const SizedBox(height: 10),
-            TextField(controller: _itemDescriptionCtrl, decoration: const InputDecoration(labelText: 'Item Description / Goods Name', border: OutlineInputBorder())),
+            TextField(controller: _itemCtrl, decoration: const InputDecoration(labelText: 'Item Name', border: OutlineInputBorder())),
             const SizedBox(height: 10),
             Row(
               children: [
-                Expanded(child: TextField(controller: _hsnCtrl, decoration: const InputDecoration(labelText: 'HSN/SAC Code', border: OutlineInputBorder()))),
+                Expanded(child: TextField(controller: _hsnCtrl, decoration: const InputDecoration(labelText: 'HSN Code', border: OutlineInputBorder()))),
                 const SizedBox(width: 8),
                 Expanded(child: TextField(controller: _qtyCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantity', border: OutlineInputBorder()))),
               ],
             ),
             const SizedBox(height: 10),
-            TextField(controller: _rateCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Unit Rate Price (₹)', border: OutlineInputBorder())),
+            TextField(controller: _rateCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Price Rate (₹)', border: OutlineInputBorder())),
             const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
-                onPressed: _generateInvoice,
-                icon: const Icon(Icons.print),
-                label: const Text('Generate GST Tax Invoice'),
-              ),
-            )
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF005A9C), foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
+              onPressed: _exportPdf,
+              icon: const Icon(Icons.picture_as_pdf),
+              label: const Text('Generate & Save PDF Invoice'),
+            ),
           ],
         ),
       ),
