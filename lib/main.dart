@@ -6,7 +6,7 @@ void main() {
 }
 
 class AccountingApp extends StatelessWidget {
-  const AccountingApp({Key? key}) : super(key: Key);
+  const AccountingApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +15,7 @@ class AccountingApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0F172A),
-        primaryColor: Colors.emerald,
+        primaryColor: const Color(0xFF059669), // Custom Emerald accent
       ),
       home: const VoucherEntryScreen(),
     );
