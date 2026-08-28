@@ -497,7 +497,7 @@ class DetailedLedgerScreen extends StatelessWidget {
                                   Text('${row['date']}  [${row['vchType']}]', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   Text(
                                     'Closing: ₹ ${bal.abs().toStringAsFixed(2)} ${bal >= 0 ? "Dr" : "Cr"}',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueHex),
+                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                                   ),
                                 ],
                               ),
@@ -522,10 +522,6 @@ class DetailedLedgerScreen extends StatelessWidget {
       ),
     );
   }
-}
-
-extension ColorsHex on Colors {
-  static const Color blueHex = Color(0xFF1B365D);
 }
 
 // ============================================================================
