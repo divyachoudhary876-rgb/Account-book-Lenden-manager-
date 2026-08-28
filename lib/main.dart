@@ -651,7 +651,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 }
 
 // ==========================================
-// 6. TAX INVOICE ENGINE
+// 6. TAX INVOICE ENGINE (FIXED CROSS-AXIS ALIGNMENT)
 // ==========================================
 class InvoiceScreen extends StatelessWidget {
   const InvoiceScreen({super.key});
@@ -689,7 +689,7 @@ class InvoiceScreen extends StatelessWidget {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Column(
-                      cross: pw.CrossAxisAlignment.start,
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text('NEELKANTH GROUPS', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
                         pw.Text('Industrial Area, Rajasthan, India'),
@@ -697,7 +697,7 @@ class InvoiceScreen extends StatelessWidget {
                       ],
                     ),
                     pw.Column(
-                      cross: pw.CrossAxisAlignment.end,
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
                       children: [
                         pw.Text('TAX INVOICE', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.green700)),
                         pw.Text('Invoice #: INV-2026-001'),
@@ -716,7 +716,7 @@ class InvoiceScreen extends StatelessWidget {
                       padding: const pw.EdgeInsets.all(8),
                       decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
                       child: pw.Column(
-                        cross: pw.CrossAxisAlignment.start,
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Text('BILLED TO (PARTY):', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
                           pw.Text('M/s Sharma & Sons', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
@@ -730,7 +730,7 @@ class InvoiceScreen extends StatelessWidget {
                       padding: const pw.EdgeInsets.all(8),
                       decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400)),
                       child: pw.Column(
-                        cross: pw.CrossAxisAlignment.start,
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Text('BANK DETAILS:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
                           pw.Text('Bank: State Bank of India'),
