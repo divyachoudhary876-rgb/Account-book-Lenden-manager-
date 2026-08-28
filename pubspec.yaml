@@ -1,7 +1,6 @@
 name: account_book_lenden_manager
-description: "A enterprise double-entry accounting application built with Flutter"
+description: "Enterprise Double-Entry Accounting Software"
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
@@ -13,6 +12,8 @@ dependencies:
   intl: ^0.19.0
   pdf: ^3.10.8
   printing: ^5.13.0
+  sqflite: ^2.3.0
+  path: ^1.9.0
 
 dev_dependencies:
   flutter_test:
