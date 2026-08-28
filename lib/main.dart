@@ -769,7 +769,7 @@ class DayBookRegisterScreen extends StatelessWidget {
 }
 
 // ============================================================================
-// 9. GST TAX INVOICE & PDF ENGINE
+// 9. GST TAX INVOICE & PDF ENGINE (FIXED PARAMETER ISSUE)
 // ============================================================================
 class GstPdfBillingView extends StatefulWidget {
   final Map<String, dynamic> firmData;
@@ -799,7 +799,7 @@ class _GstPdfBillingViewState extends State<GstPdfBillingView> {
       pw.Page(
         pageFormat: PdfPageFormat.a4,
         build: (pw.Context ctx) => pw.Column(
-          cross: pw.CrossAxisAlignment.start,
+          crossAxisAlignment: pw.CrossAxisAlignment.start, // FIXED PARAMETER NAME HERE
           children: [
             pw.Text('TAX INVOICE', style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
             pw.Text('Firm: ${widget.firmData['name']} | GSTIN: ${widget.firmData['gstin']}'),
