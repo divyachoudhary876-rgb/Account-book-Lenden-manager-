@@ -1,5 +1,5 @@
-name: account_book
-description: Professional Multi-Firm Accounting App
+name: pro_accounting_app
+description: Professional Double-Entry Accounting Software
 publish_to: 'none'
 version: 1.0.0+1
 
