@@ -1,180 +1,363 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 void main() {
-  runApp(const MaterialApp(
-    home: BusinessBookHome(),
-    debugShowCheckedModeBanner: false,
-  ));
+  runApp(const AccountingApp());
 }
 
-class BusinessBookHome extends StatefulWidget {
-  const BusinessBookHome({super.key});
+class AccountingApp extends StatelessWidget {
+  const AccountingApp({super.key});
 
   @override
-  State<BusinessBookHome> createState() => _BusinessBookHomeState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Pro Business Accountant',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.indigo,
+        useMaterial3: true,
+      ),
+      home: const MainDashboard(),
+    );
+  }
 }
 
-class _BusinessBookHomeState extends State<BusinessBookHome> {
-  double totalGave = 0.0;
-  double totalGot = 0.0;
-  final List<Map<String, String>> transactions = [];
+// Transaction Model following Accounting Principles
+enum EntryType { debit, credit } // Debit = Cash In/Asset Increase, Credit = Cash Out/Liability
 
-  final List<String> categories = [
-    'Eent Bhatta - Pathai Majdoori',
-    'Eent Bhatta - Koyla Kharid',
-    'Eent Bhatta - Transport',
-    'Customer Sales',
-    'Other Expense'
-  ];
+class JournalEntry {
+  final String id;
+  final String partyName;
+  final String accountCategory; // e.g., Sales, Purchase, Pathai, Transport
+  final double amount;
+  final EntryType type;
+  final String narration;
+  final DateTime date;
 
-  void _addEntry(String name, String amountStr, String type, String category) {
-    double amt = double.tryParse(amountStr) ?? 0.0;
+  JournalEntry({
+    required this.id,
+    required this.partyName,
+    required this.accountCategory,
+    required this.amount,
+    required this.type,
+    required this.narration,
+    required this.date,
+  });
+}
+
+class MainDashboard extends StatefulWidget {
+  const MainDashboard({super.key});
+
+  @override
+  State<MainDashboard> createState() => _MainDashboardState();
+}
+
+class _MainDashboardState extends State<MainDashboard> {
+  int _selectedIndex = 0;
+  final List<JournalEntry> _journal = [];
+
+  // Business Balances
+  double get totalReceivable => _journal
+      .where((e) => e.type == EntryType.debit)
+      .fold(0.0, (sum, e) => sum + e.amount);
+
+  double get totalPayable => _journal
+      .where((e) => e.type == EntryType.credit)
+      .fold(0.0, (sum, e) => sum + e.amount);
+
+  double get netCashBalance => totalReceivable - totalPayable;
+
+  void _addJournalEntry(JournalEntry entry) {
     setState(() {
-      if (type == 'GAVE') {
-        totalGave += amt;
-      } else {
-        totalGot += amt;
-      }
-      transactions.add({
-        'name': name,
-        'amount': amt.toString(),
-        'type': type,
-        'category': category,
-      });
+      _journal.add(entry);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      _buildDashboardView(),
+      _buildLedgerView(),
+      _buildBillingView(),
+    ];
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Business Book : Lenden Manager'),
-        backgroundColor: Colors.indigo,
-        foregroundColor: Colors.white,
+        title: const Text('Pro Business Accountant', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.indigo.shade900,
+        elevation: 4,
       ),
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            margin: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.indigo.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Column(
-                  children: [
-                    const Text('Diye (Gave)', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                    Text('₹ $totalGave', style: const TextStyle(color: Colors.red, fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                Column(
-                  children: [
-                    const Text('Mile (Got)', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                    Text('₹ $totalGot', style: const TextStyle(color: Colors.green, fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: transactions.isEmpty
-                ? const Center(child: Text('Koi entry nahi hai. Niche + button se add karein.'))
-                : ListView.builder(
-                    itemCount: transactions.length,
-                    itemBuilder: (context, i) {
-                      final item = transactions[i];
-                      bool isGave = item['type'] == 'GAVE';
-                      return ListTile(
-                        title: Text(item['name'] ?? ''),
-                        subtitle: Text(item['category'] ?? ''),
-                        trailing: Text(
-                          '${isGave ? '-' : '+'} ₹${item['amount']}',
-                          style: TextStyle(
-                            color: isGave ? Colors.red : Colors.green,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
+      body: pages[_selectedIndex],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.dashboard), label: 'Dashboard'),
+          NavigationDestination(icon: Icon(Icons.menu_book), label: 'Ledger Book'),
+          NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Create Bill'),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showDialog(context),
-        backgroundColor: Colors.indigo,
-        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
-  void _showDialog(BuildContext context) {
-    String name = '';
+  // 1. Executive Dashboard Screen
+  Widget _buildDashboardView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAlignment.start,
+        children: [
+          const Text('Financial Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _buildSummaryCard('Receivable (Dr)', '₹ ${totalReceivable.toStringAsFixed(2)}', Colors.green),
+              const SizedBox(width: 12),
+              _buildSummaryCard('Payable (Cr)', '₹ ${totalPayable.toStringAsFixed(2)}', Colors.red),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildSummaryCard('Net Working Balance', '₹ ${netCashBalance.toStringAsFixed(2)}', Colors.indigo, isFullWidth: true),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Recent Vouchers & Entries', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ElevatedButton.icon(
+                onPressed: () => _showNewVoucherDialog(context),
+                icon: const Icon(Icons.add),
+                label: const Text('New Entry'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+              )
+            ],
+          ),
+          const SizedBox(height: 12),
+          _journal.isEmpty
+              ? const Center(child: Padding(padding: EdgeInsets.all(32.0), child: Text('No Journal Entries Recorded Yet.')))
+              : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _journal.length,
+                  itemBuilder: (ctx, i) {
+                    final e = _journal.reversed.toList()[i];
+                    final isDebit = e.type == EntryType.debit;
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: isDebit ? Colors.green.shade100 : Colors.red.shade100,
+                          child: Icon(isDebit ? Icons.arrow_downward : Icons.arrow_upward, color: isDebit ? Colors.green : Colors.red),
+                        ),
+                        title: Text(e.partyName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('${e.accountCategory} • ${DateFormat('dd MMM yyyy').format(e.date)}\nNote: ${e.narration}'),
+                        trailing: Text(
+                          '${isDebit ? "Dr" : "Cr"} ₹${e.amount.toStringAsFixed(2)}',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isDebit ? Colors.green.shade800 : Colors.red.shade800),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ],
+      ),
+    );
+  }
+
+  // 2. Ledger View
+  Widget _buildLedgerView() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text('General Ledger Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            title: const Text('Pathai & Labour Expenses Account'),
+            subtitle: const Text('Category: Direct Expense'),
+            trailing: Text('₹ ${_calculateCategoryTotal("Pathai Majdoori")}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ),
+        Card(
+          child: ListTile(
+            title: const Text('Raw Material & Fuel (Koyla) Account'),
+            subtitle: const Text('Category: Direct Expense'),
+            trailing: Text('₹ ${_calculateCategoryTotal("Koyla Kharid")}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ),
+        Card(
+          child: ListTile(
+            title: const Text('Transport & Freight Account'),
+            subtitle: const Text('Category: Indirect Expense'),
+            trailing: Text('₹ ${_calculateCategoryTotal("Transport")}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ),
+        Card(
+          child: ListTile(
+            title: const Text('Sales & Revenues Account'),
+            subtitle: const Text('Category: Income'),
+            trailing: Text('₹ ${_calculateCategoryTotal("Customer Sales")}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 3. Billing & Invoicing View
+  Widget _buildBillingView() {
+    final partyController = TextEditingController();
+    final itemController = TextEditingController();
+    final rateController = TextEditingController();
+    final qtyController = TextEditingController();
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAlignment.start,
+          children: [
+            const Text('Generate Business Invoice / Bill', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            TextField(controller: partyController, decoration: const InputDecoration(labelText: 'Customer / Business Name', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            TextField(controller: itemController, decoration: const InputDecoration(labelText: 'Item Description (e.g., Eent - 1st Class)', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantity', border: OutlineInputBorder()))),
+                const SizedBox(width: 12),
+                Expanded(child: TextField(controller: rateController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Rate (per unit)', border: OutlineInputBorder()))),
+              ],
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+                onPressed: () {
+                  double qty = double.tryParse(qtyController.text) ?? 0;
+                  double rate = double.tryParse(rateController.text) ?? 0;
+                  double total = qty * rate;
+
+                  if (partyController.text.isNotEmpty && total > 0) {
+                    _addJournalEntry(JournalEntry(
+                      id: DateTime.now().millisecondsSinceEpoch.toString(),
+                      partyName: partyController.text,
+                      accountCategory: 'Customer Sales',
+                      amount: total,
+                      type: EntryType.debit,
+                      narration: 'Invoice Generated: ${itemController.text} (Qty: $qty @ ₹$rate)',
+                      date: DateTime.now(),
+                    ));
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Invoice Created & Recorded! Total: ₹$total')),
+                    );
+
+                    partyController.clear();
+                    itemController.clear();
+                    qtyController.clear();
+                    rateController.clear();
+                    setState(() => _selectedIndex = 0);
+                  }
+                },
+                icon: const Icon(Icons.receipt),
+                label: const Text('Save Transaction & Add to Ledger', style: TextStyle(fontSize: 16)),
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _calculateCategoryTotal(String cat) {
+    return _journal
+        .where((e) => e.accountCategory == cat)
+        .fold(0.0, (sum, e) => sum + e.amount)
+        .toStringAsFixed(2);
+  }
+
+  Widget _buildSummaryCard(String title, String amount, Color color, {bool isFullWidth = false}) {
+    Widget card = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAlignment.start,
+        children: [
+          Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text(amount, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+
+    return isFullWidth ? SizedBox(width: double.infinity, child: card) : Expanded(child: card);
+  }
+
+  void _showNewVoucherDialog(BuildContext context) {
+    String party = '';
+    String category = 'Pathai Majdoori';
     String amount = '';
-    String type = 'GOT';
-    String category = categories.first;
+    String narration = '';
+    EntryType type = EntryType.debit;
+
+    final categories = ['Pathai Majdoori', 'Koyla Kharid', 'Transport', 'Customer Sales', 'Other Office Expense'];
 
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (ctx) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (context, setDlgState) {
             return AlertDialog(
-              title: const Text('Add Transaction'),
+              title: const Text('Create Voucher Entry'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButton<String>(
+                    TextField(decoration: const InputDecoration(labelText: 'Party / Account Name'), onChanged: (v) => party = v),
+                    DropdownButtonFormField<String>(
                       value: category,
-                      isExpanded: true,
                       items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                      onChanged: (v) => setDialogState(() => category = v!),
+                      onChanged: (v) => setDlgState(() => category = v!),
+                      decoration: const InputDecoration(labelText: 'Account Category'),
                     ),
-                    TextField(
-                      decoration: const InputDecoration(labelText: 'Name'),
-                      onChanged: (v) => name = v,
-                    ),
-                    TextField(
-                      decoration: const InputDecoration(labelText: 'Amount'),
-                      keyboardType: TextInputType.number,
-                      onChanged: (v) => amount = v,
-                    ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: RadioListTile(
-                            title: const Text('Got'),
-                            value: 'GOT',
-                            groupValue: type,
-                            onChanged: (v) => setDialogState(() => type = v.toString()),
-                          ),
-                        ),
-                        Expanded(
-                          child: RadioListTile(
-                            title: const Text('Gave'),
-                            value: 'GAVE',
-                            groupValue: type,
-                            onChanged: (v) => setDialogState(() => type = v.toString()),
-                          ),
-                        ),
+                    TextField(decoration: const InputDecoration(labelText: 'Amount (₹)'), keyboardType: TextInputType.number, onChanged: (v) => amount = v),
+                    TextField(decoration: const InputDecoration(labelText: 'Narration / Detail'), onChanged: (v) => narration = v),
+                    const SizedBox(height: 10),
+                    SegmentedButton<EntryType>(
+                      segments: const [
+                        ButtonSegment(value: EntryType.debit, label: Text('Debit (Dr)')),
+                        ButtonSegment(value: EntryType.credit, label: Text('Credit (Cr)')),
                       ],
+                      selected: {type},
+                      onSelectionChanged: (set) => setDlgState(() => type = set.first),
                     )
                   ],
                 ),
               ),
               actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                 ElevatedButton(
                   onPressed: () {
-                    if (name.isNotEmpty && amount.isNotEmpty) {
-                      _addEntry(name, amount, type, category);
-                      Navigator.pop(context);
+                    if (party.isNotEmpty && amount.isNotEmpty) {
+                      _addJournalEntry(JournalEntry(
+                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                        partyName: party,
+                        accountCategory: category,
+                        amount: double.tryParse(amount) ?? 0.0,
+                        type: type,
+                        narration: narration,
+                        date: DateTime.now(),
+                      ));
+                      Navigator.pop(ctx);
                     }
                   },
-                  child: const Text('Save'),
+                  child: const Text('Post Voucher'),
                 )
               ],
             );
