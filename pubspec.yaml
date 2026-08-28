@@ -1,7 +1,7 @@
 name: pro_accounting_app
-description: Professional Double-Entry Accounting Software
+description: Complete Professional Multi-Firm Double-Entry Accounting Engine
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -12,6 +12,7 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   path_provider: ^2.1.2
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:
