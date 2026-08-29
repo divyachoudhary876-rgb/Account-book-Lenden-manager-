@@ -12,7 +12,6 @@ export default function AccountStatementView({ firm }) {
   const [statementData, setStatementData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Re-fetch fresh state from LocalStorage on mount or event trigger
   const syncAccountData = useCallback(() => {
     const saved = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
     setAccounts(saved);
@@ -21,7 +20,6 @@ export default function AccountStatementView({ firm }) {
     }
   }, [selectedAccountId]);
 
-  // Mount/Unmount Reactive Event Subscriptions
   useEffect(() => {
     syncAccountData();
 
@@ -38,7 +36,6 @@ export default function AccountStatementView({ firm }) {
     };
   }, [syncAccountData]);
 
-  // Recalculate Statement on Account or Date Range selection change
   useEffect(() => {
     if (selectedAccountId) {
       const result = calculateAccountStatement(selectedAccountId, fromDate, toDate);
@@ -56,7 +53,7 @@ export default function AccountStatementView({ firm }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       
-      {/* Search & Filter Header */}
+      {/* Header Search & Actions */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
         <h3 style={{ margin: '0 0 12px 0', color: '#0f172a' }}>📖 Account Milan & General Ledger Statement</h3>
         
@@ -88,17 +85,12 @@ export default function AccountStatementView({ firm }) {
         </button>
       </div>
 
-      {/* Dynamic Ledger Sheet */}
+      {/* Dynamic Printable Ledger View */}
       <div id="printable-statement-sheet" style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         <div style={{ borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '14px', textAlign: 'center' }}>
           <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>{firm?.legal_name || 'My Business Firm'}</div>
           <div style={{ fontSize: '11px', color: '#475569' }}>GSTIN: {firm?.gstin || 'Unregistered'}</div>
           <div style={{ fontSize: '13px', fontWeight: 'bold', marginTop: '6px', color: '#2563eb' }}>STATEMENT OF ACCOUNT / LEDGER MILAN</div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '6px', marginBottom: '14px', fontSize: '11px' }}>
-          <div><strong>Account Name:</strong> {statementData?.account?.name || 'N/A'}</div>
-          <div><strong>Period:</strong> {fromDate} to {toDate}</div>
         </div>
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
