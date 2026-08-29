@@ -12,7 +12,7 @@ export const executeVoucherPosting = (voucherPayload) => {
     throw new Error("Double-Entry Violation: Debit aur Credit Accounts bilkul same nahi ho sakte.");
   }
 
-  // 1. Fetch Current State Buckets
+  // 1. Fetch Current State
   const accounts = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
   const vouchers = JSON.parse(localStorage.getItem('app_vouchers') || '[]');
   const journalEntries = JSON.parse(localStorage.getItem('app_journal_entries') || '[]');
@@ -31,8 +31,6 @@ export const executeVoucherPosting = (voucherPayload) => {
   const drBal = parseFloat(drAcc.current_balance || drAcc.opening_balance || 0);
   const crBal = parseFloat(crAcc.current_balance || crAcc.opening_balance || 0);
 
-  // Accounting Rule: Assets & Expenses increase with Debit (+), decrease with Credit (-)
-  // Liabilities, Equity & Income increase with Credit (+), decrease with Debit (-)
   if (['ASSET', 'EXPENSE'].includes(drAcc.primary_type)) {
     drAcc.current_balance = drBal + numericAmount;
   } else {
@@ -91,7 +89,8 @@ export const executeVoucherPosting = (voucherPayload) => {
   localStorage.setItem('app_vouchers', JSON.stringify([newVoucher, ...vouchers]));
   localStorage.setItem('app_journal_entries', JSON.stringify([drLine, crLine, ...journalEntries]));
 
-  // 6. Fire Global Reactive State Event (Fixes live UI updates)
+  // 6. Direct Custom Event Dispatcher (Guarantees Instant Re-render in Same Screen)
+  window.dispatchEvent(new CustomEvent('ACCOUNT_BOOK_VOUCHER_POSTED', { detail: newVoucher }));
   window.dispatchEvent(new Event('storage'));
 
   return newVoucher;
