@@ -29,30 +29,31 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # 3. Clean Gradle Cache
+      # 3. Clean Runner Caches
       - name: Clean Gradle Caches
         run: |
           rm -rf ~/.gradle/caches/
           rm -rf ~/.gradle/wrapper/
 
-      # 4. Install Dependencies
+      # 4. Install Node Dependencies
       - name: Install Node Dependencies
         run: |
           if [ ! -f "package.json" ]; then
             npm init -y
           fi
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
+          npm install
 
-      # 5. Build Web Assets
-      - name: Build Web Assets
+      # 5. Build Actual Web App Assets
+      - name: Build Web App Bundle
         run: |
-          npm run build --if-present
-          if [ ! -d "dist" ]; then
-            mkdir -p dist
-            echo '<!DOCTYPE html><html><head><title>Business Book</title></head><body><div id="root">App Active</div></body></html>' > dist/index.html
+          npm run build
+          # Fallback check if output folder is 'build' instead of 'dist'
+          if [ -d "build" ] && [ ! -d "dist" ]; then
+            cp -r build dist
           fi
 
-      # 6. Ensure Capacitor Android Project
+      # 6. Ensure Capacitor Android Sync
       - name: Ensure Android Native Project Exists
         run: |
           if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
@@ -74,27 +75,19 @@ jobs:
           cd android
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # 9. Generate Keystore & Sign APK for Android OS Installation
+      # 9. Sign APK Binary for Installation
       - name: Sign APK Binary
         run: |
-          # Locate generated unsigned APK
           UNSIGNED_APK=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
-          
-          # Generate temporary release keystore
           keytool -genkeypair -v -keystore release.keystore -alias businessbook -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=Neelkanth, OU=Accounting, O=BusinessBook, L=Jaipur, ST=Rajasthan, C=IN"
-          
-          # Setup Android SDK Build Tools (zipalign & apksigner)
           ANDROID_BUILD_TOOLS=$(find $ANDROID_HOME/build-tools/ -mindepth 1 -maxdepth 1 | sort -V | tail -n 1)
-          
-          # Align APK
           $ANDROID_BUILD_TOOLS/zipalign -v 4 "$UNSIGNED_APK" android/app/build/outputs/apk/release/BusinessBook-Signed.apk
-          
-          # Sign APK
           $ANDROID_BUILD_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out android/app/build/outputs/apk/release/BusinessBook-Installable.apk android/app/build/outputs/apk/release/BusinessBook-Signed.apk
 
-      # 10. Upload Signed, Installable APK Artifact
+      # 10. Upload Final Installable Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Signed-APK
           path: android/app/build/outputs/apk/release/BusinessBook-Installable.apk
+          
