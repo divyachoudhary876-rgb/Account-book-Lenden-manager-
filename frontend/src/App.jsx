@@ -2,28 +2,25 @@
 
 import React, { useState } from 'react';
 
-// Import All Application Components
-import AccountStatementView from './components/AccountStatementView';
-import CreateInvoice from './components/CreateInvoice';
-import VoucherEntryForm from './components/VoucherEntryForm';
-import CreateFirmForm from './components/CreateFirmForm';
-import BillSettlementView from './components/BillSettlementView';
-import FinancialReportsView from './components/FinancialReportsView';
+// Explicitly define component imports with file extensions to prevent bundler resolution failures
+import AccountStatementView from './components/AccountStatementView.jsx';
+import CreateInvoice from './components/CreateInvoice.jsx';
+import VoucherEntryForm from './components/VoucherEntryForm.jsx';
+import CreateFirmForm from './components/CreateFirmForm.jsx';
+import BillSettlementView from './components/BillSettlementView.jsx';
+import FinancialReportsView from './components/FinancialReportsView.jsx';
 
 export default function App() {
-  // Active Tab State Control
-  const [activeTab, setActiveTab] = useState('statement'); // Default view: Account Milan
+  const [activeTab, setActiveTab] = useState('statement');
 
   return (
     <div style={styles.appContainer}>
-      {/* 1. Global Navigation Header */}
       <header style={styles.topHeader}>
         <div style={styles.brandContainer}>
           <span style={{ fontSize: '20px' }}>📘</span>
           <span style={styles.brandTitle}>Account Book Engine</span>
         </div>
 
-        {/* Navigation Bar Menu */}
         <nav style={styles.navMenu}>
           <button 
             onClick={() => setActiveTab('statement')} 
@@ -69,7 +66,6 @@ export default function App() {
         </nav>
       </header>
 
-      {/* 2. Main Active Workspace Container */}
       <main style={styles.mainWorkspace}>
         {activeTab === 'statement' && <AccountStatementView organizationId="ORG-101" />}
         {activeTab === 'billing' && <CreateInvoice organizationId="ORG-101" />}
@@ -110,8 +106,7 @@ const styles = {
   brandTitle: {
     fontSize: '18px',
     fontWeight: 'bold',
-    color: '#f8fafc',
-    letterSpacing: '0.5px'
+    color: '#f8fafc'
   },
   navMenu: {
     display: 'flex',
@@ -126,7 +121,7 @@ const styles = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 'bold',
-    transition: 'background-color 0.2s ease, transform 0.1s ease'
+    transition: 'background-color 0.2s ease'
   },
   mainWorkspace: {
     flex: 1,
