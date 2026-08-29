@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 
-// Explicitly define component imports with file extensions to prevent bundler resolution failures
+// Explicit component imports matching exact file casing
 import AccountStatementView from './components/AccountStatementView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
@@ -15,12 +15,14 @@ export default function App() {
 
   return (
     <div style={styles.appContainer}>
+      {/* Global Header */}
       <header style={styles.topHeader}>
         <div style={styles.brandContainer}>
           <span style={{ fontSize: '20px' }}>📘</span>
           <span style={styles.brandTitle}>Account Book Engine</span>
         </div>
 
+        {/* Dynamic Navigation Menu */}
         <nav style={styles.navMenu}>
           <button 
             onClick={() => setActiveTab('statement')} 
@@ -66,6 +68,7 @@ export default function App() {
         </nav>
       </header>
 
+      {/* Dynamic Screen View */}
       <main style={styles.mainWorkspace}>
         {activeTab === 'statement' && <AccountStatementView organizationId="ORG-101" />}
         {activeTab === 'billing' && <CreateInvoice organizationId="ORG-101" />}
