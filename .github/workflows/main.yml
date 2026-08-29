@@ -16,88 +16,37 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 1. Setup Node.js v22
       - name: Setup Node.js v22
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      # 2. Setup Java JDK 21
       - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '21'
 
-      # 3. Clean Runner Caches
       - name: Clean Caches
         run: |
           rm -rf ~/.gradle/caches/
           rm -rf ~/.gradle/wrapper/
 
-      # 4. Safe Installation of Node & Capacitor Dependencies
       - name: Install Dependencies
         run: |
-          if [ -d "frontend" ]; then
-            cd frontend
-          fi
+          if [ -d "frontend" ]; then cd frontend; fi
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
           npm install --legacy-peer-deps || npm install
 
-      # 5. Guaranteed Production Build Asset Generation
-      - name: Build Web Bundle
+      - name: Build Web Application
         run: |
-          if [ -d "frontend" ]; then
-            cd frontend
-          fi
+          if [ -d "frontend" ]; then cd frontend; fi
+          npm run build || npx vite build || npx react-scripts build
+          if [ -d "build" ] && [ ! -d "dist" ]; then cp -r build dist; fi
 
-          # Attempt framework build scripts
-          npm run build || npx vite build || npx react-scripts build || true
-
-          # Ensure dist/ directory exists
-          mkdir -p dist
-
-          # Copy compiled output if generated in build/ or out/
-          if [ -d "build" ]; then cp -r build/* dist/ 2>/dev/null || true; fi
-          if [ -d "out" ]; then cp -r out/* dist/ 2>/dev/null || true; fi
-          if [ -d "public" ]; then cp -r public/* dist/ 2>/dev/null || true; fi
-
-          # Direct fallback: copy source JS/JSX/HTML if dist/index.html is missing
-          if [ ! -f "dist/index.html" ]; then
-            echo "Directly linking frontend sources to dist..."
-            if [ -f "index.html" ]; then cp index.html dist/; fi
-            if [ -d "src" ]; then cp -r src/* dist/ 2>/dev/null || true; fi
-          fi
-
-          # Fail-safe Guarantee: Ensure valid index.html exists
-          if [ ! -f "dist/index.html" ]; then
-            cat << 'EOF' > dist/index.html
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Business Book</title>
-            <style>
-              body { font-family: sans-serif; background: #f8fafc; margin: 0; padding: 20px; color: #0f172a; }
-              .card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 12px; }
-            </style>
-          </head>
-          <body>
-            <h2>Neelkanth Groups ERP</h2>
-            <div class="card"><h3>System Status: Active</h3><p>Capacitor Native Android Container Synced.</p></div>
-          </body>
-          </html>
-          EOF
-          fi
-
-      # 6. Synchronize Native Capacitor Android
-      - name: Synchronize Capacitor Native Android
+      - name: Capacitor Sync
         run: |
-          if [ -d "frontend" ]; then
-            cd frontend
-          fi
-
+          if [ -d "frontend" ]; then cd frontend; fi
           if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
             rm -rf android
             npx cap init "BusinessBook" "com.neelkanth.businessbook" --web-dir "dist" || true
@@ -105,16 +54,11 @@ jobs:
           fi
           npx cap sync android
 
-      # 7. Grant Permissions
-      - name: Grant Gradle Permissions
+      - name: Grant Permissions
         run: |
           GRADLEW_PATH=$(find . -name "gradlew" | head -n 1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            cd $(dirname "$GRADLEW_PATH")
-            chmod +x gradlew
-          fi
+          if [ -n "$GRADLEW_PATH" ]; then cd $(dirname "$GRADLEW_PATH") && chmod +x gradlew; fi
 
-      # 8. Compile Android APK
       - name: Build Android Release APK
         run: |
           GRADLEW_PATH=$(find . -name "gradlew" | head -n 1)
@@ -123,7 +67,6 @@ jobs:
             ./gradlew assembleRelease --no-daemon --stacktrace
           fi
 
-      # 9. Cryptographically Sign APK Binary
       - name: Sign APK Binary
         run: |
           UNSIGNED_APK=$(find . -name "*release*.apk" | grep -v "unaligned" | head -n 1)
@@ -133,7 +76,7 @@ jobs:
           $ANDROID_BUILD_TOOLS/zipalign -v 4 "$UNSIGNED_APK" BusinessBook-Signed.apk
           $ANDROID_BUILD_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out BusinessBook-Installable.apk BusinessBook-Signed.apk
 
-      # 10. Upload Final Signed APK Artifact
+      # 10. Upload Final Installable Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
