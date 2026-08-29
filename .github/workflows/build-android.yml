@@ -43,10 +43,10 @@ jobs:
             npx cap init "BusinessBook" "com.neelkanth.accountbook" --web-dir "dist"
           fi
 
-      - name: Add Android Platform if Missing
+      - name: Ensure Android Platform Exists
         run: |
           cd frontend
-          if [ ! -d "android" ] && [ ! -d "../android" ]; then
+          if [ ! -d "android" ]; then
             npx cap add android
           fi
 
@@ -55,25 +55,14 @@ jobs:
           cd frontend
           npx cap sync android
 
-      - name: Locate and Grant Gradle Permissions
+      - name: Grant Permissions and Build Android APK
         run: |
-          GRADLE_PATH=$(find . -name "gradlew" | head -n 1)
-          if [ -n "$GRADLE_PATH" ]; then
-            chmod +x "$GRADLE_PATH"
-          else
-            echo "Gradle wrapper not found"
-            exit 1
-          fi
-
-      - name: Build Consistent Signed Android APK
-        run: |
-          GRADLE_DIR=$(find . -name "gradlew" -exec dirname {} \; | head -n 1)
-          cd "$GRADLE_DIR"
+          cd frontend/android
+          chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Upload Installable Update APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Installable
-          path: |
-            **/build/outputs/apk/debug/app-debug.apk
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
