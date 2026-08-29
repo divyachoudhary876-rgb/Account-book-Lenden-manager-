@@ -1,9 +1,9 @@
 // frontend/src/components/VoucherEntryForm.jsx
 
 import React, { useState, useEffect } from 'react';
-import { processVoucherPosting } from '../utils/voucherPostingEngine';
+import { executeVoucherPosting } from '../utils/voucherPostingEngine';
 
-export default function VoucherEntryForm({ firm }) {
+export default function VoucherEntryForm() {
   const [accounts, setAccounts] = useState([]);
   const [voucherType, setVoucherType] = useState('PAYMENT');
   const [drAccountId, setDrAccountId] = useState('');
@@ -11,8 +11,13 @@ export default function VoucherEntryForm({ firm }) {
   const [amount, setAmount] = useState('');
   const [narration, setNarration] = useState('');
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isPosting, setIsPosting] = useState(false);
 
   useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  const loadAccounts = () => {
     try {
       const saved = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
       setAccounts(saved);
@@ -23,50 +28,128 @@ export default function VoucherEntryForm({ firm }) {
     } catch (e) {
       setAccounts([]);
     }
-  }, []);
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (drAccountId === crAccountId) {
-      return alert('Debit and Credit Account Heads cannot be identical.');
-    }
+    setIsPosting(true);
 
     try {
-      processVoucherPosting({ voucherType, drAccountId, crAccountId, amount, narration, date: entryDate });
-      alert('✓ Voucher entry successfully posted!');
+      executeVoucherPosting({
+        voucherType,
+        drAccountId,
+        crAccountId,
+        amount,
+        narration,
+        date: entryDate
+      });
+
+      alert('✓ Voucher Posting Successful! Account Milan, Ledger, aur Dashboard par figures update ho gaye hain.');
       setAmount('');
       setNarration('');
+      loadAccounts();
     } catch (err) {
-      alert(`Posting Error: ${err.message}`);
+      alert(`❌ Posting Error: ${err.message}`);
+    } finally {
+      setIsPosting(false);
     }
   };
 
   return (
-    <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: '650px', margin: '0 auto' }}>
-      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>📒 Voucher Entry Form</h3>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <select value={voucherType} onChange={(e) => setVoucherType(e.target.value)} style={inputStyle}>
-          <option value="PAYMENT">Payment Voucher</option>
-          <option value="RECEIPT">Receipt Voucher</option>
-          <option value="JOURNAL">Journal Voucher</option>
-          <option value="CONTRA">Contra Entry</option>
-        </select>
-        <select value={drAccountId} onChange={(e) => setDrAccountId(e.target.value)} style={inputStyle} required>
-          <option value="">Select Debit Account</option>
-          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <select value={crAccountId} onChange={(e) => setCrAccountId(e.target.value)} style={inputStyle} required>
-          <option value="">Select Credit Account</option>
-          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <input type="number" step="0.01" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} required />
-        <input type="text" placeholder="Narration" value={narration} onChange={(e) => setNarration(e.target.value)} style={inputStyle} />
-        <button type="submit" style={{ padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-          Save & Post Entry
+    <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: '650px', margin: '0 auto' }}>
+      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>📒 Double-Entry Voucher Posting Engine</h3>
+
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>Voucher Type *</label>
+            <select value={voucherType} onChange={(e) => setVoucherType(e.target.value)} style={inputStyle}>
+              <option value="PAYMENT">Payment Voucher (PV)</option>
+              <option value="RECEIPT">Receipt Voucher (RV)</option>
+              <option value="JOURNAL">Journal Voucher (JV)</option>
+              <option value="CONTRA">Contra Entry (CV)</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Posting Date *</label>
+            <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} required />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={{ ...labelStyle, color: '#16a34a' }}>Debit Account (Dr / Received By) *</label>
+            <select value={drAccountId} onChange={(e) => setDrAccountId(e.target.value)} style={inputStyle} required>
+              <option value="">-- Select Debit Account --</option>
+              {accounts.map(acc => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} (Bal: ₹{parseFloat(acc.current_balance || acc.opening_balance || 0).toFixed(2)})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ ...labelStyle, color: '#dc2626' }}>Credit Account (Cr / Paid By) *</label>
+            <select value={crAccountId} onChange={(e) => setCrAccountId(e.target.value)} style={inputStyle} required>
+              <option value="">-- Select Credit Account --</option>
+              {accounts.map(acc => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} (Bal: ₹{parseFloat(acc.current_balance || acc.opening_balance || 0).toFixed(2)})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>Amount (₹) *</label>
+            <input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={amount} 
+              onChange={(e) => setAmount(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Narration / Particulars</label>
+            <input 
+              type="text" 
+              placeholder="Being payment made towards..." 
+              value={narration} 
+              onChange={(e) => setNarration(e.target.value)} 
+              style={inputStyle} 
+            />
+          </div>
+        </div>
+
+        <button 
+          type="submit" 
+          disabled={isPosting}
+          style={{ 
+            marginTop: '10px', 
+            padding: '12px', 
+            backgroundColor: isPosting ? '#94a3b8' : '#2563eb', 
+            color: '#ffffff', 
+            border: 'none', 
+            borderRadius: '8px', 
+            fontWeight: 'bold', 
+            fontSize: '14px', 
+            cursor: isPosting ? 'wait' : 'pointer' 
+          }}
+        >
+          {isPosting ? '⏳ General Ledger Me Post Ho Raha Hai...' : '💾 Save & Post Voucher Entry'}
         </button>
+
       </form>
     </div>
   );
 }
 
+const labelStyle = { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
 const inputStyle = { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box' };
