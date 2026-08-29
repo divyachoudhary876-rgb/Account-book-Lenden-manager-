@@ -1,0 +1,6 @@
+{
+  "appId": "com.neelkanth.accountbook",
+  "appName": "BusinessBook",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
