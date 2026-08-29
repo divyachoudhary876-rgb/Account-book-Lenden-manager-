@@ -57,20 +57,18 @@ jobs:
 
       - name: Locate and Grant Gradle Permissions
         run: |
-          if [ -d "frontend/android" ]; then
-            cd frontend/android
-          elif [ -d "android" ]; then
-            cd android
+          GRADLE_PATH=$(find . -name "gradlew" | head -n 1)
+          if [ -n "$GRADLE_PATH" ]; then
+            chmod +x "$GRADLE_PATH"
+          else
+            echo "Gradle wrapper not found"
+            exit 1
           fi
-          chmod +x gradlew
 
       - name: Build Consistent Signed Android APK
         run: |
-          if [ -d "frontend/android" ]; then
-            cd frontend/android
-          elif [ -d "android" ]; then
-            cd android
-          fi
+          GRADLE_DIR=$(find . -name "gradlew" -exec dirname {} \; | head -n 1)
+          cd "$GRADLE_DIR"
           ./gradlew assembleDebug
 
       - name: Upload Installable Update APK
@@ -78,5 +76,4 @@ jobs:
         with:
           name: BusinessBook-Installable
           path: |
-            frontend/android/app/build/outputs/apk/debug/app-debug.apk
-            android/app/build/outputs/apk/debug/app-debug.apk
+            **/build/outputs/apk/debug/app-debug.apk
