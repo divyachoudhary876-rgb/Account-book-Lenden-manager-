@@ -13,7 +13,7 @@ jobs:
       GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs='-Xmx2048m'"
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       # 1. Setup Node.js v22
@@ -35,36 +35,30 @@ jobs:
           rm -rf ~/.gradle/caches/
           rm -rf ~/.gradle/wrapper/
 
-      # 4. Safe Directory Discovery & Install Node Dependencies
+      # 4. Locate Project Directory & Install Dependencies
       - name: Install Node Dependencies
         run: |
-          PKG_PATH=$(find . -maxdepth 3 -name "package.json" | grep -v "node_modules" | head -n 1)
-          if [ -n "$PKG_PATH" ]; then
-            TARGET_DIR=$(dirname "$PKG_PATH")
+          PROJ_FILE=$(find . -maxdepth 3 -name "package.json" | grep -v "node_modules" | head -n 1)
+          if [ -n "$PROJ_FILE" ]; then
+            APP_DIR=$(dirname "$PROJ_FILE")
           else
-            TARGET_DIR="."
+            APP_DIR="."
             npm init -y
           fi
-          echo "Target Directory: $TARGET_DIR"
-          cd "$TARGET_DIR"
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          cd "$APP_DIR"
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
           npm install
 
-      # 5. Dynamic Web Application Asset Assembly
+      # 5. Compile Web Application Bundle
       - name: Build Web Application
         run: |
-          PKG_PATH=$(find . -maxdepth 3 -name "package.json" | grep -v "node_modules" | head -n 1)
-          if [ -n "$PKG_PATH" ]; then
-            TARGET_DIR=$(dirname "$PKG_PATH")
-          else
-            TARGET_DIR="."
-          fi
-          cd "$TARGET_DIR"
+          cd "${{ env.APP_DIR }}"
 
-          # Execute build script if defined
+          # Run build script
           npm run build --if-present
 
-          # Consolidate existing framework outputs into 'dist'
+          # Consolidate build outputs to 'dist'
           if [ -d "build" ] && [ ! -d "dist" ]; then
             cp -r build dist
           elif [ -d "out" ] && [ ! -d "dist" ]; then
@@ -74,28 +68,16 @@ jobs:
             cp -r public/* dist/
           fi
 
-          # Fallback: Copy repository root assets if no dist folder exists yet
-          if [ ! -d "dist" ]; then
-            echo "No framework build output found. Syncing repository source files to dist..."
-            mkdir -p dist
-            rsync -av --exclude='node_modules' --exclude='android' --exclude='.git' . dist/ || cp -r *.html *.js *.css dist/ 2>/dev/null || true
+          # Verify that dist contains compiled assets
+          if [ ! -d "dist" ] || [ ! -f "dist/index.html" ]; then
+            echo "ERROR: Failed to produce a valid build bundle in dist/!"
+            exit 1
           fi
 
-          # Absolute Fallback: Ensure index.html exists
-          if [ ! -f "dist/index.html" ]; then
-            echo '<!DOCTYPE html><html><head><title>Business Book</title></head><body><div id="root">App Loaded</div></body></html>' > dist/index.html
-          fi
-
-      # 6. Capacitor Android Synchronization
+      # 6. Synchronize Native Capacitor Android
       - name: Synchronize Native Capacitor Android
         run: |
-          PKG_PATH=$(find . -maxdepth 3 -name "package.json" | grep -v "node_modules" | head -n 1)
-          if [ -n "$PKG_PATH" ]; then
-            TARGET_DIR=$(dirname "$PKG_PATH")
-          else
-            TARGET_DIR="."
-          fi
-          cd "$TARGET_DIR"
+          cd "${{ env.APP_DIR }}"
 
           if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
             rm -rf android
@@ -104,27 +86,27 @@ jobs:
           fi
           npx cap sync android
 
-      # 7. Grant Gradle Permissions
+      # 7. Grant Execution Permissions
       - name: Grant Gradle Permissions
         run: |
-          GRADLEW_PATH=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            cd $(dirname "$GRADLEW_PATH")
+          GRADLEW_FILE=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
+          if [ -n "$GRADLEW_FILE" ]; then
+            cd $(dirname "$GRADLEW_FILE")
             chmod +x gradlew
           fi
 
       # 8. Build Release APK Binary
       - name: Build Android Release APK
         run: |
-          GRADLEW_PATH=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            cd $(dirname "$GRADLEW_PATH")
+          GRADLEW_FILE=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
+          if [ -n "$GRADLEW_FILE" ]; then
+            cd $(dirname "$GRADLEW_FILE")
             ./gradlew assembleRelease --no-daemon --stacktrace
           else
             echo "ERROR: Gradlew wrapper not found!" && exit 1
           fi
 
-      # 9. Sign APK Binary for Android OS Installation
+      # 9. Cryptographically Sign APK
       - name: Sign APK Binary
         run: |
           UNSIGNED_APK=$(find . -name "*release*.apk" | grep -v "unaligned" | head -n 1)
@@ -134,7 +116,7 @@ jobs:
           $ANDROID_BUILD_TOOLS/zipalign -v 4 "$UNSIGNED_APK" BusinessBook-Signed.apk
           $ANDROID_BUILD_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out BusinessBook-Installable.apk BusinessBook-Signed.apk
 
-      # 10. Upload Final Installable Artifact
+      # 10. Upload Final Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
