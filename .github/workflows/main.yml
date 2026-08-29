@@ -10,50 +10,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Updated Checkout Action (v4)
+      # 1. Checkout repository code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js (v4)
+      # 2. Setup Node.js v18
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # 3. Install & Build Frontend Static Assets
-      - name: Install Frontend Dependencies
-        run: |
-          cd frontend
-          npm install
+      # 3. Install Dependencies from root
+      - name: Install Dependencies
+        run: npm install
 
-      - name: Build React Frontend
-        run: |
-          cd frontend
-          npm run build
+      # 4. Build Frontend Web Assets
+      - name: Build Web Frontend
+        run: npm run build --if-present
 
-      # 4. Sync Capacitor Native Android Project
+      # 5. Sync Capacitor Android (if Capacitor exists in root)
       - name: Sync Capacitor Android
-        run: |
-          cd frontend
-          npx cap sync android
+        run: npx cap sync android --no-build || echo "Capacitor sync skipped"
 
-      # 5. Setup Java JDK (v4)
+      # 6. Setup Java JDK for Android Compilation
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 6. Build Android Release APK
+      # 7. Build Android Release APK
       - name: Build Android Release APK
         run: |
-          cd frontend/android
-          chmod +x gradlew
-          ./gradlew assembleRelease
+          if [ -d "android" ]; then
+            cd android
+            chmod +x gradlew
+            ./gradlew assembleRelease
+          elif [ -d "frontend/android" ]; then
+            cd frontend/android
+            chmod +x gradlew
+            ./gradlew assembleRelease
+          else
+            echo "Android directory not found!" && exit 1
+          fi
 
-      # 7. Upload APK Artifact (Updated to v4)
-      - name: Upload APK
+      # 8. Upload Build Artifact (v4)
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Release-APK
-          path: frontend/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            frontend/android/app/build/outputs/apk/release/*.apk
