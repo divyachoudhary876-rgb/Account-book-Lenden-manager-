@@ -2,30 +2,56 @@ name: Build Business Book APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
 
 jobs:
-  build:
+  build-android:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
-          channel: 'stable'
+          node-version: 18
 
-      - name: Create Android Structure
-        run: flutter create . --platforms=android
+      # 1. Install & Build Frontend Static Assets
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm install
 
-      - name: Get Dependencies
-        run: flutter pub get
+      - name: Build React Frontend
+        run: |
+          cd frontend
+          npm run build
 
-      - name: Build Release APK
-        run: flutter build apk --release --no-tree-shake-icons
+      # 2. Copy Built Code to Capacitor Native Android Project
+      - name: Sync Capacitor Android
+        run: |
+          cd frontend
+          npx cap sync android
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      # 3. Setup Java for Android APK Compile
+      - name: Setup Java JDK
+        uses: actions/setup-java@v3
         with:
-          name: Business-Book-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
-          
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 4. Build APK File
+      - name: Build Android Release APK
+        run: |
+          cd frontend/android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      # 5. Upload APK Artifact
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: BusinessBook-Latest-Release
+          path: frontend/android/app/build/outputs/apk/release/app-release-unsigned.apk
