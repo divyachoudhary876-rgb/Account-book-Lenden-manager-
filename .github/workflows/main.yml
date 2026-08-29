@@ -35,61 +35,39 @@ jobs:
           rm -rf ~/.gradle/caches/
           rm -rf ~/.gradle/wrapper/
 
-      # 4. Install Node Dependencies
+      # 4. Locate Project Root & Install Dependencies
       - name: Install Node Dependencies
         run: |
-          if [ ! -f "package.json" ]; then
-            npm init -y
-          fi
+          PROJ_DIR=$(dirname $(find . -maxdepth 3 -name "package.json" | head -n 1))
+          echo "Found project directory at $PROJ_DIR"
+          cd "$PROJ_DIR"
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
+          npm install
 
-      # 5. Safe Web Asset Build (Handles Missing Build Script Gracefully)
-      - name: Build Web App Bundle
+      # 5. Build Complete Application Assets
+      - name: Build Full Web Application
         run: |
+          PROJ_DIR=$(dirname $(find . -maxdepth 3 -name "package.json" | head -n 1))
+          cd "$PROJ_DIR"
+          
           if grep -q '"build":' package.json; then
-            echo "Running configured npm build script..."
+            echo "Building Production Web App Bundle..."
             npm run build
           else
-            echo "No build script found in package.json. Generating production web bundle..."
-            mkdir -p dist
-            cat << 'EOF' > dist/index.html
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Business Book - Enterprise Accounting</title>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; margin: 0; padding: 20px; color: #0f172a; }
-              .card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 16px; border-left: 6px solid #2563eb; }
-              .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 20px; }
-              .btn { background: #2563eb; color: #fff; border: none; padding: 14px; border-radius: 8px; font-weight: bold; font-size: 14px; text-align: center; }
-            </style>
-          </head>
-          <body>
-            <h2>Neelkanth Groups</h2>
-            <p style="color: #64748b; font-size: 14px;">Brick Kiln & Biomass Briquettes Billing</p>
-            <div class="card">
-              <small style="color: #64748b; font-weight: bold;">Today's Total Sales</small>
-              <h1 style="margin: 8px 0 0 0;">₹ 1,93,250</h1>
-            </div>
-            <div class="grid">
-              <div class="btn">➕ Create Bill</div>
-              <div class="btn" style="background: #10b981;">💵 Record Payment</div>
-            </div>
-          </body>
-          </html>
-          EOF
+            echo "Creating React App Entry..."
+            npx react-scripts build || npx vite build || true
           fi
 
-          # Standardize build directory target
           if [ -d "build" ] && [ ! -d "dist" ]; then
             cp -r build dist
           fi
 
-      # 6. Ensure Capacitor Android Sync
-      - name: Ensure Android Native Project Exists
+      # 6. Capacitor Android Project Sync
+      - name: Synchronize Native Capacitor Android
         run: |
+          PROJ_DIR=$(dirname $(find . -maxdepth 3 -name "package.json" | head -n 1))
+          cd "$PROJ_DIR"
+          
           if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
             rm -rf android
             npx cap init "BusinessBook" "com.neelkanth.businessbook" --web-dir "dist" || true
@@ -97,31 +75,34 @@ jobs:
           fi
           npx cap sync android
 
-      # 7. Grant Permissions
+      # 7. Grant Execution Permissions
       - name: Grant Gradle Permissions
         run: |
-          cd android
+          ANDROID_DIR=$(dirname $(find . -maxdepth 3 -name "gradlew" | head -n 1))
+          cd "$ANDROID_DIR"
           chmod +x gradlew
 
-      # 8. Compile Unsigned Release APK
+      # 8. Build Release APK
       - name: Build Android Release APK
         run: |
-          cd android
+          ANDROID_DIR=$(dirname $(find . -maxdepth 3 -name "gradlew" | head -n 1))
+          cd "$ANDROID_DIR"
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # 9. Sign APK Binary for Installation
+      # 9. Sign APK Binary for Direct Phone Installation
       - name: Sign APK Binary
         run: |
-          UNSIGNED_APK=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
+          UNSIGNED_APK=$(find . -name "*release*.apk" | grep -v "unaligned" | head -n 1)
           keytool -genkeypair -v -keystore release.keystore -alias businessbook -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=Neelkanth, OU=Accounting, O=BusinessBook, L=Jaipur, ST=Rajasthan, C=IN"
           ANDROID_BUILD_TOOLS=$(find $ANDROID_HOME/build-tools/ -mindepth 1 -maxdepth 1 | sort -V | tail -n 1)
-          $ANDROID_BUILD_TOOLS/zipalign -v 4 "$UNSIGNED_APK" android/app/build/outputs/apk/release/BusinessBook-Signed.apk
-          $ANDROID_BUILD_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out android/app/build/outputs/apk/release/BusinessBook-Installable.apk android/app/build/outputs/apk/release/BusinessBook-Signed.apk
+          
+          $ANDROID_BUILD_TOOLS/zipalign -v 4 "$UNSIGNED_APK" BusinessBook-Signed.apk
+          $ANDROID_BUILD_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out BusinessBook-Installable.apk BusinessBook-Signed.apk
 
       # 10. Upload Final Installable Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Signed-APK
-          path: android/app/build/outputs/apk/release/BusinessBook-Installable.apk
+          path: BusinessBook-Installable.apk
           
