@@ -1,86 +1,107 @@
 import React, { useState, useEffect } from 'react';
 
 export default function App() {
-  // Multi-Tenant State
+  // Multi-Tenant & Account Masters State
   const [firms, setFirms] = useState(() => JSON.parse(localStorage.getItem('erp_firms')) || [
     { id: 'FIRM-101', firm_name: 'Neelkanth Bricks & Biomass Unit', business_type: 'BRICK_KILN', gstin: '08AAAAA0000A1Z5', address: 'Plot 42, Industrial Area, Jaipur, Rajasthan' }
   ]);
   const [activeFirmId, setActiveFirmId] = useState(() => localStorage.getItem('erp_active_firm') || 'FIRM-101');
-  const [activeTab, setActiveTab] = useState('add_bill');
+  const [activeTab, setActiveTab] = useState('account_statement');
 
   // Chart of Accounts Master
   const [ledgers, setLedgers] = useState(() => JSON.parse(localStorage.getItem('erp_ledgers')) || [
-    { id: 'LED-1', name: 'Cash Account', group: 'CASH' },
-    { id: 'LED-2', name: 'SBI Bank Account', group: 'BANK' },
-    { id: 'LED-3', name: 'Shree Ram Traders', group: 'SUNDRY_DEBTORS', gstin: '08BBBBB1111B1Z2' },
-    { id: 'LED-4', name: 'Sales Account', group: 'SALES' },
+    { id: 'LED-1', name: 'Cash Account', group: 'CASH', openingBal: 5000 },
+    { id: 'LED-2', name: 'SBI Bank Account', group: 'BANK', openingBal: 50000 },
+    { id: 'LED-3', name: 'Shree Ram Traders', group: 'SUNDRY_DEBTORS', gstin: '08BBBBB1111B1Z2', openingBal: 12000 },
+    { id: 'LED-4', name: 'Jaipur BioFuels', group: 'SUNDRY_DEBTORS', gstin: '08CCCCC2222C1Z3', openingBal: 0 },
+    { id: 'LED-5', name: 'Sales Account', group: 'SALES', openingBal: 0 },
   ]);
 
   const [invoices, setInvoices] = useState(() => JSON.parse(localStorage.getItem('erp_invoices')) || []);
-  const [lastInvoice, setLastInvoice] = useState(null);
+  const [vouchers, setVouchers] = useState(() => JSON.parse(localStorage.getItem('erp_vouchers')) || []);
 
-  // Bill Input Form State
-  const [billInput, setBillInput] = useState({ 
-    date: new Date().toISOString().split('T')[0], 
-    partyId: 'LED-3', 
-    item: 'First Class Red Bricks', 
-    hsn: '6901',
-    qty: 10000, 
-    rate: 6.5, 
-    gstRate: 5 
-  });
+  // Filter States for Specific Account Statement
+  const [selectedAccountId, setSelectedAccountId] = useState('LED-3');
+  const [fromDate, setFromDate] = useState('2026-08-01');
+  const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
+  // Sync Persistence
   useEffect(() => {
     localStorage.setItem('erp_firms', JSON.stringify(firms));
     localStorage.setItem('erp_active_firm', activeFirmId);
     localStorage.setItem('erp_ledgers', JSON.stringify(ledgers));
     localStorage.setItem('erp_invoices', JSON.stringify(invoices));
-  }, [firms, activeFirmId, ledgers, invoices]);
+    localStorage.setItem('erp_vouchers', JSON.stringify(vouchers));
+  }, [firms, activeFirmId, ledgers, invoices, vouchers]);
 
   const activeFirm = firms.find(f => f.id === activeFirmId);
-  const selectedParty = ledgers.find(l => l.id === billInput.partyId);
+  const selectedAccount = ledgers.find(l => l.id === selectedAccountId);
 
-  // Calculations
-  const taxableVal = (parseFloat(billInput.qty) || 0) * (parseFloat(billInput.rate) || 0);
-  const cgstVal = (taxableVal * ((parseFloat(billInput.gstRate) || 0) / 100)) / 2;
-  const sgstVal = cgstVal;
-  const grandTotal = taxableVal + (cgstVal * 2);
+  // --- Statement Generation Logic ---
+  // 1. Collect all raw debit & credit entries for selected account
+  const rawTransactions = [];
 
-  // Generate & Save Bill
-  const handlePostBill = (e) => {
-    e.preventDefault();
-    if (!billInput.partyId) return alert('Customer Ledger select karein!');
-    if (grandTotal <= 0) return alert('Invalid Quantity or Rate!');
+  // Invoices (Debit for Debtors)
+  invoices.filter(i => i.firmId === activeFirmId && i.partyId === selectedAccountId).forEach(i => {
+    rawTransactions.push({
+      date: i.date,
+      voucherNo: i.id,
+      particulars: `Sales Invoice - ${i.item || 'Goods'}`,
+      voucherType: 'SALES',
+      debit: i.total,
+      credit: 0
+    });
+  });
 
-    const invObj = {
-      id: `TAX-2026-0${invoices.length + 1}`,
-      firm: activeFirm,
-      party: selectedParty,
-      date: billInput.date,
-      item: billInput.item,
-      hsn: billInput.hsn,
-      qty: billInput.qty,
-      rate: billInput.rate,
-      taxable: taxableVal,
-      cgst: cgstVal,
-      sgst: sgstVal,
-      total: grandTotal,
-      pending: grandTotal
+  // Vouchers (Debit or Credit)
+  vouchers.filter(v => v.firmId === activeFirmId && (v.drId === selectedAccountId || v.crId === selectedAccountId)).forEach(v => {
+    rawTransactions.push({
+      date: v.date,
+      voucherNo: v.id,
+      particulars: v.drId === selectedAccountId ? `Received / Adjusted from ${v.crName}` : `Paid / Transferred to ${v.drName}`,
+      voucherType: v.type,
+      debit: v.drId === selectedAccountId ? v.amount : 0,
+      credit: v.crId === selectedAccountId ? v.amount : 0
+    });
+  });
+
+  // Sort by Date
+  rawTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  // 2. Filter Date Range and Calculate Opening & Running Balances
+  let openingBal = selectedAccount?.openingBal || 0;
+  const statementRows = [];
+
+  rawTransactions.forEach(tx => {
+    if (tx.date < fromDate) {
+      openingBal += (tx.debit - tx.credit);
+    } else if (tx.date >= fromDate && tx.date <= toDate) {
+      statementRows.push(tx);
+    }
+  });
+
+  // Calculate Running Balance for each row
+  let runningBal = openingBal;
+  const finalStatementRows = statementRows.map(row => {
+    runningBal += (row.debit - row.credit);
+    return {
+      ...row,
+      runningBalance: runningBal
     };
+  });
 
-    setInvoices([invObj, ...invoices]);
-    setLastInvoice(invObj);
-    alert('Invoice Generate Ho Gaya! Ab Aap Niche PDF Download Kar Sakte Hain.');
-  };
+  // Total Summary
+  const totalDebits = statementRows.reduce((sum, r) => sum + r.debit, 0);
+  const totalCredits = statementRows.reduce((sum, r) => sum + r.credit, 0);
 
-  // PDF Download Engine Trigger
+  // PDF Trigger
   const handleDownloadPDF = () => {
-    const element = document.getElementById('printable-invoice');
-    if (!element) return alert('Invoice Element Nahi Mila!');
+    const element = document.getElementById('printable-account-statement');
+    if (!element) return alert('Statement Element Nahi Mila!');
 
     const opt = {
-      margin: 5,
-      filename: `${lastInvoice ? lastInvoice.id : 'Tax_Invoice'}.pdf`,
+      margin: 6,
+      filename: `Statement_${selectedAccount?.name.replace(/\s+/g, '_')}_${fromDate}_to_${toDate}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
@@ -107,140 +128,128 @@ export default function App() {
         </div>
       </header>
 
-      {/* Body Area */}
+      {/* Main Area */}
       <div style={styles.scrollableContent}>
         
-        {/* ADD BILL FORM */}
-        {activeTab === 'add_bill' && (
+        {/* VIEW: SPECIFIC ACCOUNT STATEMENT */}
+        {activeTab === 'account_statement' && (
           <div style={styles.contentArea}>
+            {/* Filter Controls Card */}
             <div style={styles.cardMain}>
-              <h3 style={{ margin: '0 0 12px 0', color: '#0f172a' }}>📄 Create Professional Tax Invoice</h3>
-              <form onSubmit={handlePostBill}>
-                <label style={styles.label}>Invoice Date</label>
-                <input type="date" value={billInput.date} onChange={(e) => setBillInput({ ...billInput, date: e.target.value })} style={styles.input} />
+              <h3 style={{ margin: '0 0 10px 0', color: '#0f172a' }}>📖 Account Statement & Milan</h3>
+              
+              <label style={styles.label}>Select Party / Particular Account *</label>
+              <select 
+                value={selectedAccountId} 
+                onChange={(e) => setSelectedAccountId(e.target.value)} 
+                style={styles.input}
+              >
+                {ledgers.map(l => (
+                  <option key={l.id} value={l.id}>{l.name} ({l.group})</option>
+                ))}
+              </select>
 
-                <label style={{ ...styles.label, marginTop: '10px' }}>Customer Ledger *</label>
-                <select value={billInput.partyId} onChange={(e) => setBillInput({ ...billInput, partyId: e.target.value })} style={styles.input}>
-                  {ledgers.filter(l => l.group === 'SUNDRY_DEBTORS').map(l => (
-                    <option key={l.id} value={l.id}>{l.name}</option>
-                  ))}
-                </select>
-
-                <label style={{ ...styles.label, marginTop: '10px' }}>Item Description</label>
-                <input type="text" value={billInput.item} onChange={(e) => setBillInput({ ...billInput, item: e.target.value })} style={styles.input} />
-
-                <div style={{ ...styles.grid2, marginTop: '10px' }}>
-                  <div>
-                    <label style={styles.label}>Quantity</label>
-                    <input type="number" value={billInput.qty} onChange={(e) => setBillInput({ ...billInput, qty: e.target.value })} style={styles.input} />
-                  </div>
-                  <div>
-                    <label style={styles.label}>Rate per Unit (₹)</label>
-                    <input type="number" step="0.01" value={billInput.rate} onChange={(e) => setBillInput({ ...billInput, rate: e.target.value })} style={styles.input} />
-                  </div>
+              <div style={{ ...styles.grid2, marginTop: '10px' }}>
+                <div>
+                  <label style={styles.label}>From Date</label>
+                  <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={styles.input} />
                 </div>
-
-                <div style={styles.summaryCard}>
-                  <div style={styles.summaryRow}><span>Taxable Amount:</span><strong>₹ {taxableVal.toFixed(2)}</strong></div>
-                  <div style={styles.summaryRow}><span>CGST (2.5%):</span><strong>+ ₹ {cgstVal.toFixed(2)}</strong></div>
-                  <div style={styles.summaryRow}><span>SGST (2.5%):</span><strong>+ ₹ {sgstVal.toFixed(2)}</strong></div>
-                  <div style={{ ...styles.summaryRow, borderTop: '1px solid #cbd5e1', paddingTop: '6px', marginTop: '6px' }}>
-                    <strong>Grand Total:</strong><strong style={{ color: '#10b981', fontSize: '18px' }}>₹ {grandTotal.toFixed(2)}</strong>
-                  </div>
-                </div>
-
-                <button type="submit" style={styles.btnSuccess}>Generate Tax Invoice</button>
-              </form>
-            </div>
-
-            {/* LIVE PREVIEW & DOWNLOAD SECTION */}
-            {lastInvoice && (
-              <div style={styles.cardMain}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <h3 style={{ margin: 0, color: '#0f172a' }}>🖨️ PDF Invoice Preview</h3>
-                  <button onClick={handleDownloadPDF} style={styles.btnDownload}>
-                    📥 Download PDF Invoice
-                  </button>
-                </div>
-
-                {/* Standard Printable Tax Invoice Sheet */}
-                <div id="printable-invoice" style={styles.invoiceSheet}>
-                  <div style={{ textTransform: 'uppercase', fontSize: '10px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>TAX INVOICE</div>
-                  
-                  {/* Firm Header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #0f172a', paddingBottom: '8px', marginTop: '4px' }}>
-                    <div>
-                      <h2 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>{lastInvoice.firm.firm_name}</h2>
-                      <div style={{ fontSize: '10px', color: '#475569' }}>{lastInvoice.firm.address}</div>
-                      <div style={{ fontSize: '10px', fontWeight: 'bold', marginTop: '2px' }}>GSTIN: {lastInvoice.firm.gstin}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#2563eb' }}>{lastInvoice.id}</div>
-                      <div style={{ fontSize: '10px' }}>Date: {lastInvoice.date}</div>
-                    </div>
-                  </div>
-
-                  {/* Billed To */}
-                  <div style={{ padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-                    <small style={{ color: '#64748b', fontSize: '9px', fontWeight: 'bold' }}>BILLED TO:</small>
-                    <div style={{ fontWeight: 'bold', fontSize: '12px' }}>{lastInvoice.party.name}</div>
-                    <div style={{ fontSize: '10px' }}>GSTIN: {lastInvoice.party.gstin || 'URP (Unregistered)'}</div>
-                  </div>
-
-                  {/* Itemized Table */}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '8px', fontSize: '10px' }}>
-                    <thead>
-                      <tr style={{ backgroundColor: '#f1f5f9', textAlign: 'left' }}>
-                        <th style={{ padding: '4px', border: '1px solid #cbd5e1' }}>Item Description</th>
-                        <th style={{ padding: '4px', border: '1px solid #cbd5e1' }}>HSN</th>
-                        <th style={{ padding: '4px', border: '1px solid #cbd5e1' }}>Qty</th>
-                        <th style={{ padding: '4px', border: '1px solid #cbd5e1' }}>Rate</th>
-                        <th style={{ padding: '4px', border: '1px solid #cbd5e1', textAlign: 'right' }}>Taxable</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{lastInvoice.item}</td>
-                        <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{lastInvoice.hsn}</td>
-                        <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{lastInvoice.qty}</td>
-                        <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>₹{lastInvoice.rate}</td>
-                        <td style={{ padding: '4px', border: '1px solid #cbd5e1', textAlign: 'right' }}>₹{lastInvoice.taxable.toFixed(2)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  {/* Taxes & Grand Total */}
-                  <div style={{ marginTop: '8px', fontSize: '10px', display: 'flex', justifyContent: 'flex-end' }}>
-                    <div style={{ width: '180px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                        <span>CGST (2.5%):</span><span>₹{lastInvoice.cgst.toFixed(2)}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                        <span>SGST (2.5%):</span><span>₹{lastInvoice.sgst.toFixed(2)}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #0f172a', paddingTop: '4px', fontWeight: 'bold', fontSize: '11px' }}>
-                        <span>Grand Total:</span><span>₹{lastInvoice.total.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Signatory Footer */}
-                  <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                    <div style={{ fontSize: '8px', color: '#94a3b8' }}>Computer Generated Statutory Invoice</div>
-                    <div style={{ textAlign: 'center', fontSize: '9px', fontWeight: 'bold', borderTop: '1px solid #94a3b8', paddingTop: '4px', width: '100px' }}>
-                      Authorized Signatory
-                    </div>
-                  </div>
+                <div>
+                  <label style={styles.label}>To Date</label>
+                  <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={styles.input} />
                 </div>
               </div>
-            )}
+
+              <button onClick={handleDownloadPDF} style={styles.btnSuccess}>
+                📥 Download Particular Account Statement (PDF)
+              </button>
+            </div>
+
+            {/* PRINTABLE STATEMENT SHEET */}
+            <div id="printable-account-statement" style={styles.printSheet}>
+              {/* Firm Header */}
+              <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '14px', color: '#0f172a' }}>{activeFirm?.firm_name}</div>
+              <div style={{ textAlign: 'center', fontSize: '9px', color: '#64748b' }}>{activeFirm?.address} | GSTIN: {activeFirm?.gstin}</div>
+              <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginTop: '6px', color: '#2563eb' }}>
+                ACCOUNT STATEMENT: {selectedAccount?.name.toUpperCase()}
+              </div>
+              <div style={{ textAlign: 'center', fontSize: '9px', color: '#475569', marginBottom: '10px' }}>
+                Period: {fromDate} to {toDate}
+              </div>
+
+              {/* Statement Table */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f1f5f9' }}>
+                    <th style={styles.th}>Date</th>
+                    <th style={styles.th}>Voucher No</th>
+                    <th style={styles.th}>Particulars</th>
+                    <th style={{ ...styles.th, textAlign: 'right' }}>Debit (₹)</th>
+                    <th style={{ ...styles.th, textAlign: 'right' }}>Credit (₹)</th>
+                    <th style={{ ...styles.th, textAlign: 'right' }}>Balance (₹)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Opening Balance Row */}
+                  <tr style={{ backgroundColor: '#f8fafc', fontWeight: 'bold' }}>
+                    <td style={styles.td}>{fromDate}</td>
+                    <td style={styles.td}>-</td>
+                    <td style={styles.td}>Opening Balance B/F</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{openingBal >= 0 ? `₹${openingBal.toFixed(2)}` : '-'}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{openingBal < 0 ? `₹${Math.abs(openingBal).toFixed(2)}` : '-'}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>₹{openingBal.toFixed(2)} {openingBal >= 0 ? 'Dr' : 'Cr'}</td>
+                  </tr>
+
+                  {/* Transactions Rows */}
+                  {finalStatementRows.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ ...styles.td, textAlign: 'center', color: '#94a3b8', padding: '10px' }}>
+                        Is period me koi transaction nahi mila.
+                      </td>
+                    </tr>
+                  ) : (
+                    finalStatementRows.map((row, idx) => (
+                      <tr key={idx}>
+                        <td style={styles.td}>{row.date}</td>
+                        <td style={styles.td}>{row.voucherNo}</td>
+                        <td style={styles.td}>{row.particulars}</td>
+                        <td style={{ ...styles.td, textAlign: 'right' }}>{row.debit > 0 ? `₹${row.debit.toFixed(2)}` : '-'}</td>
+                        <td style={{ ...styles.td, textAlign: 'right' }}>{row.credit > 0 ? `₹${row.credit.toFixed(2)}` : '-'}</td>
+                        <td style={{ ...styles.td, textAlign: 'right', fontWeight: 'bold' }}>
+                          ₹{Math.abs(row.runningBalance).toFixed(2)} {row.runningBalance >= 0 ? 'Dr' : 'Cr'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+
+                  {/* Closing Balance & Total Summary */}
+                  <tr style={{ backgroundColor: '#0f172a', color: '#fff', fontWeight: 'bold' }}>
+                    <td colSpan="3" style={{ ...styles.td, color: '#fff' }}>Total Period Activity & Closing Balance</td>
+                    <td style={{ ...styles.td, textAlign: 'right', color: '#fff' }}>₹{totalDebits.toFixed(2)}</td>
+                    <td style={{ ...styles.td, textAlign: 'right', color: '#fff' }}>₹{totalCredits.toFixed(2)}</td>
+                    <td style={{ ...styles.td, textAlign: 'right', color: '#10b981' }}>
+                      ₹{Math.abs(runningBal).toFixed(2)} {runningBal >= 0 ? 'Dr' : 'Cr'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* Footer Stamp Area */}
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '8px' }}>
+                <div>Computer Generated Account Statement</div>
+                <div style={{ textAlign: 'center', fontWeight: 'bold', borderTop: '1px solid #94a3b8', paddingTop: '4px', width: '110px' }}>
+                  Authorized Signatory
+                </div>
+              </div>
+            </div>
           </div>
         )}
+
       </div>
 
       {/* Bottom Nav */}
       <nav style={styles.bottomNav}>
-        <button onClick={() => setActiveTab('add_bill')} style={styles.activeBottomTab}>📄<br />Add Bill</button>
+        <button onClick={() => setActiveTab('account_statement')} style={styles.activeBottomTab}>📖<br />Account Statement</button>
       </nav>
     </div>
   );
@@ -257,11 +266,10 @@ const styles = {
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' },
   label: { display: 'block', fontWeight: 'bold', fontSize: '12px', color: '#334155', marginBottom: '4px' },
   input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' },
-  summaryCard: { backgroundColor: '#f1f5f9', padding: '10px', borderRadius: '8px', marginTop: '12px' },
-  summaryRow: { display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#334155', marginBottom: '4px' },
   btnSuccess: { width: '100%', backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', marginTop: '14px' },
-  btnDownload: { backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' },
-  invoiceSheet: { border: '1px solid #cbd5e1', padding: '12px', borderRadius: '6px', backgroundColor: '#fff' },
+  printSheet: { border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', backgroundColor: '#fff' },
+  th: { border: '1px solid #cbd5e1', padding: '6px', textAlign: 'left', fontSize: '9px' },
+  td: { border: '1px solid #e2e8f0', padding: '5px', fontSize: '9px' },
   bottomNav: { position: 'fixed', bottom: 0, left: 0, right: 0, height: '60px', backgroundColor: '#fff', display: 'flex', borderTop: '1px solid #e2e8f0', boxShadow: '0 -2px 10px rgba(0,0,0,0.05)' },
   activeBottomTab: { flex: 1, border: 'none', backgroundColor: 'transparent', color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }
 };
