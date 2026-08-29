@@ -2,14 +2,15 @@
 
 import React, { useState } from 'react';
 
-// Explicit Core Imports with your exact filename
+// Core Application Module Imports
+import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
 import AccountStatementView from './components/AccountStatementView.jsx';
+import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
 import CreateFirmForm from './components/CreateFirmForm.jsx';
 import BillSettlementView from './components/BillSettlementView.jsx';
 import FinancialReportsView from './components/FinancialReportsView.jsx';
-import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
 
 export default function App() {
   const [activeFirm, setActiveFirm] = useState(() => {
@@ -21,8 +22,9 @@ export default function App() {
     }
   });
 
+  // Default Active Tab set to 'dashboard'
   const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('active_firm_profile') ? 'statement' : 'firm_setup';
+    return localStorage.getItem('active_firm_profile') ? 'dashboard' : 'firm_setup';
   });
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -41,7 +43,7 @@ export default function App() {
   const handleFirmCreated = (firmData) => {
     localStorage.setItem('active_firm_profile', JSON.stringify(firmData));
     setActiveFirm(firmData);
-    setActiveTab('statement');
+    setActiveTab('dashboard');
     setIsMenuOpen(false);
   };
 
@@ -57,18 +59,22 @@ export default function App() {
     alert('System Reset Completed.');
   };
 
+  // Enterprise Menu Items Structure
   const menuItems = [
+    { id: 'dashboard', label: 'Dashboard & Overview', icon: '📊' },
     { id: 'statement', label: 'Account Milan & Ledger', icon: '📖' },
     { id: 'create_account', label: 'Create Account Head', icon: '➕' },
     { id: 'billing', label: 'Sales Billing & Invoicing', icon: '🧾' },
     { id: 'voucher', label: 'Voucher Entry (JV/PV/RV)', icon: '📒' },
     { id: 'settlement', label: 'Bill Settlement (FIFO)', icon: '💳' },
-    { id: 'reports', label: 'Financial Reports (P&L / BS)', icon: '📊' },
+    { id: 'reports', label: 'Financial Reports (P&L / BS)', icon: '📈' },
     { id: 'firm_setup', label: 'Firm Profile Settings', icon: '⚙️' }
   ];
 
   return (
     <div style={styles.appShell}>
+      
+      {/* Top Main Navigation Bar */}
       <header style={styles.topHeader}>
         <div style={styles.brandGroup}>
           <span style={{ fontSize: '24px' }}>🏢</span>
@@ -89,10 +95,12 @@ export default function App() {
         )}
       </header>
 
+      {/* Mobile Drawer Overlay Backdrop */}
       {isMenuOpen && (
         <div style={styles.drawerBackdrop} onClick={() => setIsMenuOpen(false)} />
       )}
 
+      {/* Main Sidebar Navigation */}
       {activeFirm && (
         <aside style={{
           ...styles.sidebar,
@@ -128,10 +136,11 @@ export default function App() {
         </aside>
       )}
 
+      {/* Central View Router Workspace */}
       <main style={styles.mainWorkspace}>
         {!activeFirm && (
           <div style={styles.onboardingBanner}>
-            <h2>Welcome to Account Book Engine 🚀</h2>
+            <h2>Welcome to Enterprise Account Engine 🚀</h2>
             <p>Accounting workspace initialize karne ke liye pehle apni Firm details create karein.</p>
           </div>
         )}
@@ -140,6 +149,7 @@ export default function App() {
           <CreateFirmForm onFirmCreated={handleFirmCreated} />
         ) : (
           <>
+            {activeTab === 'dashboard' && <EnterpriseDashboard firm={activeFirm} />}
             {activeTab === 'statement' && <AccountStatementView firm={activeFirm} />}
             {activeTab === 'create_account' && <CreateAccountHeadModal firmId={activeFirm?.id || 'FIRM-101'} />}
             {activeTab === 'billing' && <CreateInvoice firm={activeFirm} />}
@@ -150,6 +160,7 @@ export default function App() {
         )}
       </main>
 
+      {/* System Security Purge Modal */}
       {isResetModalOpen && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContent}>
@@ -199,7 +210,7 @@ const styles = {
   menuItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '8px', border: 'none', color: '#ffffff', fontSize: '13px', width: '100%', textAlign: 'left', cursor: 'pointer' },
   sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #1e293b' },
   btnSecurityReset: { width: '100%', padding: '10px', backgroundColor: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' },
-  mainWorkspace: { padding: '20px', maxWidth: '1050px', margin: '0 auto' },
+  mainWorkspace: { padding: '20px', maxWidth: '1150px', margin: '0 auto' },
   onboardingBanner: { backgroundColor: '#1e293b', color: '#ffffff', padding: '20px', borderRadius: '12px', marginBottom: '20px', textAlign: 'center' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 },
   modalContent: { backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', width: '90%', maxWidth: '420px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' },
