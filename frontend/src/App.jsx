@@ -1,8 +1,8 @@
 // frontend/src/App.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
-// Import All Application Views
+// Import All Core Application Views
 import AccountStatementView from './components/AccountStatementView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
@@ -25,10 +25,10 @@ export default function App() {
     }
   });
 
-  // Direct Tab Switcher Handler with Forced Drawer Dismissal
+  // Direct Tab Switcher with Instant Drawer Dismissal
   const handleTabClick = (tabId) => {
     setActiveTab(tabId);
-    setIsMenuOpen(false); // Instantly dismiss drawer on touch
+    setIsMenuOpen(false); // Force close drawer on touch
   };
 
   const handleFirmCreated = (firmData) => {
@@ -47,7 +47,7 @@ export default function App() {
     setActiveTab('firm_setup');
     setIsResetModalOpen(false);
     setConfirmInput('');
-    alert('System Reset Completed.');
+    alert('System Reset Completed Successfully.');
   };
 
   const menuItems = [
@@ -62,7 +62,7 @@ export default function App() {
   return (
     <div style={{ fontFamily: 'sans-serif', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       
-      {/* 1. Header Navigation Bar */}
+      {/* 1. Top Header */}
       <header style={{
         backgroundColor: '#0f172a',
         color: '#ffffff',
@@ -85,7 +85,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile Hamburger Toggle */}
+        {/* Mobile Hamburger Button */}
         <button 
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           style={{
@@ -102,7 +102,7 @@ export default function App() {
         </button>
       </header>
 
-      {/* 2. Mobile Drawer BackDrop (Dismiss on touch outside) */}
+      {/* 2. Mobile Drawer Backdrop */}
       {isMenuOpen && (
         <div 
           onClick={() => setIsMenuOpen(false)}
@@ -118,7 +118,7 @@ export default function App() {
         />
       )}
 
-      {/* 3. Sliding Navigation Menu */}
+      {/* 3. Sliding Side Navigation Menu */}
       <div style={{
         position: 'fixed',
         top: '60px',
@@ -195,7 +195,7 @@ export default function App() {
         {activeTab === 'firm_setup' && <CreateFirmForm onFirmCreated={handleFirmCreated} />}
       </main>
 
-      {/* 5. Security Data Purge Modal */}
+      {/* 5. Data Reset Modal */}
       {isResetModalOpen && (
         <div style={{
           position: 'fixed',
@@ -209,7 +209,7 @@ export default function App() {
           <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '400px' }}>
             <h3 style={{ color: '#dc2626', margin: '0 0 10px 0' }}>⚠️ Data Reset Guard</h3>
             <p style={{ fontSize: '12px', color: '#475569' }}>
-              Confirm karne ke liye niche "<strong>DELETE MY DATA</strong>" type karein:
+              Confirm karne ke liye "<strong>DELETE MY DATA</strong>" type karein:
             </p>
             <input 
               type="text" 
