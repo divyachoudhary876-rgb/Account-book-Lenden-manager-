@@ -5,14 +5,14 @@ export const executeVoucherPosting = (voucherPayload) => {
 
   const numericAmount = parseFloat(amount);
   if (isNaN(numericAmount) || numericAmount <= 0) {
-    throw new Error("Invalid Amount: Amount must be greater than zero.");
+    throw new Error("Invalid Posting Amount: Amount zero se bada hona chahiye.");
   }
 
   if (drAccountId === crAccountId) {
-    throw new Error("Double-Entry Violation: Debit and Credit accounts cannot be identical.");
+    throw new Error("Double-Entry Violation: Debit aur Credit Accounts bilkul same nahi ho sakte.");
   }
 
-  // 1. Fetch Current State
+  // 1. Fetch Current State Buckets
   const accounts = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
   const vouchers = JSON.parse(localStorage.getItem('app_vouchers') || '[]');
   const journalEntries = JSON.parse(localStorage.getItem('app_journal_entries') || '[]');
@@ -21,16 +21,18 @@ export const executeVoucherPosting = (voucherPayload) => {
   const crIndex = accounts.findIndex(a => a.id === crAccountId);
 
   if (drIndex === -1 || crIndex === -1) {
-    throw new Error("Account Head Not Found: Please select valid Debit and Credit account heads.");
+    throw new Error("Account Head Not Found: Kripya valid Debit aur Credit account heads select karein.");
   }
 
-  // 2. Double-Entry Accounting Rules Algorithm
+  // 2. Double-Entry Balance Calculation Engine
   const drAcc = { ...accounts[drIndex] };
   const crAcc = { ...accounts[crIndex] };
 
   const drBal = parseFloat(drAcc.current_balance || drAcc.opening_balance || 0);
   const crBal = parseFloat(crAcc.current_balance || crAcc.opening_balance || 0);
 
+  // Accounting Rule: Assets & Expenses increase with Debit (+), decrease with Credit (-)
+  // Liabilities, Equity & Income increase with Credit (+), decrease with Debit (-)
   if (['ASSET', 'EXPENSE'].includes(drAcc.primary_type)) {
     drAcc.current_balance = drBal + numericAmount;
   } else {
@@ -43,7 +45,7 @@ export const executeVoucherPosting = (voucherPayload) => {
     crAcc.current_balance = crBal - numericAmount;
   }
 
-  // 3. Create Audit Ledger Entries
+  // 3. Generate Master Records & Audit Lines
   const voucherId = `VOUCH-${Date.now()}`;
   const newVoucher = {
     id: voucherId,
@@ -80,7 +82,7 @@ export const executeVoucherPosting = (voucherPayload) => {
     narration
   };
 
-  // 4. Update Arrays
+  // 4. Update In-Memory Array State
   accounts[drIndex] = drAcc;
   accounts[crIndex] = crAcc;
 
@@ -89,7 +91,7 @@ export const executeVoucherPosting = (voucherPayload) => {
   localStorage.setItem('app_vouchers', JSON.stringify([newVoucher, ...vouchers]));
   localStorage.setItem('app_journal_entries', JSON.stringify([drLine, crLine, ...journalEntries]));
 
-  // 6. Global Event Dispatcher (Live Updates Across App)
+  // 6. Fire Global Reactive State Event (Fixes live UI updates)
   window.dispatchEvent(new Event('storage'));
 
   return newVoucher;
