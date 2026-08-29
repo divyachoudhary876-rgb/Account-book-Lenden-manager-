@@ -2,14 +2,14 @@
 
 import React, { useState } from 'react';
 
-// Explicit Core Imports
+// Explicit Core Imports with your exact filename
 import AccountStatementView from './components/AccountStatementView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
 import CreateFirmForm from './components/CreateFirmForm.jsx';
 import BillSettlementView from './components/BillSettlementView.jsx';
 import FinancialReportsView from './components/FinancialReportsView.jsx';
-import CreateAccountModal from './components/CreateAccountModal.jsx';
+import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
 
 export default function App() {
   const [activeFirm, setActiveFirm] = useState(() => {
@@ -141,7 +141,7 @@ export default function App() {
         ) : (
           <>
             {activeTab === 'statement' && <AccountStatementView firm={activeFirm} />}
-            {activeTab === 'create_account' && <CreateAccountModal firmId={activeFirm?.id || 'FIRM-101'} />}
+            {activeTab === 'create_account' && <CreateAccountHeadModal firmId={activeFirm?.id || 'FIRM-101'} />}
             {activeTab === 'billing' && <CreateInvoice firm={activeFirm} />}
             {activeTab === 'voucher' && <VoucherEntryForm firm={activeFirm} />}
             {activeTab === 'settlement' && <BillSettlementView firm={activeFirm} />}
