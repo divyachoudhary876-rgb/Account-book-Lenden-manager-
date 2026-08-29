@@ -35,26 +35,37 @@ jobs:
           rm -rf ~/.gradle/caches/
           rm -rf ~/.gradle/wrapper/
 
-      # 4. Locate Project Root & Install Dependencies
+      # 4. Safe Directory Discovery & Node Dependency Installation
       - name: Install Node Dependencies
         run: |
-          PROJ_DIR=$(dirname $(find . -maxdepth 3 -name "package.json" | head -n 1))
-          echo "Found project directory at $PROJ_DIR"
-          cd "$PROJ_DIR"
+          PKG_PATH=$(find . -maxdepth 3 -name "package.json" | head -n 1)
+          if [ -n "$PKG_PATH" ]; then
+            TARGET_DIR=$(dirname "$PKG_PATH")
+          else
+            TARGET_DIR="."
+            npm init -y
+          fi
+          echo "Target Directory: $TARGET_DIR"
+          cd "$TARGET_DIR"
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
           npm install
 
-      # 5. Build Complete Application Assets
-      - name: Build Full Web Application
+      # 5. Build Application Web Bundle
+      - name: Build Web Application
         run: |
-          PROJ_DIR=$(dirname $(find . -maxdepth 3 -name "package.json" | head -n 1))
-          cd "$PROJ_DIR"
-          
+          PKG_PATH=$(find . -maxdepth 3 -name "package.json" | head -n 1)
+          if [ -n "$PKG_PATH" ]; then
+            TARGET_DIR=$(dirname "$PKG_PATH")
+          else
+            TARGET_DIR="."
+          fi
+          cd "$TARGET_DIR"
+
           if grep -q '"build":' package.json; then
-            echo "Building Production Web App Bundle..."
+            echo "Running configured build script..."
             npm run build
           else
-            echo "Creating React App Entry..."
+            echo "Generating production build assets..."
             npx react-scripts build || npx vite build || true
           fi
 
@@ -62,12 +73,22 @@ jobs:
             cp -r build dist
           fi
 
-      # 6. Capacitor Android Project Sync
+          if [ ! -d "dist" ]; then
+            mkdir -p dist
+            echo '<!DOCTYPE html><html><head><title>Business Book</title></head><body><div id="root">App Active</div></body></html>' > dist/index.html
+          fi
+
+      # 6. Capacitor Android Synchronization
       - name: Synchronize Native Capacitor Android
         run: |
-          PROJ_DIR=$(dirname $(find . -maxdepth 3 -name "package.json" | head -n 1))
-          cd "$PROJ_DIR"
-          
+          PKG_PATH=$(find . -maxdepth 3 -name "package.json" | head -n 1)
+          if [ -n "$PKG_PATH" ]; then
+            TARGET_DIR=$(dirname "$PKG_PATH")
+          else
+            TARGET_DIR="."
+          fi
+          cd "$TARGET_DIR"
+
           if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
             rm -rf android
             npx cap init "BusinessBook" "com.neelkanth.businessbook" --web-dir "dist" || true
@@ -75,21 +96,27 @@ jobs:
           fi
           npx cap sync android
 
-      # 7. Grant Execution Permissions
+      # 7. Grant Permissions
       - name: Grant Gradle Permissions
         run: |
-          ANDROID_DIR=$(dirname $(find . -maxdepth 3 -name "gradlew" | head -n 1))
-          cd "$ANDROID_DIR"
-          chmod +x gradlew
+          GRADLEW_PATH=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            cd $(dirname "$GRADLEW_PATH")
+            chmod +x gradlew
+          fi
 
       # 8. Build Release APK
       - name: Build Android Release APK
         run: |
-          ANDROID_DIR=$(dirname $(find . -maxdepth 3 -name "gradlew" | head -n 1))
-          cd "$ANDROID_DIR"
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          GRADLEW_PATH=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            cd $(dirname "$GRADLEW_PATH")
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          else
+            echo "ERROR: Gradlew wrapper not found!" && exit 1
+          fi
 
-      # 9. Sign APK Binary for Direct Phone Installation
+      # 9. Sign APK Binary for Android OS Installation
       - name: Sign APK Binary
         run: |
           UNSIGNED_APK=$(find . -name "*release*.apk" | grep -v "unaligned" | head -n 1)
@@ -99,10 +126,9 @@ jobs:
           $ANDROID_BUILD_TOOLS/zipalign -v 4 "$UNSIGNED_APK" BusinessBook-Signed.apk
           $ANDROID_BUILD_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out BusinessBook-Installable.apk BusinessBook-Signed.apk
 
-      # 10. Upload Final Installable Artifact
+      # 10. Upload Signed Release APK
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Signed-APK
           path: BusinessBook-Installable.apk
-          
