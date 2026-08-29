@@ -7,107 +7,91 @@ export default function AccountStatementView({ firm }) {
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [fromDate, setFromDate] = useState('2026-08-01');
   const [toDate, setToDate] = useState('2026-08-29');
-  const [statementRows, setStatementRows] = useState([]);
-  const [openingBalance, setOpeningBalance] = useState(0);
 
-  // Load Created Accounts from Storage
   useEffect(() => {
-    loadLedgerAccounts();
+    loadAccounts();
   }, []);
 
-  const loadLedgerAccounts = () => {
-    const defaultAccounts = [
-      { id: 'DEF-CASH', name: 'Cash Account', primary_type: 'ASSET', opening_balance: 5000 },
-      { id: 'DEF-BANK', name: 'Bank Account', primary_type: 'ASSET', opening_balance: 25000 },
-      { id: 'DEF-SALES', name: 'Sales Account', primary_type: 'INCOME', opening_balance: 0 },
-      { id: 'DEF-PURCHASE', name: 'Purchase Account', primary_type: 'EXPENSE', opening_balance: 0 }
+  const loadAccounts = () => {
+    const systemDefaults = [
+      { id: 'DEF-CASH', name: 'Cash Account', sub_group: 'CASH' },
+      { id: 'DEF-BANK', name: 'Bank Account', sub_group: 'BANK' }
     ];
 
     try {
-      const savedAccounts = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
-      const combined = [...defaultAccounts, ...savedAccounts];
+      const saved = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
+      const combined = [...systemDefaults, ...saved];
       setLedgers(combined);
-      if (combined.length > 0) {
-        setSelectedAccountId(combined[0].id);
-        calculateStatement(combined[0].id);
+      if (saved.length > 0) {
+        setSelectedAccountId(saved[0].id);
       }
     } catch (e) {
-      setLedgers(defaultAccounts);
+      setLedgers(systemDefaults);
     }
   };
 
-  const handleAccountChange = (accId) => {
-    setSelectedAccountId(accId);
-    calculateStatement(accId);
+  const selectedLedger = ledgers.find(l => l.id === selectedAccountId);
+
+  // PDF Generation Trigger
+  const handleDownloadPDF = () => {
+    window.print();
   };
-
-  const calculateStatement = (accId) => {
-    const selectedAcc = ledgers.find(a => a.id === accId);
-    if (!selectedAcc) return;
-
-    const opBal = parseFloat(selectedAcc.opening_balance) || 0;
-    setOpeningBalance(opBal);
-
-    // Fetch Vouchers linked to this Account
-    try {
-      const vouchers = JSON.parse(localStorage.getItem('app_vouchers') || '[]');
-      let running = opBal;
-      const rows = [];
-
-      vouchers.forEach(v => {
-        v.lines.forEach(line => {
-          if (line.account_id === accId) {
-            const dr = parseFloat(line.debit) || 0;
-            const cr = parseFloat(line.credit) || 0;
-            running += (dr - cr);
-            rows.push({
-              date: v.entry_date,
-              voucherNo: v.id,
-              particulars: v.narration || 'General Entry',
-              debit: dr,
-              credit: cr,
-              balance: running
-            });
-          }
-        });
-      });
-      setStatementRows(rows);
-    } catch (e) {
-      setStatementRows([]);
-    }
-  };
-
-  const totalDebits = statementRows.reduce((sum, r) => sum + r.debit, 0);
-  const totalCredits = statementRows.reduce((sum, r) => sum + r.credit, 0);
-  const closingBalance = openingBalance + totalDebits - totalCredits;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      
+      {/* Control Selector Card */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
         <h3 style={{ margin: '0 0 10px 0', color: '#0f172a' }}>📖 Account Statement & Milan</h3>
         
         <label style={{ display: 'block', fontWeight: 'bold', fontSize: '12px', color: '#334155', marginBottom: '4px' }}>Select Party / Account *</label>
         <select 
           value={selectedAccountId} 
-          onChange={(e) => handleAccountChange(e.target.value)} 
+          onChange={(e) => setSelectedAccountId(e.target.value)} 
           style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box' }}
         >
           <option value="">-- Select Party / Ledger Account --</option>
           {ledgers.map(l => (
-            <option key={l.id} value={l.id}>{l.name} ({l.primary_type || 'LEDGER'})</option>
+            <option key={l.id} value={l.id}>{l.name} ({l.sub_group || 'LEDGER'})</option>
           ))}
         </select>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date</label>
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date</label>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+
+        {/* Action Button: Download PDF */}
+        <button 
+          onClick={handleDownloadPDF} 
+          style={{ width: '100%', backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', marginTop: '14px' }}
+        >
+          📥 Download Particular Account Statement (PDF)
+        </button>
       </div>
 
-      <div style={{ border: '1px solid #cbd5e1', padding: '16px', borderRadius: '8px', backgroundColor: '#fff' }}>
+      {/* Printable Sheet Sheet */}
+      <div id="printable-ledger-sheet" style={{ border: '1px solid #cbd5e1', padding: '16px', borderRadius: '8px', backgroundColor: '#fff' }}>
         <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '15px', color: '#0f172a' }}>
           {firm?.legal_name || 'My Business Firm'}
         </div>
-        <div style={{ textAlign: 'center', fontSize: '10px', color: '#64748b', marginBottom: '12px' }}>
+        <div style={{ textAlign: 'center', fontSize: '10px', color: '#64748b' }}>
+          GSTIN: {firm?.gstin || 'Unregistered'}
+        </div>
+        <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginTop: '6px', color: '#2563eb' }}>
+          ACCOUNT STATEMENT: {selectedLedger ? selectedLedger.name.toUpperCase() : 'ALL ACCOUNTS'}
+        </div>
+        <div style={{ textAlign: 'center', fontSize: '9px', color: '#475569', marginBottom: '10px' }}>
           Period: {fromDate} to {toDate}
         </div>
 
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
           <thead>
             <tr style={{ backgroundColor: '#f1f5f9' }}>
               <th style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'left' }}>Date</th>
@@ -118,40 +102,29 @@ export default function AccountStatementView({ firm }) {
             </tr>
           </thead>
           <tbody>
-            <tr style={{ fontWeight: 'bold', backgroundColor: '#f8fafc' }}>
-              <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{fromDate}</td>
-              <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>Opening Balance B/F</td>
-              <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>{openingBalance >= 0 ? `₹${openingBalance.toFixed(2)}` : '-'}</td>
-              <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>{openingBalance < 0 ? `₹${Math.abs(openingBalance).toFixed(2)}` : '-'}</td>
-              <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>₹{Math.abs(openingBalance).toFixed(2)} {openingBalance >= 0 ? 'Dr' : 'Cr'}</td>
+            <tr style={{ backgroundColor: '#f8fafc', fontWeight: 'bold' }}>
+              <td style={{ border: '1px solid #e2e8f0', padding: '6px' }}>{fromDate}</td>
+              <td style={{ border: '1px solid #e2e8f0', padding: '6px' }}>Opening Balance B/F</td>
+              <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'right' }}>₹{parseFloat(selectedLedger?.opening_balance || 0).toFixed(2)}</td>
+              <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'right' }}>-</td>
+              <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'right' }}>
+                ₹{parseFloat(selectedLedger?.opening_balance || 0).toFixed(2)} {selectedLedger?.opening_balance_type || 'Dr'}
+              </td>
             </tr>
-
-            {statementRows.length === 0 ? (
-              <tr>
-                <td colSpan="5" style={{ border: '1px solid #e2e8f0', padding: '12px', textAlign: 'center', color: '#94a3b8' }}>
-                  Is selected period me koi voucher transaction nahi mila.
-                </td>
-              </tr>
-            ) : (
-              statementRows.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ border: '1px solid #e2e8f0', padding: '6px' }}>{r.date}</td>
-                  <td style={{ border: '1px solid #e2e8f0', padding: '6px' }}>{r.particulars}</td>
-                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'right' }}>{r.debit > 0 ? `₹${r.debit.toFixed(2)}` : '-'}</td>
-                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'right' }}>{r.credit > 0 ? `₹${r.credit.toFixed(2)}` : '-'}</td>
-                  <td style={{ border: '1px solid #e2e8f0', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>₹{Math.abs(r.balance).toFixed(2)} {r.balance >= 0 ? 'Dr' : 'Cr'}</td>
-                </tr>
-              ))
-            )}
-
-            <tr style={{ backgroundColor: '#0f172a', color: '#fff', fontWeight: 'bold' }}>
-              <td colSpan="2" style={{ border: '1px solid #cbd5e1', padding: '6px' }}>Closing Account Balance</td>
-              <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>₹{totalDebits.toFixed(2)}</td>
-              <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>₹{totalCredits.toFixed(2)}</td>
-              <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', color: '#10b981' }}>₹{Math.abs(closingBalance).toFixed(2)} {closingBalance >= 0 ? 'Dr' : 'Cr'}</td>
+            <tr>
+              <td colSpan="5" style={{ border: '1px solid #e2e8f0', padding: '14px', textAlign: 'center', color: '#94a3b8' }}>
+                Is period me koi Naya Transaction Record nahi mila.
+              </td>
             </tr>
           </tbody>
         </table>
+
+        <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '9px' }}>
+          <div>Computer Generated Account Statement</div>
+          <div style={{ textAlign: 'center', fontWeight: 'bold', borderTop: '1px solid #94a3b8', paddingTop: '4px', width: '120px' }}>
+            Authorized Signatory
+          </div>
+        </div>
       </div>
     </div>
   );
