@@ -35,59 +35,23 @@ jobs:
           rm -rf ~/.gradle/caches/
           rm -rf ~/.gradle/wrapper/
 
-      # 4. Install Dependencies in Frontend
-      - name: Install Dependencies
+      # 4. Install Dependencies
+      - name: Install Frontend Dependencies
         run: |
-          if [ -d "frontend" ]; then cd frontend; fi
+          cd frontend
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
           npm install --legacy-peer-deps || npm install
 
-      # 5. Build Web Application & Physical 'dist' Guarantee
+      # 5. Build Web Application Bundle via Vite
       - name: Build Web Application
         run: |
-          if [ -d "frontend" ]; then cd frontend; fi
+          cd frontend
+          npm run build || npx vite build
 
-          # Execute framework build
-          npm run build || npx vite build || true
-
-          # Create dist folder explicitly if not created by build script
-          mkdir -p dist
-
-          # Copy output from build/ if present
-          if [ -d "build" ]; then cp -r build/* dist/ 2>/dev/null || true; fi
-          if [ -d "public" ]; then cp -r public/* dist/ 2>/dev/null || true; fi
-          if [ -d "src" ]; then cp -r src/* dist/ 2>/dev/null || true; fi
-
-          # Guarantee index.html inside dist/ for Capacitor Sync
-          if [ ! -f "dist/index.html" ]; then
-            cat << 'EOF' > dist/index.html
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Business Book</title>
-            <style>
-              body { font-family: sans-serif; background: #f8fafc; margin: 0; padding: 20px; color: #0f172a; }
-              .card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 12px; }
-            </style>
-          </head>
-          <body>
-            <h2>Neelkanth Groups ERP</h2>
-            <div class="card">
-              <h3>System Status: Active</h3>
-              <p>Capacitor Native Sync Completed.</p>
-            </div>
-          </body>
-          </html>
-          EOF
-          fi
-
-      # 6. Capacitor Native Sync
+      # 6. Capacitor Sync
       - name: Capacitor Sync
         run: |
-          if [ -d "frontend" ]; then cd frontend; fi
-
+          cd frontend
           if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
             rm -rf android
             npx cap init "BusinessBook" "com.neelkanth.businessbook" --web-dir "dist" || true
@@ -95,11 +59,14 @@ jobs:
           fi
           npx cap sync android
 
-      # 7. Grant Execution Permissions
-      - name: Grant Permissions
+      # 7. Grant Permissions
+      - name: Grant Gradle Permissions
         run: |
           GRADLEW_PATH=$(find . -name "gradlew" | head -n 1)
-          if [ -n "$GRADLEW_PATH" ]; then cd $(dirname "$GRADLEW_PATH") && chmod +x gradlew; fi
+          if [ -n "$GRADLEW_PATH" ]; then
+            cd $(dirname "$GRADLEW_PATH")
+            chmod +x gradlew
+          fi
 
       # 8. Build Android Release APK
       - name: Build Android Release APK
@@ -120,7 +87,7 @@ jobs:
           $ANDROID_BUILD_TOOLS/zipalign -v 4 "$UNSIGNED_APK" BusinessBook-Signed.apk
           $ANDROID_BUILD_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out BusinessBook-Installable.apk BusinessBook-Signed.apk
 
-      # 10. Upload Artifact
+      # 10. Upload Final Installable Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
