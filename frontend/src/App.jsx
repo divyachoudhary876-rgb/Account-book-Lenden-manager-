@@ -1,8 +1,8 @@
 // frontend/src/App.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
-// Import All Core Modules
+// Import Components
 import AccountStatementView from './components/AccountStatementView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
@@ -12,19 +12,23 @@ import FinancialReportsView from './components/FinancialReportsView.jsx';
 
 export default function App() {
   const [activeFirm, setActiveFirm] = useState(() => {
-    return JSON.parse(localStorage.getItem('active_firm_profile')) || null;
+    try {
+      const saved = localStorage.getItem('active_firm_profile');
+      return saved ? JSON.parse(saved) : { legal_name: 'My Business Firm', gstin: '' };
+    } catch (e) {
+      return { legal_name: 'My Business Firm', gstin: '' };
+    }
   });
 
-  const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('active_firm_profile') ? 'statement' : 'firm_setup';
-  });
-
-  // Navigation Drawer State Control (Default False to fix stuck overlay)
+  const [activeTab, setActiveTab] = useState('statement');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  // Destructive Action Guard Modal State
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
+
+  const handleTabSelect = (tabId) => {
+    setActiveTab(tabId);
+    setMobileMenuOpen(false); // Force close mobile drawer immediately
+  };
 
   const handleFirmCreated = (firmData) => {
     localStorage.setItem('active_firm_profile', JSON.stringify(firmData));
@@ -33,45 +37,41 @@ export default function App() {
     setMobileMenuOpen(false);
   };
 
-  // Secure Purge System Data with Confirmation Validation
   const handlePurgeData = () => {
     if (confirmInput.trim() !== 'DELETE MY DATA') {
-      return alert('Incorrect Confirmation Code! Type "DELETE MY DATA" to proceed.');
+      return alert('Incorrect Confirmation! Type "DELETE MY DATA" exact.');
     }
     localStorage.clear();
-    setActiveFirm(null);
+    setActiveFirm({ legal_name: 'My Business Firm', gstin: '' });
     setActiveTab('firm_setup');
     setIsResetModalOpen(false);
     setConfirmInput('');
-    alert('System database wiped successfully.');
+    alert('All Data Cleared Successfully.');
   };
 
   const menuItems = [
-    { id: 'statement', label: 'Account Milan', icon: '📖', disabled: !activeFirm },
-    { id: 'billing', label: 'Sales Billing', icon: '🧾', disabled: !activeFirm },
-    { id: 'voucher', label: 'Voucher Entry', icon: '📒', disabled: !activeFirm },
-    { id: 'settlement', label: 'Bill Settlement', icon: '💳', disabled: !activeFirm },
-    { id: 'reports', label: 'Financial Reports', icon: '📊', disabled: !activeFirm },
-    { id: 'firm_setup', label: 'Firm Profile Setup', icon: '⚙️', disabled: false },
+    { id: 'statement', label: 'Account Milan', icon: '📖' },
+    { id: 'billing', label: 'Sales Billing', icon: '🧾' },
+    { id: 'voucher', label: 'Voucher Entry', icon: '📒' },
+    { id: 'settlement', label: 'Bill Settlement', icon: '💳' },
+    { id: 'reports', label: 'Financial Reports', icon: '📊' },
+    { id: 'firm_setup', label: 'Firm Profile Setup', icon: '⚙️' },
   ];
 
   return (
     <div style={styles.appShell}>
-      {/* 1. Global Navigation Top Header */}
+      {/* 1. Top Header */}
       <header style={styles.topHeader}>
         <div style={styles.brandGroup}>
           <span style={{ fontSize: '22px' }}>📘</span>
           <div>
-            <div style={styles.brandTitle}>
-              {activeFirm ? activeFirm.legal_name : 'Account Book Engine'}
-            </div>
+            <div style={styles.brandTitle}>{activeFirm?.legal_name || 'My Business Firm'}</div>
             <div style={{ fontSize: '10px', color: '#94a3b8' }}>
-              {activeFirm ? `GSTIN: ${activeFirm.gstin || 'N/A'}` : 'System Ready • Setup Firm'}
+              {activeFirm?.gstin ? `GSTIN: ${activeFirm.gstin}` : 'Active Workspace'}
             </div>
           </div>
         </div>
         
-        {/* Toggle Button for Mobile Drawer */}
         <button 
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
           style={styles.mobileHamburger}
@@ -80,18 +80,15 @@ export default function App() {
         </button>
       </header>
 
-      {/* 2. Main Layout Shell */}
+      {/* 2. Main Workspace Layout */}
       <div style={styles.layoutBody}>
         
-        {/* Mobile Backdrop Overlay (Clicking outside closes drawer) */}
+        {/* Mobile Backdrop */}
         {mobileMenuOpen && (
-          <div 
-            style={styles.drawerBackdrop} 
-            onClick={() => setMobileMenuOpen(false)} 
-          />
+          <div style={styles.drawerBackdrop} onClick={() => setMobileMenuOpen(false)} />
         )}
 
-        {/* Dynamic Sidebar Navigation Menu */}
+        {/* Sidebar Menu */}
         <aside style={{
           ...styles.sidebar,
           transform: mobileMenuOpen ? 'translateX(0)' : undefined,
@@ -101,19 +98,11 @@ export default function App() {
             {menuItems.map(item => (
               <button
                 key={item.id}
-                onClick={() => {
-                  if (item.disabled) {
-                    alert('Pehle Firm Profile setup complete karein!');
-                    return;
-                  }
-                  setActiveTab(item.id);
-                  setMobileMenuOpen(false); // Auto close drawer after selection
-                }}
+                onClick={() => handleTabSelect(item.id)}
                 style={{
                   ...styles.navItem,
                   backgroundColor: activeTab === item.id ? '#2563eb' : 'transparent',
-                  color: item.disabled ? '#475569' : (activeTab === item.id ? '#ffffff' : '#94a3b8'),
-                  cursor: item.disabled ? 'not-allowed' : 'pointer',
+                  color: activeTab === item.id ? '#ffffff' : '#cbd5e1',
                   fontWeight: activeTab === item.id ? '700' : '500',
                 }}
               >
@@ -123,29 +112,16 @@ export default function App() {
             ))}
           </nav>
 
-          {/* Secure System Action Slot at Bottom */}
           <div style={styles.sidebarFooter}>
-            <button 
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setIsResetModalOpen(true);
-              }} 
-              style={styles.btnSecureReset}
-            >
+            <button onClick={() => { setMobileMenuOpen(false); setIsResetModalOpen(true); }} style={styles.btnSecureReset}>
               🔒 Security & Purge Settings
             </button>
           </div>
         </aside>
 
-        {/* 3. Main Active Workspace Container */}
+        {/* Workspace Screens */}
         <main style={styles.workspace}>
           <div style={styles.contentContainer}>
-            {!activeFirm && activeTab !== 'firm_setup' && (
-              <div style={styles.warningBox}>
-                ⚠️ Business Profile Not Set Up. Kripya pehle <strong>Firm Profile Setup</strong> form fill karein.
-              </div>
-            )}
-
             {activeTab === 'statement' && <AccountStatementView firm={activeFirm} />}
             {activeTab === 'billing' && <CreateInvoice firm={activeFirm} />}
             {activeTab === 'voucher' && <VoucherEntryForm firm={activeFirm} />}
@@ -156,48 +132,38 @@ export default function App() {
         </main>
       </div>
 
-      {/* 4. Multi-Factor Data Reset Confirmation Modal */}
+      {/* Security Data Purge Modal */}
       {isResetModalOpen && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContainer}>
-            <h3 style={{ color: '#dc2626', margin: '0 0 10px 0' }}>⚠️ Critical Warning: Database Reset</h3>
-            <p style={{ fontSize: '13px', color: '#475569', lineHeight: '1.5' }}>
-              Aapka saara Financial Data, Firm Profile, Invoices, aur Voucher Entries Permanently delete ho jayengi. Single click se deletion ko block karne ke liye confirm karein.
+            <h3 style={{ color: '#dc2626', margin: '0 0 10px 0' }}>⚠️ Data Reset Confirmation</h3>
+            <p style={{ fontSize: '12px', color: '#475569' }}>
+              Saara local business data aur entries clean ho jayengi. Confirm karne ke liye niche "<strong>DELETE MY DATA</strong>" type karein:
             </p>
-            <div style={{ margin: '16px 0' }}>
-              <label style={styles.modalLabel}>Type "<strong>DELETE MY DATA</strong>" to confirm:</label>
-              <input 
-                type="text" 
-                value={confirmInput} 
-                onChange={(e) => setConfirmInput(e.target.value)}
-                placeholder="DELETE MY DATA"
-                style={styles.modalInput}
-              />
-            </div>
+            <input 
+              type="text" 
+              value={confirmInput} 
+              onChange={(e) => setConfirmInput(e.target.value)}
+              placeholder="DELETE MY DATA"
+              style={styles.modalInput}
+            />
             <div style={styles.modalActions}>
-              <button 
-                onClick={() => setIsResetModalOpen(false)} 
-                style={styles.btnCancelModal}
-              >
-                Cancel / Safe Go Back
-              </button>
+              <button onClick={() => setIsResetModalOpen(false)} style={styles.btnCancel}>Cancel</button>
               <button 
                 onClick={handlePurgeData}
                 disabled={confirmInput.trim() !== 'DELETE MY DATA'}
                 style={{
-                  ...styles.btnPurgeModal,
-                  backgroundColor: confirmInput.trim() === 'DELETE MY DATA' ? '#dc2626' : '#cbd5e1',
-                  cursor: confirmInput.trim() === 'DELETE MY DATA' ? 'pointer' : 'not-allowed'
+                  ...styles.btnPurge,
+                  backgroundColor: confirmInput.trim() === 'DELETE MY DATA' ? '#dc2626' : '#cbd5e1'
                 }}
               >
-                Confirm Complete Purge
+                Purge All Data
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* CSS Styling for Transitions */}
       <style>{`
         @media (max-width: 768px) {
           .desktop-sidebar {
@@ -208,7 +174,7 @@ export default function App() {
             z-index: 1000;
             width: 260px !important;
             transform: ${mobileMenuOpen ? 'translateX(0)' : 'translateX(-100%)'};
-            transition: transform 0.3s ease-in-out;
+            transition: transform 0.25s ease-in-out;
             box-shadow: 4px 0 12px rgba(0,0,0,0.3);
           }
         }
@@ -218,27 +184,25 @@ export default function App() {
 }
 
 const styles = {
-  appShell: { fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', minHeight: '100vh', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column' },
-  topHeader: { backgroundColor: '#0f172a', color: '#f8fafc', height: '60px', padding: '0 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1001, boxShadow: '0 2px 5px rgba(0,0,0,0.1)' },
-  brandGroup: { display: 'flex', alignItems: 'center', gap: '12px' },
-  brandTitle: { fontSize: '16px', fontWeight: '700', color: '#ffffff' },
-  mobileHamburger: { background: 'none', border: 'none', color: '#ffffff', fontSize: '24px', cursor: 'pointer', padding: '4px' },
+  appShell: { fontFamily: 'sans-serif', minHeight: '100vh', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column' },
+  topHeader: { backgroundColor: '#0f172a', color: '#f8fafc', height: '60px', padding: '0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1001 },
+  brandGroup: { display: 'flex', alignItems: 'center', gap: '10px' },
+  brandTitle: { fontSize: '15px', fontWeight: '700', color: '#ffffff' },
+  mobileHamburger: { background: 'none', border: 'none', color: '#ffffff', fontSize: '24px', cursor: 'pointer' },
   layoutBody: { display: 'flex', flex: 1, position: 'relative' },
   drawerBackdrop: { position: 'fixed', top: '60px', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', zIndex: 999 },
-  sidebar: { width: '250px', backgroundColor: '#0f172a', padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '8px', borderRight: '1px solid #1e293b', boxSizing: 'border-box' },
-  sidebarHeader: { fontSize: '11px', color: '#64748b', fontWeight: '700', paddingLeft: '8px', marginBottom: '8px', letterSpacing: '0.5px' },
+  sidebar: { width: '250px', backgroundColor: '#0f172a', padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '8px', borderRight: '1px solid #1e293b' },
+  sidebarHeader: { fontSize: '11px', color: '#64748b', fontWeight: '700', paddingLeft: '8px', marginBottom: '8px' },
   navMenu: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  navItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '8px', border: 'none', fontSize: '14px', width: '100%', textAlign: 'left', transition: 'all 0.15s ease' },
+  navItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '8px', border: 'none', fontSize: '14px', width: '100%', textAlign: 'left', cursor: 'pointer' },
   sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #1e293b' },
-  btnSecureReset: { width: '100%', padding: '9px', backgroundColor: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textAlign: 'center' },
-  workspace: { flex: 1, padding: '20px', overflowY: 'auto' },
+  btnSecureReset: { width: '100%', padding: '8px', backgroundColor: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' },
+  workspace: { flex: 1, padding: '16px', overflowY: 'auto' },
   contentContainer: { maxWidth: '1000px', margin: '0 auto' },
-  warningBox: { backgroundColor: '#fef3c7', color: '#92400e', padding: '14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', border: '1px solid #f59e0b' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 },
-  modalContainer: { backgroundColor: '#fff', padding: '24px', borderRadius: '12px', width: '90%', maxWidth: '440px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' },
-  modalLabel: { display: 'block', fontSize: '12px', color: '#334155', marginBottom: '6px' },
-  modalInput: { width: '100%', padding: '10px', borderRadius: '6px', border: '2px solid #ef4444', fontSize: '14px', boxSizing: 'border-box', outline: 'none' },
-  modalActions: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' },
-  btnCancelModal: { padding: '10px 16px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' },
-  btnPurgeModal: { padding: '10px 16px', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', transition: 'all 0.2s' }
+  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 },
+  modalContainer: { backgroundColor: '#fff', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '400px' },
+  modalInput: { width: '100%', padding: '10px', borderRadius: '6px', border: '2px solid #ef4444', marginTop: '10px', boxSizing: 'border-box' },
+  modalActions: { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '14px' },
+  btnCancel: { padding: '8px 14px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' },
+  btnPurge: { padding: '8px 14px', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }
 };
