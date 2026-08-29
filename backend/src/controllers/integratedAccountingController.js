@@ -1,144 +1,164 @@
-const db = require('../config/db');
-const PDFDocument = require('pdfkit'); // Ensure npm install pdfkit
+// backend/src/controllers/integratedAccountingController.js
 
-// ==========================================
-// MODULE 1: AUTOMATED DOUBLE-ENTRY ENGINE
-// ==========================================
-async function postJournalEntry(client, { entry_date, reference_id, narration, debit_acc_code, credit_acc_code, amount, sub_account_id = null }) {
-  if (amount <= 0) throw new Error('Journal amount must be positive');
+const db = require('../db'); // Your PostgreSQL connection pool
 
-  const journalRes = await client.query(
-    `INSERT INTO journal_entries (entry_date, reference_id, narration) VALUES ($1, $2, $3) RETURNING id`,
-    [entry_date, reference_id, narration]
-  );
-  const journalId = journalRes.rows[0].id;
-
-  const debitAcc = await client.query('SELECT id FROM accounts WHERE account_code = $1', [debit_acc_code]);
-  const creditAcc = await client.query('SELECT id FROM accounts WHERE account_code = $1', [credit_acc_code]);
-
-  if (!debitAcc.rows[0] || !creditAcc.rows[0]) {
-    throw new Error(`Account code invalid: ${debit_acc_code} or ${credit_acc_code}`);
-  }
-
-  // Debit Entry
-  await client.query(
-    `INSERT INTO journal_items (journal_id, account_id, debit_amount, credit_amount) VALUES ($1, $2, $3, 0.00)`,
-    [journalId, debitAcc.rows[0].id, amount]
-  );
-
-  // Credit Entry
-  await client.query(
-    `INSERT INTO journal_items (journal_id, account_id, debit_amount, credit_amount) VALUES ($1, $2, 0.00, $3)`,
-    [journalId, creditAcc.rows[0].id, amount]
-  );
-
-  return journalId;
-}
-
-// ==========================================
-// MODULE 2: PAYMENT RECEIPT & KNOCK-OFF
-// ==========================================
-exports.createPaymentReceipt = async (req, res) => {
-  const client = await db.connect();
+/**
+ * 1. Calculate & Generate Account Statement with Opening & Running Balances
+ * GET /api/v1/accounting/account-statement?organization_id=...&account_id=...&from_date=...&to_date=...
+ */
+exports.getAccountStatement = async (req, res) => {
   try {
-    const { customer_id, receipt_date, amount_received, payment_mode, reference_number, invoice_settlements } = req.body;
-    await client.query('BEGIN');
+    const { organization_id, account_id, from_date, to_date } = req.query;
 
-    const receiptNum = `REC-${Date.now().toString().slice(-6)}`;
-    const recRes = await client.query(
-      `INSERT INTO payment_receipts (receipt_number, receipt_date, customer_id, amount_received, payment_mode, reference_number) 
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [receiptNum, receipt_date, customer_id, amount_received, payment_mode, reference_number]
-    );
-    const receiptId = recRes.rows[0].id;
-
-    // Direct Invoice Settlement / Knock-off
-    let totalSettled = 0;
-    if (invoice_settlements && invoice_settlements.length > 0) {
-      for (let item of invoice_settlements) {
-        await client.query(
-          `INSERT INTO receipt_invoice_settlements (receipt_id, invoice_id, settled_amount) VALUES ($1, $2, $3)`,
-          [receiptId, item.invoice_id, item.settled_amount]
-        );
-        totalSettled += Number(item.settled_amount);
-      }
+    if (!organization_id || !account_id || !from_date || !to_date) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing parameters. Required: organization_id, account_id, from_date, to_date"
+      });
     }
 
-    if (totalSettled > amount_received) {
-      throw new Error('Settlement amount cannot exceed total payment received');
+    // A. Fetch Account Head Details
+    const accountQuery = `SELECT id, name, group_type, opening_balance FROM account_heads WHERE id = $1 AND organization_id = $2`;
+    const accountRes = await db.query(accountQuery, [account_id, organization_id]);
+    
+    if (accountRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Selected Account Head not found." });
     }
+    const account = accountRes.rows[0];
 
-    // Ledger Engine Trigger: Debit Cash/Bank & Credit Customer (Accounts Receivable)
-    const assetAccount = payment_mode === 'CASH' ? 'CASH_IN_HAND' : 'BANK_ACCOUNT';
-    await postJournalEntry(client, {
-      entry_date: receipt_date,
-      reference_id: receiptId,
-      narration: `Payment received via ${payment_mode} - Ref: ${receiptNum}`,
-      debit_acc_code: assetAccount,
-      credit_acc_code: 'ACCOUNTS_RECEIVABLE',
-      amount: amount_received
+    // B. Calculate Opening Balance Brought Forward (B/F) prior to from_date
+    const bfQuery = `
+      SELECT 
+        COALESCE(SUM(l.debit), 0) AS total_debit,
+        COALESCE(SUM(l.credit), 0) AS total_credit
+      FROM journal_entry_lines l
+      JOIN journal_entries e ON l.journal_entry_id = e.id
+      WHERE e.organization_id = $1 
+        AND l.account_id = $2 
+        AND e.entry_date < $3;
+    `;
+    const bfRes = await db.query(bfQuery, [organization_id, account_id, from_date]);
+    
+    let initialMasterBal = parseFloat(account.opening_balance || 0);
+    let priorDebits = parseFloat(bfRes.rows[0].total_debit);
+    let priorCredits = parseFloat(bfRes.rows[0].total_credit);
+
+    // B/F Calculation: (Initial Bal + Prior Debits) - Prior Credits
+    let openingBalBF = initialMasterBal + (priorDebits - priorCredits);
+
+    // C. Fetch Period Transactions
+    const periodQuery = `
+      SELECT 
+        e.entry_date AS date,
+        e.voucher_no AS "voucherNo",
+        e.narration AS particulars,
+        e.voucher_type AS "voucherType",
+        l.debit,
+        l.credit
+      FROM journal_entry_lines l
+      JOIN journal_entries e ON l.journal_entry_id = e.id
+      WHERE e.organization_id = $1 
+        AND l.account_id = $2 
+        AND e.entry_date >= $3 
+        AND e.entry_date <= $4
+      ORDER BY e.entry_date ASC, e.created_at ASC;
+    `;
+    const periodRes = await db.query(periodQuery, [organization_id, account_id, from_date, to_date]);
+
+    // D. Compute Running Balance Row by Row
+    let runningBal = openingBalBF;
+    const finalStatementRows = periodRes.rows.map(row => {
+      const debitVal = parseFloat(row.debit);
+      const creditVal = parseFloat(row.credit);
+      runningBal += (debitVal - creditVal);
+      
+      return {
+        date: row.date.toISOString().split('T')[0],
+        voucherNo: row.voucherNo,
+        particulars: row.particulars || `${row.voucherType} Entry`,
+        voucherType: row.voucherType,
+        debit: debitVal,
+        credit: creditVal,
+        runningBalance: runningBal
+      };
     });
 
-    await client.query('COMMIT');
-    res.status(201).json({ success: true, receipt_id: receiptId, receipt_number: receiptNum });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    res.status(400).json({ success: false, message: err.message });
-  } finally {
-    client.release();
+    const totalPeriodDebits = finalStatementRows.reduce((sum, r) => sum + r.debit, 0);
+    const totalPeriodCredits = finalStatementRows.reduce((sum, r) => sum + r.credit, 0);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        accountName: account.name,
+        accountGroup: account.group_type,
+        period: { fromDate: from_date, toDate: to_date },
+        openingBalanceBF: openingBalBF,
+        rows: finalStatementRows,
+        totalDebits: totalPeriodDebits,
+        totalCredits: totalPeriodCredits,
+        closingBalance: runningBal
+      }
+    });
+
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// ==========================================
-// MODULE 3: PDF INVOICE GENERATOR API
-// ==========================================
-exports.generateInvoicePDF = async (req, res) => {
+/**
+ * 2. Create Double-Entry Voucher (Atomic Transaction with Sum(Debit) = Sum(Credit) Guard)
+ * POST /api/v1/accounting/vouchers
+ */
+exports.createDoubleEntryVoucher = async (req, res) => {
+  const client = await db.getClient(); // Transactional DB client
   try {
-    const { invoice_id } = req.params;
+    const { organization_id, voucher_no, voucher_type, entry_date, narration, lines } = req.body;
 
-    const invRes = await db.query(
-      `SELECT i.*, c.name as customer_name, c.gstin as customer_gstin 
-       FROM sales_invoices i 
-       JOIN customers c ON i.customer_id = c.id 
-       WHERE i.id = $1`, 
-      [invoice_id]
-    );
-    
-    if (invRes.rows.length === 0) return res.status(404).json({ message: 'Invoice not found' });
-    const inv = invRes.rows[0];
+    if (!lines || lines.length < 2) {
+      return res.status(400).json({ success: false, error: "A double-entry voucher must contain at least 2 line items." });
+    }
 
-    const itemsRes = await db.query(
-      `SELECT sii.*, item.name FROM sales_invoice_items sii JOIN items item ON sii.item_id = item.id WHERE sii.invoice_id = $1`,
-      [invoice_id]
-    );
+    // Mathematical Guard: Sum(Debit) === Sum(Credit)
+    let totalDebit = 0;
+    let totalCredit = 0;
+    for (const line of lines) {
+      totalDebit += parseFloat(line.debit || 0);
+      totalCredit += parseFloat(line.credit || 0);
+    }
 
-    const doc = new PDFDocument({ margin: 30 });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename=Invoice_${inv.invoice_number}.pdf`);
-    doc.pipe(res);
+    if (Math.abs(totalDebit - totalCredit) > 0.001) {
+      return res.status(400).json({
+        success: false,
+        error: `Unbalanced Entry Rejected! Total Debit (₹${totalDebit}) must equal Total Credit (₹${totalCredit}).`
+      });
+    }
 
-    // Header
-    doc.fontSize(20).text('TAX INVOICE', { align: 'center' }).moveDown();
-    doc.fontSize(12).text(`Invoice No: ${inv.invoice_number}`);
-    doc.text(`Date: ${inv.invoice_date}`);
-    doc.text(`Customer Name: ${inv.customer_name}`);
-    doc.text(`GSTIN: ${inv.customer_gstin || 'N/A'}`).moveDown();
+    await client.query('BEGIN');
 
-    // Table Header
-    doc.fontSize(10).text('Item Name | Qty | Unit Price | Taxable | Total Amount');
-    doc.text('------------------------------------------------------------------');
+    // Insert Header
+    const headerQuery = `
+      INSERT INTO journal_entries (organization_id, voucher_no, voucher_type, entry_date, narration)
+      VALUES ($1, $2, $3, $4, $5) RETURNING id;
+    `;
+    const headerRes = await client.query(headerQuery, [organization_id, voucher_no, voucher_type, entry_date, narration]);
+    const voucherId = headerRes.rows[0].id;
 
-    itemsRes.rows.forEach(item => {
-      doc.text(`${item.name} | ${item.quantity} | ₹${item.unit_price} | ₹${item.taxable_value} | ₹${item.total_amount}`);
-    });
+    // Insert Lines
+    const lineQuery = `
+      INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+      VALUES ($1, $2, $3, $4);
+    `;
+    for (const line of lines) {
+      await client.query(lineQuery, [voucherId, line.account_id, line.debit || 0, line.credit || 0]);
+    }
 
-    doc.moveDown();
-    doc.fontSize(12).text(`Subtotal: ₹${inv.subtotal}`);
-    doc.text(`CGST: ₹${inv.total_cgst} | SGST: ₹${inv.total_sgst} | IGST: ₹${inv.total_igst}`);
-    doc.fontSize(14).text(`Grand Total: ₹${inv.grand_total}`, { bold: true });
+    await client.query('COMMIT');
+    return res.status(201).json({ success: true, message: "Voucher posted successfully", voucherId });
 
-    doc.end();
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ success: false, error: error.message });
+  } finally {
+    client.release();
   }
 };
