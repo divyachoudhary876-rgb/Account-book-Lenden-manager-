@@ -20,45 +20,57 @@ jobs:
         with:
           node-version: 18
 
-      # 3. Install Dependencies from root
+      # 3. Locate package.json dynamically and Install Dependencies
       - name: Install Dependencies
-        run: npm install
+        run: |
+          if [ -f "package.json" ]; then
+            echo "Found package.json in root"
+            npm install
+          elif [ -f "account-book/package.json" ]; then
+            echo "Found package.json in account-book"
+            cd account-book && npm install
+          elif [ -f "frontend/package.json" ]; then
+            echo "Found package.json in frontend"
+            cd frontend && npm install
+          else
+            echo "ERROR: package.json not found in repository!" && exit 1
+          fi
 
-      # 4. Build Frontend Web Assets
+      # 4. Build Web Frontend Assets
       - name: Build Web Frontend
-        run: npm run build --if-present
+        run: |
+          if [ -f "package.json" ]; then
+            npm run build --if-present
+          elif [ -f "account-book/package.json" ]; then
+            cd account-book && npm run build --if-present
+          elif [ -f "frontend/package.json" ]; then
+            cd frontend && npm run build --if-present
+          fi
 
-      # 5. Sync Capacitor Android (if Capacitor exists in root)
-      - name: Sync Capacitor Android
-        run: npx cap sync android --no-build || echo "Capacitor sync skipped"
-
-      # 6. Setup Java JDK for Android Compilation
+      # 5. Setup Java JDK 17 for Android Build
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 7. Build Android Release APK
+      # 6. Locate Android Project and Build Release APK
       - name: Build Android Release APK
         run: |
-          if [ -d "android" ]; then
-            cd android
-            chmod +x gradlew
-            ./gradlew assembleRelease
-          elif [ -d "frontend/android" ]; then
-            cd frontend/android
+          ANDROID_DIR=$(find . -maxdepth 3 -type d -name "android" | head -n 1)
+          if [ -n "$ANDROID_DIR" ]; then
+            echo "Building APK in $ANDROID_DIR"
+            cd "$ANDROID_DIR"
             chmod +x gradlew
             ./gradlew assembleRelease
           else
-            echo "Android directory not found!" && exit 1
+            echo "ERROR: android folder not found in repository!" && exit 1
           fi
 
-      # 8. Upload Build Artifact (v4)
+      # 7. Upload Release Artifact (v4)
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Release-APK
           path: |
-            android/app/build/outputs/apk/release/*.apk
-            frontend/android/app/build/outputs/apk/release/*.apk
+            **/android/app/build/outputs/apk/release/*.apk
