@@ -18,19 +18,28 @@ jobs:
         with:
           node-version: 18
 
-      # 1. Install dependencies at root
+      # 1. Dynamic Dependency Installation
       - name: Install Dependencies
         run: |
-          if [ ! -f "package.json" ]; then
-            echo "Creating missing package.json..."
+          PACKAGE_PATH=$(find . -maxdepth 3 -name "package.json" | head -n 1)
+          if [ -n "$PACKAGE_PATH" ]; then
+            TARGET_DIR=$(dirname "$PACKAGE_PATH")
+            echo "Installing dependencies in $TARGET_DIR"
+            cd "$TARGET_DIR" && npm install
+          else
+            echo "Creating fallback package.json..."
             npm init -y
-            npm install @capacitor/core @capacitor/cli @capacitor/android
+            npm install
           fi
-          npm install
 
-      # 2. Build Web Assets
+      # 2. Build Frontend Static Assets
       - name: Build Web Assets
-        run: npm run build --if-present
+        run: |
+          PACKAGE_PATH=$(find . -maxdepth 3 -name "package.json" | head -n 1)
+          if [ -n "$PACKAGE_PATH" ]; then
+            TARGET_DIR=$(dirname "$PACKAGE_PATH")
+            cd "$TARGET_DIR" && npm run build --if-present
+          fi
 
       # 3. Setup Java JDK 17
       - name: Setup Java JDK
@@ -39,20 +48,23 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # 4. Build Android Release APK
+      # 4. Locate 'gradlew' dynamically and Build APK
       - name: Build Android Release APK
         run: |
-          if [ -d "android" ]; then
-            cd android
+          GRADLEW_PATH=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            ANDROID_DIR=$(dirname "$GRADLEW_PATH")
+            echo "Found Android wrapper at $ANDROID_DIR"
+            cd "$ANDROID_DIR"
             chmod +x gradlew
             ./gradlew assembleRelease
           else
-            echo "Android directory missing! Please check repository structure." && exit 1
+            echo "ERROR: Could not find 'gradlew' file in any folder!" && exit 1
           fi
 
-      # 5. Upload APK Artifact
+      # 5. Upload Generated APK
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Release-APK
-          path: android/app/build/outputs/apk/release/*.apk
+          path: "**/app/build/outputs/apk/release/*.apk"
