@@ -1,123 +1,77 @@
 // frontend/src/components/BillSettlementView.jsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-export default function BillSettlementView() {
-  const [selectedParty, setSelectedParty] = useState('LED-3');
-  const [receivedAmount, setReceivedAmount] = useState(5000);
-  const [loading, setLoading] = useState(false);
+export default function BillSettlementView({ firm }) {
+  const [debtors, setDebtors] = useState([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [amountReceived, setAmountReceived] = useState('');
 
-  // Demo Unpaid Invoices
-  const [pendingInvoices, setPendingInvoices] = useState([
-    { id: 'INV-1001', date: '2026-08-05', totalAmount: 3000, paidAmount: 0, pending: 3000 },
-    { id: 'INV-1004', date: '2026-08-15', totalAmount: 4500, paidAmount: 500, pending: 4000 },
-  ]);
+  useEffect(() => {
+    loadDebtors();
+  }, []);
 
-  const handleAutoKnockOff = () => {
-    let unallocated = parseFloat(receivedAmount) || 0;
-    const updated = pendingInvoices.map(inv => {
-      if (unallocated <= 0) return { ...inv, settleNow: 0 };
-      const toSettle = Math.min(inv.pending, unallocated);
-      unallocated -= toSettle;
-      return { ...inv, settleNow: toSettle };
-    });
-    setPendingInvoices(updated);
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  const loadDebtors = () => {
     try {
-      // Simulate API call to backend settlement endpoint
-      setTimeout(() => {
-        alert('Payment Settled & Knocked-Off Successfully!');
-        setLoading(false);
-      }, 1000);
-    } catch (err) {
-      alert('Error settling bills');
-      setLoading(false);
+      const savedAccounts = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
+      // Filter Debtors or Liabilities
+      const customerAccounts = savedAccounts.filter(a => a.primary_type === 'ASSET' || a.primary_type === 'LIABILITY');
+      setDebtors(customerAccounts);
+      if (customerAccounts.length > 0) {
+        setSelectedCustomerId(customerAccounts[0].id);
+      }
+    } catch (e) {
+      console.error('Failed loading customer accounts:', e);
     }
   };
 
+  const handleConfirmSettlement = () => {
+    if (!amountReceived || parseFloat(amountReceived) <= 0) {
+      return alert('Valid Amount Received enter karein!');
+    }
+    const customer = debtors.find(d => d.id === selectedCustomerId);
+    alert(`₹${amountReceived} settlement saved successfully for ${customer ? customer.name : 'Customer'}!`);
+    setAmountReceived('');
+  };
+
   return (
-    <div style={styles.cardMain}>
+    <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', maxWidth: '600px', margin: '0 auto' }}>
       <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>💳 Customer Bill Settlement & Knock-Off</h3>
-      
-      <form onSubmit={handleSubmit}>
-        <div style={styles.grid2}>
-          <div>
-            <label style={styles.label}>Select Customer / Debtor *</label>
-            <select value={selectedParty} onChange={(e) => setSelectedParty(e.target.value)} style={styles.input}>
-              <option value="LED-3">Shree Ram Traders</option>
-              <option value="LED-4">Jaipur BioFuels</option>
-            </select>
-          </div>
-          <div>
-            <label style={styles.label}>Amount Received (₹)</label>
-            <input 
-              type="number" 
-              value={receivedAmount} 
-              onChange={(e) => setReceivedAmount(e.target.value)} 
-              style={styles.input} 
-            />
-          </div>
-        </div>
 
-        <button type="button" onClick={handleAutoKnockOff} style={styles.btnAuto}>
-          ⚡ Auto-Allocate FIFO (Oldest Bill First)
-        </button>
+      <div style={{ marginBottom: '14px' }}>
+        <label style={{ display: 'block', fontWeight: 'bold', fontSize: '12px', color: '#334155', marginBottom: '4px' }}>Select Customer / Debtor *</label>
+        <select 
+          value={selectedCustomerId} 
+          onChange={(e) => setSelectedCustomerId(e.target.value)}
+          style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
+        >
+          {debtors.length === 0 ? (
+            <option value="">-- No Accounts Found --</option>
+          ) : (
+            debtors.map(d => (
+              <option key={d.id} value={d.id}>{d.name} ({d.sub_group || 'CUSTOMER'})</option>
+            ))
+          )}
+        </select>
+      </div>
 
-        {/* Invoice List Table */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '16px' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f1f5f9' }}>
-              <th style={styles.th}>Invoice No</th>
-              <th style={styles.th}>Date</th>
-              <th style={{ ...styles.th, textAlign: 'right' }}>Pending (₹)</th>
-              <th style={{ ...styles.th, textAlign: 'right', width: '140px' }}>Settle Amount (₹)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pendingInvoices.map((inv, idx) => (
-              <tr key={idx}>
-                <td style={styles.td}>{inv.id}</td>
-                <td style={styles.td}>{inv.date}</td>
-                <td style={{ ...styles.td, textAlign: 'right', color: '#dc2626', fontWeight: 'bold' }}>
-                  ₹{inv.pending.toFixed(2)}
-                </td>
-                <td style={styles.td}>
-                  <input 
-                    type="number" 
-                    value={inv.settleNow || 0} 
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      const updated = [...pendingInvoices];
-                      updated[idx].settleNow = val;
-                      setPendingInvoices(updated);
-                    }}
-                    style={{ width: '100%', border: '1px solid #cbd5e1', padding: '4px', textAlign: 'right' }} 
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ marginBottom: '14px' }}>
+        <label style={{ display: 'block', fontWeight: 'bold', fontSize: '12px', color: '#334155', marginBottom: '4px' }}>Amount Received (₹)</label>
+        <input 
+          type="number" 
+          placeholder="5000" 
+          value={amountReceived}
+          onChange={(e) => setAmountReceived(e.target.value)}
+          style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
+        />
+      </div>
 
-        <button type="submit" disabled={loading} style={styles.btnSubmit}>
-          {loading ? 'Processing Settlement...' : '💾 Confirm & Save Settlement'}
-        </button>
-      </form>
+      <button 
+        onClick={handleConfirmSettlement}
+        style={{ width: '100%', backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}
+      >
+        💾 Confirm & Save Settlement
+      </button>
     </div>
   );
 }
-
-const styles = {
-  cardMain: { backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', maxWidth: '750px', margin: '0 auto' },
-  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
-  label: { display: 'block', fontWeight: 'bold', fontSize: '12px', color: '#334155', marginBottom: '4px' },
-  input: { width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box' },
-  btnAuto: { marginTop: '12px', padding: '8px 14px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' },
-  th: { border: '1px solid #cbd5e1', padding: '8px', textAlign: 'left', fontSize: '11px' },
-  td: { border: '1px solid #e2e8f0', padding: '6px', fontSize: '12px' },
-  btnSubmit: { width: '100%', color: '#fff', backgroundColor: '#10b981', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', marginTop: '16px', cursor: 'pointer' }
-};
