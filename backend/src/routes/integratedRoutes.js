@@ -1,11 +1,13 @@
+// backend/src/routes/integratedRoutes.js
+
 const express = require('express');
 const router = express.Router();
-const { createPaymentReceipt, generateInvoicePDF } = require('../controllers/integratedAccountingController');
+const integratedController = require('../controllers/integratedAccountingController');
 
-// Module 2 API: Add Receipt
-router.post('/payment-receipt', createPaymentReceipt);
+// Account Statement API
+router.get('/accounting/account-statement', integratedController.getAccountStatement);
 
-// Module 3 API: Stream PDF Invoice directly to browser
-router.get('/sales-invoice/:invoice_id/pdf', generateInvoicePDF);
+// Create Double-Entry Voucher API
+router.post('/accounting/vouchers', integratedController.createDoubleEntryVoucher);
 
 module.exports = router;
