@@ -9,6 +9,13 @@ import SecurityBackupSettings from './components/SecurityBackupSettings.jsx';
 import DataPurgeView from './components/DataPurgeView.jsx';
 import FinancialReportsView from './components/FinancialReportsView.jsx';
 
+// Import Existing Repository Components
+import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
+import InventoryStockView from './components/InventoryStockView.jsx';
+import CreateInvoice from './components/CreateInvoice.jsx';
+import BillSettlementView from './components/BillSettlementView.jsx';
+import CreateFirmForm from './components/CreateFirmForm.jsx';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -23,9 +30,14 @@ export default function App() {
     { id: 'dashboard', label: 'Dashboard & Overview', icon: '📊' },
     { id: 'ledger', label: 'Account Milan & Ledger', icon: '📖' },
     { id: 'journal', label: 'General Journal Register', icon: '📝' },
+    { id: 'create_account', label: 'Create Account Head', icon: '➕' },
+    { id: 'inventory', label: 'Inventory & Stock Master', icon: '📦' },
+    { id: 'billing', label: 'Sales Billing & Invoicing', icon: '🧾' },
     { id: 'vouchers', label: 'Voucher Entry (JV/PV/RV)', icon: '📒' },
+    { id: 'settlement', label: 'Bill Settlement (FIFO)', icon: '💳' },
     { id: 'reports', label: 'Financial Reports (P&L / BS)', icon: '📈' },
     { id: 'backup', label: 'Data Backup & Protection', icon: '🔒' },
+    { id: 'firm_setup', label: 'Firm Profile Settings', icon: '⚙️' },
     { id: 'purge', label: 'Clear Demo Data', icon: '🗑️' }
   ];
 
@@ -88,9 +100,14 @@ export default function App() {
         {activeTab === 'dashboard' && <EnterpriseDashboard firm={activeFirm} onNavigate={(tab) => setActiveTab(tab)} />}
         {activeTab === 'ledger' && <AccountStatementView firm={activeFirm} />}
         {activeTab === 'journal' && <JournalRegisterView firm={activeFirm} />}
+        {activeTab === 'create_account' && <CreateAccountHeadModal onClose={() => setActiveTab('ledger')} />}
+        {activeTab === 'inventory' && <InventoryStockView />}
+        {activeTab === 'billing' && <CreateInvoice firm={activeFirm} />}
         {activeTab === 'vouchers' && <VoucherEntryForm firm={activeFirm} />}
+        {activeTab === 'settlement' && <BillSettlementView firm={activeFirm} />}
         {activeTab === 'reports' && <FinancialReportsView firm={activeFirm} />}
         {activeTab === 'backup' && <SecurityBackupSettings />}
+        {activeTab === 'firm_setup' && <CreateFirmForm onSaved={(f) => setActiveFirm(f)} />}
         {activeTab === 'purge' && <DataPurgeView />}
       </main>
     </div>
