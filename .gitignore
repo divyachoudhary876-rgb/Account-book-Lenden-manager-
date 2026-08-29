@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Environment Variables
+.env
+.env.local
+.env.production
+
+# Build Outputs
+dist/
+build/
+.next/
+
+# Logs & Database
+*.log
+*.sqlite
