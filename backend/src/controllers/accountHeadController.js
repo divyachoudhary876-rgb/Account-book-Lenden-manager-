@@ -1,49 +1,46 @@
 const db = require('../db');
 
-// 1. Fetch All Accounts for Dropdown Selection
-exports.getAccountHeads = async (req, res) => {
-  try {
-    const { organization_id } = req.query;
-    const query = `
-      SELECT id, name, parent_group, sub_group 
-      FROM account_heads 
-      WHERE organization_id = $1 OR is_system_account = TRUE
-      ORDER BY name ASC;
-    `;
-    const { rows } = await db.query(query, [organization_id || '00000000-0000-0000-0000-000000000000']);
-    return res.status(200).json({ success: true, data: rows });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
-  }
-};
-
-// 2. Create New Ledger Head According to Accounting Rules
+// Post API to Create Account Head based on Strict Accounting Rules
 exports.createAccountHead = async (req, res) => {
   try {
-    const { organization_id, name, parent_group, sub_group, opening_balance, opening_balance_type } = req.body;
+    const { organization_id, name, primary_type, sub_group, opening_balance, opening_balance_type } = req.body;
 
-    if (!name || !parent_group || !sub_group) {
-      return res.status(400).json({ success: false, error: "Name, Parent Group, and Sub Group are required." });
+    if (!organization_id || !name || !primary_type || !sub_group) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Missing mandatory fields: organization_id, name, primary_type, sub_group" 
+      });
     }
 
-    const query = `
-      INSERT INTO account_heads (organization_id, name, parent_group, sub_group, opening_balance, opening_balance_type)
+    // Enforce Accounting Group Equivalence
+    const validGroups = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'];
+    if (!validGroups.includes(primary_type.toUpperCase())) {
+      return res.status(422).json({ success: false, error: "Invalid Primary Account Type." });
+    }
+
+    const insertQuery = `
+      INSERT INTO account_heads 
+      (organization_id, name, primary_type, sub_group, opening_balance, opening_balance_type)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *;
     `;
+
     const values = [
       organization_id,
       name.trim(),
-      parent_group,
-      sub_group,
-      parseFloat(opening_balance) || 0,
+      primary_type.toUpperCase(),
+      sub_group.toUpperCase(),
+      parseFloat(opening_balance) || 0.00,
       opening_balance_type || 'Dr'
     ];
 
-    const { rows } = await db.query(query, values);
-    return res.status(201).json({ success: true, data: rows[0] });
+    const result = await db.query(insertQuery, values);
+    return res.status(201).json({ success: true, data: result.rows[0] });
+
   } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ success: false, error: "Isi naam se Account Head pehle se bani hui hai." });
+    }
     return res.status(500).json({ success: false, error: error.message });
   }
 };
-
