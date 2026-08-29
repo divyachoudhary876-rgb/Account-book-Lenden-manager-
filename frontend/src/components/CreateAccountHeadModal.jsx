@@ -8,7 +8,7 @@ export default function CreateAccountHeadModal({ firmId, onAccountCreated }) {
     primary_type: 'ASSET',
     sub_group: 'SUNDRY_DEBTOR',
     opening_balance: 0,
-    opening_balance_type: 'Dr'
+    opening_balance_type: 'Dr' // Auto-set according to accounting rules
   });
 
   const subGroupMapping = {
@@ -16,7 +16,7 @@ export default function CreateAccountHeadModal({ firmId, onAccountCreated }) {
       { code: 'SUNDRY_DEBTOR', label: 'Sundry Debtors (Customers)' },
       { code: 'CASH', label: 'Cash-in-Hand' },
       { code: 'BANK', label: 'Bank Accounts' },
-      { code: 'FIXED_ASSET', label: 'Fixed Assets (Machinery/Land/Plant)' }
+      { code: 'FIXED_ASSET', label: 'Fixed Assets (Machinery/Land)' }
     ],
     LIABILITY: [
       { code: 'SUNDRY_CREDITOR', label: 'Sundry Creditors (Suppliers)' },
@@ -37,12 +37,22 @@ export default function CreateAccountHeadModal({ firmId, onAccountCreated }) {
     ]
   };
 
+  // 1. Automatic Balance Type Determination Rule Engine
+  const getNaturalBalanceType = (type) => {
+    if (type === 'ASSET' || type === 'EXPENSE') return 'Dr';
+    if (type === 'LIABILITY' || type === 'EQUITY' || type === 'INCOME') return 'Cr';
+    return 'Dr';
+  };
+
   const handlePrimaryTypeChange = (e) => {
     const selectedType = e.target.value;
+    const autoBalanceType = getNaturalBalanceType(selectedType);
+
     setFormData({
       ...formData,
       primary_type: selectedType,
-      sub_group: subGroupMapping[selectedType][0].code
+      sub_group: subGroupMapping[selectedType][0].code,
+      opening_balance_type: autoBalanceType // Automatic Dr/Cr Switch
     });
   };
 
@@ -68,11 +78,10 @@ export default function CreateAccountHeadModal({ firmId, onAccountCreated }) {
       if (data.success) {
         saveAccountToLocalStorage(data.data);
       } else {
-        // Fallback to offline store on server error response
         saveAccountToLocalStorage(payload);
       }
     } catch (err) {
-      // API Network Error Fallback: Store locally seamlessly
+      // Offline / Direct Save Fallback
       saveAccountToLocalStorage(payload);
     }
   };
@@ -80,15 +89,27 @@ export default function CreateAccountHeadModal({ firmId, onAccountCreated }) {
   const saveAccountToLocalStorage = (accountObj) => {
     try {
       const existing = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
-      const updated = [...existing, accountObj];
+      
+      // Avoid Duplicate Entries
+      const filtered = existing.filter(a => a.name.toLowerCase() !== accountObj.name.toLowerCase());
+      const updated = [...filtered, accountObj];
+      
       localStorage.setItem('app_account_heads', JSON.stringify(updated));
       
       alert(`Account Head "${accountObj.name}" created successfully!`);
-      setFormData({ name: '', primary_type: 'ASSET', sub_group: 'SUNDRY_DEBTOR', opening_balance: 0, opening_balance_type: 'Dr' });
       
+      // Reset Form State
+      setFormData({ 
+        name: '', 
+        primary_type: 'ASSET', 
+        sub_group: 'SUNDRY_DEBTOR', 
+        opening_balance: 0, 
+        opening_balance_type: 'Dr' 
+      });
+
       if (onAccountCreated) onAccountCreated(accountObj);
     } catch (e) {
-      alert('Local storage write error.');
+      alert('Error updating local storage database.');
     }
   };
 
@@ -147,11 +168,11 @@ export default function CreateAccountHeadModal({ firmId, onAccountCreated }) {
           </div>
 
           <div>
-            <label style={styles.label}>Balance Type</label>
+            <label style={styles.label}>Balance Type (Auto-Selected)</label>
             <select 
               value={formData.opening_balance_type} 
               onChange={(e) => setFormData({ ...formData, opening_balance_type: e.target.value })}
-              style={styles.input}
+              style={{ ...styles.input, backgroundColor: '#f1f5f9', fontWeight: 'bold' }}
             >
               <option value="Dr">Debit (Dr)</option>
               <option value="Cr">Credit (Cr)</option>
