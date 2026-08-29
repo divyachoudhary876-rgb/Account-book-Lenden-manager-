@@ -25,39 +25,42 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Install Dependencies
+      - name: Install Frontend Dependencies
         run: |
           cd frontend
           npm install
-          npm install @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Build Web Application
         run: |
           cd frontend
           npm run build
 
-      - name: Clean Incomplete Android Folder if Broken
+      - name: Initialize Capacitor Config if Missing
         run: |
           cd frontend
-          if [ ! -f "android/gradlew" ]; then
-            rm -rf android
+          if [ ! -f "capacitor.config.json" ]; then
+            npx cap init "BusinessBook" "com.neelkanth.accountbook" --web-dir "dist"
           fi
 
-      - name: Initialize Capacitor Android Platform
+      - name: Ensure Android Platform Exists
         run: |
           cd frontend
           if [ ! -d "android" ]; then
             npx cap add android
           fi
+
+      - name: Capacitor Sync
+        run: |
+          cd frontend
           npx cap sync android
 
-      - name: Grant Gradle Permissions & Build Debug APK
+      - name: Grant Gradle Permissions and Build Debug APK
         run: |
           cd frontend/android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload Installable APK
+      - name: Upload Installable Update APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Installable
