@@ -5,7 +5,7 @@ import { calculateFinancialReports } from '../utils/financialReportEngine';
 import { downloadElementAsPDF } from '../utils/pdfDownloadEngine';
 
 export default function FinancialReportsView({ firm }) {
-  const [activeTab, setActiveTab] = useState('PNL'); // PNL or BS
+  const [activeTab, setActiveTab] = useState('PNL');
   const [reportData, setReportData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -30,12 +30,12 @@ export default function FinancialReportsView({ firm }) {
     setIsExporting(false);
   };
 
-  if (!reportData) return <div>Loading reports...</div>;
+  if (!reportData) return <div style={{ padding: '20px', textAlign: 'center' }}>⏳ Loading Financial Reports...</div>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       
-      {/* Selector & Actions */}
+      {/* Selector Controls */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button 
@@ -61,9 +61,8 @@ export default function FinancialReportsView({ firm }) {
         </button>
       </div>
 
-      {/* Printable Report Sheet */}
+      {/* Printable Financial Statement */}
       <div id="printable-financial-report" style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        
         <div style={{ borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '14px', textAlign: 'center' }}>
           <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>{firm?.legal_name || 'My Business Firm'}</div>
           <div style={{ fontSize: '11px', color: '#475569' }}>GSTIN: {firm?.gstin || 'Unregistered'}</div>
@@ -78,7 +77,7 @@ export default function FinancialReportsView({ firm }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
                 <h4 style={{ color: '#16a34a', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Income (Revenue)</h4>
-                {reportData.pnl.incomeHeads.map(item => (
+                {reportData.pnl.incomeHeads.length === 0 ? <p style={emptyStyle}>No Income Entries</p> : reportData.pnl.incomeHeads.map(item => (
                   <div key={item.id} style={rowStyle}><span>{item.name}</span><span>₹{item.balance.toFixed(2)}</span></div>
                 ))}
                 <div style={totalRowStyle}><span>Total Income</span><span>₹{reportData.pnl.totalIncome.toFixed(2)}</span></div>
@@ -86,7 +85,7 @@ export default function FinancialReportsView({ firm }) {
 
               <div>
                 <h4 style={{ color: '#dc2626', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Expenses</h4>
-                {reportData.pnl.expenseHeads.map(item => (
+                {reportData.pnl.expenseHeads.length === 0 ? <p style={emptyStyle}>No Expense Entries</p> : reportData.pnl.expenseHeads.map(item => (
                   <div key={item.id} style={rowStyle}><span>{item.name}</span><span>₹{item.balance.toFixed(2)}</span></div>
                 ))}
                 <div style={totalRowStyle}><span>Total Expenses</span><span>₹{reportData.pnl.totalExpenses.toFixed(2)}</span></div>
@@ -104,7 +103,7 @@ export default function FinancialReportsView({ firm }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
                 <h4 style={{ color: '#2563eb', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Assets</h4>
-                {reportData.balanceSheet.assetHeads.map(item => (
+                {reportData.balanceSheet.assetHeads.length === 0 ? <p style={emptyStyle}>No Asset Heads</p> : reportData.balanceSheet.assetHeads.map(item => (
                   <div key={item.id} style={rowStyle}><span>{item.name}</span><span>₹{item.balance.toFixed(2)}</span></div>
                 ))}
                 <div style={totalRowStyle}><span>Total Assets</span><span>₹{reportData.balanceSheet.totalAssets.toFixed(2)}</span></div>
@@ -140,5 +139,6 @@ export default function FinancialReportsView({ firm }) {
   );
 }
 
+const emptyStyle = { fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' };
 const rowStyle = { display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px dashed #e2e8f0', fontSize: '11px' };
 const totalRowStyle = { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #0f172a', fontWeight: 'bold', fontSize: '12px', marginTop: '10px' };
