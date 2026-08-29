@@ -6,17 +6,12 @@ export const calculateAccountStatement = (accountId, fromDate, toDate) => {
 
   const account = accounts.find(a => a.id === accountId);
   if (!account) {
-    return { 
-      account: null, 
-      statementLines: [], 
-      summary: { openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0, closingBalanceType: 'Dr' } 
-    };
+    return { account: null, statementLines: [], summary: { openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0, closingBalanceType: 'Dr' } };
   }
 
   let runningBalance = parseFloat(account.opening_balance || 0);
   const isDebitNormal = ['ASSET', 'EXPENSE'].includes(account.primary_type);
 
-  // Filter journal lines for selected party within date range
   const filteredLines = journalLines
     .filter(entry => entry.account_id === accountId && entry.date >= fromDate && entry.date <= toDate)
     .sort((a, b) => new Date(a.date) - new Date(b.date));
