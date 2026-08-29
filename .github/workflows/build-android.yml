@@ -46,7 +46,7 @@ jobs:
       - name: Add Android Platform if Missing
         run: |
           cd frontend
-          if [ ! -d "android" ]; then
+          if [ ! -d "android" ] && [ ! -d "../android" ]; then
             npx cap add android
           fi
 
@@ -55,18 +55,28 @@ jobs:
           cd frontend
           npx cap sync android
 
-      - name: Grant Gradle Permissions
+      - name: Locate and Grant Gradle Permissions
         run: |
-          cd frontend/android
+          if [ -d "frontend/android" ]; then
+            cd frontend/android
+          elif [ -d "android" ]; then
+            cd android
+          fi
           chmod +x gradlew
 
       - name: Build Consistent Signed Android APK
         run: |
-          cd frontend/android
+          if [ -d "frontend/android" ]; then
+            cd frontend/android
+          elif [ -d "android" ]; then
+            cd android
+          fi
           ./gradlew assembleDebug
 
       - name: Upload Installable Update APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Installable
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            frontend/android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
