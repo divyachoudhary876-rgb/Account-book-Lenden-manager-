@@ -1,110 +1,194 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import CreateAccountHeadModal from './CreateAccountHeadModal';
 
-export default function VoucherEntryForm() {
+export default function VoucherEntryForm({ organizationId = "ORG-101" }) {
   const [voucherType, setVoucherType] = useState('JOURNAL');
-  const [voucherDate, setVoucherDate] = useState(new Date().toISOString().split('T')[0]);
-  const [financialYear, setFinancialYear] = useState('2026-27');
+  const [entryDate, setEntryDate] = useState('2026-08-29');
   const [narration, setNarration] = useState('');
-  const [rows, setRows] = useState([
-    { entry_type: 'DR', account_id: '', amount: '', particulars: '' },
-    { entry_type: 'CR', account_id: '', amount: '', particulars: '' }
+  
+  const [accounts, setAccounts] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeLineIdx, setActiveLineIdx] = useState(null);
+
+  const [lines, setLines] = useState([
+    { type: 'Dr', account_id: '', debit: 0, credit: 0 },
+    { type: 'Cr', account_id: '', debit: 0, credit: 0 }
   ]);
 
-  const updateRow = (idx, field, val) => {
-    const copy = [...rows];
-    copy[idx][field] = val;
-    setRows(copy);
-  };
+  // Load Ledger Accounts Dropdown Data
+  useEffect(() => {
+    fetchAccounts();
+  }, []);
 
-  const addRow = () => setRows([...rows, { entry_type: 'DR', account_id: '', amount: '', particulars: '' }]);
-  const removeRow = (idx) => setRows(rows.filter((_, i) => i !== idx));
-
-  const totalDr = rows.filter(r => r.entry_type === 'DR').reduce((acc, r) => acc + Number(r.amount || 0), 0);
-  const totalCr = rows.filter(r => r.entry_type === 'CR').reduce((acc, r) => acc + Number(r.amount || 0), 0);
-  const isBalanced = totalDr > 0 && Math.abs(totalDr - totalCr) < 0.01;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!isBalanced) return alert('Cannot Submit: Total Debit must equal Total Credit');
-
-    const payload = {
-      voucher_type: voucherType,
-      voucher_date: voucherDate,
-      financial_year: financialYear,
-      narration,
-      line_items: rows
-    };
-
+  const fetchAccounts = async () => {
     try {
-      const res = await fetch('/api/vouchers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(payload)
-      });
+      const res = await fetch(`/api/v1/account-heads?organization_id=${organizationId}`);
       const data = await res.json();
       if (data.success) {
-        alert(`Voucher Posted Successfully: ${data.voucher_number}`);
-        setNarration('');
-        setRows([
-          { entry_type: 'DR', account_id: '', amount: '', particulars: '' },
-          { entry_type: 'CR', account_id: '', amount: '', particulars: '' }
-        ]);
-      } else {
-        alert(`Error: ${data.message}`);
+        setAccounts(data.data);
       }
     } catch (err) {
-      alert(`Network Error: ${err.message}`);
+      console.error('Failed to load ledger dropdowns:', err);
     }
   };
 
+  const handleLineChange = (index, field, value) => {
+    const updated = [...lines];
+    updated[index][field] = value;
+
+    if (field === 'debit') updated[index].credit = 0;
+    if (field === 'credit') updated[index].debit = 0;
+
+    setLines(updated);
+  };
+
+  const handleAddLine = () => {
+    setLines([...lines, { type: 'Dr', account_id: '', debit: 0, credit: 0 }]);
+  };
+
+  const totalDebit = lines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
+  const totalCredit = lines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
+  const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
+
   return (
-    <div style={{ maxWidth: '900px', margin: '20px auto', padding: '24px', border: '1px solid #ccc', borderRadius: '8px' }}>
-      <h2>Standard Accounting Voucher Entry</h2>
-      <form onSubmit={handleSubmit}>
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
-          <select value={voucherType} onChange={e => setVoucherType(e.target.value)} style={{ padding: '8px', flex: 1 }}>
-            <option value="JOURNAL">Journal Voucher (JV)</option>
-            <option value="PAYMENT">Payment Voucher (PAY)</option>
-            <option value="RECEIPT">Receipt Voucher (REC)</option>
-            <option value="CONTRA">Contra Voucher (Bank/Cash)</option>
-          </select>
-          <input type="date" value={voucherDate} onChange={e => setVoucherDate(e.target.value)} style={{ padding: '8px', flex: 1 }} />
-          <input type="text" value={financialYear} onChange={e => setFinancialYear(e.target.value)} placeholder="FY (2026-27)" style={{ padding: '8px', flex: 1 }} />
-        </div>
+    <div style={styles.cardMain}>
+      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>Standard Accounting Voucher Entry</h3>
 
-        <h4>Voucher Line Items</h4>
-        {rows.map((row, idx) => (
-          <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-            <select value={row.entry_type} onChange={e => updateRow(idx, 'entry_type', e.target.value)} style={{ padding: '8px' }}>
-              <option value="DR">By (Dr)</option>
-              <option value="CR">To (Cr)</option>
-            </select>
-            <input type="text" placeholder="Account UUID / Name" value={row.account_id} onChange={e => updateRow(idx, 'account_id', e.target.value)} required style={{ flex: 2, padding: '8px' }} />
-            <input type="number" placeholder="Amount (₹)" value={row.amount} onChange={e => updateRow(idx, 'amount', e.target.value)} required style={{ flex: 1, padding: '8px' }} />
-            {rows.length > 2 && (
-              <button type="button" onClick={() => removeRow(idx)} style={{ background: 'red', color: 'white', border: 'none', padding: '8px' }}>X</button>
-            )}
-          </div>
-        ))}
+      {/* Header Info */}
+      <div style={styles.grid2}>
+        <select value={voucherType} onChange={(e) => setVoucherType(e.target.value)} style={styles.input}>
+          <option value="JOURNAL">Journal Voucher (JV)</option>
+          <option value="RECEIPT">Receipt Voucher (RV)</option>
+          <option value="PAYMENT">Payment Voucher (PV)</option>
+          <option value="CONTRA">Contra Voucher (CV)</option>
+        </select>
+        <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={styles.input} />
+      </div>
 
-        <button type="button" onClick={addRow} style={{ marginBottom: '16px', padding: '6px 12px' }}>+ Add Row</button>
+      <h4 style={{ margin: '16px 0 8px 0', color: '#334155' }}>Voucher Line Items</h4>
 
-        <textarea placeholder="Voucher Narration / Description" value={narration} onChange={e => setNarration(e.target.value)} required style={{ width: '100%', height: '60px', padding: '8px', marginBottom: '16px' }} />
+      {/* Dynamic Lines Table */}
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ backgroundColor: '#f1f5f9' }}>
+            <th style={{ ...styles.th, width: '90px' }}>Type</th>
+            <th style={styles.th}>Particular Account (Dropdown)</th>
+            <th style={{ ...styles.th, width: '130px', textAlign: 'right' }}>Amount (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, idx) => (
+            <tr key={idx}>
+              <td style={styles.td}>
+                <select 
+                  value={line.type} 
+                  onChange={(e) => {
+                    const newType = e.target.value;
+                    const updated = [...lines];
+                    updated[idx].type = newType;
+                    setLines(updated);
+                  }}
+                  style={styles.tableInput}
+                >
+                  <option value="Dr">By (Dr)</option>
+                  <option value="Cr">To (Cr)</option>
+                </select>
+              </td>
 
-        <div style={{ background: isBalanced ? '#e6ffe6' : '#ffe6e6', padding: '12px', marginBottom: '16px', borderRadius: '4px' }}>
-          <strong>Total DR: ₹{totalDr} | Total CR: ₹{totalCr}</strong>
-          <span style={{ marginLeft: '16px', color: isBalanced ? 'green' : 'red', fontWeight: 'bold' }}>
-            {isBalanced ? '✓ Balanced Entry' : '✗ Unbalanced (Debits must equal Credits)'}
-          </span>
-        </div>
+              {/* DYNAMIC ACCOUNT HEAD DROPDOWN */}
+              <td style={{ ...styles.td, display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <select
+                  value={line.account_id}
+                  onChange={(e) => handleLineChange(idx, 'account_id', e.target.value)}
+                  style={{ ...styles.tableInput, flex: 1 }}
+                  required
+                >
+                  <option value="">-- Select Ledger Account --</option>
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} ({acc.parent_group})
+                    </option>
+                  ))}
+                </select>
+                <button 
+                  type="button" 
+                  title="Create New Account"
+                  onClick={() => { setActiveLineIdx(idx); setIsModalOpen(true); }}
+                  style={styles.btnAddAccount}
+                >
+                  +
+                </button>
+              </td>
 
-        <button type="submit" disabled={!isBalanced} style={{ background: isBalanced ? '#28a745' : '#ccc', color: 'white', border: 'none', padding: '12px 24px', cursor: isBalanced ? 'pointer' : 'not-allowed' }}>
-          Post Voucher
-        </button>
-      </form>
+              <td style={styles.td}>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  value={line.type === 'Dr' ? line.debit : line.credit}
+                  onChange={(e) => handleLineChange(idx, line.type === 'Dr' ? 'debit' : 'credit', e.target.value)}
+                  style={{ ...styles.tableInput, textAlign: 'right' }} 
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <button type="button" onClick={handleAddLine} style={styles.btnAddRow}>+ Add Row</button>
+
+      {/* Narration */}
+      <div style={{ marginTop: '16px' }}>
+        <textarea 
+          placeholder="Voucher Narration / Description" 
+          value={narration} 
+          onChange={(e) => setNarration(e.target.value)} 
+          style={{ ...styles.input, height: '60px' }} 
+        />
+      </div>
+
+      {/* Math Equilibrium Guard Indicator */}
+      <div style={{
+        marginTop: '16px',
+        padding: '12px',
+        borderRadius: '8px',
+        backgroundColor: isBalanced ? '#ecfdf5' : '#fef2f2',
+        border: `1px solid ${isBalanced ? '#10b981' : '#f87171'}`,
+        color: isBalanced ? '#065f46' : '#991b1b',
+        fontWeight: 'bold',
+        fontSize: '13px'
+      }}>
+        Total DR: ₹{totalDebit.toFixed(2)} | Total CR: ₹{totalCredit.toFixed(2)} {isBalanced ? '✓' : '✗'}
+        {!isBalanced && <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '4px' }}>Unbalanced (Debits must equal Credits)</div>}
+      </div>
+
+      <button type="button" disabled={!isBalanced} style={{ ...styles.btnSubmit, backgroundColor: isBalanced ? '#2563eb' : '#cbd5e1', cursor: isBalanced ? 'pointer' : 'not-allowed' }}>
+        Post Voucher
+      </button>
+
+      {/* Account Head Creation Modal */}
+      <CreateAccountHeadModal 
+        organizationId={organizationId}
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)}
+        onAccountCreated={(newAccount) => {
+          setAccounts(prev => [...prev, newAccount]);
+          if (activeLineIdx !== null) {
+            handleLineChange(activeLineIdx, 'account_id', newAccount.id);
+          }
+        }}
+      />
     </div>
   );
 }
+
+const styles = {
+  cardMain: { backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', maxWidth: '700px', margin: '0 auto' },
+  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
+  input: { width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box' },
+  th: { border: '1px solid #cbd5e1', padding: '8px', textAlign: 'left', fontSize: '11px' },
+  td: { border: '1px solid #e2e8f0', padding: '6px' },
+  tableInput: { width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: '13px' },
+  btnAddAccount: { padding: '4px 8px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' },
+  btnAddRow: { marginTop: '10px', padding: '6px 12px', backgroundColor: '#f1f5f9', color: '#0f172a', border: '1px solid #cbd5e1', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' },
+  btnSubmit: { width: '100%', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', marginTop: '16px' }
+};
