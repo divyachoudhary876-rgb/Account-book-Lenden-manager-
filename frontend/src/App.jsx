@@ -4,10 +4,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [receiptAmount, setReceiptAmount] = useState(20000);
   
+  // State for Bill-by-Bill Settlement
   const [pendingBills, setPendingBills] = useState([
     { id: 'INV-2026-001', party: 'Shree Ram Bricks', total: 50000, pending: 20000, allocated: 20000 },
     { id: 'INV-2026-002', party: 'Jaipur BioFuels', total: 35000, pending: 15000, allocated: 0 },
   ]);
+
+  // State for Voucher Entry Form
+  const [voucher, setVoucher] = useState({ type: 'RECEIPT', party: '', amount: '', narration: '' });
 
   const totalAllocated = pendingBills.reduce((sum, item) => sum + (parseFloat(item.allocated) || 0), 0);
 
@@ -18,7 +22,7 @@ export default function App() {
 
   return (
     <div style={styles.appContainer}>
-      {/* App Header */}
+      {/* Brand Header */}
       <header style={styles.header}>
         <div>
           <h2 style={styles.brand}>Neelkanth Groups ERP</h2>
@@ -27,7 +31,7 @@ export default function App() {
         <div style={styles.liveTag}>System Online</div>
       </header>
 
-      {/* Navigation */}
+      {/* Navigation Bar */}
       <div style={styles.tabBar}>
         <button 
           onClick={() => setActiveTab('dashboard')} 
@@ -39,11 +43,23 @@ export default function App() {
           onClick={() => setActiveTab('settlement')} 
           style={activeTab === 'settlement' ? styles.activeTabBtn : styles.tabBtn}
         >
-          💳 Bill Settlement
+          💳 Settlement
+        </button>
+        <button 
+          onClick={() => setActiveTab('voucher')} 
+          style={activeTab === 'voucher' ? styles.activeTabBtn : styles.tabBtn}
+        >
+          📝 Voucher
+        </button>
+        <button 
+          onClick={() => setActiveTab('reports')} 
+          style={activeTab === 'reports' ? styles.activeTabBtn : styles.tabBtn}
+        >
+          📈 Reports
         </button>
       </div>
 
-      {/* View 1: Accounting Dashboard */}
+      {/* View 1: Dashboard */}
       {activeTab === 'dashboard' && (
         <div style={styles.contentArea}>
           <div style={styles.cardMain}>
@@ -64,14 +80,19 @@ export default function App() {
 
           <div style={styles.cardMain}>
             <h3 style={{ margin: '0 0 12px 0' }}>Quick Accounting Tasks</h3>
-            <button onClick={() => setActiveTab('settlement')} style={styles.btnPrimary}>
-              + Record Payment Receipt
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => setActiveTab('settlement')} style={styles.btnPrimary}>
+                + Record Settlement
+              </button>
+              <button onClick={() => setActiveTab('voucher')} style={styles.btnSecondary}>
+                + Voucher Entry
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* View 2: Bill-by-Bill Settlement */}
+      {/* View 2: Bill Settlement */}
       {activeTab === 'settlement' && (
         <div style={styles.contentArea}>
           <div style={styles.cardMain}>
@@ -120,6 +141,73 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* View 3: Voucher Entry */}
+      {activeTab === 'voucher' && (
+        <div style={styles.contentArea}>
+          <div style={styles.cardMain}>
+            <h3 style={{ margin: '0 0 12px 0' }}>New Journal / Payment Voucher</h3>
+            
+            <label style={styles.label}>Voucher Type</label>
+            <select 
+              value={voucher.type} 
+              onChange={(e) => setVoucher({ ...voucher, type: e.target.value })}
+              style={styles.input}
+            >
+              <option value="RECEIPT">Receipt Voucher</option>
+              <option value="PAYMENT">Payment Voucher</option>
+              <option value="SALES">Sales Invoice</option>
+              <option value="JOURNAL">Journal Entry</option>
+            </select>
+
+            <label style={{ ...styles.label, marginTop: '12px' }}>Party / Account Head</label>
+            <input 
+              type="text" 
+              placeholder="e.g. Shree Ram Bricks"
+              value={voucher.party}
+              onChange={(e) => setVoucher({ ...voucher, party: e.target.value })}
+              style={styles.input}
+            />
+
+            <label style={{ ...styles.label, marginTop: '12px' }}>Amount (₹)</label>
+            <input 
+              type="number" 
+              placeholder="0.00"
+              value={voucher.amount}
+              onChange={(e) => setVoucher({ ...voucher, amount: e.target.value })}
+              style={styles.input}
+            />
+
+            <button 
+              onClick={() => { alert('Voucher Created Successfully!'); setVoucher({ type: 'RECEIPT', party: '', amount: '', narration: '' }); }}
+              style={styles.btnSuccess}
+            >
+              Save Voucher
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* View 4: Financial Reports & Compliance */}
+      {activeTab === 'reports' && (
+        <div style={styles.contentArea}>
+          <div style={styles.cardMain}>
+            <h3 style={{ margin: '0 0 12px 0' }}>GST & Financial Statements</h3>
+            <div style={styles.reportRow}>
+              <span>GSTR-1 Sales Report</span>
+              <button style={styles.btnSmall} onClick={() => alert('Generating GSTR-1 JSON...')}>Export</button>
+            </div>
+            <div style={styles.reportRow}>
+              <span>Profit & Loss Statement</span>
+              <button style={styles.btnSmall} onClick={() => alert('Opening P&L Statement...')}>View</button>
+            </div>
+            <div style={styles.reportRow}>
+              <span>Balance Sheet (Double-Entry)</span>
+              <button style={styles.btnSmall} onClick={() => alert('Opening Balance Sheet...')}>View</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -130,22 +218,25 @@ const styles = {
   brand: { margin: 0, fontSize: '18px' },
   subBrand: { fontSize: '12px', color: '#94a3b8' },
   liveTag: { backgroundColor: '#10b981', color: '#fff', fontSize: '10px', padding: '4px 8px', borderRadius: '10px', fontWeight: 'bold' },
-  tabBar: { display: 'flex', gap: '8px', marginBottom: '16px' },
-  tabBtn: { flex: 1, padding: '12px', border: 'none', backgroundColor: '#e2e8f0', color: '#334155', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
-  activeTabBtn: { flex: 1, padding: '12px', border: 'none', backgroundColor: '#2563eb', color: '#fff', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
+  tabBar: { display: 'flex', gap: '4px', marginBottom: '16px', overflowX: 'auto' },
+  tabBtn: { flex: 1, padding: '10px 8px', border: 'none', backgroundColor: '#e2e8f0', color: '#334155', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' },
+  activeTabBtn: { flex: 1, padding: '10px 8px', border: 'none', backgroundColor: '#2563eb', color: '#fff', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' },
   contentArea: { display: 'flex', flexDirection: 'column', gap: '16px' },
   cardMain: { backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
   cardTitle: { color: '#64748b', fontSize: '11px', fontWeight: 'bold' },
   amountText: { margin: '8px 0 0 0', color: '#0f172a', fontSize: '26px' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   cardMini: { backgroundColor: '#fff', padding: '12px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
-  btnPrimary: { width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
+  btnPrimary: { flex: 1, backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
+  btnSecondary: { flex: 1, backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
   btnSuccess: { width: '100%', backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '12px' },
   btnDisabled: { width: '100%', backgroundColor: '#cbd5e1', color: '#64748b', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', marginTop: '12px' },
+  btnSmall: { backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' },
   label: { display: 'block', fontWeight: 'bold', fontSize: '14px', marginBottom: '6px' },
   input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '16px', boxSizing: 'border-box' },
   inputSmall: { width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '6px', boxSizing: 'border-box' },
   billBox: { borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', marginBottom: '12px' },
   billFlex: { display: 'flex', justifyContent: 'space-between', fontSize: '14px' },
-  summaryRow: { display: 'flex', justifyContent: 'space-between', marginTop: '12px', borderTop: '2px solid #f1f5f9', paddingTop: '8px' }
+  summaryRow: { display: 'flex', justifyContent: 'space-between', marginTop: '12px', borderTop: '2px solid #f1f5f9', paddingTop: '8px' },
+  reportRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }
 };
