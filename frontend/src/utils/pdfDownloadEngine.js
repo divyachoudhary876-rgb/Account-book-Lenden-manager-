@@ -5,12 +5,14 @@ import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 import html2pdf from 'html2pdf.js';
 
-export const downloadElementAsPDF = async (elementId, fileName) => {
+export const downloadElementAsPDF = async (elementId, partyName) => {
   const element = document.getElementById(elementId);
   if (!element) {
-    alert('PDF Generation Error: Element not found!');
+    alert('PDF Engine Error: Target DOM element missing.');
     return;
   }
+
+  const fileName = `${partyName.replace(/\s+/g, '_')}_Ledger_Statement.pdf`;
 
   const options = {
     margin: [8, 8, 8, 8],
@@ -21,35 +23,33 @@ export const downloadElementAsPDF = async (elementId, fileName) => {
   };
 
   try {
-    // Check if running inside Native Mobile App (Android/iOS)
+    // 1. Android/iOS Mobile App Native Storage Logic
     if (Capacitor.isNativePlatform()) {
-      // 1. Generate PDF as Base64 String
       const pdfBase64 = await html2pdf().set(options).from(element).outputPdf('datauristring');
       const base64CleanData = pdfBase64.split(',')[1];
 
-      // 2. Save directly to Android Device Documents Directory
+      // File Write to Mobile Device Storage
       const savedFile = await Filesystem.writeFile({
         path: fileName,
         data: base64CleanData,
-        directory: Directory.Documents,
-        recursive: true
+        directory: Directory.Cache
       });
 
-      // 3. Trigger Native Mobile Share & Save Popup
+      // Trigger Android System Share Popup
       await Share.share({
-        title: 'Save or Share PDF',
-        text: `PDF Document: ${fileName}`,
+        title: `${partyName} - Ledger Statement`,
+        text: `Kripya ${partyName} ka Complete Account Milan PDF Document attach dekhein.`,
         url: savedFile.uri,
-        dialogTitle: 'PDF Downloaded Successfully'
+        dialogTitle: 'Save or Share PDF (WhatsApp / Email)'
       });
 
     } else {
-      // Direct Web / PC Browser Download Fallback
+      // 2. PC / Laptop Web Browser Fallback
       await html2pdf().set(options).from(element).save();
     }
   } catch (error) {
-    console.error('Mobile PDF Download Engine Failed:', error);
-    // Emergency Fallback
+    console.error('PDF Native Engine Execution Failed:', error);
+    // Safety Fallback for PC
     window.print();
   }
 };
