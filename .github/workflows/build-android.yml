@@ -53,13 +53,13 @@ jobs:
           cd frontend/android
           chmod +x gradlew
 
-      - name: Build Android Release APK
+      - name: Build Consistent Signed Android APK
         run: |
           cd frontend/android
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
 
-      - name: Upload Signed Release APK
+      - name: Upload Installable Update APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Installable
-          path: frontend/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
