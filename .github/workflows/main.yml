@@ -9,8 +9,11 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
 
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs='-Xmx2048m -XX:MaxMetaspaceSize=512m'"
+
     steps:
-      # 1. Checkout repository code
+      # 1. Checkout Repository Code
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -20,56 +23,59 @@ jobs:
         with:
           node-version: 18
 
-      # 3. Setup Java JDK 17 for Android Build
+      # 3. Setup Java JDK 17
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 4. Initialize package.json & Dependencies
-      - name: Install Dependencies
+      # 4. Clear Gradle Cache to Prevent Jar Corruption
+      - name: Clean Gradle Caches
+        run: |
+          rm -rf ~/.gradle/caches/
+          rm -rf ~/.gradle/wrapper/
+
+      # 5. Install Dependencies and Capacitor
+      - name: Install Node Dependencies
         run: |
           if [ ! -f "package.json" ]; then
-            echo "Initializing root package.json..."
             npm init -y
           fi
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
 
-      # 5. Build Web Assets & Create dist Folder
+      # 6. Build Web Assets & Ensure Dist Directory
       - name: Build Web Assets
         run: |
           npm run build --if-present
           if [ ! -d "dist" ]; then
-            echo "Creating dist folder fallback..."
             mkdir -p dist
             echo '<!DOCTYPE html><html><head><title>Business Book</title></head><body><div id="root">App Active</div></body></html>' > dist/index.html
           fi
 
-      # 6. Self-Healing Android Native Setup
+      # 7. Initialize Capacitor Native Project
       - name: Ensure Android Native Project Exists
         run: |
           if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
-            echo "Initializing missing Android native project..."
             rm -rf android
             npx cap init "BusinessBook" "com.neelkanth.businessbook" --web-dir "dist" || true
             npx cap add android
           fi
           npx cap sync android
 
-      # 7. Grant Executable Permissions to Gradle
+      # 8. Grant Gradle Permissions
       - name: Grant Gradle Execution Permission
         run: |
           cd android
           chmod +x gradlew
 
-      # 8. Compile Android Release APK
+      # 9. Build Release APK (No Daemon, Single-Threaded Safe Execution)
       - name: Build Android Release APK
         run: |
           cd android
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # 9. Upload Compiled APK Artifact (v4)
+      # 10. Upload APK Artifact (v4)
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
