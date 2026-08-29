@@ -44,10 +44,10 @@ export default function VoucherEntryForm() {
         date: entryDate
       });
 
-      alert('✓ Voucher Posting Successful! Account Milan, Ledger, aur Dashboard par figures update ho gaye hain.');
+      alert('✓ Voucher Entry Successfully Posted! Account Milan, Ledger, aur Dashboard updates ready hain.');
       setAmount('');
       setNarration('');
-      loadAccounts();
+      loadAccounts(); // Dropdown balances update
     } catch (err) {
       alert(`❌ Posting Error: ${err.message}`);
     } finally {
