@@ -1,6 +1,6 @@
 // frontend/src/components/AccountStatementView.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { calculateAccountStatement } from '../utils/statementEngine';
 import { downloadElementAsPDF } from '../utils/pdfDownloadEngine';
 
@@ -12,31 +12,33 @@ export default function AccountStatementView({ firm }) {
   const [statementData, setStatementData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  const refreshData = () => {
+  // Re-fetch fresh state from LocalStorage on mount or event trigger
+  const syncAccountData = useCallback(() => {
     const saved = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
     setAccounts(saved);
     if (saved.length > 0 && !selectedAccountId) {
       setSelectedAccountId(saved[0].id);
     }
-  };
+  }, [selectedAccountId]);
 
+  // Mount/Unmount Reactive Event Subscriptions
   useEffect(() => {
-    refreshData();
+    syncAccountData();
 
-    // Listen to live voucher entry broadcasts
-    const handleLivePosting = () => {
-      refreshData();
+    const handlePostingUpdate = () => {
+      syncAccountData();
     };
 
-    window.addEventListener('ACCOUNT_BOOK_VOUCHER_POSTED', handleLivePosting);
-    window.addEventListener('storage', handleLivePosting);
+    window.addEventListener('ACCOUNT_BOOK_VOUCHER_POSTED', handlePostingUpdate);
+    window.addEventListener('storage', handlePostingUpdate);
 
     return () => {
-      window.removeEventListener('ACCOUNT_BOOK_VOUCHER_POSTED', handleLivePosting);
-      window.removeEventListener('storage', handleLivePosting);
+      window.removeEventListener('ACCOUNT_BOOK_VOUCHER_POSTED', handlePostingUpdate);
+      window.removeEventListener('storage', handlePostingUpdate);
     };
-  }, []);
+  }, [syncAccountData]);
 
+  // Recalculate Statement on Account or Date Range selection change
   useEffect(() => {
     if (selectedAccountId) {
       const result = calculateAccountStatement(selectedAccountId, fromDate, toDate);
@@ -54,7 +56,7 @@ export default function AccountStatementView({ firm }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       
-      {/* Search & Filter Bar */}
+      {/* Search & Filter Header */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
         <h3 style={{ margin: '0 0 12px 0', color: '#0f172a' }}>📖 Account Milan & General Ledger Statement</h3>
         
@@ -86,7 +88,7 @@ export default function AccountStatementView({ firm }) {
         </button>
       </div>
 
-      {/* Real-time Ledger Sheet */}
+      {/* Dynamic Ledger Sheet */}
       <div id="printable-statement-sheet" style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         <div style={{ borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '14px', textAlign: 'center' }}>
           <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>{firm?.legal_name || 'My Business Firm'}</div>
