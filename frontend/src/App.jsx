@@ -1,3 +1,5 @@
+// frontend/src/App.jsx
+
 import React, { useState } from 'react';
 
 // Import All Application Components
@@ -9,15 +11,15 @@ import BillSettlementView from './components/BillSettlementView';
 import FinancialReportsView from './components/FinancialReportsView';
 
 export default function App() {
-  // Navigation State Control
-  const [activeTab, setActiveTab] = useState('statement'); // Default active view
+  // Active Tab State Control
+  const [activeTab, setActiveTab] = useState('statement'); // Default view: Account Milan
 
   return (
     <div style={styles.appContainer}>
       {/* 1. Global Navigation Header */}
       <header style={styles.topHeader}>
         <div style={styles.brandContainer}>
-          <span style={{ fontSize: '18px' }}>📖</span>
+          <span style={{ fontSize: '20px' }}>📘</span>
           <span style={styles.brandTitle}>Account Book Engine</span>
         </div>
 
@@ -91,11 +93,11 @@ const styles = {
   topHeader: {
     backgroundColor: '#0f172a',
     color: '#fff',
-    padding: '10px 20px',
+    padding: '12px 24px',
     display: 'flex',
     justify: 'space-between',
     alignItems: 'center',
-    boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
     position: 'sticky',
     top: 0,
     zIndex: 1000
@@ -103,31 +105,32 @@ const styles = {
   brandContainer: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px'
+    gap: '10px'
   },
   brandTitle: {
-    fontSize: '16px',
+    fontSize: '18px',
     fontWeight: 'bold',
-    color: '#f8fafc'
+    color: '#f8fafc',
+    letterSpacing: '0.5px'
   },
   navMenu: {
     display: 'flex',
-    gap: '6px',
+    gap: '8px',
     flexWrap: 'wrap'
   },
   navTab: {
     color: '#fff',
     border: 'none',
-    padding: '8px 12px',
+    padding: '8px 14px',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: 'bold',
-    transition: 'all 0.2s ease'
+    transition: 'background-color 0.2s ease, transform 0.1s ease'
   },
   mainWorkspace: {
     flex: 1,
-    padding: '16px',
+    padding: '20px',
     maxWidth: '1200px',
     margin: '0 auto',
     width: '100%',
