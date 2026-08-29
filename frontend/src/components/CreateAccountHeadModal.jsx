@@ -1,6 +1,8 @@
+// frontend/src/components/CreateAccountHeadModal.jsx
+
 import React, { useState } from 'react';
 
-export default function CreateAccountModal({ firmId, onAccountCreated }) {
+export default function CreateAccountHeadModal({ firmId, onAccountCreated }) {
   const [formData, setFormData] = useState({
     name: '',
     primary_type: 'ASSET',
@@ -46,6 +48,8 @@ export default function CreateAccountModal({ firmId, onAccountCreated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.name.trim()) return alert('Account / Party Name enter karein!');
+
     try {
       const res = await fetch('/api/v1/account-heads', {
         method: 'POST',
@@ -54,11 +58,11 @@ export default function CreateAccountModal({ firmId, onAccountCreated }) {
       });
       const data = await res.json();
       if (data.success) {
-        alert('Naya Account Head accounting rules ke mutabiq create ho gaya hai!');
+        alert('Naya Account Head accounting rules ke mutabiq save ho gaya hai!');
         setFormData({ name: '', primary_type: 'ASSET', sub_group: 'SUNDRY_DEBTOR', opening_balance: 0, opening_balance_type: 'Dr' });
         if (onAccountCreated) onAccountCreated(data.data);
       } else {
-        alert('Error: ' + data.error);
+        alert('Error: ' + (data.error || 'Failed to create account head'));
       }
     } catch (err) {
       alert('Network error while creating account.');
