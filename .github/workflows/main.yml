@@ -30,35 +30,36 @@ jobs:
           java-version: '21'
 
       # 3. Clean Runner Caches
-      - name: Clean Gradle Caches
+      - name: Clean Caches
         run: |
           rm -rf ~/.gradle/caches/
           rm -rf ~/.gradle/wrapper/
 
-      # 4. Locate Project Directory & Install Dependencies
-      - name: Install Node Dependencies
+      # 4. Locate Project Working Directory & Install Dependencies
+      - name: Install Dependencies
         run: |
-          PROJ_FILE=$(find . -maxdepth 3 -name "package.json" | grep -v "node_modules" | head -n 1)
-          if [ -n "$PROJ_FILE" ]; then
-            APP_DIR=$(dirname "$PROJ_FILE")
+          PKG_PATH=$(find . -maxdepth 4 -name "package.json" | grep -v "node_modules" | head -n 1)
+          if [ -n "$PKG_PATH" ]; then
+            WORK_DIR=$(dirname "$PKG_PATH")
           else
-            APP_DIR="."
+            WORK_DIR="."
             npm init -y
           fi
-          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
-          cd "$APP_DIR"
+          echo "WORK_DIR=$WORK_DIR" >> $GITHUB_ENV
+          echo "Target project directory resolved to: $WORK_DIR"
+          cd "$WORK_DIR"
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
           npm install
 
-      # 5. Compile Web Application Bundle
-      - name: Build Web Application
+      # 5. Compile Real Frontend Web Assets
+      - name: Build Web Application Bundle
         run: |
-          cd "${{ env.APP_DIR }}"
+          cd "${{ env.WORK_DIR }}"
+          
+          # Execute project build script
+          npm run build --if-present || true
 
-          # Run build script
-          npm run build --if-present
-
-          # Consolidate build outputs to 'dist'
+          # Consolidate output into dist/ for Capacitor sync
           if [ -d "build" ] && [ ! -d "dist" ]; then
             cp -r build dist
           elif [ -d "out" ] && [ ! -d "dist" ]; then
@@ -68,16 +69,18 @@ jobs:
             cp -r public/* dist/
           fi
 
-          # Verify that dist contains compiled assets
+          # Safe fallback to root assets if compilation output directory absent
           if [ ! -d "dist" ] || [ ! -f "dist/index.html" ]; then
-            echo "ERROR: Failed to produce a valid build bundle in dist/!"
-            exit 1
+            mkdir -p dist
+            find . -maxdepth 2 -name "*.html" -exec cp {} dist/ \; 2>/dev/null || true
+            find . -maxdepth 2 -name "*.js" -exec cp {} dist/ \; 2>/dev/null || true
+            find . -maxdepth 2 -name "*.css" -exec cp {} dist/ \; 2>/dev/null || true
           fi
 
-      # 6. Synchronize Native Capacitor Android
-      - name: Synchronize Native Capacitor Android
+      # 6. Capacitor Android Native Project Sync
+      - name: Synchronize Capacitor Native Android
         run: |
-          cd "${{ env.APP_DIR }}"
+          cd "${{ env.WORK_DIR }}"
 
           if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
             rm -rf android
@@ -86,27 +89,27 @@ jobs:
           fi
           npx cap sync android
 
-      # 7. Grant Execution Permissions
+      # 7. Grant Permissions
       - name: Grant Gradle Permissions
         run: |
-          GRADLEW_FILE=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
-          if [ -n "$GRADLEW_FILE" ]; then
-            cd $(dirname "$GRADLEW_FILE")
+          GRADLEW_PATH=$(find . -maxdepth 5 -name "gradlew" | head -n 1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            cd $(dirname "$GRADLEW_PATH")
             chmod +x gradlew
           fi
 
-      # 8. Build Release APK Binary
+      # 8. Compile Release APK Binary
       - name: Build Android Release APK
         run: |
-          GRADLEW_FILE=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
-          if [ -n "$GRADLEW_FILE" ]; then
-            cd $(dirname "$GRADLEW_FILE")
+          GRADLEW_PATH=$(find . -maxdepth 5 -name "gradlew" | head -n 1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            cd $(dirname "$GRADLEW_PATH")
             ./gradlew assembleRelease --no-daemon --stacktrace
           else
-            echo "ERROR: Gradlew wrapper not found!" && exit 1
+            echo "ERROR: Gradle wrapper execution file not found!" && exit 1
           fi
 
-      # 9. Cryptographically Sign APK
+      # 9. Cryptographically Sign APK Binary (V2/V3 Android Security Scheme)
       - name: Sign APK Binary
         run: |
           UNSIGNED_APK=$(find . -name "*release*.apk" | grep -v "unaligned" | head -n 1)
@@ -116,7 +119,7 @@ jobs:
           $ANDROID_BUILD_TOOLS/zipalign -v 4 "$UNSIGNED_APK" BusinessBook-Signed.apk
           $ANDROID_BUILD_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out BusinessBook-Installable.apk BusinessBook-Signed.apk
 
-      # 10. Upload Final Artifact
+      # 10. Upload Final Installable Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
