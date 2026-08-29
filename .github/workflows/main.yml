@@ -18,53 +18,44 @@ jobs:
         with:
           node-version: 18
 
-      # 1. Dynamic Dependency Installation
-      - name: Install Dependencies
-        run: |
-          PACKAGE_PATH=$(find . -maxdepth 3 -name "package.json" | head -n 1)
-          if [ -n "$PACKAGE_PATH" ]; then
-            TARGET_DIR=$(dirname "$PACKAGE_PATH")
-            echo "Installing dependencies in $TARGET_DIR"
-            cd "$TARGET_DIR" && npm install
-          else
-            echo "Creating fallback package.json..."
-            npm init -y
-            npm install
-          fi
-
-      # 2. Build Frontend Static Assets
-      - name: Build Web Assets
-        run: |
-          PACKAGE_PATH=$(find . -maxdepth 3 -name "package.json" | head -n 1)
-          if [ -n "$PACKAGE_PATH" ]; then
-            TARGET_DIR=$(dirname "$PACKAGE_PATH")
-            cd "$TARGET_DIR" && npm run build --if-present
-          fi
-
-      # 3. Setup Java JDK 17
-      - name: Setup Java JDK
+      - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 4. Locate 'gradlew' dynamically and Build APK
+      # 1. Install Dependencies & Capacitor
+      - name: Install Dependencies
+        run: |
+          if [ ! -f "package.json" ]; then
+            npm init -y
+          fi
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      # 2. Build Web Assets
+      - name: Build Web Assets
+        run: npm run build --if-present
+
+      # 3. Auto-Add Android Platform if gradlew is missing
+      - name: Ensure Android Native Project Exists
+        run: |
+          if [ ! -f "android/gradlew" ]; then
+            echo "Android folder missing. Initializing Capacitor Android..."
+            npx cap init "BusinessBook" "com.neelkanth.businessbook" --web-dir dist || true
+            npx cap add android
+          fi
+          npx cap sync android
+
+      # 4. Build Release APK
       - name: Build Android Release APK
         run: |
-          GRADLEW_PATH=$(find . -maxdepth 4 -name "gradlew" | head -n 1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            ANDROID_DIR=$(dirname "$GRADLEW_PATH")
-            echo "Found Android wrapper at $ANDROID_DIR"
-            cd "$ANDROID_DIR"
-            chmod +x gradlew
-            ./gradlew assembleRelease
-          else
-            echo "ERROR: Could not find 'gradlew' file in any folder!" && exit 1
-          fi
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
 
-      # 5. Upload Generated APK
+      # 5. Upload APK Artifact
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-Release-APK
-          path: "**/app/build/outputs/apk/release/*.apk"
+          path: android/app/build/outputs/apk/release/*.apk
