@@ -36,6 +36,13 @@ jobs:
           cd frontend
           npm run build
 
+      - name: Initialize Capacitor Config if Missing
+        run: |
+          cd frontend
+          if [ ! -f "capacitor.config.json" ]; then
+            npx cap init "BusinessBook" "com.neelkanth.accountbook" --web-dir "dist"
+          fi
+
       - name: Add Android Platform if Missing
         run: |
           cd frontend
