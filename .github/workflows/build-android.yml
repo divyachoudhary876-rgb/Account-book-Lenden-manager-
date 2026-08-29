@@ -29,11 +29,19 @@ jobs:
         run: |
           cd frontend
           npm install
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Build Web Application
         run: |
           cd frontend
           npm run build
+
+      - name: Add Android Platform if Missing
+        run: |
+          cd frontend
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
 
       - name: Capacitor Sync
         run: |
