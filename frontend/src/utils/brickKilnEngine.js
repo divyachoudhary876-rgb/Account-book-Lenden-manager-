@@ -75,19 +75,19 @@ export const processPathaiProductionEntry = (firmId, payload) => {
   const ratePer1000 = parseFloat(payload.rate_per_1000 || 400);
   const unitWeight = parseFloat(payload.unit_weight_kg || 3.2);
 
-  if (qty <= 0) throw new Error("⚠️ Please enter a valid raw brick quantity (> 0).");
-  if (unitWeight <= 0) throw new Error("⚠️ Please enter a valid brick unit weight (> 0 kg).");
+  if (qty <= 0) throw new Error("⚠️ Enter valid raw brick count (> 0).");
+  if (unitWeight <= 0) throw new Error("⚠️ Enter valid unit weight (> 0 kg).");
 
   const settings = getKilnSettings(targetId);
   const soilConsumedTons = calculateSoilTons(qty, unitWeight, settings.soil_waste_percentage);
   const stock = getBrickKilnStock(targetId);
 
-  // 1. Update Kiln Stock Balance
+  // 1. Update Kiln Stock
   stock.RAW_SOIL_TONS = parseFloat((stock.RAW_SOIL_TONS - soilConsumedTons).toFixed(3));
   stock.RAW_KACHI += qty;
   localStorage.setItem(`app_brick_stock_${targetId}`, JSON.stringify(stock));
 
-  // 2. Direct Sync to Master Inventory Stock View (`📦 Inventory Master`)
+  // 2. Direct Sync to Master Inventory Stock Matrix
   const masterKey = `app_inventory_${targetId}`;
   const masterItems = getStockItemsByFirm(targetId);
   
@@ -95,29 +95,19 @@ export const processPathaiProductionEntry = (firmId, payload) => {
   if (mudItemIndex !== -1) {
     masterItems[mudItemIndex].current_stock = stock.RAW_SOIL_TONS;
   } else {
-    masterItems.unshift({ 
-      id: `ITEM-MUD-${Date.now()}`, 
-      item_name: '🌱 कच्ची मिट्टी (Raw Clay / Mud)', 
-      unit: 'Tons', 
-      current_stock: stock.RAW_SOIL_TONS 
-    });
+    masterItems.unshift({ id: `ITEM-MUD-${Date.now()}`, item_name: '🌱 कच्ची मिट्टी (Raw Clay / Mud)', unit: 'Tons', current_stock: stock.RAW_SOIL_TONS });
   }
 
   let rawBrickIndex = masterItems.findIndex(i => i.item_name && (i.item_name.includes('कच्ची ईंट') || i.item_name.includes('Raw Brick')));
   if (rawBrickIndex !== -1) {
     masterItems[rawBrickIndex].current_stock = stock.RAW_KACHI;
   } else {
-    masterItems.unshift({ 
-      id: `ITEM-RAW-${Date.now()}`, 
-      item_name: '🧱 कच्ची ईंट (Raw Unbaked Brick)', 
-      unit: 'Pcs', 
-      current_stock: stock.RAW_KACHI 
-    });
+    masterItems.unshift({ id: `ITEM-RAW-${Date.now()}`, item_name: '🧱 कच्ची ईंट (Raw Unbaked Brick)', unit: 'Pcs', current_stock: stock.RAW_KACHI });
   }
 
   localStorage.setItem(masterKey, JSON.stringify(masterItems));
 
-  // 3. Log Transaction
+  // 3. Log Record
   const logKey = `app_brick_pathai_logs_${targetId}`;
   const existingLogs = JSON.parse(localStorage.getItem(logKey) || '[]');
   const wagesPayable = (qty / 1000) * ratePer1000;
