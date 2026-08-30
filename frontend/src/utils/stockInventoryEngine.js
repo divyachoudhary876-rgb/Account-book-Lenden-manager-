@@ -43,7 +43,27 @@ export const saveStockItem = (firmId, itemData) => {
   return existingItems;
 };
 
-// Explicit Named Export required by InventoryStockView.jsx
+// Named export required by salesInvoicingEngine.js
+export const updateStockMovement = (firmId, itemId, qtyChange, movementType = 'OUT') => {
+  const targetId = firmId || 'FIRM-001';
+  const items = getStockItemsByFirm(targetId);
+  const index = items.findIndex(i => i.id === itemId || i.item_name === itemId);
+
+  if (index !== -1) {
+    const qty = parseFloat(qtyChange || 0);
+    if (movementType === 'OUT') {
+      items[index].current_stock = parseFloat((items[index].current_stock - qty).toFixed(3));
+    } else if (movementType === 'IN') {
+      items[index].current_stock = parseFloat((items[index].current_stock + qty).toFixed(3));
+    }
+    const key = `app_inventory_${targetId}`;
+    localStorage.setItem(key, JSON.stringify(items));
+    window.dispatchEvent(new Event('storage'));
+  }
+  return items;
+};
+
+// Named exports required by InventoryStockView.jsx
 export const addNewStockItem = (firmId, itemData) => {
   if (!itemData.item_name || itemData.item_name.trim() === '') {
     throw new Error('⚠️ Stock Item Name is required.');
@@ -51,7 +71,6 @@ export const addNewStockItem = (firmId, itemData) => {
   return saveStockItem(firmId, itemData);
 };
 
-// Explicit Named Export required by InventoryStockView.jsx
 export const deleteStockItem = (firmId, itemId) => {
   const targetId = firmId || 'FIRM-001';
   const key = `app_inventory_${targetId}`;
@@ -63,7 +82,6 @@ export const deleteStockItem = (firmId, itemId) => {
   return filtered;
 };
 
-// Explicit Named Export required by InventoryStockView.jsx
 export const purgeAndClearInventoryData = (firmId) => {
   const targetId = firmId || 'FIRM-001';
   const key = `app_inventory_${targetId}`;
