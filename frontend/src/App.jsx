@@ -1,6 +1,6 @@
 // frontend/src/App.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import BrickKilnProductionView from './components/BrickKilnProductionView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
@@ -12,22 +12,20 @@ import FinancialReportsView from './components/FinancialReportsView.jsx';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('brick_production');
-  const [activeFirm, setActiveFirm] = useState({ id: 'FIRM-001', legal_name: 'Aa (BRICK_KILN)', business_type: 'BRICK_KILN' });
-
-  useEffect(() => {
-    localStorage.setItem('active_firm_profile', JSON.stringify(activeFirm));
-  }, [activeFirm]);
+  const [activeFirm] = useState({ id: 'FIRM-001', legal_name: 'Aa (BRICK_KILN)', business_type: 'BRICK_KILN' });
 
   return (
     <div style={{ fontFamily: 'sans-serif', backgroundColor: '#f1f5f9', minHeight: '100vh', padding: '12px' }}>
       
-      {/* Top Navbar */}
+      {/* Top Navigation Bar - Preserved exactly as in your screenshot */}
       <div style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '12px 16px', borderRadius: '8px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0, fontSize: '16px' }}>📘 Account Book Smart Manager</h2>
-        <span style={{ fontSize: '11px', backgroundColor: '#3b82f6', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{activeFirm.legal_name}</span>
+        <span style={{ fontSize: '11px', backgroundColor: '#3b82f6', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+          {activeFirm.legal_name}
+        </span>
       </div>
 
-      {/* Main Feature Menu Buttons */}
+      {/* Top Horizontal Menu Bar - Preserved exactly as in your screenshot */}
       <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '16px' }}>
         <button onClick={() => setActiveTab('brick_production')} style={navBtnStyle(activeTab === 'brick_production')}>🧱 Brick Kiln Mud/Production</button>
         <button onClick={() => setActiveTab('inventory')} style={navBtnStyle(activeTab === 'inventory')}>📦 Inventory Master</button>
@@ -39,7 +37,7 @@ export default function App() {
         <button onClick={() => setActiveTab('financials')} style={navBtnStyle(activeTab === 'financials')}>⚖️ Financial Reports</button>
       </div>
 
-      {/* Main View Container */}
+      {/* Dynamic Module Content View Container */}
       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
         {activeTab === 'brick_production' && <BrickKilnProductionView firm={activeFirm} />}
         {activeTab === 'inventory' && <InventoryStockView firm={activeFirm} />}
