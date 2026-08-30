@@ -1,7 +1,7 @@
 // frontend/src/utils/purchasePostingEngine.js
 
 export const recordPurchaseInvoice = (payload) => {
-  const { supplierAccId, supplierInvoiceNo, invoiceDate, itemId, qty, rate, gstRate, firmId } = payload;
+  const { supplierAccId, supplierInvoiceNo, invoiceDate, itemId, qty, rate, gstRate } = payload;
 
   const numericQty = parseFloat(qty || 0);
   const numericRate = parseFloat(rate || 0);
@@ -13,9 +13,7 @@ export const recordPurchaseInvoice = (payload) => {
   const gstAmount = (taxableAmount * parseFloat(gstRate || 0)) / 100;
   const totalAmount = taxableAmount + gstAmount;
 
-  // -------------------------------------------------------------
-  // 1. AUTOMATIC STOCK INVENTORY UPDATE (+ IN)
-  // -------------------------------------------------------------
+  // 1. Automatic Stock Inventory Inward Increment (+ IN)
   const inventory = JSON.parse(localStorage.getItem('app_inventory') || '[]');
   const itemIndex = inventory.findIndex(i => i.id === itemId);
   if (itemIndex !== -1) {
@@ -23,12 +21,10 @@ export const recordPurchaseInvoice = (payload) => {
     localStorage.setItem('app_inventory', JSON.stringify(inventory));
   }
 
-  // -------------------------------------------------------------
-  // 2. AUTOMATIC GENERAL JOURNAL & DAY BOOK ENTRY
-  // -------------------------------------------------------------
+  // 2. Automatic Double-Entry Journal Posting (Day Book)
   const journalEntries = JSON.parse(localStorage.getItem('app_journal_entries') || '[]');
   
-  // Credit Entry for Supplier (Payable)
+  // Credit Supplier Account (Payable)
   journalEntries.push({
     id: `PURCH-SUPP-${Date.now()}`,
     entry_date: invoiceDate,
@@ -39,7 +35,7 @@ export const recordPurchaseInvoice = (payload) => {
     credit: totalAmount
   });
 
-  // Debit Entry for Purchase Account
+  // Debit Purchase Account
   journalEntries.push({
     id: `PURCH-ACC-${Date.now()}`,
     entry_date: invoiceDate,
@@ -51,10 +47,6 @@ export const recordPurchaseInvoice = (payload) => {
   });
 
   localStorage.setItem('app_journal_entries', JSON.stringify(journalEntries));
-
-  // -------------------------------------------------------------
-  // 3. BROADCAST REAL-TIME RE-RENDER EVENT
-  // -------------------------------------------------------------
   window.dispatchEvent(new Event('storage'));
 
   return { success: true, totalAmount };
