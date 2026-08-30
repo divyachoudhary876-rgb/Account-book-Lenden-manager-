@@ -1,6 +1,5 @@
 // frontend/src/utils/stockInventoryEngine.js
 
-// Comprehensive Indian SME Units of Measurement
 export const UNITS_OF_MEASUREMENT = [
   { code: 'Pcs', name: 'Pcs (Pieces)' },
   { code: 'Qtl', name: 'Quintal (100 kg)' },
@@ -57,28 +56,66 @@ export const addNewStockItem = (firmId, itemPayload) => {
   const existingItems = getStockItemsByFirm(targetId);
 
   const exists = existingItems.some(
-    i => i && i.item_name && i.item_name.trim().toLowerCase() === itemPayload.item_name.trim().toLowerCase()
+    i => i && i.item_name && i.item_name.trim().toLowerCase() === itemPayload.item_name.trim().toLowerCase() && i.id !== itemPayload.id
   );
 
   if (exists) {
     throw new Error(`Stock Item "${itemPayload.item_name}" already exists.`);
   }
 
-  const newItem = {
-    id: `ITEM-${Date.now()}`,
-    item_name: itemPayload.item_name.trim(),
-    unit: itemPayload.unit || 'Pcs',
-    current_stock: parseFloat(itemPayload.opening_stock || 0),
-    created_at: new Date().toISOString()
-  };
-
-  const updatedList = [newItem, ...existingItems];
-  localStorage.setItem(key, JSON.stringify(updatedList));
-  window.dispatchEvent(new Event('storage'));
-  return newItem;
+  // Handle Edit vs New Creation
+  if (itemPayload.id) {
+    const updatedList = existingItems.map(item => {
+      if (item.id === itemPayload.id) {
+        return {
+          ...item,
+          item_name: itemPayload.item_name.trim(),
+          unit: itemPayload.unit || 'Pcs',
+          current_stock: parseFloat(itemPayload.opening_stock || 0),
+          updated_at: new Date().toISOString()
+        };
+      }
+      return item;
+    });
+    localStorage.setItem(key, JSON.stringify(updatedList));
+    window.dispatchEvent(new Event('storage'));
+    return { id: itemPayload.id };
+  } else {
+    const newItem = {
+      id: `ITEM-${Date.now()}`,
+      item_name: itemPayload.item_name.trim(),
+      unit: itemPayload.unit || 'Pcs',
+      current_stock: parseFloat(itemPayload.opening_stock || 0),
+      created_at: new Date().toISOString()
+    };
+    const updatedList = [newItem, ...existingItems];
+    localStorage.setItem(key, JSON.stringify(updatedList));
+    window.dispatchEvent(new Event('storage'));
+    return newItem;
+  }
 };
 
-// Purge function to clean old mock data
+// Item Deletion Logic
+export const deleteStockItem = (firmId, itemId) => {
+  let targetId = firmId;
+  if (!targetId) {
+    try {
+      const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
+      targetId = activeFirm.id || 'FIRM-001';
+    } catch (e) {
+      targetId = 'FIRM-001';
+    }
+  }
+
+  const key = `app_inventory_${targetId}`;
+  const existingItems = getStockItemsByFirm(targetId);
+
+  const filteredItems = existingItems.filter(i => i.id !== itemId);
+  localStorage.setItem(key, JSON.stringify(filteredItems));
+  window.dispatchEvent(new Event('storage'));
+  return true;
+};
+
 export const purgeAndClearInventoryData = (firmId) => {
   let targetId = firmId;
   if (!targetId) {
