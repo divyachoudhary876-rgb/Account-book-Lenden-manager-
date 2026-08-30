@@ -1,48 +1,63 @@
 // frontend/src/utils/stockInventoryEngine.js
 
-// Single Source of Truth: All 3 modules (Inventory, Sales, Purchase) call this exact function
 export const getStockItemsByFirm = (firmId) => {
   let targetId = firmId;
   if (!targetId) {
-    const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
-    targetId = activeFirm.id || 'FIRM-001';
+    try {
+      const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
+      targetId = activeFirm.id || 'FIRM-001';
+    } catch (e) {
+      targetId = 'FIRM-001';
+    }
   }
 
   const key = `app_inventory_${targetId}`;
   let items = [];
 
   try {
-    items = JSON.parse(localStorage.getItem(key) || '[]');
+    const rawData = localStorage.getItem(key);
+    items = rawData ? JSON.parse(rawData) : [];
   } catch (e) {
     items = [];
   }
 
-  // Pre-populate standard unified items if inventory is empty
-  if (!items || items.length === 0) {
+  // Pre-populate default items if array is completely empty
+  if (!Array.isArray(items) || items.length === 0) {
     items = [
       { id: `ITEM-1-${targetId}`, item_name: 'Red Brick (A-Class)', unit: 'Pcs', current_stock: 10000 },
       { id: `ITEM-2-${targetId}`, item_name: 'Raw Coal (Koyla)', unit: 'Tons', current_stock: 50 },
       { id: `ITEM-3-${targetId}`, item_name: 'Biomass Briquette', unit: 'MT', current_stock: 120 }
     ];
-    localStorage.setItem(key, JSON.stringify(items));
+    try {
+      localStorage.setItem(key, JSON.stringify(items));
+    } catch (e) {
+      console.error("Storage write error:", e);
+    }
   }
 
-  return items;
+  return Array.isArray(items) ? items : [];
 };
 
 export const addNewStockItem = (firmId, itemPayload) => {
   let targetId = firmId;
   if (!targetId) {
-    const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
-    targetId = activeFirm.id || 'FIRM-001';
+    try {
+      const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
+      targetId = activeFirm.id || 'FIRM-001';
+    } catch (e) {
+      targetId = 'FIRM-001';
+    }
   }
 
   const key = `app_inventory_${targetId}`;
   const existingItems = getStockItemsByFirm(targetId);
 
-  const exists = existingItems.some(i => i.item_name.trim().toLowerCase() === itemPayload.item_name.trim().toLowerCase());
+  const exists = existingItems.some(
+    i => i && i.item_name && i.item_name.trim().toLowerCase() === itemPayload.item_name.trim().toLowerCase()
+  );
+
   if (exists) {
-    throw new Error(`Item "${itemPayload.item_name}" already exists in Inventory master.`);
+    throw new Error(`Stock Item "${itemPayload.item_name}" already exists.`);
   }
 
   const newItem = {
@@ -62,8 +77,12 @@ export const addNewStockItem = (firmId, itemPayload) => {
 export const updateStockMovement = (firmId, itemId, qty, movementType, refNo, rate = 0) => {
   let targetId = firmId;
   if (!targetId) {
-    const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
-    targetId = activeFirm.id || 'FIRM-001';
+    try {
+      const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
+      targetId = activeFirm.id || 'FIRM-001';
+    } catch (e) {
+      targetId = 'FIRM-001';
+    }
   }
 
   const key = `app_inventory_${targetId}`;
@@ -72,7 +91,7 @@ export const updateStockMovement = (firmId, itemId, qty, movementType, refNo, ra
   const quantity = parseFloat(qty || 0);
   if (quantity <= 0) throw new Error("Quantity must be greater than zero.");
 
-  const itemIndex = existingItems.findIndex(i => i.id === itemId);
+  const itemIndex = existingItems.findIndex(i => i && i.id === itemId);
   if (itemIndex === -1) throw new Error("Selected stock item not found.");
 
   const item = existingItems[itemIndex];
