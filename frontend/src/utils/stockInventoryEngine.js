@@ -1,5 +1,3 @@
-// frontend/src/utils/stockInventoryEngine.js
-
 export const getStockItemsByFirm = (firmId) => {
   const targetId = firmId || 'FIRM-001';
   const key = `app_inventory_${targetId}`;
@@ -43,7 +41,6 @@ export const saveStockItem = (firmId, itemData) => {
   return existingItems;
 };
 
-// Named export required by salesInvoicingEngine.js
 export const updateStockMovement = (firmId, itemId, qtyChange, movementType = 'OUT') => {
   const targetId = firmId || 'FIRM-001';
   const items = getStockItemsByFirm(targetId);
@@ -63,7 +60,6 @@ export const updateStockMovement = (firmId, itemId, qtyChange, movementType = 'O
   return items;
 };
 
-// Named exports required by InventoryStockView.jsx
 export const addNewStockItem = (firmId, itemData) => {
   if (!itemData.item_name || itemData.item_name.trim() === '') {
     throw new Error('⚠️ Stock Item Name is required.');
