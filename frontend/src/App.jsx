@@ -20,7 +20,7 @@ export default function App() {
   return (
     <div style={{ fontFamily: 'sans-serif', backgroundColor: '#f1f5f9', minHeight: '100vh', padding: '12px' }}>
       
-      {/* Top Main Navigation Header */}
+      {/* Top Header */}
       <div style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '12px 16px', borderRadius: '8px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0, fontSize: '16px' }}>📘 Account Book Smart Manager</h2>
         <span style={{ fontSize: '11px', backgroundColor: '#3b82f6', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
@@ -28,7 +28,7 @@ export default function App() {
         </span>
       </div>
 
-      {/* Original Primary Horizontal Navigation Bar */}
+      {/* Main Original Horizontal Menu Bar */}
       <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '16px' }}>
         <button onClick={() => setActiveTab('inventory')} style={navBtnStyle(activeTab === 'inventory')}>📦 Inventory Master</button>
         <button onClick={() => setActiveTab('create_invoice')} style={navBtnStyle(activeTab === 'create_invoice')}>🧾 Sales Bill</button>
@@ -39,7 +39,7 @@ export default function App() {
         <button onClick={() => setActiveTab('financials')} style={navBtnStyle(activeTab === 'financials')}>⚖️ Financial Reports</button>
       </div>
 
-      {/* Main Workspace Render View */}
+      {/* Main Workspace Frame */}
       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
         {activeTab === 'inventory' && <InventoryStockView firm={activeFirm} />}
         {activeTab === 'create_invoice' && <CreateInvoice firm={activeFirm} />}
