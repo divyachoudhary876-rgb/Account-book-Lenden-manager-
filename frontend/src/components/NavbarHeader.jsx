@@ -16,23 +16,23 @@ export default function NavbarHeader({ firm, activeTab, onNavigate, onToggleMenu
   const handleQuickFirmSwitch = (firmId) => {
     try {
       const switched = switchActiveFirm(firmId);
-      alert(`⚡ Quick Switch: Active firm changed to ${switched.legal_name}`);
+      if (onNavigate) onNavigate('dashboard');
       window.location.reload();
     } catch (err) {
-      alert(`❌ Switch Error: ${err.message}`);
+      alert(`❌ Context Switch Error: ${err.message}`);
     }
   };
 
   const handleFYChange = (fy) => {
     setActiveFY(fy);
     setCurrentFY(fy);
-    alert(`📅 Financial Year Period set to ${fy}`);
+    alert(`📅 Active Audit Period set to ${fy}`);
   };
 
   return (
     <header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #cbd5e1', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100, flexWrap: 'wrap', gap: '10px' }}>
       
-      {/* Brand & Direct Back Button */}
+      {/* Brand & Direct Navigation Back Button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         {activeTab !== 'dashboard' && firm && (
           <button
@@ -54,11 +54,10 @@ export default function NavbarHeader({ firm, activeTab, onNavigate, onToggleMenu
         </div>
       </div>
 
-      {/* Top Bar Quick Firm & FY Controls */}
+      {/* Top Bar Quick Controls */}
       {firm && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           
-          {/* Quick Firm Switcher Dropdown */}
           <select
             value={firm.id}
             onChange={(e) => handleQuickFirmSwitch(e.target.value)}
@@ -69,7 +68,6 @@ export default function NavbarHeader({ firm, activeTab, onNavigate, onToggleMenu
             ))}
           </select>
 
-          {/* Financial Year Selector */}
           <select
             value={currentFY}
             onChange={(e) => handleFYChange(e.target.value)}
