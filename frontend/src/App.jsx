@@ -19,21 +19,34 @@ import DataPurgeView from './components/DataPurgeView.jsx';
 import { runSafeAppMigration } from './utils/databaseMigrationEngine.js';
 
 export default function App() {
+  // Default active workspace set to Bhatta Production (Tab 7) instead of Firm Setup
   const [activeTab, setActiveTab] = useState('bhatta_prod');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [firm, setFirm] = useState({
     id: 'FIRM-001',
     legal_name: 'Neelkanth Int Udyog',
     industry_type: 'BRICK_KILN',
-    gstin: '08AAAAA0000A1Z5'
+    gstin: '08AAAAA0000A1Z5',
+    address: 'RIICO Industrial Area, Hanumangarh'
   });
 
   useEffect(() => {
-    // Run safe migration on startup to preserve user data across app re-installs/updates
     runSafeAppMigration();
-    
+
+    // Auto-hydrate firm profile to bypass setup form on app launch
     const savedFirm = JSON.parse(localStorage.getItem('active_firm_profile') || 'null');
-    if (savedFirm) setFirm(savedFirm);
+    if (savedFirm && savedFirm.legal_name) {
+      setFirm(savedFirm);
+    } else {
+      const defaultFirm = {
+        id: 'FIRM-001',
+        legal_name: 'Neelkanth Int Udyog',
+        industry_type: 'BRICK_KILN',
+        gstin: '08AAAAA0000A1Z5',
+        address: 'RIICO Industrial Area, Hanumangarh'
+      };
+      localStorage.setItem('active_firm_profile', JSON.stringify(defaultFirm));
+    }
   }, []);
 
   const handleNavigate = (tabId) => {
@@ -44,13 +57,13 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: 'Arial, sans-serif' }}>
       
-      {/* Top Application Navbar & Logo Header */}
+      {/* Header Bar */}
       <NavbarHeader firm={firm} onOpenMenu={() => setIsMenuOpen(!isMenuOpen)} />
 
-      {/* Navigation Drawer Sequence */}
+      {/* Workflow Navigation Drawer */}
       {isMenuOpen && (
         <div style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '16px', borderBottom: '2px solid #2563eb' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '10px', color: '#94a3b8' }}>ACCOUNTING WORKFLOW MENU</div>
+          <div style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '10px', color: '#94a3b8' }}>ACCOUNTING WORKFLOW MENU</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
             <button onClick={() => handleNavigate('firm_setup')} style={menuBtnStyle}>1. Firm Profile Settings</button>
             <button onClick={() => handleNavigate('create_account')} style={menuBtnStyle}>2. Create Account Head</button>
@@ -58,7 +71,7 @@ export default function App() {
             <button onClick={() => handleNavigate('billing')} style={menuBtnStyle}>4. Sales Billing & Invoicing</button>
             <button onClick={() => handleNavigate('purchase')} style={menuBtnStyle}>5. Purchase Entry & Inward Stock</button>
             <button onClick={() => handleNavigate('vouchers')} style={menuBtnStyle}>6. Voucher Entry (JV/PV/RV)</button>
-            <button onClick={() => handleNavigate('bhatta_prod')} style={menuBtnStyle}>7. Brick Production / Nikasi</button>
+            <button onClick={() => handleNavigate('bhatta_prod')} style={{ ...menuBtnStyle, backgroundColor: '#2563eb' }}>7. Brick Production / Nikasi</button>
             <button onClick={() => handleNavigate('settlement')} style={menuBtnStyle}>8. Bill Settlement (FIFO)</button>
             <button onClick={() => handleNavigate('dashboard')} style={menuBtnStyle}>9. Dashboard & Overview</button>
             <button onClick={() => handleNavigate('ledger')} style={menuBtnStyle}>10. Account Milan & Ledger</button>
@@ -70,9 +83,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Dynamic Main Workspace Router */}
+      {/* Main Workspace Router */}
       <main style={{ padding: '16px', maxWidth: '1000px', margin: '0 auto' }}>
-        {activeTab === 'firm_setup' && <CreateFirmForm onSave={(f) => setFirm(f)} />}
+        {activeTab === 'firm_setup' && <CreateFirmForm onSave={(f) => { setFirm(f); setActiveTab('bhatta_prod'); }} />}
         {activeTab === 'create_account' && <CreateAccountHeadModal onClose={() => setActiveTab('bhatta_prod')} />}
         {activeTab === 'inventory' && <InventoryStockView firm={firm} />}
         {activeTab === 'billing' && <CreateInvoice firm={firm} />}
