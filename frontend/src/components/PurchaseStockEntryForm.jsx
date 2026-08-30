@@ -5,7 +5,7 @@ import { getSupplierAccounts } from '../utils/accountMasterEngine.js';
 import { getStockItemsByFirm, updateStockMovement } from '../utils/stockInventoryEngine.js';
 
 export default function PurchaseStockEntryForm({ firm }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
+  const activeFirmId = firm?.id;
 
   const [suppliers, setSuppliers] = useState([]);
   const [stockItems, setStockItems] = useState([]);
@@ -18,14 +18,21 @@ export default function PurchaseStockEntryForm({ firm }) {
   const [narration, setNarration] = useState('');
 
   useEffect(() => {
+    loadDropdowns();
+    const handleStorageChange = () => loadDropdowns();
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [firm]);
+
+  const loadDropdowns = () => {
     const suppList = getSupplierAccounts(activeFirmId);
     setSuppliers(suppList);
-    if (suppList.length > 0) setSelectedSupplier(suppList[0].id);
+    if (suppList.length > 0 && !selectedSupplier) setSelectedSupplier(suppList[0].id);
 
     const itemsList = getStockItemsByFirm(activeFirmId);
     setStockItems(itemsList);
-    if (itemsList.length > 0) setSelectedItem(itemsList[0].id);
-  }, [activeFirmId]);
+    if (itemsList.length > 0 && !selectedItem) setSelectedItem(itemsList[0].id);
+  };
 
   const totalAmount = (parseFloat(qty || 0) * parseFloat(unitRate || 0)).toFixed(2);
 
@@ -40,6 +47,7 @@ export default function PurchaseStockEntryForm({ firm }) {
       setQty('');
       setUnitRate('');
       setNarration('');
+      setBillNo(`SUP-${Math.floor(1000 + Math.random() * 9000)}`);
     } catch (err) {
       alert(`❌ Stock Update Failed: ${err.message}`);
     }
@@ -61,7 +69,7 @@ export default function PurchaseStockEntryForm({ firm }) {
           </select>
         </div>
 
-        {/* Stock Item Dropdown */}
+        {/* Stock Item Selection */}
         <div>
           <label style={labelStyle}>Select Stock Item to Inward (+IN) *</label>
           <select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} style={inputStyle}>
