@@ -1,144 +1,118 @@
 // frontend/src/components/FinancialReportsView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { calculateFinancialReports } from '../utils/financialReportEngine';
-import { downloadElementAsPDF } from '../utils/pdfDownloadEngine';
+import { calculateFinancialReports } from '../utils/financialReportEngine.js';
 
 export default function FinancialReportsView({ firm }) {
-  const [activeTab, setActiveTab] = useState('PNL');
+  const activeFirmId = firm?.id;
+  const [activeTab, setActiveTab] = useState('pl'); // 'pl' or 'bs'
   const [reportData, setReportData] = useState(null);
-  const [isExporting, setIsExporting] = useState(false);
-
-  const loadReports = () => {
-    const data = calculateFinancialReports();
-    setReportData(data);
-  };
 
   useEffect(() => {
     loadReports();
-    window.addEventListener('ACCOUNT_BOOK_VOUCHER_POSTED', loadReports);
-    window.addEventListener('storage', loadReports);
-    return () => {
-      window.removeEventListener('ACCOUNT_BOOK_VOUCHER_POSTED', loadReports);
-      window.removeEventListener('storage', loadReports);
-    };
-  }, []);
+    const handleStorage = () => loadReports();
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [firm]);
 
-  const handleDownloadPDF = async () => {
-    setIsExporting(true);
-    await downloadElementAsPDF('printable-financial-report', `${firm?.legal_name || 'Business'}_Financial_Report`);
-    setIsExporting(false);
+  const loadReports = () => {
+    const data = calculateFinancialReports(activeFirmId);
+    setReportData(data);
   };
 
-  if (!reportData) return <div style={{ padding: '20px', textAlign: 'center' }}>⏳ Loading Financial Reports...</div>;
+  if (!reportData) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       
-      {/* Selector Controls */}
-      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button 
-            onClick={() => setActiveTab('PNL')}
-            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: activeTab === 'PNL' ? '#2563eb' : '#e2e8f0', color: activeTab === 'PNL' ? '#fff' : '#0f172a', fontWeight: 'bold', cursor: 'pointer' }}
-          >
-            📊 Profit & Loss Statement
-          </button>
-          <button 
-            onClick={() => setActiveTab('BS')}
-            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: activeTab === 'BS' ? '#2563eb' : '#e2e8f0', color: activeTab === 'BS' ? '#fff' : '#0f172a', fontWeight: 'bold', cursor: 'pointer' }}
-          >
-            ⚖️ Balance Sheet
-          </button>
-        </div>
-
-        <button 
-          onClick={handleDownloadPDF}
-          disabled={isExporting}
-          style={{ backgroundColor: isExporting ? '#94a3b8' : '#10b981', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: isExporting ? 'wait' : 'pointer' }}
+      {/* Report Switcher Tabs */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+        <button
+          onClick={() => setActiveTab('pl')}
+          style={{ backgroundColor: activeTab === 'pl' ? '#2563eb' : '#f1f5f9', color: activeTab === 'pl' ? '#ffffff' : '#475569', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
         >
-          {isExporting ? '⏳ Generating PDF...' : '📲 Share & Download Report PDF'}
+          📊 Profit & Loss Statement
+        </button>
+        <button
+          onClick={() => setActiveTab('bs')}
+          style={{ backgroundColor: activeTab === 'bs' ? '#2563eb' : '#f1f5f9', color: activeTab === 'bs' ? '#ffffff' : '#475569', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+        >
+          ⚖️ Balance Sheet
         </button>
       </div>
 
-      {/* Printable Financial Statement */}
-      <div id="printable-financial-report" style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        <div style={{ borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '14px', textAlign: 'center' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>{firm?.legal_name || 'My Business Firm'}</div>
-          <div style={{ fontSize: '11px', color: '#475569' }}>GSTIN: {firm?.gstin || 'Unregistered'}</div>
-          <div style={{ fontSize: '14px', fontWeight: 'bold', marginTop: '6px', color: '#2563eb' }}>
-            {activeTab === 'PNL' ? 'PROFIT & LOSS STATEMENT' : 'BALANCE SHEET STATEMENT'}
+      {activeTab === 'pl' ? (
+        <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px' }}>
+          <h4 style={{ margin: '0 0 12px 0', textAlign: 'center', color: '#0f172a' }}>PROFIT & LOSS STATEMENT</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div>
+              <h5 style={{ color: '#059669', borderBottom: '2px solid #059669', paddingBottom: '4px' }}>Income (Revenue)</h5>
+              {reportData.incomeItems.length === 0 ? <p style={{ fontSize: '11px', color: '#94a3b8' }}>No Income Entries</p> : (
+                reportData.incomeItems.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0' }}>
+                    <span>{item.name}</span>
+                    <strong>₹{item.amount.toFixed(2)}</strong>
+                  </div>
+                ))
+              )}
+              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '4px', fontWeight: 'bold', fontSize: '13px' }}>
+                Total Income: ₹{reportData.totalIncome.toFixed(2)}
+              </div>
+            </div>
+
+            <div>
+              <h5 style={{ color: '#dc2626', borderBottom: '2px solid #dc2626', paddingBottom: '4px' }}>Expenses</h5>
+              {reportData.expenseItems.length === 0 ? <p style={{ fontSize: '11px', color: '#94a3b8' }}>No Expense Entries</p> : (
+                reportData.expenseItems.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0' }}>
+                    <span>{item.name}</span>
+                    <strong>₹{item.amount.toFixed(2)}</strong>
+                  </div>
+                ))
+              )}
+              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '4px', fontWeight: 'bold', fontSize: '13px' }}>
+                Total Expenses: ₹{reportData.totalExpenses.toFixed(2)}
+              </div>
+            </div>
           </div>
-          <div style={{ fontSize: '10px', color: '#64748b' }}>As of {new Date().toLocaleDateString('en-IN')}</div>
+
+          <div style={{ backgroundColor: reportData.netProfit >= 0 ? '#ecfdf5' : '#fef2f2', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', textAlign: 'center', marginTop: '16px', fontWeight: 'bold', fontSize: '14px', color: reportData.netProfit >= 0 ? '#047857' : '#b91c1c' }}>
+            Net Profit / Loss: ₹{reportData.netProfit.toFixed(2)}
+          </div>
         </div>
-
-        {activeTab === 'PNL' ? (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div>
-                <h4 style={{ color: '#16a34a', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Income (Revenue)</h4>
-                {reportData.pnl.incomeHeads.length === 0 ? <p style={emptyStyle}>No Income Entries</p> : reportData.pnl.incomeHeads.map(item => (
-                  <div key={item.id} style={rowStyle}><span>{item.name}</span><span>₹{item.balance.toFixed(2)}</span></div>
-                ))}
-                <div style={totalRowStyle}><span>Total Income</span><span>₹{reportData.pnl.totalIncome.toFixed(2)}</span></div>
-              </div>
-
-              <div>
-                <h4 style={{ color: '#dc2626', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Expenses</h4>
-                {reportData.pnl.expenseHeads.length === 0 ? <p style={emptyStyle}>No Expense Entries</p> : reportData.pnl.expenseHeads.map(item => (
-                  <div key={item.id} style={rowStyle}><span>{item.name}</span><span>₹{item.balance.toFixed(2)}</span></div>
-                ))}
-                <div style={totalRowStyle}><span>Total Expenses</span><span>₹{reportData.pnl.totalExpenses.toFixed(2)}</span></div>
+      ) : (
+        <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px' }}>
+          <h4 style={{ margin: '0 0 12px 0', textAlign: 'center', color: '#0f172a' }}>BALANCE SHEET STATEMENT</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div>
+              <h5 style={{ color: '#2563eb', borderBottom: '2px solid #2563eb', paddingBottom: '4px' }}>Assets</h5>
+              {reportData.assetItems.map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0' }}>
+                  <span>{item.name}</span>
+                  <strong>₹{item.amount.toFixed(2)}</strong>
+                </div>
+              ))}
+              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '4px', fontWeight: 'bold', fontSize: '13px' }}>
+                Total Assets: ₹{reportData.totalAssets.toFixed(2)}
               </div>
             </div>
 
-            <div style={{ marginTop: '20px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '6px', textAlign: 'center', border: '1px solid #cbd5e1' }}>
-              <span style={{ fontSize: '14px', fontWeight: 'bold', color: reportData.pnl.netProfitOrLoss >= 0 ? '#16a34a' : '#dc2626' }}>
-                {reportData.pnl.netProfitOrLoss >= 0 ? 'Net Profit: ' : 'Net Loss: '} ₹{Math.abs(reportData.pnl.netProfitOrLoss).toFixed(2)}
-              </span>
+            <div>
+              <h5 style={{ color: '#d97706', borderBottom: '2px solid #d97706', paddingBottom: '4px' }}>Liabilities & Equity</h5>
+              {reportData.liabilityItems.map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0' }}>
+                  <span>{item.name}</span>
+                  <strong>₹{item.amount.toFixed(2)}</strong>
+                </div>
+              ))}
+              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '4px', fontWeight: 'bold', fontSize: '13px' }}>
+                Total Liabilities: ₹{reportData.totalLiabilities.toFixed(2)}
+              </div>
             </div>
           </div>
-        ) : (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div>
-                <h4 style={{ color: '#2563eb', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Assets</h4>
-                {reportData.balanceSheet.assetHeads.length === 0 ? <p style={emptyStyle}>No Asset Heads</p> : reportData.balanceSheet.assetHeads.map(item => (
-                  <div key={item.id} style={rowStyle}><span>{item.name}</span><span>₹{item.balance.toFixed(2)}</span></div>
-                ))}
-                <div style={totalRowStyle}><span>Total Assets</span><span>₹{reportData.balanceSheet.totalAssets.toFixed(2)}</span></div>
-              </div>
+        </div>
+      )}
 
-              <div>
-                <h4 style={{ color: '#d97706', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Liabilities & Capital</h4>
-                {reportData.balanceSheet.liabilityHeads.map(item => (
-                  <div key={item.id} style={rowStyle}><span>{item.name}</span><span>₹{item.balance.toFixed(2)}</span></div>
-                ))}
-                {reportData.balanceSheet.equityHeads.map(item => (
-                  <div key={item.id} style={rowStyle}><span>{item.name}</span><span>₹{item.balance.toFixed(2)}</span></div>
-                ))}
-                <div style={rowStyle}>
-                  <span>Retained Earnings (Net Profit)</span>
-                  <span>₹{reportData.balanceSheet.netProfitOrLoss.toFixed(2)}</span>
-                </div>
-                <div style={totalRowStyle}>
-                  <span>Total Liabilities & Equity</span>
-                  <span>₹{reportData.balanceSheet.totalLiabilitiesAndEquity.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: '20px', padding: '10px', borderRadius: '6px', textAlign: 'center', backgroundColor: reportData.balanceSheet.isBalanced ? '#dcfce7' : '#fee2e2', color: reportData.balanceSheet.isBalanced ? '#166534' : '#991b1b', fontWeight: 'bold', fontSize: '12px' }}>
-              {reportData.balanceSheet.isBalanced ? '✓ Balance Sheet Matched (Assets = Liabilities + Equity)' : '⚠️ Balance Sheet Mismatch Alert'}
-            </div>
-          </div>
-        )}
-
-      </div>
     </div>
   );
 }
-
-const emptyStyle = { fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' };
-const rowStyle = { display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px dashed #e2e8f0', fontSize: '11px' };
-const totalRowStyle = { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #0f172a', fontWeight: 'bold', fontSize: '12px', marginTop: '10px' };
