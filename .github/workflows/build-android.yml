@@ -22,12 +22,12 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Clean Install Dependencies
+      # Step 1: Install Dependencies
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
-      # Step 2: Auto-Bump Android Versioning
+      # Step 2: Dynamic Android Versioning Auto-Increment
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
@@ -40,26 +40,27 @@ jobs:
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      # Step 3: Compile Fresh Production Web Bundle
-      - name: Build Production Web Bundle
+      # Step 3: Build Web React Dist Bundle
+      - name: Build Web Bundle
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Force Sync Web Build into Android Assets Native Folder
-      - name: Force Capacitor Native Asset Sync
+      # Step 4: Re-Generate & Sync Capacitor Android Native Folder
+      - name: Sync Web Assets to Native Android Workspace
         working-directory: frontend
         run: |
-          npx @capacitor/cli copy android
+          rm -rf android
+          npx @capacitor/cli add android
           npx @capacitor/cli sync android
 
-      # Step 5: Build Fresh Android APK
-      - name: Assemble Debug APK
+      # Step 5: Build Fresh Output APK
+      - name: Build APK
         working-directory: frontend/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # Step 6: Upload Build Output Artifact
+      # Step 6: Upload Output APK Artifact
       - name: Upload APK Binary Artifact
         uses: actions/upload-artifact@v4
         with:
