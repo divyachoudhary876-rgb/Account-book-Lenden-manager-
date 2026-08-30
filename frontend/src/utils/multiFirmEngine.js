@@ -25,7 +25,7 @@ export const saveOrUpdateFirm = (firmData) => {
   } else {
     newRegistry = [...existingFirms, updatedFirm];
     
-    // Initialize blank isolated ledger & inventory keys for NEW firm
+    // Initialize isolated local storage keys for NEW firm
     localStorage.setItem(`app_inventory_${firmId}`, JSON.stringify([]));
     localStorage.setItem(`app_journal_entries_${firmId}`, JSON.stringify([]));
     localStorage.setItem(`app_account_heads_${firmId}`, JSON.stringify([]));
