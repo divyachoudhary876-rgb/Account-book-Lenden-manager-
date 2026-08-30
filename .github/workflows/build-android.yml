@@ -22,17 +22,31 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies with --legacy-peer-deps flag to resolve ERESOLVE conflicts
+      # Step 1: Install Dependencies
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps
 
-      # Step 2: Compile Production Web Bundle
+      # Step 2: Auto-Increment Android Version Code & Version Name dynamically
+      - name: Auto-Bump Android Versioning
+        working-directory: frontend
+        run: |
+          BUILD_NUMBER=${{ github.run_number }}
+          VERSION_NAME="1.0.${BUILD_NUMBER}"
+          echo "Setting Version Name to ${VERSION_NAME} with Version Code ${BUILD_NUMBER}"
+          
+          # Inject dynamic versioning into android/app/build.gradle if present
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUMBER}/g" android/app/build.gradle
+            sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
+          fi
+
+      # Step 3: Build Web Application
       - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      # Step 3: Sync Capacitor Android Native Assets
+      # Step 4: Sync Capacitor Native Android Workspace
       - name: Ensure Capacitor Platform Sync
         working-directory: frontend
         run: |
@@ -42,19 +56,18 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      # Step 4: Grant Permissions to Gradle Wrapper
+      # Step 5: Grant Permissions & Build APK
       - name: Grant Gradle Permissions
         working-directory: frontend/android
         run: chmod +x gradlew
 
-      # Step 5: Build Debug Signed Android APK Binary
-      - name: Build Android Debug Binary
+      - name: Build Android Release APK
         working-directory: frontend/android
         run: ./gradlew assembleDebug
 
-      # Step 6: Upload Output APK Artifact
+      # Step 6: Upload Output Binary Artifact
       - name: Upload Output APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
+          name: AccountBook-v1.0.${{ github.run_number }}-release
           path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
