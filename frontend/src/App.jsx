@@ -1,120 +1,105 @@
 // frontend/src/App.jsx
 
 import React, { useState, useEffect } from 'react';
-import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
-import AccountStatementView from './components/AccountStatementView.jsx';
-import JournalRegisterView from './components/JournalRegisterView.jsx';
-import VoucherEntryForm from './components/VoucherEntryForm.jsx';
-import SecurityBackupSettings from './components/SecurityBackupSettings.jsx';
-import DataPurgeView from './components/DataPurgeView.jsx';
-import FinancialReportsView from './components/FinancialReportsView.jsx';
+import NavbarHeader from './components/NavbarHeader.jsx';
+import CreateFirmForm from './components/CreateFirmForm.jsx';
 import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
 import InventoryStockView from './components/InventoryStockView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
-import BillSettlementView from './components/BillSettlementView.jsx';
-import CreateFirmForm from './components/CreateFirmForm.jsx';
+import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
+import VoucherEntryForm from './components/VoucherEntryForm.jsx';
 import BhattaProductionMasterView from './components/BhattaProductionMasterView.jsx';
-
-import { SORTED_ACCOUNTING_MENU } from './utils/navigationRegistry.js';
-import { isFirstTimeUser } from './utils/firmValidationEngine.js';
+import BillSettlementView from './components/BillSettlementView.jsx';
+import AccountingDashboard from './components/AccountingDashboard.jsx';
+import AccountStatementView from './components/AccountStatementView.jsx';
+import JournalRegisterView from './components/JournalRegisterView.jsx';
+import FinancialReportsView from './components/FinancialReportsView.jsx';
+import SecurityBackupSettings from './components/SecurityBackupSettings.jsx';
+import DataPurgeView from './components/DataPurgeView.jsx';
+import { runSafeAppMigration } from './utils/databaseMigrationEngine.js';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [activeFirm, setActiveFirm] = useState(null);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
-
-  const syncFirmState = () => {
-    const firstTime = isFirstTimeUser();
-    setNeedsOnboarding(firstTime);
-
-    if (firstTime) {
-      setActiveTab('firm_setup');
-    } else {
-      const firm = JSON.parse(localStorage.getItem('active_firm_profile'));
-      setActiveFirm(firm);
-    }
-  };
+  const [activeTab, setActiveTab] = useState('bhatta_prod');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [firm, setFirm] = useState({
+    id: 'FIRM-001',
+    legal_name: 'Neelkanth Int Udyog',
+    industry_type: 'BRICK_KILN',
+    gstin: '08AAAAA0000A1Z5'
+  });
 
   useEffect(() => {
-    syncFirmState();
-    window.addEventListener('storage', syncFirmState);
-    return () => window.removeEventListener('storage', syncFirmState);
+    // Run safe migration on startup to preserve user data across app re-installs/updates
+    runSafeAppMigration();
+    
+    const savedFirm = JSON.parse(localStorage.getItem('active_firm_profile') || 'null');
+    if (savedFirm) setFirm(savedFirm);
   }, []);
 
+  const handleNavigate = (tabId) => {
+    setActiveTab(tabId);
+    setIsMenuOpen(false);
+  };
+
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'Arial, sans-serif' }}>
-      <header style={{ backgroundColor: '#0f172a', color: '#fff', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{activeFirm?.legal_name || 'Business Setup Required'}</div>
-          <div style={{ fontSize: '11px', color: '#94a3b8' }}>GSTIN: {activeFirm?.gstin || 'Unregistered'}</div>
-        </div>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: 'Arial, sans-serif' }}>
+      
+      {/* Top Application Navbar & Logo Header */}
+      <NavbarHeader firm={firm} onOpenMenu={() => setIsMenuOpen(!isMenuOpen)} />
 
-        {!needsOnboarding && (
-          <button 
-            onClick={() => setIsDrawerOpen(true)}
-            style={{ backgroundColor: '#1e293b', color: '#fff', border: '1px solid #334155', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-          >
-            ☰ Navigation Suite
-          </button>
-        )}
-      </header>
-
-      {isDrawerOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex' }}>
-          <div style={{ width: '320px', backgroundColor: '#0f172a', color: '#fff', height: '100%', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#38bdf8' }}>WORKFLOW SEQUENCED MENU</span>
-              <button onClick={() => setIsDrawerOpen(false)} style={{ backgroundColor: '#1e293b', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>✕ Close</button>
-            </div>
-
-            {SORTED_ACCOUNTING_MENU.map(item => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setIsDrawerOpen(false);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  backgroundColor: activeTab === item.id ? '#2563eb' : 'transparent',
-                  color: '#ffffff',
-                  fontWeight: activeTab === item.id ? 'bold' : 'normal',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  fontSize: '13px'
-                }}
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            ))}
+      {/* Navigation Drawer Sequence */}
+      {isMenuOpen && (
+        <div style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '16px', borderBottom: '2px solid #2563eb' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '10px', color: '#94a3b8' }}>ACCOUNTING WORKFLOW MENU</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
+            <button onClick={() => handleNavigate('firm_setup')} style={menuBtnStyle}>1. Firm Profile Settings</button>
+            <button onClick={() => handleNavigate('create_account')} style={menuBtnStyle}>2. Create Account Head</button>
+            <button onClick={() => handleNavigate('inventory')} style={menuBtnStyle}>3. Inventory & Stock Master</button>
+            <button onClick={() => handleNavigate('billing')} style={menuBtnStyle}>4. Sales Billing & Invoicing</button>
+            <button onClick={() => handleNavigate('purchase')} style={menuBtnStyle}>5. Purchase Entry & Inward Stock</button>
+            <button onClick={() => handleNavigate('vouchers')} style={menuBtnStyle}>6. Voucher Entry (JV/PV/RV)</button>
+            <button onClick={() => handleNavigate('bhatta_prod')} style={menuBtnStyle}>7. Brick Production / Nikasi</button>
+            <button onClick={() => handleNavigate('settlement')} style={menuBtnStyle}>8. Bill Settlement (FIFO)</button>
+            <button onClick={() => handleNavigate('dashboard')} style={menuBtnStyle}>9. Dashboard & Overview</button>
+            <button onClick={() => handleNavigate('ledger')} style={menuBtnStyle}>10. Account Milan & Ledger</button>
+            <button onClick={() => handleNavigate('journal')} style={menuBtnStyle}>11. General Journal Register</button>
+            <button onClick={() => handleNavigate('reports')} style={menuBtnStyle}>12. Financial Reports (P&L / BS)</button>
+            <button onClick={() => handleNavigate('backup')} style={menuBtnStyle}>13. Data Backup & Protection</button>
+            <button onClick={() => handleNavigate('purge')} style={menuBtnStyle}>14. Clear Demo Data</button>
           </div>
-          <div style={{ flex: 1 }} onClick={() => setIsDrawerOpen(false)} />
         </div>
       )}
 
+      {/* Dynamic Main Workspace Router */}
       <main style={{ padding: '16px', maxWidth: '1000px', margin: '0 auto' }}>
-        {activeTab === 'firm_setup' && <CreateFirmForm onSaved={() => { syncFirmState(); setActiveTab('dashboard'); }} />}
-        {activeTab === 'create_account' && <CreateAccountHeadModal onClose={() => setActiveTab('ledger')} />}
-        {activeTab === 'inventory' && <InventoryStockView />}
-        {activeTab === 'billing' && <CreateInvoice firm={activeFirm} />}
-        {activeTab === 'vouchers' && <VoucherEntryForm firm={activeFirm} />}
-        {activeTab === 'bhatta_prod' && <BhattaProductionMasterView />}
-        {activeTab === 'settlement' && <BillSettlementView firm={activeFirm} />}
-        {activeTab === 'dashboard' && <EnterpriseDashboard firm={activeFirm} onNavigate={(tab) => setActiveTab(tab)} />}
-        {activeTab === 'ledger' && <AccountStatementView firm={activeFirm} />}
-        {activeTab === 'journal' && <JournalRegisterView firm={activeFirm} />}
-        {activeTab === 'reports' && <FinancialReportsView firm={activeFirm} />}
+        {activeTab === 'firm_setup' && <CreateFirmForm onSave={(f) => setFirm(f)} />}
+        {activeTab === 'create_account' && <CreateAccountHeadModal onClose={() => setActiveTab('bhatta_prod')} />}
+        {activeTab === 'inventory' && <InventoryStockView firm={firm} />}
+        {activeTab === 'billing' && <CreateInvoice firm={firm} />}
+        {activeTab === 'purchase' && <PurchaseStockEntryForm firm={firm} />}
+        {activeTab === 'vouchers' && <VoucherEntryForm firm={firm} />}
+        {activeTab === 'bhatta_prod' && <BhattaProductionMasterView firm={firm} />}
+        {activeTab === 'settlement' && <BillSettlementView firm={firm} />}
+        {activeTab === 'dashboard' && <AccountingDashboard firm={firm} />}
+        {activeTab === 'ledger' && <AccountStatementView firm={firm} />}
+        {activeTab === 'journal' && <JournalRegisterView firm={firm} />}
+        {activeTab === 'reports' && <FinancialReportsView firm={firm} />}
         {activeTab === 'backup' && <SecurityBackupSettings />}
         {activeTab === 'purge' && <DataPurgeView />}
       </main>
+
     </div>
   );
 }
+
+const menuBtnStyle = {
+  backgroundColor: '#1e293b',
+  color: '#ffffff',
+  border: '1px solid #334155',
+  padding: '10px 12px',
+  borderRadius: '6px',
+  textAlign: 'left',
+  fontWeight: 'bold',
+  fontSize: '12px',
+  cursor: 'pointer'
+};
