@@ -69,7 +69,6 @@ export const updateDefaultBrickWeight = (firmId, newWeightKg, applyRetrospective
   return settings;
 };
 
-// Process Pathai Entry & Synchronize directly with Master Inventory Matrix
 export const processPathaiProductionEntry = (firmId, payload) => {
   const targetId = firmId || 'FIRM-001';
   const qty = parseInt(payload.raw_bricks_count || 0, 10);
@@ -83,16 +82,15 @@ export const processPathaiProductionEntry = (firmId, payload) => {
   const soilConsumedTons = calculateSoilTons(qty, unitWeight, settings.soil_waste_percentage);
   const stock = getBrickKilnStock(targetId);
 
-  // Update Mud Stock (-OUT) & Raw Brick Stock (+IN)
+  // Update Soil Stock (-OUT) & Raw Brick Stock (+IN)
   stock.RAW_SOIL_TONS = parseFloat((stock.RAW_SOIL_TONS - soilConsumedTons).toFixed(3));
   stock.RAW_KACHI += qty;
   localStorage.setItem(`app_brick_stock_${targetId}`, JSON.stringify(stock));
 
-  // Direct Integration into Master Inventory Matrix (Master Stock Inventory)
+  // Sync to Master Inventory Stock View
   const masterKey = `app_inventory_${targetId}`;
   const masterItems = getStockItemsByFirm(targetId);
   
-  // 1. Update/Add Raw Clay / Mud Stock Item in Master Inventory
   let mudItemIndex = masterItems.findIndex(i => i.item_name && (i.item_name.includes('मिट्टी') || i.item_name.includes('Clay')));
   if (mudItemIndex !== -1) {
     masterItems[mudItemIndex].current_stock = stock.RAW_SOIL_TONS;
@@ -105,7 +103,6 @@ export const processPathaiProductionEntry = (firmId, payload) => {
     });
   }
 
-  // 2. Update/Add Kachi Brick Item in Master Inventory
   let rawBrickIndex = masterItems.findIndex(i => i.item_name && (i.item_name.includes('कच्ची ईंट') || i.item_name.includes('Raw Brick')));
   if (rawBrickIndex !== -1) {
     masterItems[rawBrickIndex].current_stock = stock.RAW_KACHI;
@@ -120,7 +117,7 @@ export const processPathaiProductionEntry = (firmId, payload) => {
 
   localStorage.setItem(masterKey, JSON.stringify(masterItems));
 
-  // Save Pathai Record Log
+  // Pathai Log Recording
   const logKey = `app_brick_pathai_logs_${targetId}`;
   const existingLogs = JSON.parse(localStorage.getItem(logKey) || '[]');
   const wagesPayable = (qty / 1000) * ratePer1000;
