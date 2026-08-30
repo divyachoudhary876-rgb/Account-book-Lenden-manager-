@@ -24,6 +24,7 @@ export const saveStockItem = (firmId, itemData) => {
     id: itemData.id || `ITEM-${Date.now()}`,
     item_name: itemData.item_name,
     unit: itemData.unit || 'Pcs',
+    opening_stock: parseFloat(itemData.opening_stock || itemData.current_stock || 0),
     current_stock: parseFloat(itemData.current_stock || 0),
     sale_rate: parseFloat(itemData.sale_rate || 0),
     purchase_rate: parseFloat(itemData.purchase_rate || 0),
@@ -40,4 +41,33 @@ export const saveStockItem = (firmId, itemData) => {
   localStorage.setItem(key, JSON.stringify(existingItems));
   window.dispatchEvent(new Event('storage'));
   return existingItems;
+};
+
+// Explicit Named Export required by InventoryStockView.jsx
+export const addNewStockItem = (firmId, itemData) => {
+  if (!itemData.item_name || itemData.item_name.trim() === '') {
+    throw new Error('⚠️ Stock Item Name is required.');
+  }
+  return saveStockItem(firmId, itemData);
+};
+
+// Explicit Named Export required by InventoryStockView.jsx
+export const deleteStockItem = (firmId, itemId) => {
+  const targetId = firmId || 'FIRM-001';
+  const key = `app_inventory_${targetId}`;
+  const existingItems = getStockItemsByFirm(targetId);
+  const filtered = existingItems.filter(item => item.id !== itemId);
+  
+  localStorage.setItem(key, JSON.stringify(filtered));
+  window.dispatchEvent(new Event('storage'));
+  return filtered;
+};
+
+// Explicit Named Export required by InventoryStockView.jsx
+export const purgeAndClearInventoryData = (firmId) => {
+  const targetId = firmId || 'FIRM-001';
+  const key = `app_inventory_${targetId}`;
+  localStorage.setItem(key, JSON.stringify([]));
+  window.dispatchEvent(new Event('storage'));
+  return true;
 };
