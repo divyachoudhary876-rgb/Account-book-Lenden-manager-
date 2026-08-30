@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getAccountHeadsByFirm } from '../utils/accountMasterEngine.js';
+import { postDoubleEntryVoucher } from '../utils/voucherPostingEngine.js';
 
 export default function VoucherEntryForm({ firm }) {
   const activeFirmId = firm?.id;
@@ -34,9 +35,21 @@ export default function VoucherEntryForm({ firm }) {
     if (!amount || parseFloat(amount) <= 0) return alert("❌ Please enter valid Transaction Amount.");
     if (debitAcc === creditAcc) return alert("❌ Debit and Credit Accounts cannot be identical.");
 
-    alert(`✓ ${voucherType} Voucher of ₹${amount} posted successfully!`);
-    setAmount('');
-    setNarration('');
+    try {
+      postDoubleEntryVoucher(activeFirmId, {
+        voucher_type: voucherType,
+        debit_account_id: debitAcc,
+        credit_account_id: creditAcc,
+        amount: amount,
+        narration: narration
+      });
+
+      alert(`✓ ${voucherType} Voucher of ₹${amount} posted! Entry is now live in Account Statement and Trial Balance.`);
+      setAmount('');
+      setNarration('');
+    } catch (err) {
+      alert(`❌ Voucher Posting Error: ${err.message}`);
+    }
   };
 
   return (
@@ -45,9 +58,8 @@ export default function VoucherEntryForm({ firm }) {
 
       <form onSubmit={handlePostVoucher} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         
-        {/* Voucher Type Selector (Fixed Escaped Characters) */}
         <div>
-          <label style={labelStyle}>Select Voucher Entry Type *</label>
+          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Select Voucher Entry Type *</label>
           <select value={voucherType} onChange={e => setVoucherType(e.target.value)} style={inputStyle}>
             <option value="JOURNAL">📓 Journal Voucher (General Transfer)</option>
             <option value="PAYMENT">💸 Payment Voucher (Outgoing Cash/Bank)</option>
@@ -56,10 +68,9 @@ export default function VoucherEntryForm({ firm }) {
           </select>
         </div>
 
-        {/* Account Selection */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
-            <label style={labelStyle}>Debit Account (Dr) *</label>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Debit Account (Dr) *</label>
             <select value={debitAcc} onChange={e => setDebitAcc(e.target.value)} style={inputStyle}>
               {accounts.map(a => (
                 <option key={a.id} value={a.id}>Dr: {a.name} ({a.group_type})</option>
@@ -68,7 +79,7 @@ export default function VoucherEntryForm({ firm }) {
           </div>
 
           <div>
-            <label style={labelStyle}>Credit Account (Cr) *</label>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Credit Account (Cr) *</label>
             <select value={creditAcc} onChange={e => setCreditAcc(e.target.value)} style={inputStyle}>
               {accounts.map(a => (
                 <option key={a.id} value={a.id}>Cr: {a.name} ({a.group_type})</option>
@@ -78,16 +89,16 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         <div>
-          <label style={labelStyle}>Transaction Amount (₹) *</label>
+          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Transaction Amount (₹) *</label>
           <input type="number" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} style={inputStyle} required />
         </div>
 
         <div>
-          <label style={labelStyle}>Narration / Particulars Details</label>
+          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Narration / Particulars</label>
           <input type="text" placeholder="Particulars of voucher entry..." value={narration} onChange={e => setNarration(e.target.value)} style={inputStyle} />
         </div>
 
-        <button type="submit" style={{ backgroundColor: '#1e3a8a', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', marginTop: '6px' }}>
+        <button type="submit" style={{ backgroundColor: '#1e3a8a', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
           💾 Save & Post Double-Entry Voucher
         </button>
 
@@ -96,5 +107,4 @@ export default function VoucherEntryForm({ firm }) {
   );
 }
 
-const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' };
 const inputStyle = { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' };
