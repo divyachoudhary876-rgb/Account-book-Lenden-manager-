@@ -1,104 +1,57 @@
 // frontend/src/components/JournalRegisterView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { downloadElementAsPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function JournalRegisterView({ firm }) {
+  const activeFirmId = firm?.id;
   const [entries, setEntries] = useState([]);
-  const [filterType, setFilterType] = useState('ALL');
-  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem('app_journal_entries') || '[]');
-    setEntries(stored);
-  }, []);
+    loadJournal();
+    const handleStorage = () => loadJournal();
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [firm]);
 
-  const filteredEntries = entries.filter(e => {
-    const matchesType = filterType === 'ALL' || e.voucher_type === filterType;
-    const matchesSearch = !searchTerm || 
-      (e.account_name && e.account_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (e.narration && e.narration.toLowerCase().includes(searchTerm.toLowerCase()));
-    return matchesType && matchesSearch;
-  });
+  const loadJournal = () => {
+    const targetId = activeFirmId || 'FIRM-001';
+    const list = JSON.parse(localStorage.getItem(`app_journal_entries_${targetId}`) || '[]');
+    setEntries(list);
+  };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '18px' }}>📖 General Journal Register (Day Book)</h3>
       
-      {/* Header Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>📖 General Journal Register (Day Book)</h3>
-          <span style={{ fontSize: '12px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Active Firm'}</span>
-        </div>
-
-        <button
-          onClick={() => downloadElementAsPDF('printable_journal_area', 'Journal_Register_DayBook')}
-          style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-        >
-          📲 Download & Print PDF
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px', marginBottom: '16px' }}>
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} style={inputStyle}>
-          <option value="ALL">All Voucher Types</option>
-          <option value="PAYMENT">Payment Vouchers</option>
-          <option value="RECEIPT">Receipt Vouchers</option>
-          <option value="SALES">Sales Vouchers</option>
-          <option value="PURCHASE">Purchase Vouchers</option>
-          <option value="JOURNAL">Journal Vouchers</option>
-        </select>
-
-        <input
-          type="text"
-          placeholder="Search Account or Narration..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          style={inputStyle}
-        />
-      </div>
-
-      {/* Clean Journal Table Without Voucher Ref Column */}
-      <div id="printable_journal_area" style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-        <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'center' }}>
-          <h4 style={{ margin: 0, color: '#0f172a' }}>{firm?.legal_name || 'Account Book'}</h4>
-          <span style={{ fontSize: '11px', color: '#64748b' }}>GENERAL JOURNAL REGISTER / DAY BOOK</span>
-        </div>
-
+      <div style={{ overflowX: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
           <thead>
             <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-              <th style={{ ...thStyle, width: '18%' }}>Date</th>
-              <th style={{ ...thStyle, width: '18%' }}>Voucher Type</th>
-              <th style={{ ...thStyle, width: '40%' }}>Particulars (Account & Narration)</th>
-              <th style={{ ...thStyle, textAlign: 'right', width: '12%' }}>Debit (₹)</th>
-              <th style={{ ...thStyle, textAlign: 'right', width: '12%' }}>Credit (₹)</th>
+              <th style={{ padding: '10px', textAlign: 'left' }}>Date</th>
+              <th style={{ padding: '10px', textAlign: 'left' }}>Voucher Type</th>
+              <th style={{ padding: '10px', textAlign: 'left' }}>Particulars (Dr / Cr)</th>
+              <th style={{ padding: '10px', textAlign: 'right' }}>Amount (₹)</th>
             </tr>
           </thead>
           <tbody>
-            {filteredEntries.length === 0 ? (
+            {entries.length === 0 ? (
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
-                  No journal entries found.
+                <td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
+                  No journal entries recorded.
                 </td>
               </tr>
             ) : (
-              filteredEntries.map((item, idx) => (
+              entries.map((item, idx) => (
                 <tr key={item.id || idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                  <td style={tdStyle}>{item.entry_date || '30/08/2026'}</td>
-                  <td style={tdStyle}>
-                    <span style={badgeStyle(item.voucher_type)}>{item.voucher_type || 'GENERAL'}</span>
+                  <td style={{ padding: '10px' }}>{item.date}</td>
+                  <td style={{ padding: '10px', fontWeight: 'bold' }}>{item.voucher_type}</td>
+                  <td style={{ padding: '10px' }}>
+                    <div><strong>Dr:</strong> {item.debit_account_name || item.debit_account_id}</div>
+                    <div><strong>Cr:</strong> {item.credit_account_name || item.credit_account_id}</div>
+                    <div style={{ fontSize: '10px', color: '#64748b' }}>{item.narration}</div>
                   </td>
-                  <td style={tdStyle}>
-                    <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{item.account_name || 'General Entry'}</div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{item.narration || '-'}</div>
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: item.debit > 0 ? '#10b981' : '#64748b' }}>
-                    {item.debit > 0 ? `₹${parseFloat(item.debit).toFixed(2)}` : '-'}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: item.credit > 0 ? '#ef4444' : '#64748b' }}>
-                    {item.credit > 0 ? `₹${parseFloat(item.credit).toFixed(2)}` : '-'}
+                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#1e3a8a' }}>
+                    ₹{parseFloat(item.amount).toFixed(2)}
                   </td>
                 </tr>
               ))
@@ -106,16 +59,6 @@ export default function JournalRegisterView({ firm }) {
           </tbody>
         </table>
       </div>
-
     </div>
   );
 }
-
-const inputStyle = { padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' };
-const thStyle = { padding: '10px', textAlign: 'left', fontWeight: 'bold', fontSize: '11px' };
-const tdStyle = { padding: '10px', verticalAlign: 'top' };
-const badgeStyle = (type) => ({
-  padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold',
-  backgroundColor: type === 'PAYMENT' ? '#fee2e2' : type === 'RECEIPT' ? '#d1fae5' : '#e0f2fe',
-  color: type === 'PAYMENT' ? '#991b1b' : type === 'RECEIPT' ? '#065f46' : '#075985'
-});
