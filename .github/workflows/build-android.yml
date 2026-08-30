@@ -23,38 +23,37 @@ jobs:
           java-version: '21'
 
       # Step 1: Install Dependencies
-      - name: Install Frontend Dependencies
+      - name: Install Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps
 
-      # Step 2: Build Web Application Bundle
+      # Step 2: Build Web Bundle
       - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      # Step 3: Ensure Native Android Wrapper Exists & Sync
-      - name: Ensure Capacitor Android Platform
+      # Step 3: Ensure Capacitor Native Platform
+      - name: Ensure Capacitor Platform
         working-directory: frontend
         run: |
           if [ ! -f "android/settings.gradle" ]; then
-            echo "Scaffolding missing Capacitor Android platform..."
             rm -rf android
             npx @capacitor/cli add android
           fi
           npx @capacitor/cli sync android
 
-      # Step 4: Set Executable Permissions
-      - name: Grant Gradle Permissions
+      # Step 4: Grant Permissions
+      - name: Grant Executable Permissions
         working-directory: frontend/android
         run: chmod +x gradlew
 
-      # Step 5: Build Debug Signed APK (Always Installable on Android Devices)
-      - name: Build Installable Android APK
+      # Step 5: Build Debug Signed APK (Consistent Debug Keystore)
+      - name: Build Debug Signed Binary
         working-directory: frontend/android
         run: ./gradlew assembleDebug
 
-      # Step 6: Upload Output Installable Binary
-      - name: Upload Signed Release APK
+      # Step 6: Upload Output APK
+      - name: Upload Output APK
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
