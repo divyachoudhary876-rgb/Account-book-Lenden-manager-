@@ -32,7 +32,7 @@ export default function VoucherEntryForm({ firm }) {
   const handlePostVoucher = (e) => {
     e.preventDefault();
     if (!amount || parseFloat(amount) <= 0) return alert("❌ Please enter valid Transaction Amount.");
-    if (debitAcc === creditAcc) return alert("❌ Debit and Credit Accounts cannot be the same.");
+    if (debitAcc === creditAcc) return alert("❌ Debit and Credit Accounts cannot be identical.");
 
     alert(`✓ ${voucherType} Voucher of ₹${amount} posted successfully!`);
     setAmount('');
@@ -45,14 +45,14 @@ export default function VoucherEntryForm({ firm }) {
 
       <form onSubmit={handlePostVoucher} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         
-        {/* Voucher Type Selector (Restored Missing Feature) */}
+        {/* Voucher Type Selector (Fixed Escaped Characters) */}
         <div>
           <label style={labelStyle}>Select Voucher Entry Type *</label>
           <select value={voucherType} onChange={e => setVoucherType(e.target.value)} style={inputStyle}>
             <option value="JOURNAL">📓 Journal Voucher (General Transfer)</option>
             <option value="PAYMENT">💸 Payment Voucher (Outgoing Cash/Bank)</option>
             <option value="RECEIPT">💰 Receipt Voucher (Incoming Cash/Bank)</option>
-            <option value="CONTRA">🏦 Contra Voucher (Cash <-> Bank Transfer)</option>
+            <option value="CONTRA">🏦 Contra Voucher (Cash &lt;-&gt; Bank Transfer)</option>
           </select>
         </div>
 
@@ -84,11 +84,11 @@ export default function VoucherEntryForm({ firm }) {
 
         <div>
           <label style={labelStyle}>Narration / Particulars Details</label>
-          <input type="text" placeholder="Particulars of transaction..." value={narration} onChange={e => setNarration(e.target.value)} style={inputStyle} />
+          <input type="text" placeholder="Particulars of voucher entry..." value={narration} onChange={e => setNarration(e.target.value)} style={inputStyle} />
         </div>
 
         <button type="submit" style={{ backgroundColor: '#1e3a8a', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', marginTop: '6px' }}>
-          💾 Save & Post Voucher Entry
+          💾 Save & Post Double-Entry Voucher
         </button>
 
       </form>
