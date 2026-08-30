@@ -16,7 +16,6 @@ export const getAccountHeadsByFirm = (firmId) => {
     accounts = [];
   }
 
-  // Pre-populate defaults ONLY IF completely empty
   if (!accounts || accounts.length === 0) {
     accounts = [
       { id: `ACC-DEF-1-${targetId}`, name: 'Cash-in-Hand A/C', primary_type: 'ASSETS', group_type: 'CASH', opening_balance: 0, balance_type: 'Dr' },
@@ -63,6 +62,5 @@ export const saveOrUpdateAccountHead = (firmId, accountPayload) => {
   return updatedAccount;
 };
 
-// Returns ALL created accounts to guarantee no account is hidden in dropdowns
 export const getCustomerAccounts = (firmId) => getAccountHeadsByFirm(firmId);
 export const getSupplierAccounts = (firmId) => getAccountHeadsByFirm(firmId);
