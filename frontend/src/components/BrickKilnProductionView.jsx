@@ -13,16 +13,14 @@ import {
 export default function BrickKilnProductionView({ firm }) {
   const activeFirmId = firm?.id;
 
-  const [stock, setStock] = useState({ RAW_KACHI: 0, RAW_SOIL_TONS: 0 });
+  const [stock, setStock] = useState({ RAW_KACHI: 0, PAKKI_AVVAL: 0, PAKKI_DOYAM: 0, PAKKI_RODA: 0, RAW_SOIL_TONS: 0 });
   const [settings, setSettings] = useState({ default_brick_weight_kg: 3.2, soil_waste_percentage: 2.0 });
 
-  // Form Controls
   const [laborerName, setLaborerName] = useState('Ramesh Labor Group');
   const [rawBricksCount, setRawBricksCount] = useState('');
   const [unitWeightKg, setUnitWeightKg] = useState('3.2');
   const [pathaiRate, setPathaiRate] = useState('400');
 
-  // Weight Edit Confirmation Modal State
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [tempNewWeight, setTempNewWeight] = useState('');
 
@@ -52,7 +50,7 @@ export default function BrickKilnProductionView({ firm }) {
         unit_weight_kg: unitWeightKg,
         rate_per_1000: pathaiRate
       });
-      alert(`✓ Pathai entry saved! ${rawBricksCount} Raw Bricks created (${unitWeightKg} kg/brick). Deducted ${estimatedSoilTons} Tons of Clay stock.`);
+      alert(`✓ Pathai entry saved! ${rawBricksCount} Raw Bricks created. Auto deducted ${estimatedSoilTons} Tons Mud stock.`);
       setRawBricksCount('');
       loadData();
     } catch (err) {
@@ -69,7 +67,7 @@ export default function BrickKilnProductionView({ firm }) {
     updateDefaultBrickWeight(activeFirmId, tempNewWeight, applyRetrospective);
     alert(
       applyRetrospective 
-        ? `✓ New weight (${tempNewWeight} kg) applied to ALL past and future records!`
+        ? `✓ New weight (${tempNewWeight} kg) applied to ALL past & future records!`
         : `✓ New weight (${tempNewWeight} kg) set for FUTURE entries only.`
     );
     setShowWeightModal(false);
@@ -82,7 +80,7 @@ export default function BrickKilnProductionView({ firm }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>🧱 Brick Kiln Manual Weight & Soil Engine</h3>
+          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>🧱 Brick Production & Soil Weight Engine</h3>
           <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Aa (BRICK_KILN)'}</span>
         </div>
 
@@ -94,13 +92,13 @@ export default function BrickKilnProductionView({ firm }) {
         </button>
       </div>
 
-      {/* Weight Change Decision Modal Overlay */}
+      {/* Decision Modal */}
       {showWeightModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
-          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', maxWidth: '420px', width: '100%', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', maxWidth: '420px', width: '100%', border: '1px solid #cbd5e1' }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#0f172a' }}>⚖️ Confirm Brick Weight Update</h4>
             <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.5' }}>
-              Aap <strong>1 Brick ka weight {tempNewWeight} kg</strong> update kar rahe hain. Iska prabhav kis par padna chahiye?
+              Aap <strong>1 Brick ka weight {tempNewWeight} kg</strong> set kar rahe hain. Iska effect kis par padna chahiye?
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
@@ -109,7 +107,6 @@ export default function BrickKilnProductionView({ firm }) {
                 style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
               >
                 1. ➡️ Sirf Aage Se (Future Entries Only)
-                <div style={{ fontSize: '10px', fontWeight: 'normal', opacity: 0.9 }}>Purana stock aur data waisa hi rahega.</div>
               </button>
 
               <button
@@ -117,12 +114,11 @@ export default function BrickKilnProductionView({ firm }) {
                 style={{ backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
               >
                 2. 🔄 Purani Aur Aage Ki Sabhi Entries Par (Retrospective)
-                <div style={{ fontSize: '10px', fontWeight: 'normal', opacity: 0.9 }}>Pichhle sabhi pathai records ka mitti vajan fir se calculate hoga.</div>
               </button>
 
               <button
                 onClick={() => setShowWeightModal(false)}
-                style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', marginTop: '4px' }}
+                style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
               >
                 Cancel
               </button>
@@ -131,7 +127,7 @@ export default function BrickKilnProductionView({ firm }) {
         </div>
       )}
 
-      {/* Pathai Form with Manual Weight Input */}
+      {/* Pathai Form */}
       <form onSubmit={handleSavePathai} style={{ display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
         <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#1e293b' }}>📝 Raw Bricks Pathai & Manual Weight Input</div>
 
@@ -149,7 +145,7 @@ export default function BrickKilnProductionView({ firm }) {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <label style={labelStyle}>1 Brick Wt (Kg) *</label>
-              <button type="button" onClick={triggerWeightEdit} style={{ border: 'none', background: 'none', color: '#2563eb', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}>⚙️ Set Default</button>
+              <button type="button" onClick={triggerWeightEdit} style={{ border: 'none', background: 'none', color: '#2563eb', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}>⚙️ Edit Default</button>
             </div>
             <input type="number" step="0.1" value={unitWeightKg} onChange={e => setUnitWeightKg(e.target.value)} style={inputStyle} required />
           </div>
@@ -160,10 +156,9 @@ export default function BrickKilnProductionView({ firm }) {
           </div>
         </div>
 
-        {/* Live Calculation Output Card */}
         <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px', borderRadius: '6px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '11px', color: '#1e40af' }}>
-          <div><strong>Calculated Soil Consumed:</strong> <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1d4ed8' }}>{estimatedSoilTons} Tons</span></div>
-          <div><strong>Total Wages Payable:</strong> <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1d4ed8' }}>₹{calculatedWages}</span></div>
+          <div><strong>Soil Consumed:</strong> <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1d4ed8' }}>{estimatedSoilTons} Tons</span></div>
+          <div><strong>Wages Payable:</strong> <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1d4ed8' }}>₹{calculatedWages}</span></div>
         </div>
 
         <button type="submit" style={{ backgroundColor: '#2563eb', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
@@ -171,7 +166,7 @@ export default function BrickKilnProductionView({ firm }) {
         </button>
       </form>
 
-      {/* Live Stock Matrix */}
+      {/* Stock Matrix */}
       <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden' }}>
         <div style={{ padding: '10px 14px', backgroundColor: '#0f172a', color: '#ffffff', fontWeight: 'bold', fontSize: '13px' }}>
           📋 Live Inventory Stock Balance
