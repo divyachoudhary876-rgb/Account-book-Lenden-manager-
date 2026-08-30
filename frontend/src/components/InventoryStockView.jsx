@@ -1,7 +1,12 @@
 // frontend/src/components/InventoryStockView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { getStockItemsByFirm, addNewStockItem } from '../utils/stockInventoryEngine.js';
+import { 
+  getStockItemsByFirm, 
+  addNewStockItem, 
+  purgeAndClearInventoryData,
+  UNITS_OF_MEASUREMENT 
+} from '../utils/stockInventoryEngine.js';
 
 export default function InventoryStockView({ firm }) {
   const activeFirmId = firm?.id;
@@ -10,7 +15,6 @@ export default function InventoryStockView({ firm }) {
   const [itemName, setItemName] = useState('');
   const [unit, setUnit] = useState('Pcs');
   const [openingStock, setOpeningStock] = useState('0');
-  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     loadInventory();
@@ -20,15 +24,8 @@ export default function InventoryStockView({ firm }) {
   }, [firm]);
 
   const loadInventory = () => {
-    try {
-      const list = getStockItemsByFirm(activeFirmId);
-      setItems(Array.isArray(list) ? list : []);
-      setHasError(false);
-    } catch (err) {
-      console.error("Inventory loading crash prevented:", err);
-      setItems([]);
-      setHasError(true);
-    }
+    const list = getStockItemsByFirm(activeFirmId);
+    setItems(Array.isArray(list) ? list : []);
   };
 
   const handleCreateItem = (e) => {
@@ -51,28 +48,36 @@ export default function InventoryStockView({ firm }) {
     }
   };
 
-  if (hasError) {
-    return (
-      <div style={{ padding: '20px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#991b1b', textAlign: 'center' }}>
-        <h4>⚠️ Inventory Module Data Reset Needed</h4>
-        <p style={{ fontSize: '12px' }}>Data formatting mismatch detected. Click below to recover inventory view.</p>
-        <button onClick={loadInventory} style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-          🔄 Reload Stock Items
-        </button>
-      </div>
-    );
-  }
+  const handlePurgeData = () => {
+    if (window.confirm("⚠️ Kya aap is firm ka purana sample stock data saaf karna chahte hain?")) {
+      purgeAndClearInventoryData(activeFirmId);
+      alert("✓ Purana sample inventory data clear ho gaya hai!");
+      loadInventory();
+    }
+  };
 
   return (
     <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: '100%', boxSizing: 'border-box' }}>
       
-      {/* Module Title */}
-      <div style={{ marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-        <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📦 Master Inventory & Stock Balance</h3>
-        <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Aa (TRADING)'}</span>
+      {/* Header & Data Clear Button */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+        <div>
+          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📦 Master Inventory & Stock Balance</h3>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Aa (TRADING)'}</span>
+        </div>
+
+        {items.length > 0 && (
+          <button
+            type="button"
+            onClick={handlePurgeData}
+            style={{ backgroundColor: '#ef4444', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+          >
+            🗑️ Clear Sample Data
+          </button>
+        )}
       </div>
 
-      {/* Item Creation Form */}
+      {/* Register New Item Form */}
       <form onSubmit={handleCreateItem} style={{ display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
         <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#334155' }}>➕ Register New Stock Item</div>
 
@@ -80,7 +85,7 @@ export default function InventoryStockView({ firm }) {
           <label style={labelStyle}>Item Name *</label>
           <input
             type="text"
-            placeholder="e.g. Red Brick / Raw Coal / Briquette"
+            placeholder="e.g. Gehun / Sarson / Red Brick / Cement"
             value={itemName}
             onChange={e => setItemName(e.target.value)}
             style={inputStyle}
@@ -92,11 +97,9 @@ export default function InventoryStockView({ firm }) {
           <div>
             <label style={labelStyle}>Measurement Unit *</label>
             <select value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle}>
-              <option value="Pcs">Pcs (Pieces)</option>
-              <option value="Tons">Tons</option>
-              <option value="MT">MT (Metric Ton)</option>
-              <option value="Kg">Kg</option>
-              <option value="Bags">Bags</option>
+              {UNITS_OF_MEASUREMENT.map(u => (
+                <option key={u.code} value={u.code}>{u.name}</option>
+              ))}
             </select>
           </div>
 
@@ -120,7 +123,7 @@ export default function InventoryStockView({ firm }) {
         </button>
       </form>
 
-      {/* Directory Table */}
+      {/* Stock Items Table */}
       <div style={{ overflowX: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '320px' }}>
           <thead>
@@ -133,15 +136,17 @@ export default function InventoryStockView({ firm }) {
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan="3" style={{ textAlign: 'center', padding: '16px', color: '#94a3b8' }}>
-                  No stock items registered yet. Create one above.
+                <td colSpan="3" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
+                  Koi stock item abhi tak add nahi kiya gaya hai. Upar diye form se naya item jodein.
                 </td>
               </tr>
             ) : (
               items.map((item, idx) => (
                 <tr key={item?.id || idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                   <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>📦 {item?.item_name || 'Unnamed Item'}</td>
-                  <td style={{ padding: '10px', textAlign: 'center' }}><span style={{ backgroundColor: '#e2e8f0', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px' }}>{item?.unit || 'Pcs'}</span></td>
+                  <td style={{ padding: '10px', textAlign: 'center' }}>
+                    <span style={{ backgroundColor: '#e2e8f0', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px' }}>{item?.unit || 'Pcs'}</span>
+                  </td>
                   <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: (item?.current_stock || 0) > 0 ? '#059669' : '#dc2626' }}>
                     {item?.current_stock || 0} {item?.unit || 'Pcs'}
                   </td>
