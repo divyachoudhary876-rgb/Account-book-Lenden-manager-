@@ -27,46 +27,42 @@ jobs:
         working-directory: frontend
         run: npm install --legacy-peer-deps
 
-      # Step 2: Auto-Increment Android Version Code & Version Name dynamically
+      # Step 2: Auto-Increment Android Versioning
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
           BUILD_NUMBER=${{ github.run_number }}
           VERSION_NAME="1.0.${BUILD_NUMBER}"
-          echo "Setting Version Name to ${VERSION_NAME} with Version Code ${BUILD_NUMBER}"
+          echo "Setting Version Code: ${BUILD_NUMBER}, Version Name: ${VERSION_NAME}"
           
-          # Inject dynamic versioning into android/app/build.gradle if present
-          if [ -f "android/app/build.gradle" ]; then
+          if [ -d "android/app" ]; then
             sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUMBER}/g" android/app/build.gradle
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
       # Step 3: Build Web Application
-      - name: Build Web Application
+      - name: Build Web Bundle
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Sync Capacitor Native Android Workspace
-      - name: Ensure Capacitor Platform Sync
+      # Step 4: Sync Capacitor Native Project
+      - name: Capacitor Sync
         working-directory: frontend
         run: |
-          if [ ! -f "android/settings.gradle" ]; then
-            rm -rf android
+          if [ ! -d "android" ]; then
             npx @capacitor/cli add android
           fi
           npx @capacitor/cli sync android
 
       # Step 5: Grant Permissions & Build APK
-      - name: Grant Gradle Permissions
+      - name: Build APK
         working-directory: frontend/android
-        run: chmod +x gradlew
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Build Android Release APK
-        working-directory: frontend/android
-        run: ./gradlew assembleDebug
-
-      # Step 6: Upload Output Binary Artifact
-      - name: Upload Output APK Artifact
+      # Step 6: Upload Build Output
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AccountBook-v1.0.${{ github.run_number }}-release
