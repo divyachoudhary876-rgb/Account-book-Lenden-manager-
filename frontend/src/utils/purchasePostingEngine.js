@@ -13,7 +13,9 @@ export const recordPurchaseInvoice = (payload) => {
   const gstAmount = (taxableAmount * parseFloat(gstRate || 0)) / 100;
   const totalAmount = taxableAmount + gstAmount;
 
-  // 1. Update Inventory (+ IN)
+  // -------------------------------------------------------------
+  // 1. AUTOMATIC STOCK INVENTORY UPDATE (+ IN)
+  // -------------------------------------------------------------
   const inventory = JSON.parse(localStorage.getItem('app_inventory') || '[]');
   const itemIndex = inventory.findIndex(i => i.id === itemId);
   if (itemIndex !== -1) {
@@ -21,20 +23,39 @@ export const recordPurchaseInvoice = (payload) => {
     localStorage.setItem('app_inventory', JSON.stringify(inventory));
   }
 
-  // 2. Double-Entry Journal Posting (Debit Purchase A/C & GST, Credit Supplier A/C)
+  // -------------------------------------------------------------
+  // 2. AUTOMATIC GENERAL JOURNAL & DAY BOOK ENTRY
+  // -------------------------------------------------------------
   const journalEntries = JSON.parse(localStorage.getItem('app_journal_entries') || '[]');
-  const newVoucher = {
-    id: `PURCH-${Date.now()}`,
+  
+  // Credit Entry for Supplier (Payable)
+  journalEntries.push({
+    id: `PURCH-SUPP-${Date.now()}`,
     entry_date: invoiceDate,
     voucher_type: 'PURCHASE',
     account_name: supplierAccId,
     narration: `Purchase Bill #${supplierInvoiceNo}`,
     debit: 0,
     credit: totalAmount
-  };
-  journalEntries.push(newVoucher);
+  });
+
+  // Debit Entry for Purchase Account
+  journalEntries.push({
+    id: `PURCH-ACC-${Date.now()}`,
+    entry_date: invoiceDate,
+    voucher_type: 'PURCHASE',
+    account_name: 'Purchase Account',
+    narration: `Inward Stock Purchase Bill #${supplierInvoiceNo}`,
+    debit: totalAmount,
+    credit: 0
+  });
+
   localStorage.setItem('app_journal_entries', JSON.stringify(journalEntries));
 
+  // -------------------------------------------------------------
+  // 3. BROADCAST REAL-TIME RE-RENDER EVENT
+  // -------------------------------------------------------------
   window.dispatchEvent(new Event('storage'));
+
   return { success: true, totalAmount };
 };
