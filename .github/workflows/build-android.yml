@@ -22,8 +22,8 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies
-      - name: Install Dependencies
+      # Step 1: Install Dependencies with Legacy Peer Flag (Fixes ERESOLVE)
+      - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps
 
@@ -32,7 +32,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      # Step 3: Ensure Capacitor Native Platform
+      # Step 3: Ensure Capacitor Native Platform Sync
       - name: Ensure Capacitor Platform
         working-directory: frontend
         run: |
@@ -42,18 +42,18 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      # Step 4: Grant Permissions
-      - name: Grant Executable Permissions
+      # Step 4: Grant Executable Permissions to Gradle Wrapper
+      - name: Grant Gradle Permissions
         working-directory: frontend/android
         run: chmod +x gradlew
 
-      # Step 5: Build Debug Signed APK (Consistent Debug Keystore)
-      - name: Build Debug Signed Binary
+      # Step 5: Build Debug Signed APK
+      - name: Build Android Debug Binary
         working-directory: frontend/android
         run: ./gradlew assembleDebug
 
-      # Step 6: Upload Output APK
-      - name: Upload Output APK
+      # Step 6: Upload Output Signed Release APK Artifact
+      - name: Upload Output APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
