@@ -27,7 +27,7 @@ jobs:
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
-      # Step 2: Dynamic Android Versioning Auto-Increment
+      # Step 2: Auto-Increment Android Versioning
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
@@ -40,27 +40,27 @@ jobs:
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      # Step 3: Build Web React Dist Bundle
+      # Step 3: Build Production Web Bundle
       - name: Build Web Bundle
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Re-Generate & Sync Capacitor Android Native Folder
-      - name: Sync Web Assets to Native Android Workspace
+      # Step 4: Force Capacitor Sync into Native Android Folder
+      - name: Force Sync Web Assets to Native Workspace
         working-directory: frontend
         run: |
           rm -rf android
           npx @capacitor/cli add android
           npx @capacitor/cli sync android
 
-      # Step 5: Build Fresh Output APK
+      # Step 5: Build Debug APK
       - name: Build APK
         working-directory: frontend/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # Step 6: Upload Output APK Artifact
+      # Step 6: Upload Signed Binary Output
       - name: Upload APK Binary Artifact
         uses: actions/upload-artifact@v4
         with:
