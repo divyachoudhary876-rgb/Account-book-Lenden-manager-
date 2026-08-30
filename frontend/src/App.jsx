@@ -1,128 +1,68 @@
 // frontend/src/App.jsx
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
-import NavbarHeader from './components/NavbarHeader.jsx';
-import CreateFirmForm from './components/CreateFirmForm.jsx';
-import AccountingDashboard from './components/AccountingDashboard.jsx';
-
-import { filterMenuByIndustry } from './utils/industryEngine.js';
-import { getActiveFirm } from './utils/multiFirmEngine.js';
-
-// Lazy load heavy enterprise components to reduce initial launch bundle size
-const CreateAccountHeadModal = lazy(() => import('./components/CreateAccountHeadModal.jsx'));
-const InventoryStockView = lazy(() => import('./components/InventoryStockView.jsx'));
-const CreateInvoice = lazy(() => import('./components/CreateInvoice.jsx'));
-const PurchaseStockEntryForm = lazy(() => import('./components/PurchaseStockEntryForm.jsx'));
-const VoucherEntryForm = lazy(() => import('./components/VoucherEntryForm.jsx'));
-const BhattaProductionMasterView = lazy(() => import('./components/BhattaProductionMasterView.jsx'));
-const BillSettlementView = lazy(() => import('./components/BillSettlementView.jsx'));
-const AccountStatementView = lazy(() => import('./components/AccountStatementView.jsx'));
-const JournalRegisterView = lazy(() => import('./components/JournalRegisterView.jsx'));
-const FinancialReportsView = lazy(() => import('./components/FinancialReportsView.jsx'));
-const SecurityBackupSettings = lazy(() => import('./components/SecurityBackupSettings.jsx'));
-const DataPurgeView = lazy(() => import('./components/DataPurgeView.jsx'));
+import React, { useState, useEffect } from 'react';
+import BrickKilnProductionView from './components/BrickKilnProductionView.jsx';
+import CreateInvoice from './components/CreateInvoice.jsx';
+import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
+import InventoryStockView from './components/InventoryStockView.jsx';
+import VoucherEntryForm from './components/VoucherEntryForm.jsx';
+import AccountStatementView from './components/AccountStatementView.jsx';
+import JournalRegisterView from './components/JournalRegisterView.jsx';
+import FinancialReportsView from './components/FinancialReportsView.jsx';
 
 export default function App() {
-  const [firm, setFirm] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isHydrating, setIsHydrating] = useState(true);
+  const [activeTab, setActiveTab] = useState('brick_production');
+  const [activeFirm, setActiveFirm] = useState({ id: 'FIRM-001', legal_name: 'Aa (BRICK_KILN)', business_type: 'BRICK_KILN' });
 
   useEffect(() => {
-    // Instant micro-task execution to hydrate initial state
-    requestAnimationFrame(() => {
-      const currentFirm = getActiveFirm();
-      if (currentFirm) {
-        setFirm(currentFirm);
-        setActiveTab('dashboard');
-      } else {
-        setActiveTab('firm_setup');
-      }
-      setIsHydrating(false);
-    });
-  }, []);
-
-  const handleSaveFirm = (newFirm) => {
-    setFirm(newFirm);
-    setActiveTab('dashboard');
-  };
-
-  const handleNavigate = (tabId) => {
-    setActiveTab(tabId);
-    setIsMenuOpen(false);
-  };
-
-  if (isHydrating) {
-    return null; // Inline HTML loader in index.html will remain visible during this split second
-  }
-
-  const menuList = filterMenuByIndustry(firm?.industry_type || 'TRADING');
+    localStorage.setItem('active_firm_profile', JSON.stringify(activeFirm));
+  }, [activeFirm]);
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: 'Arial, sans-serif' }}>
+    <div style={{ fontFamily: 'sans-serif', backgroundColor: '#f1f5f9', minHeight: '100vh', padding: '12px' }}>
       
-      <NavbarHeader
-        firm={firm}
-        activeTab={activeTab}
-        onNavigate={handleNavigate}
-        onToggleMenu={() => setIsMenuOpen(!isMenuOpen)}
-      />
+      {/* Top Navbar */}
+      <div style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '12px 16px', borderRadius: '8px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ margin: 0, fontSize: '16px' }}>📘 Account Book Smart Manager</h2>
+        <span style={{ fontSize: '11px', backgroundColor: '#3b82f6', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{activeFirm.legal_name}</span>
+      </div>
 
-      {isMenuOpen && firm && (
-        <div style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '16px', borderBottom: '2px solid #2563eb' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '10px', color: '#94a3b8' }}>
-            {firm.legal_name.toUpperCase()} ({firm.industry_type}) WORKFLOW MENU
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '8px' }}>
-            {menuList.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => handleNavigate(item.id)}
-                style={{
-                  backgroundColor: activeTab === item.id ? '#2563eb' : '#1e293b',
-                  color: '#ffffff',
-                  border: '1px solid #334155',
-                  padding: '10px 12px',
-                  borderRadius: '6px',
-                  textAlign: 'left',
-                  fontWeight: 'bold',
-                  fontSize: '12px',
-                  cursor: 'pointer'
-                }}
-              >
-                {item.icon} {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Main Feature Menu Buttons */}
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '16px' }}>
+        <button onClick={() => setActiveTab('brick_production')} style={navBtnStyle(activeTab === 'brick_production')}>🧱 Brick Kiln Mud/Production</button>
+        <button onClick={() => setActiveTab('inventory')} style={navBtnStyle(activeTab === 'inventory')}>📦 Inventory Master</button>
+        <button onClick={() => setActiveTab('create_invoice')} style={navBtnStyle(activeTab === 'create_invoice')}>🧾 Sales Bill</button>
+        <button onClick={() => setActiveTab('purchase_entry')} style={navBtnStyle(activeTab === 'purchase_entry')}>🛍️ Purchase Inward</button>
+        <button onClick={() => setActiveTab('vouchers')} style={navBtnStyle(activeTab === 'vouchers')}>📒 Voucher Posting</button>
+        <button onClick={() => setActiveTab('daybook')} style={navBtnStyle(activeTab === 'daybook')}>📖 Day Book</button>
+        <button onClick={() => setActiveTab('statement')} style={navBtnStyle(activeTab === 'statement')}>📊 Account Milan</button>
+        <button onClick={() => setActiveTab('financials')} style={navBtnStyle(activeTab === 'financials')}>⚖️ Financial Reports</button>
+      </div>
 
-      <main style={{ padding: '16px', maxWidth: '1000px', margin: '0 auto' }}>
-        {!firm || activeTab === 'firm_setup' ? (
-          <CreateFirmForm onSave={handleSaveFirm} existingFirm={firm} />
-        ) : (
-          <Suspense fallback={
-            <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-              ⚡ Loading module...
-            </div>
-          }>
-            {activeTab === 'dashboard' && <AccountingDashboard firm={firm} onNavigate={handleNavigate} />}
-            {activeTab === 'create_account' && <CreateAccountHeadModal firm={firm} onClose={() => setActiveTab('dashboard')} />}
-            {activeTab === 'inventory' && <InventoryStockView firm={firm} />}
-            {activeTab === 'billing' && <CreateInvoice firm={firm} />}
-            {activeTab === 'purchase' && <PurchaseStockEntryForm firm={firm} />}
-            {activeTab === 'vouchers' && <VoucherEntryForm firm={firm} />}
-            {activeTab === 'bhatta_prod' && firm.industry_type === 'BRICK_KILN' && <BhattaProductionMasterView firm={firm} />}
-            {activeTab === 'settlement' && <BillSettlementView firm={firm} />}
-            {activeTab === 'ledger' && <AccountStatementView firm={firm} />}
-            {activeTab === 'journal' && <JournalRegisterView firm={firm} />}
-            {activeTab === 'reports' && <FinancialReportsView firm={firm} />}
-            {activeTab === 'backup' && <SecurityBackupSettings />}
-            {activeTab === 'purge' && <DataPurgeView />}
-          </Suspense>
-        )}
-      </main>
+      {/* Main View Container */}
+      <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+        {activeTab === 'brick_production' && <BrickKilnProductionView firm={activeFirm} />}
+        {activeTab === 'inventory' && <InventoryStockView firm={activeFirm} />}
+        {activeTab === 'create_invoice' && <CreateInvoice firm={activeFirm} />}
+        {activeTab === 'purchase_entry' && <PurchaseStockEntryForm firm={activeFirm} />}
+        {activeTab === 'vouchers' && <VoucherEntryForm firm={activeFirm} />}
+        {activeTab === 'daybook' && <JournalRegisterView firm={activeFirm} />}
+        {activeTab === 'statement' && <AccountStatementView firm={activeFirm} />}
+        {activeTab === 'financials' && <FinancialReportsView firm={activeFirm} />}
+      </div>
 
     </div>
   );
 }
+
+const navBtnStyle = (isActive) => ({
+  backgroundColor: isActive ? '#0f172a' : '#ffffff',
+  color: isActive ? '#ffffff' : '#334155',
+  border: '1px solid #cbd5e1',
+  padding: '8px 14px',
+  borderRadius: '6px',
+  fontWeight: 'bold',
+  fontSize: '11px',
+  whiteSpace: 'nowrap',
+  cursor: 'pointer'
+});
