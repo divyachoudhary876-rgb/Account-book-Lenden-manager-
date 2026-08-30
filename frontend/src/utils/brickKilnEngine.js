@@ -13,10 +13,7 @@ export const getKilnSettings = (firmId) => {
   }
 
   if (!settings) {
-    settings = {
-      default_brick_weight_kg: 3.2,
-      soil_waste_percentage: 2.0
-    };
+    settings = { default_brick_weight_kg: 3.2, soil_waste_percentage: 2.0 };
     localStorage.setItem(key, JSON.stringify(settings));
   }
 
@@ -35,13 +32,14 @@ export const getBrickKilnStock = (firmId) => {
     stockData = null;
   }
 
+  // Clean initialization: ZERO mock values
   if (!stockData) {
     stockData = {
       RAW_KACHI: 0,
       PAKKI_AVVAL: 0,
       PAKKI_DOYAM: 0,
       PAKKI_RODA: 0,
-      RAW_SOIL_TONS: 100 // Default 100 Tons soil stock
+      RAW_SOIL_TONS: 0
     };
     localStorage.setItem(key, JSON.stringify(stockData));
   }
@@ -49,19 +47,16 @@ export const getBrickKilnStock = (firmId) => {
   return stockData;
 };
 
-// Calculate Soil Consumed based on Manual or Default Weight Input
 export const calculateSoilTons = (brickCountNos, weightPerBrickKg, wastePercentage = 2.0) => {
   const qty = parseInt(brickCountNos || 0, 10);
   const wt = parseFloat(weightPerBrickKg || 0);
 
   if (qty <= 0 || wt <= 0) return 0;
-
   const grossKg = qty * wt;
   const totalWithWastage = grossKg * (1 + parseFloat(wastePercentage) / 100);
   return parseFloat((totalWithWastage / 1000).toFixed(3));
 };
 
-// Update Default Weight (Handles User Decision: Prospective vs Retrospective)
 export const updateDefaultBrickWeight = (firmId, newWeightKg, applyRetrospective = false) => {
   const targetId = firmId || 'FIRM-001';
   const settings = getKilnSettings(targetId);
@@ -69,7 +64,6 @@ export const updateDefaultBrickWeight = (firmId, newWeightKg, applyRetrospective
   localStorage.setItem(`app_kiln_settings_${targetId}`, JSON.stringify(settings));
 
   if (applyRetrospective) {
-    // Recalculate soil consumption across all historical pathai records
     const pathaiKey = `app_brick_pathai_logs_${targetId}`;
     const logs = JSON.parse(localStorage.getItem(pathaiKey) || '[]');
     let totalAdjustedSoilTons = 0;
@@ -77,19 +71,13 @@ export const updateDefaultBrickWeight = (firmId, newWeightKg, applyRetrospective
     const updatedLogs = logs.map(log => {
       const newSoilTons = calculateSoilTons(log.raw_bricks_count, newWeightKg, settings.soil_waste_percentage);
       totalAdjustedSoilTons += newSoilTons;
-      return {
-        ...log,
-        unit_weight_kg: parseFloat(newWeightKg),
-        soil_consumed_tons: newSoilTons
-      };
+      return { ...log, unit_weight_kg: parseFloat(newWeightKg), soil_consumed_tons: newSoilTons };
     });
 
     localStorage.setItem(pathaiKey, JSON.stringify(updatedLogs));
 
-    // Recalculate mud stock balance
     const stock = getBrickKilnStock(targetId);
-    let initialSoilStock = 100; // Baseline initial clay stock
-    stock.RAW_SOIL_TONS = parseFloat((initialSoilStock - totalAdjustedSoilTons).toFixed(3));
+    stock.RAW_SOIL_TONS = parseFloat((Math.max(0, stock.RAW_SOIL_TONS) - totalAdjustedSoilTons).toFixed(3));
     localStorage.setItem(`app_brick_stock_${targetId}`, JSON.stringify(stock));
   }
 
@@ -97,7 +85,6 @@ export const updateDefaultBrickWeight = (firmId, newWeightKg, applyRetrospective
   return settings;
 };
 
-// Process Pathai Entry with Manual Unit Weight Capture
 export const processPathaiProductionEntry = (firmId, payload) => {
   const targetId = firmId || 'FIRM-001';
   const qty = parseInt(payload.raw_bricks_count || 0, 10);
@@ -105,22 +92,17 @@ export const processPathaiProductionEntry = (firmId, payload) => {
   const unitWeight = parseFloat(payload.unit_weight_kg || 3.2);
 
   if (qty <= 0) throw new Error("⚠️ Please enter valid raw brick quantity (> 0).");
-  if (unitWeight <= 0) throw new Error("⚠️ Please enter valid brick unit weight (> 0 kg).");
+  if (unitWeight <= 0) throw new Error("⚠️ Please enter valid unit weight (> 0 kg).");
 
   const settings = getKilnSettings(targetId);
   const soilConsumedTons = calculateSoilTons(qty, unitWeight, settings.soil_waste_percentage);
   const stock = getBrickKilnStock(targetId);
 
-  if (stock.RAW_SOIL_TONS < soilConsumedTons) {
-    throw new Error(`⚠️ Insufficient Raw Clay (मिट्टी) Stock! Required: ${soilConsumedTons} Tons, Available: ${stock.RAW_SOIL_TONS} Tons.`);
-  }
-
-  // Deduct Mud (-OUT) & Add Raw Bricks (+IN)
+  // Update Mud stock (-OUT) and Raw Brick Stock (+IN)
   stock.RAW_SOIL_TONS = parseFloat((stock.RAW_SOIL_TONS - soilConsumedTons).toFixed(3));
   stock.RAW_KACHI += qty;
   localStorage.setItem(`app_brick_stock_${targetId}`, JSON.stringify(stock));
 
-  // Log Production Record
   const logKey = `app_brick_pathai_logs_${targetId}`;
   const existingLogs = JSON.parse(localStorage.getItem(logKey) || '[]');
   const wagesPayable = (qty / 1000) * ratePer1000;
