@@ -1,146 +1,103 @@
 // frontend/src/components/JournalRegisterView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { getJournalRegisterEntries } from '../utils/journalEngine';
-import { downloadElementAsPDF } from '../utils/pdfDownloadEngine';
+import { downloadElementAsPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function JournalRegisterView({ firm }) {
   const [entries, setEntries] = useState([]);
   const [filterType, setFilterType] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isExporting, setIsExporting] = useState(false);
-
-  const loadJournal = () => {
-    const data = getJournalRegisterEntries(filterType, searchQuery);
-    setEntries(data);
-  };
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    loadJournal();
+    const stored = JSON.parse(localStorage.getItem('app_journal_entries') || '[]');
+    setEntries(stored);
+  }, []);
 
-    window.addEventListener('ACCOUNT_BOOK_VOUCHER_POSTED', loadJournal);
-    window.addEventListener('storage', loadJournal);
-
-    return () => {
-      window.removeEventListener('ACCOUNT_BOOK_VOUCHER_POSTED', loadJournal);
-      window.removeEventListener('storage', loadJournal);
-    };
-  }, [filterType, searchQuery]);
-
-  // Direct Browser Print Trigger
-  const handlePrint = () => {
-    window.print();
-  };
-
-  // Mobile Native PDF Download & Share Trigger
-  const handlePDFDownload = async () => {
-    setIsExporting(true);
-    await downloadElementAsPDF('printable-journal-register', `${firm?.legal_name || 'Business'}_Journal_Register`);
-    setIsExporting(false);
-  };
+  const filteredEntries = entries.filter(e => {
+    const matchesType = filterType === 'ALL' || e.voucher_type === filterType;
+    const matchesSearch = !searchTerm || 
+      (e.account_name && e.account_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (e.narration && e.narration.toLowerCase().includes(searchTerm.toLowerCase()));
+    return matchesType && matchesSearch;
+  });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       
-      {/* Action Bar (Print / PDF Controls) */}
-      <div className="no-print" style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
-          <div>
-            <h3 style={{ margin: 0, color: '#0f172a' }}>📖 General Journal Register (Day Book)</h3>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firm?.legal_name || 'My Business Firm'}</span>
-          </div>
-
-          {/* Export Action Buttons */}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
-              onClick={handlePrint} 
-              style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              🖨️ Print Journal
-            </button>
-            <button 
-              onClick={handlePDFDownload}
-              disabled={isExporting} 
-              style={{ backgroundColor: isExporting ? '#94a3b8' : '#10b981', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: isExporting ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              {isExporting ? '⏳ Rendering...' : '📲 Download & Share PDF'}
-            </button>
-          </div>
+      {/* Action Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>📖 General Journal Register (Day Book)</h3>
+          <span style={{ fontSize: '12px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Active Business'}</span>
         </div>
 
-        {/* Filters & Search Controls */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
-          <div>
-            <label style={labelStyle}>Filter Voucher Type</label>
-            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={inputStyle}>
-              <option value="ALL">All Voucher Types (PV/RV/JV/CV)</option>
-              <option value="PAYMENT">Payment Voucher (PV)</option>
-              <option value="RECEIPT">Receipt Voucher (RV)</option>
-              <option value="JOURNAL">Journal Voucher (JV)</option>
-              <option value="CONTRA">Contra Entry (CV)</option>
-            </select>
-          </div>
-
-          <div>
-            <label style={labelStyle}>Search Journal Records</label>
-            <input 
-              type="text" 
-              placeholder="Search by Particulars, Ref No, or Narration..." 
-              value={searchQuery} 
-              onChange={(e) => setSearchQuery(e.target.value)} 
-              style={inputStyle} 
-            />
-          </div>
-        </div>
+        <button
+          onClick={() => downloadElementAsPDF('printable_journal_area', 'Journal_Register_DayBook')}
+          style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+        >
+          📲 Download & Print PDF
+        </button>
       </div>
 
-      {/* Printable Sheet Wrapper */}
-      <div id="printable-journal-register" style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        
-        {/* Document Print Header */}
-        <div style={{ borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '14px', textAlign: 'center' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>{firm?.legal_name || 'My Business Firm'}</div>
-          <div style={{ fontSize: '11px', color: '#475569' }}>GSTIN: {firm?.gstin || 'Unregistered'}</div>
-          <div style={{ fontSize: '13px', fontWeight: 'bold', marginTop: '6px', color: '#2563eb' }}>GENERAL JOURNAL REGISTER / DAY BOOK</div>
-          <div style={{ fontSize: '10px', color: '#64748b' }}>As on {new Date().toLocaleDateString('en-IN')}</div>
+      {/* Filters */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px', marginBottom: '16px' }}>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)} style={inputStyle}>
+          <option value="ALL">All Voucher Types</option>
+          <option value="PAYMENT">Payment Vouchers</option>
+          <option value="RECEIPT">Receipt Vouchers</option>
+          <option value="SALES">Sales Vouchers</option>
+          <option value="JOURNAL">Journal Vouchers</option>
+        </select>
+
+        <input
+          type="text"
+          placeholder="Search Account or Narration..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={inputStyle}
+        />
+      </div>
+
+      {/* Clean Journal Table Without Voucher Ref */}
+      <div id="printable_journal_area" style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+        <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'center' }}>
+          <h4 style={{ margin: 0, color: '#0f172a' }}>{firm?.legal_name || 'Account Book'}</h4>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>GENERAL JOURNAL REGISTER / DAY BOOK</span>
         </div>
 
-        {/* Journal Entries Dynamic Table */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
           <thead>
             <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-              <th style={thStyle}>Date</th>
-              <th style={thStyle}>Voucher Ref</th>
-              <th style={thStyle}>Type</th>
-              <th style={thStyle}>Particulars (Account Head & Narration)</th>
-              <th style={{ ...thStyle, textAlign: 'right' }}>Debit (Dr ₹)</th>
-              <th style={{ ...thStyle, textAlign: 'right' }}>Credit (Cr ₹)</th>
+              <th style={{ ...thStyle, width: '18%' }}>Date</th>
+              <th style={{ ...thStyle, width: '18%' }}>Voucher Type</th>
+              <th style={{ ...thStyle, width: '40%' }}>Particulars (Account & Narration)</th>
+              <th style={{ ...thStyle, textAlign: 'right', width: '12%' }}>Debit (₹)</th>
+              <th style={{ ...thStyle, textAlign: 'right', width: '12%' }}>Credit (₹)</th>
             </tr>
           </thead>
           <tbody>
-            {entries.length === 0 ? (
+            {filteredEntries.length === 0 ? (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
-                  Selected filter me koi Journal entries recorded nahi hain.
+                <td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
+                  No journal entries found.
                 </td>
               </tr>
             ) : (
-              entries.map((item) => (
-                <tr key={item.id} style={{ borderBottom: '1px solid #cbd5e1' }}>
-                  <td style={tdStyle}>{item.date}</td>
-                  <td style={{ ...tdStyle, fontWeight: 'bold', color: '#2563eb' }}>{item.voucher_id}</td>
+              filteredEntries.map((item, idx) => (
+                <tr key={item.id || idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                  <td style={tdStyle}>{item.entry_date || '30/08/2026'}</td>
                   <td style={tdStyle}>
-                    <span style={badgeStyle(item.voucher_type)}>{item.voucher_type}</span>
+                    <span style={badgeStyle(item.voucher_type)}>{item.voucher_type || 'GENERAL'}</span>
                   </td>
                   <td style={tdStyle}>
-                    <strong style={{ color: '#0f172a' }}>{item.account_name}</strong>
-                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{item.narration}</div>
+                    <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{item.account_name || 'General Entry'}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{item.narration || '-'}</div>
                   </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', color: item.debit > 0 ? '#16a34a' : '#94a3b8', fontWeight: item.debit > 0 ? 'bold' : 'normal' }}>
-                    {item.debit > 0 ? `₹${item.debit.toFixed(2)}` : '-'}
+                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: item.debit > 0 ? '#10b981' : '#64748b' }}>
+                    {item.debit > 0 ? `₹${parseFloat(item.debit).toFixed(2)}` : '-'}
                   </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', color: item.credit > 0 ? '#dc2626' : '#94a3b8', fontWeight: item.credit > 0 ? 'bold' : 'normal' }}>
-                    {item.credit > 0 ? `₹${item.credit.toFixed(2)}` : '-'}
+                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: item.credit > 0 ? '#ef4444' : '#64748b' }}>
+                    {item.credit > 0 ? `₹${parseFloat(item.credit).toFixed(2)}` : '-'}
                   </td>
                 </tr>
               ))
@@ -148,20 +105,16 @@ export default function JournalRegisterView({ firm }) {
           </tbody>
         </table>
       </div>
+
     </div>
   );
 }
 
-const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' };
-const inputStyle = { width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' };
-const thStyle = { padding: '8px', textAlign: 'left', border: '1px solid #0f172a' };
-const tdStyle = { padding: '8px', border: '1px solid #cbd5e1' };
-
+const inputStyle = { padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' };
+const thStyle = { padding: '10px', textAlign: 'left', fontWeight: 'bold', fontSize: '11px' };
+const tdStyle = { padding: '10px', verticalAlign: 'top' };
 const badgeStyle = (type) => ({
-  padding: '2px 6px',
-  borderRadius: '4px',
-  fontSize: '9px',
-  fontWeight: 'bold',
-  backgroundColor: type === 'PAYMENT' ? '#fee2e2' : type === 'RECEIPT' ? '#dcfce7' : '#e0f2fe',
-  color: type === 'PAYMENT' ? '#991b1b' : type === 'RECEIPT' ? '#166534' : '#075985'
+  padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold',
+  backgroundColor: type === 'PAYMENT' ? '#fee2e2' : type === 'RECEIPT' ? '#d1fae5' : '#e0f2fe',
+  color: type === 'PAYMENT' ? '#991b1b' : type === 'RECEIPT' ? '#065f46' : '#075985'
 });
