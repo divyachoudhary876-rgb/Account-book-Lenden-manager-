@@ -11,14 +11,14 @@ export const getAccountHeadsByFirm = (firmId) => {
     accounts = [];
   }
 
-  // Pre-populate standard accounts if namespace is completely empty
-  if (accounts.length === 0) {
+  // Pre-populate default Chart of Accounts if empty
+  if (!accounts || accounts.length === 0) {
     accounts = [
-      { id: `ACC-DEF-1-${targetId}`, name: 'Cash-in-Hand A/C', primary_type: 'ASSETS', group_type: 'CASH', opening_balance: 0, balance_type: 'Dr', gstin: '', phone: '' },
-      { id: `ACC-DEF-2-${targetId}`, name: 'Main Bank A/C', primary_type: 'ASSETS', group_type: 'BANK', opening_balance: 0, balance_type: 'Dr', gstin: '', phone: '' },
-      { id: `ACC-DEF-3-${targetId}`, name: 'Propritor Capital A/C', primary_type: 'LIABILITIES', group_type: 'CAPITAL_ACCOUNT', opening_balance: 0, balance_type: 'Cr', gstin: '', phone: '' },
-      { id: `ACC-DEF-4-${targetId}`, name: 'General Sales Account', primary_type: 'INCOME', group_type: 'SALES_ACCOUNT', opening_balance: 0, balance_type: 'Cr', gstin: '', phone: '' },
-      { id: `ACC-DEF-5-${targetId}`, name: 'General Purchase Account', primary_type: 'EXPENSES', group_type: 'PURCHASE_ACCOUNT', opening_balance: 0, balance_type: 'Dr', gstin: '', phone: '' }
+      { id: `ACC-DEF-1-${targetId}`, name: 'Cash-in-Hand A/C', primary_type: 'ASSETS', group_type: 'CASH', opening_balance: 0, balance_type: 'Dr', phone: '', gstin: '' },
+      { id: `ACC-DEF-2-${targetId}`, name: 'Main Bank A/C', primary_type: 'ASSETS', group_type: 'BANK', opening_balance: 0, balance_type: 'Dr', phone: '', gstin: '' },
+      { id: `ACC-DEF-3-${targetId}`, name: 'Propritor Capital A/C', primary_type: 'LIABILITIES', group_type: 'CAPITAL_ACCOUNT', opening_balance: 0, balance_type: 'Cr', phone: '', gstin: '' },
+      { id: `ACC-DEF-4-${targetId}`, name: 'General Customer (Sundry Debtor)', primary_type: 'ASSETS', group_type: 'SUNDRY_DEBTORS', opening_balance: 0, balance_type: 'Dr', phone: '', gstin: '' },
+      { id: `ACC-DEF-5-${targetId}`, name: 'General Supplier (Sundry Creditor)', primary_type: 'LIABILITIES', group_type: 'SUNDRY_CREDITORS', opening_balance: 0, balance_type: 'Cr', phone: '', gstin: '' }
     ];
     localStorage.setItem(key, JSON.stringify(accounts));
   }
@@ -45,7 +45,6 @@ export const saveOrUpdateAccountHead = (firmId, accountPayload) => {
   if (isEdit) {
     newList = existingList.map(a => a.id === accId ? updatedAccount : a);
   } else {
-    // Check duplicate account name
     const exists = existingList.some(a => a.name.trim().toLowerCase() === accountPayload.name.trim().toLowerCase());
     if (exists) {
       throw new Error(`An account named "${accountPayload.name}" already exists.`);
@@ -60,10 +59,10 @@ export const saveOrUpdateAccountHead = (firmId, accountPayload) => {
 
 export const getCustomerAccounts = (firmId) => {
   const list = getAccountHeadsByFirm(firmId);
-  return list.filter(a => ['SUNDRY_DEBTORS', 'CASH', 'BANK'].includes(a.group_type));
+  return list.filter(a => ['SUNDRY_DEBTORS', 'CASH', 'BANK', 'ASSETS'].includes(a.group_type) || a.primary_type === 'ASSETS');
 };
 
 export const getSupplierAccounts = (firmId) => {
   const list = getAccountHeadsByFirm(firmId);
-  return list.filter(a => ['SUNDRY_CREDITORS', 'CASH', 'BANK'].includes(a.group_type));
+  return list.filter(a => ['SUNDRY_CREDITORS', 'CASH', 'BANK', 'LIABILITIES'].includes(a.group_type) || a.primary_type === 'LIABILITIES');
 };
