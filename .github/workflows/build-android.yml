@@ -22,12 +22,12 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies
+      # Step 1: Install Dependencies with Legacy Peer Resolution Flag
       - name: Install Frontend Dependencies
         working-directory: frontend
-        run: npm install --legacy-peer-deps
+        run: npm install --legacy-peer-deps --force
 
-      # Step 2: Auto-Increment Android Versioning
+      # Step 2: Auto-Bump Android Versioning
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
