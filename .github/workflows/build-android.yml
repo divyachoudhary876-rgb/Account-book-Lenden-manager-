@@ -22,12 +22,12 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies
+      # Step 1: Install Dependencies with Legacy Flag to prevent ERESOLVE
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
-      # Step 2: Auto-Increment Android Versioning
+      # Step 2: Auto-Bump Version Code & Name
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
@@ -40,13 +40,13 @@ jobs:
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      # Step 3: Build Production Web Bundle
-      - name: Build Web Bundle
+      # Step 3: Compile Web Bundle
+      - name: Build Production Web Bundle
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Force Capacitor Sync into Native Android Folder
-      - name: Force Sync Web Assets to Native Workspace
+      # Step 4: Generate & Sync Android Native Folder
+      - name: Force Capacitor Native Sync
         working-directory: frontend
         run: |
           rm -rf android
@@ -60,7 +60,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # Step 6: Upload Signed Binary Output
+      # Step 6: Upload Output APK
       - name: Upload APK Binary Artifact
         uses: actions/upload-artifact@v4
         with:
