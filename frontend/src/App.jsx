@@ -11,13 +11,13 @@ import JournalRegisterView from './components/JournalRegisterView.jsx';
 import FinancialReportsView from './components/FinancialReportsView.jsx';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('brick_production');
+  const [activeTab, setActiveTab] = useState('inventory'); // Restored standard default tab
   const [activeFirm] = useState({ id: 'FIRM-001', legal_name: 'Aa (BRICK_KILN)', business_type: 'BRICK_KILN' });
 
   return (
     <div style={{ fontFamily: 'sans-serif', backgroundColor: '#f1f5f9', minHeight: '100vh', padding: '12px' }}>
       
-      {/* Top Navigation Bar - Preserved exactly as in your screenshot */}
+      {/* Top Main Navigation Bar */}
       <div style={{ backgroundColor: '#1e3a8a', color: '#fff', padding: '12px 16px', borderRadius: '8px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0, fontSize: '16px' }}>📘 Account Book Smart Manager</h2>
         <span style={{ fontSize: '11px', backgroundColor: '#3b82f6', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
@@ -25,10 +25,10 @@ export default function App() {
         </span>
       </div>
 
-      {/* Top Horizontal Menu Bar - Preserved exactly as in your screenshot */}
+      {/* Horizontal Multi-Module Tab Bar */}
       <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '16px' }}>
-        <button onClick={() => setActiveTab('brick_production')} style={navBtnStyle(activeTab === 'brick_production')}>🧱 Brick Kiln Mud/Production</button>
         <button onClick={() => setActiveTab('inventory')} style={navBtnStyle(activeTab === 'inventory')}>📦 Inventory Master</button>
+        <button onClick={() => setActiveTab('brick_production')} style={navBtnStyle(activeTab === 'brick_production')}>🧱 Brick Kiln Mud/Production</button>
         <button onClick={() => setActiveTab('create_invoice')} style={navBtnStyle(activeTab === 'create_invoice')}>🧾 Sales Bill</button>
         <button onClick={() => setActiveTab('purchase_entry')} style={navBtnStyle(activeTab === 'purchase_entry')}>🛍️ Purchase Inward</button>
         <button onClick={() => setActiveTab('vouchers')} style={navBtnStyle(activeTab === 'vouchers')}>📒 Voucher Posting</button>
@@ -37,10 +37,10 @@ export default function App() {
         <button onClick={() => setActiveTab('financials')} style={navBtnStyle(activeTab === 'financials')}>⚖️ Financial Reports</button>
       </div>
 
-      {/* Dynamic Module Content View Container */}
+      {/* Active Module Container */}
       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-        {activeTab === 'brick_production' && <BrickKilnProductionView firm={activeFirm} />}
         {activeTab === 'inventory' && <InventoryStockView firm={activeFirm} />}
+        {activeTab === 'brick_production' && <BrickKilnProductionView firm={activeFirm} />}
         {activeTab === 'create_invoice' && <CreateInvoice firm={activeFirm} />}
         {activeTab === 'purchase_entry' && <PurchaseStockEntryForm firm={activeFirm} />}
         {activeTab === 'vouchers' && <VoucherEntryForm firm={activeFirm} />}
