@@ -1,118 +1,83 @@
 // frontend/src/components/PurchaseStockEntryForm.jsx
 
 import React, { useState, useEffect } from 'react';
-import { processPurchaseStockPosting } from '../utils/inventoryPostingEngine';
+import { recordPurchaseInvoice } from '../utils/purchasePostingEngine.js';
 
-export default function PurchaseStockEntryForm() {
+export default function PurchaseStockEntryForm({ firm }) {
+  const [accounts, setAccounts] = useState([]);
   const [inventory, setInventory] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  
-  const [selectedSupplier, setSelectedSupplier] = useState('');
-  const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedItemId, setSelectedItemId] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [purchaseRate, setPurchaseRate] = useState('');
-  const [narration, setNarration] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    supplierAccId: '',
+    supplierInvoiceNo: '',
+    invoiceDate: '2026-08-30',
+    itemId: '',
+    qty: '',
+    rate: '',
+    gstRate: '18'
+  });
 
-  const loadData = () => {
-    const savedInventory = JSON.parse(localStorage.getItem('app_inventory') || '[]');
-    const savedAccounts = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
-    
-    setInventory(savedInventory);
-    const suppList = savedAccounts.filter(a => a.sub_group === 'SUNDRY_CREDITORS' || a.primary_type === 'LIABILITY');
-    setSuppliers(suppList);
+  useEffect(() => {
+    const accList = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
+    const invList = JSON.parse(localStorage.getItem('app_inventory') || '[]');
+    setAccounts(accList);
+    setInventory(invList);
+    if (accList.length > 0) setFormData(prev => ({ ...prev, supplierAccId: accList[0].name }));
+    if (invList.length > 0) setFormData(prev => ({ ...prev, itemId: invList[0].id }));
+  }, []);
 
-    if (savedInventory.length > 0 && !selectedItemId) setSelectedItemId(savedInventory[0].id);
-    if (suppList.length > 0 && !selectedSupplier) setSelectedSupplier(suppList[0].id);
-  };
-
-  useEffect(() => { loadData(); }, []);
-
-  const handleSavePurchase = (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
-
     try {
-      const result = processPurchaseStockPosting({
-        supplierId: selectedSupplier,
-        invoiceNumber,
-        entryDate,
-        itemId: selectedItemId,
-        quantity,
-        purchaseRate,
-        narration
-      });
-
-      alert(`✓ Purchase Entry Posted! Stock Inventory me ${quantity} units AUTOMATIC INCREASE ho chuki hain.\n\nNew Item Stock: ${result.stockItem.current_qty} ${result.stockItem.unit}`);
-      setQuantity('');
-      setPurchaseRate('');
-      setInvoiceNumber('');
-      setNarration('');
-      loadData();
+      const res = recordPurchaseInvoice(formData);
+      alert(`✓ Purchase Inward Bill #${formData.supplierInvoiceNo} saved! Total Amount: ₹${res.totalAmount}`);
+      setFormData({ ...formData, supplierInvoiceNo: '', qty: '', rate: '' });
     } catch (err) {
-      alert(`❌ Stock Posting Error: ${err.message}`);
-    } finally {
-      setIsSubmitting(false);
+      alert(`❌ Error: ${err.message}`);
     }
   };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: '650px', margin: '0 auto' }}>
-      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>📥 Purchase Bill / Inward Stock Entry</h3>
+    <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>🛍️ Purchase Inward & Raw Material Entry</h3>
 
-      <form onSubmit={handleSavePurchase} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
-            <label style={labelStyle}>Select Supplier / Creditor *</label>
-            <select value={selectedSupplier} onChange={(e) => setSelectedSupplier(e.target.value)} style={inputStyle} required>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>Supplier Bill No *</label>
-            <input type="text" placeholder="BILL-102" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} style={inputStyle} required />
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '10px' }}>
-          <div>
-            <label style={labelStyle}>Select Stock Item *</label>
-            <select value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)} style={inputStyle} required>
-              {inventory.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.name} (Current Stock: {item.current_qty} {item.unit})
-                </option>
+            <label style={labelStyle}>Supplier / Creditor Account *</label>
+            <select value={formData.supplierAccId} onChange={e => setFormData({...formData, supplierAccId: e.target.value})} style={inputStyle}>
+              {accounts.map((a, idx) => (
+                <option key={a.id || idx} value={a.name}>{a.name}</option>
               ))}
             </select>
           </div>
-
           <div>
-            <label style={labelStyle}>Quantity *</label>
-            <input type="number" step="0.01" placeholder="10.00" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={inputStyle} required />
-          </div>
-
-          <div>
-            <label style={labelStyle}>Purchase Rate (₹) *</label>
-            <input type="number" step="0.01" placeholder="4500.00" value={purchaseRate} onChange={(e) => setPurchaseRate(e.target.value)} style={inputStyle} required />
+            <label style={labelStyle}>Supplier Invoice / Bill No. *</label>
+            <input type="text" placeholder="e.g. INV-9081" value={formData.supplierInvoiceNo} onChange={e => setFormData({...formData, supplierInvoiceNo: e.target.value})} style={inputStyle} required />
           </div>
         </div>
 
-        <div>
-          <label style={labelStyle}>Entry Narration / Particulars</label>
-          <input type="text" placeholder="Purchase of raw material via Truck No. RJ31-GA-1234..." value={narration} onChange={(e) => setNarration(e.target.value)} style={inputStyle} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>Select Stock Item *</label>
+            <select value={formData.itemId} onChange={e => setFormData({...formData, itemId: e.target.value})} style={inputStyle}>
+              {inventory.map((item, idx) => (
+                <option key={item.id || idx} value={item.id}>{item.item_name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Inward Quantity *</label>
+            <input type="number" placeholder="Qty" value={formData.qty} onChange={e => setFormData({...formData, qty: e.target.value})} style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Unit Purchase Rate (₹) *</label>
+            <input type="number" placeholder="Rate" value={formData.rate} onChange={e => setFormData({...formData, rate: e.target.value})} style={inputStyle} required />
+          </div>
         </div>
 
-        <button 
-          type="submit" 
-          disabled={isSubmitting}
-          style={{ padding: '12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', marginTop: '8px' }}
-        >
-          {isSubmitting ? '⏳ Stock Inward Ho Raha Hai...' : '💾 Save & Add Stock to Inventory'}
+        <button type="submit" style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', marginTop: '10px' }}>
+          💾 Save Purchase Bill & Update Stock (+IN)
         </button>
-
       </form>
     </div>
   );
