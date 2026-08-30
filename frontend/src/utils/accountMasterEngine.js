@@ -1,7 +1,13 @@
 // frontend/src/utils/accountMasterEngine.js
 
 export const getAccountHeadsByFirm = (firmId) => {
-  const targetId = firmId || 'FIRM-001';
+  // 1. Resolve Active Firm ID from Parameter or LocalStorage
+  let targetId = firmId;
+  if (!targetId) {
+    const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
+    targetId = activeFirm.id || 'FIRM-DEFAULT';
+  }
+
   const key = `app_account_heads_${targetId}`;
   let accounts = [];
 
@@ -11,7 +17,7 @@ export const getAccountHeadsByFirm = (firmId) => {
     accounts = [];
   }
 
-  // Fallback defaults if empty
+  // 2. Pre-populate default system accounts ONLY IF namespace is completely empty
   if (!accounts || accounts.length === 0) {
     accounts = [
       { id: `ACC-DEF-1-${targetId}`, name: 'Cash-in-Hand A/C', primary_type: 'ASSETS', group_type: 'CASH', opening_balance: 0, balance_type: 'Dr' },
@@ -27,7 +33,12 @@ export const getAccountHeadsByFirm = (firmId) => {
 };
 
 export const saveOrUpdateAccountHead = (firmId, accountPayload) => {
-  const targetId = firmId || 'FIRM-001';
+  let targetId = firmId;
+  if (!targetId) {
+    const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
+    targetId = activeFirm.id || 'FIRM-DEFAULT';
+  }
+
   const key = `app_account_heads_${targetId}`;
   const existingList = getAccountHeadsByFirm(targetId);
 
@@ -45,7 +56,7 @@ export const saveOrUpdateAccountHead = (firmId, accountPayload) => {
   if (isEdit) {
     newList = existingList.map(a => a.id === accId ? updatedAccount : a);
   } else {
-    newList = [...existingList, updatedAccount];
+    newList = [updatedAccount, ...existingList]; // Push new entries to top
   }
 
   localStorage.setItem(key, JSON.stringify(newList));
@@ -54,9 +65,11 @@ export const saveOrUpdateAccountHead = (firmId, accountPayload) => {
 };
 
 export const getCustomerAccounts = (firmId) => {
-  return getAccountHeadsByFirm(firmId);
+  const list = getAccountHeadsByFirm(firmId);
+  return list.filter(a => ['SUNDRY_DEBTORS', 'CASH', 'BANK', 'ASSETS'].includes(a.group_type) || a.primary_type === 'ASSETS');
 };
 
 export const getSupplierAccounts = (firmId) => {
-  return getAccountHeadsByFirm(firmId);
+  const list = getAccountHeadsByFirm(firmId);
+  return list.filter(a => ['SUNDRY_CREDITORS', 'CASH', 'BANK', 'LIABILITIES'].includes(a.group_type) || a.primary_type === 'LIABILITIES');
 };
