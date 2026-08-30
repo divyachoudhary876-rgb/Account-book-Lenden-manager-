@@ -44,14 +44,10 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'Arial, sans-serif' }}>
-      
-      {/* Header Bar */}
       <header style={{ backgroundColor: '#0f172a', color: '#fff', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{activeFirm?.legal_name || 'Business Setup Required'}</div>
-          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-            GSTIN: {activeFirm?.gstin || 'Unregistered'} | Industry: {activeFirm?.industry_type || 'Setup Pending'}
-          </div>
+          <div style={{ fontSize: '11px', color: '#94a3b8' }}>GSTIN: {activeFirm?.gstin || 'Unregistered'}</div>
         </div>
 
         {!needsOnboarding && (
@@ -64,11 +60,9 @@ export default function App() {
         )}
       </header>
 
-      {/* Ascending Sequenced Navigation Drawer */}
       {isDrawerOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex' }}>
           <div style={{ width: '320px', backgroundColor: '#0f172a', color: '#fff', height: '100%', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
-            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
               <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#38bdf8' }}>WORKFLOW SEQUENCED MENU</span>
               <button onClick={() => setIsDrawerOpen(false)} style={{ backgroundColor: '#1e293b', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>✕ Close</button>
@@ -106,14 +100,6 @@ export default function App() {
         </div>
       )}
 
-      {/* First Time Onboarding Guard */}
-      {needsOnboarding && (
-        <div style={{ backgroundColor: '#eff6ff', borderBottom: '1px solid #bfdbfe', padding: '12px', textAlign: 'center', color: '#1e40af', fontSize: '13px', fontWeight: 'bold' }}>
-          👋 Welcome to Account Book! Kripya Step 1 (Firm Profile Settings) me apni Firm Details save karein.
-        </div>
-      )}
-
-      {/* Main Workspace Router */}
       <main style={{ padding: '16px', maxWidth: '1000px', margin: '0 auto' }}>
         {activeTab === 'firm_setup' && <CreateFirmForm onSaved={() => { syncFirmState(); setActiveTab('dashboard'); }} />}
         {activeTab === 'create_account' && <CreateAccountHeadModal onClose={() => setActiveTab('ledger')} />}
