@@ -22,12 +22,12 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies with Legacy Flag
+      # Step 1: Clean Install Dependencies
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
-      # Step 2: Auto-Bump Version Code & Version Name
+      # Step 2: Auto-Bump Android Versioning
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
@@ -40,32 +40,27 @@ jobs:
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      # Step 3: Build Web Application
-      - name: Build Web Bundle
+      # Step 3: Compile Fresh Production Web Bundle
+      - name: Build Production Web Bundle
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Clean, Add, and Sync Capacitor Android Workspace
-      - name: Generate and Sync Capacitor Android Workspace
+      # Step 4: Force Sync Web Build into Android Assets Native Folder
+      - name: Force Capacitor Native Asset Sync
         working-directory: frontend
         run: |
-          rm -rf android
-          npx @capacitor/cli add android
+          npx @capacitor/cli copy android
           npx @capacitor/cli sync android
 
-      # Step 5: Verify Gradle Executable & Build APK
-      - name: Build APK
+      # Step 5: Build Fresh Android APK
+      - name: Assemble Debug APK
         working-directory: frontend/android
         run: |
-          if [ ! -f "gradlew" ]; then
-            echo "Error: gradlew file missing after android platform add!"
-            exit 1
-          fi
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # Step 6: Upload Output Artifact
-      - name: Upload APK Artifact
+      # Step 6: Upload Build Output Artifact
+      - name: Upload APK Binary Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AccountBook-v1.0.${{ github.run_number }}-release
