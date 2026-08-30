@@ -1,5 +1,23 @@
 // frontend/src/utils/stockInventoryEngine.js
 
+// Comprehensive Indian SME Units of Measurement
+export const UNITS_OF_MEASUREMENT = [
+  { code: 'Pcs', name: 'Pcs (Pieces)' },
+  { code: 'Qtl', name: 'Quintal (100 kg)' },
+  { code: 'MT', name: 'MT (Metric Ton - 1000 kg)' },
+  { code: 'Tons', name: 'Tons' },
+  { code: 'Kg', name: 'Kg (Kilograms)' },
+  { code: 'Ltr', name: 'Ltr (Liters)' },
+  { code: 'Bags', name: 'Bags / Sacks' },
+  { code: 'Brass', name: 'Brass (100 Cft)' },
+  { code: 'Cft', name: 'Cft (Cubic Feet)' },
+  { code: 'SqFt', name: 'Sq. Ft. (Square Feet)' },
+  { code: 'SqMtr', name: 'Sq. Meter' },
+  { code: 'Box', name: 'Box / Carton' },
+  { code: 'Bndl', name: 'Bundles / Bales' },
+  { code: 'Thousand', name: 'Thousand Pcs (1000 Nos)' }
+];
+
 export const getStockItemsByFirm = (firmId) => {
   let targetId = firmId;
   if (!targetId) {
@@ -19,20 +37,6 @@ export const getStockItemsByFirm = (firmId) => {
     items = rawData ? JSON.parse(rawData) : [];
   } catch (e) {
     items = [];
-  }
-
-  // Pre-populate default items if array is completely empty
-  if (!Array.isArray(items) || items.length === 0) {
-    items = [
-      { id: `ITEM-1-${targetId}`, item_name: 'Red Brick (A-Class)', unit: 'Pcs', current_stock: 10000 },
-      { id: `ITEM-2-${targetId}`, item_name: 'Raw Coal (Koyla)', unit: 'Tons', current_stock: 50 },
-      { id: `ITEM-3-${targetId}`, item_name: 'Biomass Briquette', unit: 'MT', current_stock: 120 }
-    ];
-    try {
-      localStorage.setItem(key, JSON.stringify(items));
-    } catch (e) {
-      console.error("Storage write error:", e);
-    }
   }
 
   return Array.isArray(items) ? items : [];
@@ -72,6 +76,24 @@ export const addNewStockItem = (firmId, itemPayload) => {
   localStorage.setItem(key, JSON.stringify(updatedList));
   window.dispatchEvent(new Event('storage'));
   return newItem;
+};
+
+// Purge function to clean old mock data
+export const purgeAndClearInventoryData = (firmId) => {
+  let targetId = firmId;
+  if (!targetId) {
+    try {
+      const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
+      targetId = activeFirm.id || 'FIRM-001';
+    } catch (e) {
+      targetId = 'FIRM-001';
+    }
+  }
+
+  const key = `app_inventory_${targetId}`;
+  localStorage.setItem(key, JSON.stringify([]));
+  window.dispatchEvent(new Event('storage'));
+  return true;
 };
 
 export const updateStockMovement = (firmId, itemId, qty, movementType, refNo, rate = 0) => {
