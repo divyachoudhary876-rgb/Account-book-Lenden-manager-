@@ -24,11 +24,11 @@ export default function JournalRegisterView({ firm }) {
   return (
     <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       
-      {/* Action Header */}
+      {/* Header Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>📖 General Journal Register (Day Book)</h3>
-          <span style={{ fontSize: '12px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Active Business'}</span>
+          <span style={{ fontSize: '12px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Active Firm'}</span>
         </div>
 
         <button
@@ -46,6 +46,7 @@ export default function JournalRegisterView({ firm }) {
           <option value="PAYMENT">Payment Vouchers</option>
           <option value="RECEIPT">Receipt Vouchers</option>
           <option value="SALES">Sales Vouchers</option>
+          <option value="PURCHASE">Purchase Vouchers</option>
           <option value="JOURNAL">Journal Vouchers</option>
         </select>
 
@@ -58,7 +59,7 @@ export default function JournalRegisterView({ firm }) {
         />
       </div>
 
-      {/* Clean Journal Table Without Voucher Ref */}
+      {/* Clean Journal Table Without Voucher Ref Column */}
       <div id="printable_journal_area" style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
         <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'center' }}>
           <h4 style={{ margin: 0, color: '#0f172a' }}>{firm?.legal_name || 'Account Book'}</h4>
