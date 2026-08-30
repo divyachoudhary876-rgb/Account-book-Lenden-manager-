@@ -22,12 +22,12 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies with Legacy Peer Resolution Flag
+      # Step 1: Install Dependencies with Legacy Flag
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
-      # Step 2: Auto-Bump Android Versioning
+      # Step 2: Auto-Bump Version Code & Version Name
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
@@ -45,23 +45,26 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Sync Capacitor Native Project
-      - name: Capacitor Sync
+      # Step 4: Clean, Add, and Sync Capacitor Android Workspace
+      - name: Generate and Sync Capacitor Android Workspace
         working-directory: frontend
         run: |
-          if [ ! -d "android" ]; then
-            npx @capacitor/cli add android
-          fi
+          rm -rf android
+          npx @capacitor/cli add android
           npx @capacitor/cli sync android
 
-      # Step 5: Grant Permissions & Build APK
+      # Step 5: Verify Gradle Executable & Build APK
       - name: Build APK
         working-directory: frontend/android
         run: |
+          if [ ! -f "gradlew" ]; then
+            echo "Error: gradlew file missing after android platform add!"
+            exit 1
+          fi
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # Step 6: Upload Build Output
+      # Step 6: Upload Output Artifact
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
