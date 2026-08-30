@@ -1,25 +1,26 @@
 {
   "name": "business-book-frontend",
-  "version": "1.0.2",
   "private": true,
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@capacitor/android": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/filesystem": "^6.0.0",
-    "@capacitor/share": "^6.0.0",
-    "html2pdf.js": "^0.10.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.0.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.2"
+    "vite": "^5.3.4"
   }
 }
