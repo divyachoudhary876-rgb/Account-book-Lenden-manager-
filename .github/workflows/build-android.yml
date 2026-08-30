@@ -27,47 +27,35 @@ jobs:
         working-directory: frontend
         run: npm install --legacy-peer-deps
 
-      # Step 2: Build Web Application
+      # Step 2: Build Web Application Bundle
       - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      # Step 3: Scaffold Native Android Platform if Missing
+      # Step 3: Ensure Native Android Wrapper Exists & Sync
       - name: Ensure Capacitor Android Platform
         working-directory: frontend
         run: |
           if [ ! -f "android/settings.gradle" ]; then
-            echo "Scaffolding Capacitor Android wrapper..."
+            echo "Scaffolding missing Capacitor Android platform..."
             rm -rf android
             npx @capacitor/cli add android
           fi
           npx @capacitor/cli sync android
 
-      # Step 4: Grant Permissions to Gradle Executable
+      # Step 4: Set Executable Permissions
       - name: Grant Gradle Permissions
         working-directory: frontend/android
         run: chmod +x gradlew
 
-      # Step 5: Assemble Release APK
-      - name: Build Android Release APK
+      # Step 5: Build Debug Signed APK (Always Installable on Android Devices)
+      - name: Build Installable Android APK
         working-directory: frontend/android
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleDebug
 
-      # Step 6: Automatically Sign the Release APK for Direct Phone Installation
-      - name: Sign Release APK
-        working-directory: frontend/android/app/build/outputs/apk/release
-        run: |
-          # Create a temporary signing key if unsigned file exists
-          if [ -f "app-release-unsigned.apk" ]; then
-            echo "Signing APK for Android installation..."
-            keytool -genkey -v -keystore release.keystore -alias androidkey -keyalg RSA -keysize 2048 -validity 10000 -storepass password -keypass password -dname "CN=AccountBook, OU=IT, O=Neelkanth, L=Hanumangarh, ST=Rajasthan, C=IN"
-            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore release.keystore -storepass password app-release-unsigned.apk androidkey
-            mv app-release-unsigned.apk Account_Book_Signed.apk
-          fi
-
-      # Step 7: Upload Signed APK File as Downloadable Artifact
+      # Step 6: Upload Output Installable Binary
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
-          path: frontend/android/app/build/outputs/apk/release/*.apk
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
