@@ -22,18 +22,18 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies with --legacy-peer-deps flag (Fixes ERESOLVE Error)
+      # Step 1: Install Dependencies with --legacy-peer-deps flag to resolve ERESOLVE conflicts
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps
 
-      # Step 2: Build Web Bundle
+      # Step 2: Compile Production Web Bundle
       - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      # Step 3: Ensure Capacitor Native Platform Sync
-      - name: Ensure Capacitor Platform
+      # Step 3: Sync Capacitor Android Native Assets
+      - name: Ensure Capacitor Platform Sync
         working-directory: frontend
         run: |
           if [ ! -f "android/settings.gradle" ]; then
@@ -42,12 +42,12 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      # Step 4: Grant Executable Permissions to Gradle Wrapper
+      # Step 4: Grant Permissions to Gradle Wrapper
       - name: Grant Gradle Permissions
         working-directory: frontend/android
         run: chmod +x gradlew
 
-      # Step 5: Build Debug Signed APK (Ensures Consistent Keystore Fingerprint)
+      # Step 5: Build Debug Signed Android APK Binary
       - name: Build Android Debug Binary
         working-directory: frontend/android
         run: ./gradlew assembleDebug
