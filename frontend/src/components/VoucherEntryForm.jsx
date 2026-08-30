@@ -4,28 +4,37 @@ import React, { useState, useEffect } from 'react';
 import { getAccountHeadsByFirm } from '../utils/accountMasterEngine.js';
 
 export default function VoucherEntryForm({ firm }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
+  const activeFirmId = firm?.id;
   const [accounts, setAccounts] = useState([]);
+  
+  const [voucherType, setVoucherType] = useState('JOURNAL');
   const [debitAcc, setDebitAcc] = useState('');
   const [creditAcc, setCreditAcc] = useState('');
   const [amount, setAmount] = useState('');
   const [narration, setNarration] = useState('');
 
   useEffect(() => {
+    loadAccounts();
+    const handleStorageChange = () => loadAccounts();
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [firm]);
+
+  const loadAccounts = () => {
     const list = getAccountHeadsByFirm(activeFirmId);
     setAccounts(list);
     if (list.length > 0) {
-      setDebitAcc(list[0].id);
-      setCreditAcc(list[1]?.id || list[0].id);
+      if (!debitAcc) setDebitAcc(list[0].id);
+      if (!creditAcc) setCreditAcc(list[1]?.id || list[0].id);
     }
-  }, [activeFirmId]);
+  };
 
   const handlePostVoucher = (e) => {
     e.preventDefault();
-    if (!amount || parseFloat(amount) <= 0) return alert("❌ Please enter Voucher Amount.");
-    if (debitAcc === creditAcc) return alert("❌ Debit and Credit accounts cannot be identical.");
+    if (!amount || parseFloat(amount) <= 0) return alert("❌ Please enter valid Transaction Amount.");
+    if (debitAcc === creditAcc) return alert("❌ Debit and Credit Accounts cannot be the same.");
 
-    alert(`✓ Double-Entry Voucher of ₹${amount} posted successfully!`);
+    alert(`✓ ${voucherType} Voucher of ₹${amount} posted successfully!`);
     setAmount('');
     setNarration('');
   };
@@ -36,6 +45,18 @@ export default function VoucherEntryForm({ firm }) {
 
       <form onSubmit={handlePostVoucher} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         
+        {/* Voucher Type Selector (Restored Missing Feature) */}
+        <div>
+          <label style={labelStyle}>Select Voucher Entry Type *</label>
+          <select value={voucherType} onChange={e => setVoucherType(e.target.value)} style={inputStyle}>
+            <option value="JOURNAL">📓 Journal Voucher (General Transfer)</option>
+            <option value="PAYMENT">💸 Payment Voucher (Outgoing Cash/Bank)</option>
+            <option value="RECEIPT">💰 Receipt Voucher (Incoming Cash/Bank)</option>
+            <option value="CONTRA">🏦 Contra Voucher (Cash <-> Bank Transfer)</option>
+          </select>
+        </div>
+
+        {/* Account Selection */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <label style={labelStyle}>Debit Account (Dr) *</label>
@@ -62,12 +83,12 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         <div>
-          <label style={labelStyle}>Narration / Particulars</label>
-          <input type="text" placeholder="Being payment/receipt voucher entry..." value={narration} onChange={e => setNarration(e.target.value)} style={inputStyle} />
+          <label style={labelStyle}>Narration / Particulars Details</label>
+          <input type="text" placeholder="Particulars of transaction..." value={narration} onChange={e => setNarration(e.target.value)} style={inputStyle} />
         </div>
 
         <button type="submit" style={{ backgroundColor: '#1e3a8a', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', marginTop: '6px' }}>
-          💾 Save & Post Double-Entry Voucher
+          💾 Save & Post Voucher Entry
         </button>
 
       </form>
