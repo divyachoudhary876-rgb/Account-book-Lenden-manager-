@@ -1,15 +1,12 @@
-name: Build Android APK
+name: Build Android Release APK
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -25,43 +22,34 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
+      # Fix for npm ERESOLVE dependency conflict
       - name: Install Frontend Dependencies
         run: |
           cd frontend
-          npm install
+          npm install --legacy-peer-deps
 
       - name: Build Web Application
         run: |
           cd frontend
           npm run build
 
-      - name: Initialize Capacitor Config if Missing
-        run: |
-          cd frontend
-          if [ ! -f "capacitor.config.json" ]; then
-            npx cap init "BusinessBook" "com.neelkanth.accountbook" --web-dir "dist"
-          fi
-
-      - name: Ensure Android Platform Exists
-        run: |
-          cd frontend
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
-
       - name: Capacitor Sync
         run: |
           cd frontend
           npx cap sync android
 
-      - name: Grant Gradle Permissions and Build Debug APK
+      - name: Grant Gradle Permissions
         run: |
           cd frontend/android
           chmod +x gradlew
-          ./gradlew assembleDebug
 
-      - name: Upload Installable Update APK
+      - name: Build Android Release APK
+        run: |
+          cd frontend/android
+          ./gradlew assembleRelease
+
+      - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: BusinessBook-Installable
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          name: release-apk
+          path: frontend/android/app/build/outputs/apk/release/app-release.apk
