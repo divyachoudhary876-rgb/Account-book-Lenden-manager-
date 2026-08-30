@@ -22,43 +22,38 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies
+      # Step 1: Install Dependencies with Legacy Peer Flag
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps
 
-      # Step 2: Build Web Application Bundle
+      # Step 2: Compile Production Web Bundle
       - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      # Step 3: Ensure Native Android Wrapper Exists & Sync
+      # Step 3: Scaffold Complete Capacitor Android Native Project
       - name: Ensure Capacitor Android Platform
         working-directory: frontend
         run: |
-          if [ ! -d "android" ]; then
+          if [ ! -f "android/settings.gradle" ]; then
+            echo "Android directory incomplete or missing. Re-adding Capacitor Android platform..."
+            rm -rf android
             npx @capacitor/cli add android
           fi
           npx @capacitor/cli sync android
 
-      # Step 4: Grant Executable Permissions to Gradle Wrapper
+      # Step 4: Grant Permissions to Gradle Executable
       - name: Grant Gradle Permissions
         working-directory: frontend/android
-        run: |
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-          else
-            echo "gradlew not found directly; initializing via gradle wrapper..."
-            gradle wrapper
-            chmod +x gradlew
-          fi
+        run: chmod +x gradlew
 
-      # Step 5: Compile Android Release APK
+      # Step 5: Assemble Release APK Binary
       - name: Build Android Release APK
         working-directory: frontend/android
         run: ./gradlew assembleRelease
 
-      # Step 6: Upload Output Binary Artifact
+      # Step 6: Upload Output APK Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
