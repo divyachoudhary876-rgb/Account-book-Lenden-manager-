@@ -22,19 +22,19 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies Safely
+      # Step 1: Install Dependencies with Legacy Flag
       - name: Install Frontend Dependencies
         run: |
           cd frontend
           npm install --legacy-peer-deps
 
-      # Step 2: Build Web Bundle
+      # Step 2: Build Web Application
       - name: Build Web Application
         run: |
           cd frontend
           npm run build
 
-      # Step 3: Ensure Android Native Platform Wrapper Exists
+      # Step 3: Auto-Inject Native Android Platform if Missing
       - name: Ensure Capacitor Android Platform
         run: |
           cd frontend
