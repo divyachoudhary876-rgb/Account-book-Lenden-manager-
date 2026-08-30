@@ -45,11 +45,13 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'Arial, sans-serif' }}>
       
-      {/* Navbar Header */}
+      {/* Header Bar */}
       <header style={{ backgroundColor: '#0f172a', color: '#fff', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{activeFirm?.legal_name || 'Business Onboarding Required'}</div>
-          <div style={{ fontSize: '11px', color: '#94a3b8' }}>GSTIN: {activeFirm?.gstin || 'Unregistered'} | Category: {activeFirm?.industry_type || 'Setup Pending'}</div>
+          <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{activeFirm?.legal_name || 'Business Setup Required'}</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+            GSTIN: {activeFirm?.gstin || 'Unregistered'} | Industry: {activeFirm?.industry_type || 'Setup Pending'}
+          </div>
         </div>
 
         {!needsOnboarding && (
@@ -57,12 +59,12 @@ export default function App() {
             onClick={() => setIsDrawerOpen(true)}
             style={{ backgroundColor: '#1e293b', color: '#fff', border: '1px solid #334155', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
           >
-            ☰ Navigation Menu
+            ☰ Navigation Suite
           </button>
         )}
       </header>
 
-      {/* Ascending Order Slide-out Drawer */}
+      {/* Ascending Sequenced Navigation Drawer */}
       {isDrawerOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex' }}>
           <div style={{ width: '320px', backgroundColor: '#0f172a', color: '#fff', height: '100%', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
@@ -104,13 +106,14 @@ export default function App() {
         </div>
       )}
 
+      {/* First Time Onboarding Guard */}
       {needsOnboarding && (
         <div style={{ backgroundColor: '#eff6ff', borderBottom: '1px solid #bfdbfe', padding: '12px', textAlign: 'center', color: '#1e40af', fontSize: '13px', fontWeight: 'bold' }}>
-          👋 Welcome to Account Book! Kripya pehle Step 1 (Firm Profile Settings) me apni firm details save karein.
+          👋 Welcome to Account Book! Kripya Step 1 (Firm Profile Settings) me apni Firm Details save karein.
         </div>
       )}
 
-      {/* Main View Router */}
+      {/* Main Workspace Router */}
       <main style={{ padding: '16px', maxWidth: '1000px', margin: '0 auto' }}>
         {activeTab === 'firm_setup' && <CreateFirmForm onSaved={() => { syncFirmState(); setActiveTab('dashboard'); }} />}
         {activeTab === 'create_account' && <CreateAccountHeadModal onClose={() => setActiveTab('ledger')} />}
