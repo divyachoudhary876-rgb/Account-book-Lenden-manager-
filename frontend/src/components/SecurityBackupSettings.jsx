@@ -1,54 +1,65 @@
 // frontend/src/components/SecurityBackupSettings.jsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { validateEntryModificationPermission } from '../utils/financialYearLockEngine.js';
 
 export default function SecurityBackupSettings() {
-  const [isExporting, setIsExporting] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockDate, setLockDate] = useState('2026-03-31');
 
-  const handleCreateBackup = async () => {
-    setIsExporting(true);
-    try {
-      const backupData = {
-        firm_profile: JSON.parse(localStorage.getItem('active_firm_profile') || '{}'),
-        accounts: JSON.parse(localStorage.getItem('app_account_heads') || '[]'),
-        journal_entries: JSON.parse(localStorage.getItem('app_journal_entries') || '[]'),
-        invoices: JSON.parse(localStorage.getItem('app_invoices') || '[]'),
-        inventory: JSON.parse(localStorage.getItem('app_inventory') || '[]'),
-        exported_at: new Date().toISOString()
-      };
+  useEffect(() => {
+    setIsLocked(localStorage.getItem('is_fy_period_locked') === 'true');
+    setLockDate(localStorage.getItem('fy_lock_until_date') || '2026-03-31');
+  }, []);
 
-      const jsonString = JSON.stringify(backupData, null, 2);
-      const fileName = `ACCOUNT_BOOK_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
-
-      // Web Fallback Download
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = fileName;
-      link.click();
-
-      alert("✓ Security Backup JSON File created & saved to Downloads!");
-    } catch (err) {
-      alert(`❌ Backup Export Error: ${err.message}`);
-    } finally {
-      setIsExporting(false);
-    }
+  const handleSaveSecurityLock = () => {
+    localStorage.setItem('is_fy_period_locked', isLocked ? 'true' : 'false');
+    localStorage.setItem('fy_lock_until_date', lockDate);
+    alert(`🔒 Security Lock Configuration updated! Entries on or before ${lockDate} are now ${isLocked ? 'LOCKED' : 'UNLOCKED'}.`);
   };
 
   return (
-    <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: '600px', margin: '0 auto' }}>
-      <h3 style={{ margin: '0 0 12px 0', color: '#0f172a' }}>🔒 Data Security & System Backup</h3>
-      <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
-        Create an encrypted full JSON snapshot of your accounts, vouchers, invoices, and inventory to restore anytime.
-      </p>
+    <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>🔒 Data Security & Financial Period Lock</h3>
 
-      <button
-        onClick={handleCreateBackup}
-        disabled={isExporting}
-        style={{ padding: '12px 20px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-      >
-        {isExporting ? '⏳ Generating Encrypted Backup...' : '📲 Download Full System Backup File (.JSON)'}
-      </button>
+      <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <h4 style={{ margin: 0, color: '#1e293b' }}>CA Audit Period Lock</h4>
+        <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+          Lock historical voucher entries to prevent accidental modifications or backdated tampering in closed financial periods.
+        </p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <input
+            type="checkbox"
+            id="lockToggle"
+            checked={isLocked}
+            onChange={(e) => setIsLocked(e.target.checked)}
+            style={{ width: '18px', height: '18px' }}
+          />
+          <label htmlFor="lockToggle" style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+            Enable Read-Only Period Lock
+          </label>
+        </div>
+
+        <div>
+          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>
+            Lock Entries On or Before Date
+          </label>
+          <input
+            type="date"
+            value={lockDate}
+            onChange={(e) => setLockDate(e.target.value)}
+            style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+          />
+        </div>
+
+        <button
+          onClick={handleSaveSecurityLock}
+          style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', alignSelf: 'flex-start' }}
+        >
+          💾 Apply Security Settings
+        </button>
+      </div>
     </div>
   );
 }
