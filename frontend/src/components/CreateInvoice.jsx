@@ -1,235 +1,183 @@
-import React, { useState } from 'react';
+// frontend/src/components/CreateInvoice.jsx
 
-export default function CreateInvoice({ organizationId = "ORG-101" }) {
-  const [partyId, setPartyId] = useState('');
+import React, { useState, useEffect } from 'react';
+import { processSalesInvoicePosting } from '../utils/salesPostingEngine';
+
+export default function CreateInvoice({ firm }) {
+  const [parties, setParties] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
-  const [items, setItems] = useState([
-    { item_name: '', qty: 1, rate: 0, gst_percent: 18 }
-  ]);
-  const [loading, setLoading] = useState(false);
+  const [taxableAmount, setTaxableAmount] = useState('');
+  const [gstRate, setGstRate] = useState('18');
+  const [narration, setNarration] = useState('');
+  const [showAddPartyModal, setShowAddPartyModal] = useState(false);
 
-  // Add Row
-  const handleAddItem = () => {
-    setItems([...items, { item_name: '', qty: 1, rate: 0, gst_percent: 18 }]);
+  // New Party Form States
+  const [newPartyName, setNewPartyName] = useState('');
+  const [newPartyGstin, setNewPartyGstin] = useState('');
+  const [newPartyState, setNewPartyState] = useState('08 - Rajasthan');
+  const [newPartyAddress, setNewPartyAddress] = useState('');
+  const [newPartyPhone, setNewPartyPhone] = useState('');
+
+  const loadParties = () => {
+    const saved = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
+    const debtors = saved.filter(a => a.sub_group === 'SUNDRY_DEBTORS' || a.primary_type === 'ASSET');
+    setParties(debtors);
   };
 
-  // Remove Row
-  const handleRemoveItem = (index) => {
-    if (items.length === 1) return;
-    setItems(items.filter((_, i) => i !== index));
-  };
+  useEffect(() => { loadParties(); }, []);
 
-  // Update Item Fields
-  const handleItemChange = (index, field, value) => {
-    const updated = [...items];
-    updated[index][field] = value;
-    setItems(updated);
-  };
-
-  // Tax & Totals Calculation
-  const calculateTotals = () => {
-    let subtotal = 0;
-    let totalGst = 0;
-
-    items.forEach(item => {
-      const lineSubtotal = (parseFloat(item.qty) || 0) * (parseFloat(item.rate) || 0);
-      const lineGst = (lineSubtotal * (parseFloat(item.gst_percent) || 0)) / 100;
-      subtotal += lineSubtotal;
-      totalGst += lineGst;
-    });
-
-    return {
-      subtotal,
-      totalGst,
-      grandTotal: subtotal + totalGst
-    };
-  };
-
-  const { subtotal, totalGst, grandTotal } = calculateTotals();
-
-  // Submit Invoice to Backend API
-  const handleSubmit = async (e) => {
+  const handleCreateParty = (e) => {
     e.preventDefault();
-    if (!partyId) return alert('Please select a customer!');
-
-    setLoading(true);
-    const payload = {
-      organization_id: organizationId,
-      party_id: partyId,
-      invoice_date: invoiceDate,
-      items,
-      subtotal,
-      tax_total: totalGst,
-      grand_total: grandTotal
+    const saved = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
+    const newAccount = {
+      id: `ACC-CUST-${Date.now()}`,
+      name: newPartyName,
+      sub_group: 'SUNDRY_DEBTORS',
+      primary_type: 'ASSET',
+      gstin: newPartyGstin,
+      state: newPartyState,
+      address: newPartyAddress,
+      phone: newPartyPhone,
+      opening_balance: 0,
+      current_balance: 0
     };
+
+    localStorage.setItem('app_account_heads', JSON.stringify([...saved, newAccount]));
+    alert(`✓ Party '${newPartyName}' with GSTIN successfully created!`);
+    setShowAddPartyModal(false);
+    setNewPartyName('');
+    setNewPartyGstin('');
+    setNewPartyAddress('');
+    setNewPartyPhone('');
+    loadParties();
+    setSelectedCustomer(newAccount.id);
+  };
+
+  const handleSaveInvoice = (e) => {
+    e.preventDefault();
+    const cust = parties.find(p => p.id === selectedCustomer);
+    if (!cust) return alert("❌ Please select a Customer / Debtors Party!");
 
     try {
-      const res = await fetch('/api/v1/invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      processSalesInvoicePosting({
+        customerId: cust.id,
+        customerName: cust.name,
+        invoiceDate,
+        taxableAmount,
+        gstRate,
+        narration
       });
-      const data = await res.json();
-      if (data.success) {
-        alert('Invoice Created Successfully!');
-        setItems([{ item_name: '', qty: 1, rate: 0, gst_percent: 18 }]);
-      } else {
-        alert('Error: ' + data.error);
-      }
+
+      alert("✓ Sales Invoice Posted! Journal Register, Ledger Milan & Dashboard figures updated.");
+      setTaxableAmount('');
+      setNarration('');
     } catch (err) {
-      alert('Network error while saving invoice.');
-    } finally {
-      setLoading(false);
+      alert(`❌ Sales Posting Error: ${err.message}`);
     }
   };
 
   return (
-    <div style={styles.container}>
-      <h2 style={{ color: '#0f172a', marginBottom: '16px' }}>🧾 Fast Sales Invoice Entry</h2>
-      <form onSubmit={handleSubmit}>
+    <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: '700px', margin: '0 auto' }}>
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h3 style={{ margin: 0, color: '#0f172a' }}>🧾 Fast Sales Invoice Entry</h3>
+        <button onClick={() => setShowAddPartyModal(true)} style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+          + Create Complete New Party
+        </button>
+      </div>
+
+      <form onSubmit={handleSaveInvoice} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         
-        {/* Header Inputs */}
-        <div style={styles.grid2}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
           <div>
-            <label style={styles.label}>Select Customer / Debtor *</label>
-            <select 
-              value={partyId} 
-              onChange={(e) => setPartyId(e.target.value)}
-              style={styles.input}
-              required
-            >
+            <label style={labelStyle}>Select Customer / Debtor *</label>
+            <select value={selectedCustomer} onChange={(e) => setSelectedCustomer(e.target.value)} style={inputStyle} required>
               <option value="">-- Choose Party --</option>
-              <option value="LED-3">Shree Ram Traders</option>
-              <option value="LED-4">Jaipur BioFuels</option>
+              {parties.map(p => (
+                <option key={p.id} value={p.id}>{p.name} {p.gstin ? `(GST: ${p.gstin})` : ''}</option>
+              ))}
             </select>
           </div>
           <div>
-            <label style={styles.label}>Invoice Date</label>
-            <input 
-              type="date" 
-              value={invoiceDate} 
-              onChange={(e) => setInvoiceDate(e.target.value)} 
-              style={styles.input} 
-            />
+            <label style={labelStyle}>Invoice Date *</label>
+            <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} style={inputStyle} required />
           </div>
         </div>
 
-        {/* Dynamic Items Table */}
-        <table style={styles.table}>
-          <thead>
-            <tr style={{ backgroundColor: '#f1f5f9' }}>
-              <th style={styles.th}>Item Particulars</th>
-              <th style={{ ...styles.th, width: '80px' }}>Qty</th>
-              <th style={{ ...styles.th, width: '120px' }}>Rate (₹)</th>
-              <th style={{ ...styles.th, width: '100px' }}>GST %</th>
-              <th style={{ ...styles.th, width: '120px', textAlign: 'right' }}>Total (₹)</th>
-              <th style={{ ...styles.th, width: '50px' }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item, index) => {
-              const lineTotal = (item.qty || 0) * (item.rate || 0) * (1 + (item.gst_percent || 0)/100);
-              return (
-                <tr key={index}>
-                  <td style={styles.td}>
-                    <input 
-                      type="text" 
-                      placeholder="Item name / description" 
-                      value={item.item_name}
-                      onChange={(e) => handleItemChange(index, 'item_name', e.target.value)}
-                      style={styles.tableInput}
-                      required
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      value={item.qty}
-                      onChange={(e) => handleItemChange(index, 'qty', parseFloat(e.target.value) || 0)}
-                      style={styles.tableInput}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      value={item.rate}
-                      onChange={(e) => handleItemChange(index, 'rate', parseFloat(e.target.value) || 0)}
-                      style={styles.tableInput}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <select 
-                      value={item.gst_percent}
-                      onChange={(e) => handleItemChange(index, 'gst_percent', parseFloat(e.target.value))}
-                      style={styles.tableInput}
-                    >
-                      <option value={0}>0%</option>
-                      <option value={5}>5%</option>
-                      <option value={12}>12%</option>
-                      <option value={18}>18%</option>
-                      <option value={28}>28%</option>
-                    </select>
-                  </td>
-                  <td style={{ ...styles.td, textAlign: 'right', fontWeight: 'bold' }}>
-                    ₹{lineTotal.toFixed(2)}
-                  </td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <button 
-                      type="button" 
-                      onClick={() => handleRemoveItem(index)}
-                      style={{ background: 'none', border: 'none', color: 'red', cursor: 'pointer', fontWeight: 'bold' }}
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-        <button 
-          type="button" 
-          onClick={handleAddItem} 
-          style={styles.btnAddRow}
-        >
-          + Add Item Row
-        </button>
-
-        {/* Calculation Summary Card */}
-        <div style={styles.summaryCard}>
-          <div>Subtotal: <strong>₹{subtotal.toFixed(2)}</strong></div>
-          <div>GST Tax: <strong>₹{totalGst.toFixed(2)}</strong></div>
-          <div style={{ fontSize: '16px', color: '#2563eb', marginTop: '4px' }}>
-            Grand Total: <strong>₹{grandTotal.toFixed(2)}</strong>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>Taxable Bill Value (₹) *</label>
+            <input type="number" step="0.01" placeholder="10000.00" value={taxableAmount} onChange={(e) => setTaxableAmount(e.target.value)} style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>GST Tax Rate (%)</label>
+            <select value={gstRate} onChange={(e) => setGstRate(e.target.value)} style={inputStyle}>
+              <option value="0">0% (Exempted)</option>
+              <option value="5">5% GST</option>
+              <option value="12">12% GST</option>
+              <option value="18">18% GST</option>
+              <option value="28">28% GST</option>
+            </select>
           </div>
         </div>
 
-        <button 
-          type="submit" 
-          disabled={loading} 
-          style={styles.btnSubmit}
-        >
-          {loading ? 'Saving Invoice...' : '💾 Save & Generate Invoice'}
+        <div>
+          <label style={labelStyle}>Invoice Narration / Item Description</label>
+          <input type="text" placeholder="Sales of Biomass Briquettes Order #105..." value={narration} onChange={(e) => setNarration(e.target.value)} style={inputStyle} />
+        </div>
+
+        <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', padding: '12px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', marginTop: '10px' }}>
+          💾 Save & Post Sales Invoice
         </button>
 
       </form>
+
+      {/* Complete Party Master Creation Modal */}
+      {showAddPartyModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '12px', width: '90%', maxWidth: '500px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+            <h3 style={{ margin: '0 0 14px 0', color: '#0f172a' }}>🏢 Complete New Customer Party Master</h3>
+            <form onSubmit={handleCreateParty} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label style={labelStyle}>Party Legal Name *</label>
+                <input type="text" placeholder="Shree Ram Traders" value={newPartyName} onChange={e => setNewPartyName(e.target.value)} style={inputStyle} required />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={labelStyle}>GSTIN Number</label>
+                  <input type="text" placeholder="08AAAAA0000A1Z5" value={newPartyGstin} onChange={e => setNewPartyGstin(e.target.value)} style={inputStyle} maxLength="15" />
+                </div>
+                <div>
+                  <label style={labelStyle}>State / POS</label>
+                  <select value={newPartyState} onChange={e => setNewPartyState(e.target.value)} style={inputStyle}>
+                    <option value="08 - Rajasthan">08 - Rajasthan</option>
+                    <option value="07 - Delhi">07 - Delhi</option>
+                    <option value="03 - Punjab">03 - Punjab</option>
+                    <option value="06 - Haryana">06 - Haryana</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle}>Billing Address</label>
+                <input type="text" placeholder="Industrial Area, Hanumangarh" value={newPartyAddress} onChange={e => setNewPartyAddress(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Mobile Phone</label>
+                <input type="text" placeholder="98290XXXXX" value={newPartyPhone} onChange={e => setNewPartyPhone(e.target.value)} style={inputStyle} />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="submit" style={{ flex: 1, backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Save Party Master</button>
+                <button type="button" onClick={() => setShowAddPartyModal(false)} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
 
-const styles = {
-  container: { maxWidth: '800px', margin: '0 auto', backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
-  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' },
-  label: { display: 'block', fontWeight: 'bold', fontSize: '12px', color: '#334155', marginBottom: '4px' },
-  input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' },
-  table: { width: '100%', borderCollapse: 'collapse', marginTop: '10px' },
-  th: { border: '1px solid #cbd5e1', padding: '8px', fontSize: '12px', textAlign: 'left' },
-  td: { border: '1px solid #e2e8f0', padding: '6px' },
-  tableInput: { width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: '13px' },
-  btnAddRow: { marginTop: '10px', padding: '8px 14px', backgroundColor: '#f1f5f9', color: '#0f172a', border: '1px solid #cbd5e1', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' },
-  summaryCard: { marginTop: '16px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', textAlign: 'right', fontSize: '13px' },
-  btnSubmit: { width: '100%', marginTop: '16px', padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }
-};
+const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' };
+const inputStyle = { width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' };
