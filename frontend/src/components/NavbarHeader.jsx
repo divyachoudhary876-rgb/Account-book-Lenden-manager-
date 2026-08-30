@@ -1,12 +1,38 @@
 // frontend/src/components/NavbarHeader.jsx
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { getAllFirms, switchActiveFirm } from '../utils/multiFirmEngine.js';
+import { getCurrentActiveFY, setActiveFY } from '../utils/financialYearLockEngine.js';
 
 export default function NavbarHeader({ firm, activeTab, onNavigate, onToggleMenu }) {
+  const [firmsList, setFirmsList] = useState([]);
+  const [currentFY, setCurrentFY] = useState('2026-2027');
+
+  useEffect(() => {
+    setFirmsList(getAllFirms());
+    setCurrentFY(getCurrentActiveFY());
+  }, [firm]);
+
+  const handleQuickFirmSwitch = (firmId) => {
+    try {
+      const switched = switchActiveFirm(firmId);
+      alert(`⚡ Quick Switch: Active firm changed to ${switched.legal_name}`);
+      window.location.reload();
+    } catch (err) {
+      alert(`❌ Switch Error: ${err.message}`);
+    }
+  };
+
+  const handleFYChange = (fy) => {
+    setActiveFY(fy);
+    setCurrentFY(fy);
+    alert(`📅 Financial Year Period set to ${fy}`);
+  };
+
   return (
-    <header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #cbd5e1', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
+    <header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #cbd5e1', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100, flexWrap: 'wrap', gap: '10px' }}>
       
-      {/* Fixed Functional Back Button */}
+      {/* Brand & Direct Back Button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         {activeTab !== 'dashboard' && firm && (
           <button
@@ -23,12 +49,40 @@ export default function NavbarHeader({ firm, activeTab, onNavigate, onToggleMenu
           </div>
           <div>
             <h2 style={{ margin: 0, fontSize: '13px', color: '#0f172a', lineHeight: '1.2' }}>Account Book</h2>
-            <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#2563eb' }}>{firm?.legal_name || 'SMART MANAGER'}</span>
+            <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#2563eb' }}>SMART MANAGER</span>
           </div>
         </div>
       </div>
 
-      {/* Menu Drawer Toggle */}
+      {/* Top Bar Quick Firm & FY Controls */}
+      {firm && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          
+          {/* Quick Firm Switcher Dropdown */}
+          <select
+            value={firm.id}
+            onChange={(e) => handleQuickFirmSwitch(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #2563eb', backgroundColor: '#eff6ff', fontSize: '12px', fontWeight: 'bold', color: '#1e40af', outline: 'none' }}
+          >
+            {firmsList.map(f => (
+              <option key={f.id} value={f.id}>🏢 {f.legal_name} ({f.industry_type})</option>
+            ))}
+          </select>
+
+          {/* Financial Year Selector */}
+          <select
+            value={currentFY}
+            onChange={(e) => handleFYChange(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', fontSize: '12px', fontWeight: 'bold', color: '#334155', outline: 'none' }}
+          >
+            <option value="2025-2026">FY 2025-26</option>
+            <option value="2026-2027">FY 2026-27</option>
+          </select>
+
+        </div>
+      )}
+
+      {/* Navigation Suite Toggle */}
       <button
         onClick={onToggleMenu}
         style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
