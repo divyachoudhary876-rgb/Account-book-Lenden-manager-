@@ -1,108 +1,48 @@
-import React, { useState } from 'react';
+// frontend/src/components/AccountingDashboard.jsx
 
-export default function AccountingDashboard() {
-  const [activeTab, setActiveTab] = useState('receipt');
-  const [invoiceIdForPdf, setInvoiceIdForPdf] = useState('');
+import React from 'react';
 
-  // Payment Receipt Form State
-  const [receiptData, setReceiptData] = useState({
-    customer_id: '',
-    receipt_date: new Date().toISOString().split('T')[0],
-    amount_received: '',
-    payment_mode: 'BANK_TRANSFER',
-    reference_number: ''
-  });
-
-  const handleReceiptSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch('/api/payment-receipt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(receiptData)
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(`Receipt Generated & Ledger Updated! Ref: ${data.receipt_number}`);
-      } else {
-        alert(`Error: ${data.message}`);
-      }
-    } catch (err) {
-      alert(`Network Error: ${err.message}`);
-    }
-  };
-
-  const handlePrintPdf = () => {
-    if (!invoiceIdForPdf) return alert('Enter Invoice ID');
-    window.open(`/api/sales-invoice/${invoiceIdForPdf}/pdf`, '_blank');
-  };
-
+export default function AccountingDashboard({ firm, onNavigate }) {
   return (
-    <div style={{ maxWidth: '900px', margin: '20px auto', padding: '20px', fontFamily: 'Arial' }}>
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button onClick={() => setActiveTab('receipt')} style={{ padding: '10px 20px', cursor: 'pointer' }}>
-          Module 2: Add Payment Receipt
-        </button>
-        <button onClick={() => setActiveTab('pdf')} style={{ padding: '10px 20px', cursor: 'pointer' }}>
-          Module 3: Print GST PDF Invoice
-        </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      
+      {/* Firm Greeting Banner */}
+      <div style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+        <h2 style={{ margin: 0, fontSize: '20px' }}>🏭 {firm?.legal_name || 'Neelkanth Int Udyog'}</h2>
+        <span style={{ fontSize: '12px', color: '#94a3b8' }}>GSTIN: {firm?.gstin || 'Unregistered'} | Category: {firm?.industry_type || 'BRICK_KILN'}</span>
       </div>
 
-      {activeTab === 'receipt' && (
-        <form onSubmit={handleReceiptSubmit} style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '5px' }}>
-          <h3>Record Customer Payment & Auto Ledger Knock-off</h3>
-          <input 
-            type="text" 
-            placeholder="Customer UUID" 
-            value={receiptData.customer_id} 
-            onChange={e => setReceiptData({...receiptData, customer_id: e.target.value})} 
-            required style={{ display: 'block', width: '100%', marginBottom: '10px', padding: '8px' }}
-          />
-          <input 
-            type="number" 
-            placeholder="Amount Received (₹)" 
-            value={receiptData.amount_received} 
-            onChange={e => setReceiptData({...receiptData, amount_received: parseFloat(e.target.value)})} 
-            required style={{ display: 'block', width: '100%', marginBottom: '10px', padding: '8px' }}
-          />
-          <select 
-            value={receiptData.payment_mode} 
-            onChange={e => setReceiptData({...receiptData, payment_mode: e.target.value})}
-            style={{ display: 'block', width: '100%', marginBottom: '10px', padding: '8px' }}
-          >
-            <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
-            <option value="UPI">UPI Payment</option>
-            <option value="CASH">Cash</option>
-            <option value="CHEQUE">Cheque</option>
-          </select>
-          <input 
-            type="text" 
-            placeholder="Reference/Transaction No." 
-            value={receiptData.reference_number} 
-            onChange={e => setReceiptData({...receiptData, reference_number: e.target.value})} 
-            style={{ display: 'block', width: '100%', marginBottom: '10px', padding: '8px' }}
-          />
-          <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '10px 20px', cursor: 'pointer' }}>
-            Save Receipt & Post Ledger
-          </button>
-        </form>
-      )}
-
-      {activeTab === 'pdf' && (
-        <div style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '5px' }}>
-          <h3>Print Printable GST PDF Invoice</h3>
-          <input 
-            type="text" 
-            placeholder="Enter Invoice UUID" 
-            value={invoiceIdForPdf} 
-            onChange={e => setInvoiceIdForPdf(e.target.value)} 
-            style={{ width: '70%', padding: '8px', marginRight: '10px' }}
-          />
-          <button onClick={handlePrintPdf} style={{ background: '#007bff', color: '#fff', border: 'none', padding: '8px 16px', cursor: 'pointer' }}>
-            Generate & View PDF
-          </button>
+      {/* Metrics Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+        <div style={{ ...cardStyle, borderLeft: '4px solid #10b981' }}>
+          <span style={cardTitleStyle}>Total Receivables (Denadar)</span>
+          <h3 style={{ margin: '6px 0 0 0', color: '#10b981' }}>₹1,45,000.00</h3>
         </div>
-      )}
+        <div style={{ ...cardStyle, borderLeft: '4px solid #ef4444' }}>
+          <span style={cardTitleStyle}>Total Payables (Lendhar)</span>
+          <h3 style={{ margin: '6px 0 0 0', color: '#ef4444' }}>₹62,500.00</h3>
+        </div>
+        <div style={{ ...cardStyle, borderLeft: '4px solid #2563eb' }}>
+          <span style={cardTitleStyle}>Total Raw Bricks Stock</span>
+          <h3 style={{ margin: '6px 0 0 0', color: '#2563eb' }}>10,000 NOS</h3>
+        </div>
+      </div>
+
+      {/* Quick Actions Shortcuts */}
+      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        <h4 style={{ margin: '0 0 12px 0', color: '#0f172a' }}>⚡ Quick Accounting Actions</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+          <button onClick={() => onNavigate('billing')} style={actionBtnStyle}>🧾 Create Sales Invoice</button>
+          <button onClick={() => onNavigate('bhatta_prod')} style={actionBtnStyle}>🧱 Brick Production Entry</button>
+          <button onClick={() => onNavigate('purchase')} style={actionBtnStyle}>🛍️ Purchase Stock Inward</button>
+          <button onClick={() => onNavigate('ledger')} style={actionBtnStyle}>📖 View Account Milan</button>
+        </div>
+      </div>
+
     </div>
   );
 }
+
+const cardStyle = { backgroundColor: '#ffffff', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' };
+const cardTitleStyle = { fontSize: '11px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' };
+const actionBtnStyle = { backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', color: '#0f172a', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', textAlign: 'center' };
