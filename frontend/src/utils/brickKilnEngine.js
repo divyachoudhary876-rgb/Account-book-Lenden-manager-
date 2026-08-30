@@ -82,12 +82,12 @@ export const processPathaiProductionEntry = (firmId, payload) => {
   const soilConsumedTons = calculateSoilTons(qty, unitWeight, settings.soil_waste_percentage);
   const stock = getBrickKilnStock(targetId);
 
-  // Update Soil Stock (-OUT) & Raw Bricks (+IN)
+  // 1. Update Kiln Stock Balance
   stock.RAW_SOIL_TONS = parseFloat((stock.RAW_SOIL_TONS - soilConsumedTons).toFixed(3));
   stock.RAW_KACHI += qty;
   localStorage.setItem(`app_brick_stock_${targetId}`, JSON.stringify(stock));
 
-  // Live Integration with Master Stock Inventory View
+  // 2. Direct Sync to Master Inventory Stock View (`📦 Inventory Master`)
   const masterKey = `app_inventory_${targetId}`;
   const masterItems = getStockItemsByFirm(targetId);
   
@@ -117,6 +117,7 @@ export const processPathaiProductionEntry = (firmId, payload) => {
 
   localStorage.setItem(masterKey, JSON.stringify(masterItems));
 
+  // 3. Log Transaction
   const logKey = `app_brick_pathai_logs_${targetId}`;
   const existingLogs = JSON.parse(localStorage.getItem(logKey) || '[]');
   const wagesPayable = (qty / 1000) * ratePer1000;
