@@ -22,25 +22,28 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install all packages including @capacitor/cli
+      # Step 1: Install Dependencies Safely
       - name: Install Frontend Dependencies
         run: |
           cd frontend
           npm install --legacy-peer-deps
 
-      # Step 2: Build Web Application (dist folder)
+      # Step 2: Build Web Bundle
       - name: Build Web Application
         run: |
           cd frontend
           npm run build
 
-      # Step 3: Capacitor Sync (Using local npx CLI)
-      - name: Capacitor Sync
+      # Step 3: Ensure Android Native Platform Wrapper Exists
+      - name: Ensure Capacitor Android Platform
         run: |
           cd frontend
+          if [ ! -d "android" ]; then
+            npx @capacitor/cli add android
+          fi
           npx @capacitor/cli sync android
 
-      # Step 4: Gradle Build Execution
+      # Step 4: Grant Permissions & Execute Gradle Build
       - name: Grant Gradle Permissions
         run: |
           cd frontend/android
@@ -51,7 +54,7 @@ jobs:
           cd frontend/android
           ./gradlew assembleRelease
 
-      # Step 5: Upload Signed Artifact
+      # Step 5: Upload Generated Release APK
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
