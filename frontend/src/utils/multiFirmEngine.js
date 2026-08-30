@@ -1,49 +1,39 @@
 // frontend/src/utils/multiFirmEngine.js
 
-export const getAllFirms = () => {
-  return JSON.parse(localStorage.getItem('app_all_firms_registry') || '[]');
+export const checkIsFirstTimeUser = () => {
+  const registry = JSON.parse(localStorage.getItem('app_all_firms_registry') || '[]');
+  return registry.length === 0;
 };
 
-export const getActiveFirm = () => {
-  return JSON.parse(localStorage.getItem('active_firm_profile') || 'null');
-};
-
-export const saveOrUpdateFirm = (firmData) => {
-  const existingFirms = getAllFirms();
-  const isEdit = Boolean(firmData.id);
-  
-  const firmId = isEdit ? firmData.id : `FIRM-${Date.now()}`;
-  const updatedFirm = {
-    ...firmData,
+export const createInitialFirmProfile = (firmPayload) => {
+  const firmId = `FIRM-${Date.now()}`;
+  const newFirm = {
     id: firmId,
-    updated_at: new Date().toISOString()
+    legal_name: firmPayload.legal_name.trim(),
+    industry_type: firmPayload.industry_type || 'TRADING',
+    gstin: firmPayload.gstin ? firmPayload.gstin.trim().toUpperCase() : 'Unregistered',
+    office_address: firmPayload.office_address ? firmPayload.office_address.trim() : '',
+    contact_mobile: firmPayload.contact_mobile ? firmPayload.contact_mobile.trim() : '',
+    created_at: new Date().toISOString()
   };
 
-  let newRegistry = [];
-  if (isEdit) {
-    newRegistry = existingFirms.map(f => f.id === firmId ? updatedFirm : f);
-  } else {
-    newRegistry = [...existingFirms, updatedFirm];
-    
-    // Initialize isolated local storage keys for NEW firm
-    localStorage.setItem(`app_inventory_${firmId}`, JSON.stringify([]));
-    localStorage.setItem(`app_journal_entries_${firmId}`, JSON.stringify([]));
-    localStorage.setItem(`app_account_heads_${firmId}`, JSON.stringify([]));
-  }
+  // 1. Register Firm in Registry
+  const existingFirms = JSON.parse(localStorage.getItem('app_all_firms_registry') || '[]');
+  existingFirms.push(newFirm);
+  localStorage.setItem('app_all_firms_registry', JSON.stringify(existingFirms));
 
-  localStorage.setItem('app_all_firms_registry', JSON.stringify(newRegistry));
-  localStorage.setItem('active_firm_profile', JSON.stringify(updatedFirm));
+  // 2. Set as Active Firm Context
+  localStorage.setItem('active_firm_profile', JSON.stringify(newFirm));
+
+  // 3. Initialize Default Chart of Accounts for new firm
+  const defaultAccounts = [
+    { id: `ACC-DEF-1-${firmId}`, name: 'Cash-in-Hand A/C', primary_type: 'ASSETS', group_type: 'CASH', opening_balance: 0, balance_type: 'Dr' },
+    { id: `ACC-DEF-2-${firmId}`, name: 'Main Bank Account', primary_type: 'ASSETS', group_type: 'BANK', opening_balance: 0, balance_type: 'Dr' },
+    { id: `ACC-DEF-3-${firmId}`, name: 'General Sales Account', primary_type: 'INCOME', group_type: 'SALES_ACCOUNT', opening_balance: 0, balance_type: 'Cr' },
+    { id: `ACC-DEF-4-${firmId}`, name: 'General Purchase Account', primary_type: 'EXPENSES', group_type: 'PURCHASE_ACCOUNT', opening_balance: 0, balance_type: 'Dr' }
+  ];
+  localStorage.setItem(`app_account_heads_${firmId}`, JSON.stringify(defaultAccounts));
 
   window.dispatchEvent(new Event('storage'));
-  return updatedFirm;
-};
-
-export const switchActiveFirm = (firmId) => {
-  const existingFirms = getAllFirms();
-  const targetFirm = existingFirms.find(f => f.id === firmId);
-  if (!targetFirm) throw new Error("Selected firm not found.");
-
-  localStorage.setItem('active_firm_profile', JSON.stringify(targetFirm));
-  window.dispatchEvent(new Event('storage'));
-  return targetFirm;
+  return newFirm;
 };
