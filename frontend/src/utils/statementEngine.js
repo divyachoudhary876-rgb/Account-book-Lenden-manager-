@@ -1,11 +1,11 @@
 // frontend/src/utils/statementEngine.js
 
-// Universal Account Master Lookup Engine
+// Universal Master Account Aggregator (Firm-Agnostic Resolution)
 export const getAccountHeads = (firmId) => {
   let combinedAccounts = [];
 
   try {
-    // 1. Scan all localStorage keys for any account entries
+    // 1. Scan all localStorage keys for any account registries
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && (key.startsWith('app_accounts') || key.startsWith('app_account_masters'))) {
@@ -19,14 +19,14 @@ export const getAccountHeads = (firmId) => {
       }
     }
 
-    // 2. Deduplicate by Account Name (Case-Insensitive)
+    // 2. Deduplicate accounts by clean, case-insensitive Account Name
     const accountMap = new Map();
     combinedAccounts.forEach(acc => {
       if (acc && acc.account_name) {
         const cleanName = acc.account_name.trim();
         if (!accountMap.has(cleanName.toLowerCase())) {
           accountMap.set(cleanName.toLowerCase(), {
-            id: acc.id || `ACC-${Date.now()}-${Math.random()}`,
+            id: acc.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
             account_name: cleanName,
             account_group: acc.account_group || acc.sub_group || 'GENERAL'
           });
@@ -39,7 +39,7 @@ export const getAccountHeads = (firmId) => {
     combinedAccounts = [];
   }
 
-  // Save back to master global store
+  // 3. Mirror consolidated master back to active keys for rapid access
   if (combinedAccounts.length > 0) {
     localStorage.setItem('app_accounts_master_global', JSON.stringify(combinedAccounts));
     if (firmId) {
@@ -50,7 +50,7 @@ export const getAccountHeads = (firmId) => {
   return combinedAccounts;
 };
 
-// Create Account Head Logic (Pushes to Global Master Store)
+// Create Account Head Logic
 export const createQuickAccountHead = (firmId, accountData) => {
   if (!accountData.account_name || !accountData.account_name.trim()) {
     throw new Error("⚠️ Account / Party Name is required.");
@@ -73,12 +73,12 @@ export const createQuickAccountHead = (firmId, accountData) => {
 
   currentAccounts.push(newAccount);
 
-  // Sync across all storage keys
+  // Synchronize across all active firm contexts
   const targetId = firmId || 'FIRM-001';
   localStorage.setItem(`app_accounts_${targetId}`, JSON.stringify(currentAccounts));
   localStorage.setItem('app_accounts_master_global', JSON.stringify(currentAccounts));
 
-  // Dispatch event for real-time reactivity
+  // Trigger reactive storage events across open components
   window.dispatchEvent(new Event('accounts_master_updated'));
   window.dispatchEvent(new Event('storage'));
   return newAccount;
