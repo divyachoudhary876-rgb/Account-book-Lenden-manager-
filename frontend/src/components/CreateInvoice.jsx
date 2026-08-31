@@ -88,7 +88,7 @@ export default function CreateInvoice({ firm }) {
       {showModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <form onSubmit={handleCreateAcc} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', maxWidth: '360px', width: '100%' }}>
-            <h4>➕ Quick Add Customer</h4>
+            <h4>➕ Quick Add Customer Account</h4>
             <input type="text" placeholder="Customer Name *" value={newAccName} onChange={e => setNewAccName(e.target.value)} style={inputStyle} required />
             <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
               <button type="submit" style={btnStyle('#2563eb')}>Save</button>
@@ -130,29 +130,35 @@ export default function CreateInvoice({ firm }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
           <input type="number" placeholder="Qty" value={quantity} onChange={e => setQuantity(e.target.value)} style={inputStyle} required />
           <input type="number" placeholder="Rate" value={unitRate} onChange={e => setUnitRate(e.target.value)} style={inputStyle} required />
+          
+          {/* Complete GST Slabs List Including 0% */}
           <select value={gstRate} onChange={e => setGstRate(e.target.value)} style={inputStyle}>
-            <option value="18">18% GST</option>
-            <option value="12">12% GST</option>
+            <option value="0">0% GST (Exempt)</option>
             <option value="5">5% GST</option>
+            <option value="12">12% GST</option>
+            <option value="18">18% GST</option>
+            <option value="28">28% GST</option>
           </select>
         </div>
 
         <button type="submit" style={{ ...btnStyle('#2563eb'), width: '100%', padding: '10px', marginTop: '10px' }}>💾 Save & Post Sales Invoice</button>
       </form>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-        <thead><tr style={{ backgroundColor: '#0f172a', color: '#fff' }}><th style={{ padding: '8px' }}>Inv #</th><th style={{ padding: '8px' }}>Customer</th><th style={{ padding: '8px' }}>Total</th><th style={{ padding: '8px' }}>Action</th></tr></thead>
-        <tbody>
-          {salesHistory.map(s => (
-            <tr key={s.id} style={{ borderBottom: '1px solid #cbd5e1' }}>
-              <td style={{ padding: '8px', fontWeight: 'bold', color: '#2563eb' }}>{s.id}</td>
-              <td style={{ padding: '8px' }}>{s.customer_account}</td>
-              <td style={{ padding: '8px' }}>₹{s.grand_total}</td>
-              <td style={{ padding: '8px' }}><button onClick={() => setPrintableInvoice(s)} style={btnStyle('#2563eb')}>📄 PDF</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <thead><tr style={{ backgroundColor: '#0f172a', color: '#fff' }}><th style={{ padding: '8px' }}>Inv #</th><th style={{ padding: '8px' }}>Customer</th><th style={{ padding: '8px' }}>Total</th><th style={{ padding: '8px' }}>Action</th></tr></thead>
+          <tbody>
+            {salesHistory.map(s => (
+              <tr key={s.id} style={{ borderBottom: '1px solid #cbd5e1' }}>
+                <td style={{ padding: '8px', fontWeight: 'bold', color: '#2563eb' }}>{s.id}</td>
+                <td style={{ padding: '8px' }}>{s.customer_account}</td>
+                <td style={{ padding: '8px' }}>₹{s.grand_total}</td>
+                <td style={{ padding: '8px' }}><button onClick={() => setPrintableInvoice(s)} style={btnStyle('#2563eb')}>📄 PDF</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
