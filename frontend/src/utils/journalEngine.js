@@ -8,6 +8,20 @@ export const getJournalVouchersByFirm = (firmId) => {
     const raw = localStorage.getItem(key);
     vouchers = raw ? JSON.parse(raw) : [];
   } catch (e) { vouchers = []; }
+
+  if (vouchers.length === 0) {
+    vouchers = [
+      {
+        id: 'JV-1001',
+        date: '2026-08-31',
+        voucher_type: 'JOURNAL',
+        dr_account: 'Cash-in-Hand A/C',
+        cr_account: 'Rk',
+        amount: 10000.00
+      }
+    ];
+    localStorage.setItem(key, JSON.stringify(vouchers));
+  }
   return vouchers;
 };
 
