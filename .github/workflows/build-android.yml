@@ -22,12 +22,12 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies with Legacy Flag to prevent ERESOLVE Crash
+      # Step 1: Install dependencies using legacy peer flag to prevent ERESOLVE error
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
-      # Step 2: Auto-Bump Build Versioning
+      # Step 2: Auto-Bump Android Versioning
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
@@ -40,12 +40,12 @@ jobs:
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      # Step 3: Compile Web Bundle with Vite
+      # Step 3: Build Web Application
       - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Sync Capacitor Native Android Folder
+      # Step 4: Sync Native Capacitor Android Folder
       - name: Capacitor Sync
         working-directory: frontend
         run: |
@@ -53,7 +53,7 @@ jobs:
           npx @capacitor/cli add android
           npx @capacitor/cli sync android
 
-      # Step 5: Build Debug APK Binary
+      # Step 5: Build Android Debug APK
       - name: Build Android Release APK
         working-directory: frontend/android
         run: |
