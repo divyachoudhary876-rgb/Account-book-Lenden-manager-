@@ -22,7 +22,7 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies using Legacy Peer Flag to bypass ERESOLVE conflict
+      # Step 1: Install Dependencies with Legacy Flag to prevent ERESOLVE Crash
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
@@ -45,7 +45,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Sync Capacitor Android Native Folder
+      # Step 4: Sync Capacitor Native Android Folder
       - name: Capacitor Sync
         working-directory: frontend
         run: |
@@ -60,7 +60,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # Step 6: Upload Output APK Artifact
+      # Step 6: Upload Output APK Binary Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
