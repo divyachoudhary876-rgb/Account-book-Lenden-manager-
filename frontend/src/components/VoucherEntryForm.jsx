@@ -17,10 +17,10 @@ export default function VoucherEntryForm({ firm }) {
   useEffect(() => {
     loadAccounts();
     window.addEventListener('storage', loadAccounts);
-    window.addEventListener('accounts_updated', loadAccounts);
+    window.addEventListener('accounts_master_updated', loadAccounts);
     return () => {
       window.removeEventListener('storage', loadAccounts);
-      window.removeEventListener('accounts_updated', loadAccounts);
+      window.removeEventListener('accounts_master_updated', loadAccounts);
     };
   }, [firm]);
 
@@ -28,15 +28,15 @@ export default function VoucherEntryForm({ firm }) {
     const list = getAccountHeads(activeFirmId);
     setAccounts(list);
     if (list.length > 0) {
-      setDrAccount(list[0].account_name);
-      setCrAccount(list[1]?.account_name || list[0].account_name);
+      if (!drAccount) setDrAccount(list[0].account_name);
+      if (!crAccount) setCrAccount(list[1]?.account_name || list[0].account_name);
     }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!drAccount || !crAccount) {
-      alert("⚠️ Pehle 'Create Account Head' me jaakar accounts banayein!");
+      alert("⚠️ Select Accounts first!");
       return;
     }
     try {
@@ -67,10 +67,10 @@ export default function VoucherEntryForm({ firm }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Debit Account (Dr) (User Created Accounts) *</label>
+            <label style={labelStyle}>Debit Account (Dr) (From Master List) *</label>
             <select value={drAccount} onChange={e => setDrAccount(e.target.value)} style={inputStyle} required>
               {accounts.length === 0 ? (
-                <option value="">No Accounts Found! Pehle Naya Account Banayein</option>
+                <option value="">No Accounts Found!</option>
               ) : (
                 accounts.map(a => (
                   <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
@@ -79,10 +79,10 @@ export default function VoucherEntryForm({ firm }) {
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Credit Account (Cr) (User Created Accounts) *</label>
+            <label style={labelStyle}>Credit Account (Cr) (From Master List) *</label>
             <select value={crAccount} onChange={e => setCrAccount(e.target.value)} style={inputStyle} required>
               {accounts.length === 0 ? (
-                <option value="">No Accounts Found! Pehle Naya Account Banayein</option>
+                <option value="">No Accounts Found!</option>
               ) : (
                 accounts.map(a => (
                   <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
