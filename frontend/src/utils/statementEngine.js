@@ -1,8 +1,5 @@
-  document.body.removeChild(link);
-};
 // frontend/src/utils/statementEngine.js
 
-// Default Baseline Accounts (Seed only when storage is completely empty)
 const DEFAULT_SYSTEM_ACCOUNTS = [
   { id: 'ACC-CASH', account_name: 'Cash-in-Hand A/C', account_group: 'CASH' },
   { id: 'ACC-BANK', account_name: 'Main Bank Account', account_group: 'BANK' },
@@ -24,12 +21,10 @@ export const getAccountHeads = (firmId) => {
     accounts = [];
   }
 
-  // Seed default accounts ONLY if localStorage key does not exist at all
   if (!accounts || accounts.length === 0) {
     accounts = [...DEFAULT_SYSTEM_ACCOUNTS];
     localStorage.setItem(key, JSON.stringify(accounts));
   } else {
-    // Ensure essential system accounts always exist alongside user created accounts
     DEFAULT_SYSTEM_ACCOUNTS.forEach(defAcc => {
       const exists = accounts.some(a => a.account_name.toLowerCase() === defAcc.account_name.toLowerCase());
       if (!exists) {
@@ -68,8 +63,6 @@ export const createQuickAccountHead = (firmId, accountData) => {
 
   accounts.push(newAcc);
   localStorage.setItem(key, JSON.stringify(accounts));
-
-  // Trigger global storage event to sync all open screens & modals
   window.dispatchEvent(new Event('storage'));
   return newAcc;
 };
@@ -93,7 +86,7 @@ export const getAccountLedgerStatement = (firmId, accountName, fromDate, toDate)
 
 export const downloadCSVStatement = (firmName, accountName, transactions) => {
   if (!transactions || transactions.length === 0) {
-    alert("⚠️ Selected account me export karne ke liye koi transactions nahi hain.");
+    alert("⚠️ Selected account has no transactions to export.");
     return;
   }
 
