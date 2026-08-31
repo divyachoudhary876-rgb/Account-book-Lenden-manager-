@@ -12,7 +12,7 @@ export default function AccountStatementView({ firm, defaultAccount }) {
   const firmName = firm?.legal_name || 'Aa (TRADING)';
 
   const [accounts, setAccounts] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState(defaultAccount || 'Diesel Account');
+  const [selectedAccount, setSelectedAccount] = useState(defaultAccount || 'Rk Supplier A/C');
   const [fromDate, setFromDate] = useState('2026-08-01');
   const [toDate, setToDate] = useState('2026-08-31');
   const [statementData, setStatementData] = useState([]);
@@ -25,6 +25,7 @@ export default function AccountStatementView({ firm, defaultAccount }) {
     }
   }, [firm]);
 
+  // Dynamic ledger statement re-fetch upon Account or Date selection
   useEffect(() => {
     if (selectedAccount) {
       const logs = getAccountLedgerStatement(activeFirmId, selectedAccount, fromDate, toDate);
@@ -33,6 +34,10 @@ export default function AccountStatementView({ firm, defaultAccount }) {
   }, [selectedAccount, fromDate, toDate, firm]);
 
   const handlePrintPDF = () => {
+    if (statementData.length === 0) {
+      alert("⚠️ Selected account me print/save karne ke liye transactions nahi hain.");
+      return;
+    }
     window.print();
   };
 
@@ -48,11 +53,10 @@ export default function AccountStatementView({ firm, defaultAccount }) {
         <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📖 Account Milan & General Ledger Statement</h3>
       </div>
 
-      {/* Filter Options Panel - Full Width Fix */}
+      {/* Filter Options Panel */}
       <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           
-          {/* Account Dropdown Container Fix */}
           <div style={{ width: '100%' }}>
             <label style={labelStyle}>Select Party / Account Head *</label>
             <select 
@@ -68,7 +72,6 @@ export default function AccountStatementView({ firm, defaultAccount }) {
             </select>
           </div>
 
-          {/* Date Range Inputs */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
               <label style={labelStyle}>From Date</label>
@@ -93,26 +96,26 @@ export default function AccountStatementView({ firm, defaultAccount }) {
         </div>
       </div>
 
-      {/* Statement Header & Report Action Controls */}
+      {/* Account Statement Header & Actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
         <div>
-          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>{firmName}</div>
-          <h4 style={{ margin: '2px 0 0 0', color: '#1e40af', fontSize: '16px' }}>
+          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>{firmName}</div>
+          <h4 style={{ margin: '2px 0 0 0', color: '#1e40af', fontSize: '15px' }}>
             STATEMENT OF ACCOUNT: {selectedAccount}
           </h4>
         </div>
 
-        {/* Download & Print Buttons */}
+        {/* Action Buttons */}
         <div style={{ display: 'flex', gap: '8px' }}>
           <button 
             onClick={handleDownloadExcel}
-            style={{ backgroundColor: '#10b981', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+            style={{ backgroundColor: '#10b981', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
           >
             📊 Export Excel/CSV
           </button>
           <button 
             onClick={handlePrintPDF}
-            style={{ backgroundColor: '#2563eb', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+            style={{ backgroundColor: '#2563eb', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
           >
             🖨️ Print / Save PDF
           </button>
@@ -144,7 +147,7 @@ export default function AccountStatementView({ firm, defaultAccount }) {
                 return (
                   <tr key={row.id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '10px' }}>{row.date || '2026-08-31'}</td>
-                    <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold' }}>{row.id}</td>
+                    <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb' }}>{row.id}</td>
                     <td style={{ padding: '10px' }}>{isDebit ? `To ${row.cr_account}` : `By ${row.dr_account}`}</td>
                     <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: isDebit ? '#059669' : '#64748b' }}>
                       {isDebit ? `₹${parseFloat(row.amount).toFixed(2)}` : '-'}
