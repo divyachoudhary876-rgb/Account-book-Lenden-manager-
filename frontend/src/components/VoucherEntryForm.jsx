@@ -14,7 +14,6 @@ export default function VoucherEntryForm({ firm }) {
   const [amount, setAmount] = useState('');
   const [narration, setNarration] = useState('');
 
-  // Quick Account Modal State
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [newAccName, setNewAccName] = useState('');
   const [newAccGroup, setNewAccGroup] = useState('SUNDRY_DEBTOR');
@@ -41,7 +40,7 @@ export default function VoucherEntryForm({ firm }) {
         account_name: newAccName,
         account_group: newAccGroup
       });
-      alert(`✓ New Account "${created.account_name}" created successfully!`);
+      alert(`✓ Account "${created.account_name}" created successfully!`);
       setShowAccountModal(false);
       setNewAccName('');
       loadAccounts();
@@ -63,7 +62,7 @@ export default function VoucherEntryForm({ firm }) {
       };
 
       const created = processVoucherEntrySubmission(activeFirmId, payload);
-      alert(`✓ Voucher ${created.id} Posted Successfully!\n• Reflected in General Journal (Day Book)\n• Reflected in Account Milan & Ledger`);
+      alert(`✓ Voucher ${created.id} Posted Successfully!`);
       setAmount('');
       setNarration('');
     } catch (err) {
@@ -72,9 +71,7 @@ export default function VoucherEntryForm({ firm }) {
   };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      
-      {/* Title & Quick Create Button */}
+    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
         <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📒 Voucher Entry Posting (Double-Entry)</h3>
         <button 
@@ -86,7 +83,6 @@ export default function VoucherEntryForm({ firm }) {
         </button>
       </div>
 
-      {/* Quick Add Account Modal */}
       {showAccountModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
           <form onSubmit={handleQuickAddAccount} style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', maxWidth: '380px', width: '100%', border: '1px solid #cbd5e1' }}>
@@ -116,9 +112,7 @@ export default function VoucherEntryForm({ firm }) {
         </div>
       )}
 
-      {/* Main Voucher Form */}
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        
         <div style={{ marginBottom: '10px' }}>
           <label style={labelStyle}>Voucher Type</label>
           <select value={voucherType} onChange={e => setVoucherType(e.target.value)} style={inputStyle}>
@@ -166,7 +160,6 @@ export default function VoucherEntryForm({ firm }) {
           💾 Post Voucher Entry
         </button>
       </form>
-
     </div>
   );
 }
