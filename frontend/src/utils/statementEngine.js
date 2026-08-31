@@ -1,64 +1,73 @@
 // frontend/src/utils/statementEngine.js
 
-// Universal Account Master Fetcher
+// Fetch ONLY user-created accounts from Master Storage
 export const getAccountHeads = (firmId) => {
   const targetId = firmId || 'FIRM-001';
-  const key = `app_accounts_${targetId}`;
+  const primaryKey = `app_accounts_${targetId}`;
+  const secondaryKey = `app_accounts_master_${targetId}`;
   let accounts = [];
 
   try {
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      accounts = JSON.parse(raw);
-    }
+    const primaryData = JSON.parse(localStorage.getItem(primaryKey) || 'null');
+    const secondaryData = JSON.parse(localStorage.getItem(secondaryKey) || 'null');
+
+    let rawList = [];
+    if (Array.isArray(primaryData)) rawList = rawList.concat(primaryData);
+    if (Array.isArray(secondaryData)) rawList = rawList.concat(secondaryData);
+
+    // Deduplicate accounts created by user
+    const accountMap = new Map();
+    rawList.forEach(item => {
+      if (item && item.account_name) {
+        const normKey = item.account_name.trim().toLowerCase();
+        if (!accountMap.has(normKey)) {
+          accountMap.set(normKey, {
+            id: item.id || `ACC-${Date.now()}`,
+            account_name: item.account_name.trim(),
+            account_group: item.account_group || 'GENERAL'
+          });
+        }
+      }
+    });
+
+    accounts = Array.from(accountMap.values());
   } catch (e) {
     accounts = [];
   }
 
-  // Seed essential system accounts only if NO accounts exist at all
-  if (!accounts || accounts.length === 0) {
-    accounts = [
-      { id: 'ACC-CASH', account_name: 'Cash-in-Hand A/C', account_group: 'CASH' },
-      { id: 'ACC-BANK', account_name: 'Main Bank Account', account_group: 'BANK' },
-      { id: 'ACC-SALES', account_name: 'Sales Account', account_group: 'INCOME' },
-      { id: 'ACC-PURCHASE', account_name: 'Purchase Account', account_group: 'EXPENSE' }
-    ];
-    localStorage.setItem(key, JSON.stringify(accounts));
-  }
-
+  // Pure User Accounts List (Zero Pre-seeded Default Accounts)
   return accounts;
 };
 
-// Create Account Head Logic (Saves directly to Master Store)
+// Pure Custom Account Creation
 export const createQuickAccountHead = (firmId, accountData) => {
   const targetId = firmId || 'FIRM-001';
   if (!accountData.account_name || !accountData.account_name.trim()) {
     throw new Error("⚠️ Account Name is required.");
   }
 
-  const key = `app_accounts_${targetId}`;
-  const accounts = getAccountHeads(targetId);
-  const name = accountData.account_name.trim();
+  const primaryKey = `app_accounts_${targetId}`;
+  const currentAccounts = getAccountHeads(targetId);
+  const trimmedName = accountData.account_name.trim();
 
-  const exists = accounts.some(a => a.account_name.toLowerCase() === name.toLowerCase());
+  const exists = currentAccounts.some(a => a.account_name.toLowerCase() === trimmedName.toLowerCase());
   if (exists) {
-    throw new Error(`⚠️ Account "${name}" already exists.`);
+    throw new Error(`⚠️ Account "${trimmedName}" already exists.`);
   }
 
   const newAccount = {
-    id: `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    account_name: name,
-    account_group: accountData.account_group || 'SUNDRY_DEBTOR',
+    id: `ACC-${Date.now()}`,
+    account_name: trimmedName,
+    account_group: accountData.account_group || 'SUNDRY_DEBTORS',
     gstin: accountData.gstin || '',
-    phone: accountData.phone || '',
-    billing_address: accountData.billing_address || ''
+    phone: accountData.phone || ''
   };
 
-  accounts.push(newAccount);
-  localStorage.setItem(key, JSON.stringify(accounts));
-  
-  // Dispatch custom event so all open forms update immediately
-  window.dispatchEvent(new Event('accounts_master_updated'));
+  currentAccounts.push(newAccount);
+  localStorage.setItem(primaryKey, JSON.stringify(currentAccounts));
+
+  // Trigger sync across all forms
+  window.dispatchEvent(new Event('accounts_updated'));
   window.dispatchEvent(new Event('storage'));
   return newAccount;
 };
@@ -82,41 +91,29 @@ export const getAccountLedgerStatement = (firmId, accountName, fromDate, toDate)
 
 export const downloadCSVStatement = (firmName, accountName, transactions) => {
   if (!transactions || transactions.length === 0) {
-    alert("⚠️ Selected account me export karne ke liye koi transactions nahi hain.");
+    alert("⚠️ Selected account has no transactions to export.");
     return;
   }
 
   let csvRows = [];
   csvRows.push(`"STATEMENT OF ACCOUNT: ${accountName}"`);
   csvRows.push(`"Firm: ${firmName}"`);
-  csvRows.push(`"Generated Date: ${new Date().toLocaleDateString()}"`);
   csvRows.push("");
-  csvRows.push(`"Date","Voucher Ref","Particulars / Narration","Debit (Rs)","Credit (Rs)"`);
-
-  let totalDebit = 0;
-  let totalCredit = 0;
+  csvRows.push(`"Date","Voucher Ref","Particulars","Debit (Rs)","Credit (Rs)"`);
 
   transactions.forEach(t => {
     const isDebit = t.dr_account === accountName;
     const drVal = isDebit ? parseFloat(t.amount || 0) : 0;
     const crVal = !isDebit ? parseFloat(t.amount || 0) : 0;
-    
-    totalDebit += drVal;
-    totalCredit += crVal;
-
     const particulars = isDebit ? `To ${t.cr_account}` : `By ${t.dr_account}`;
     csvRows.push(`"${t.date || ''}","${t.id}","${particulars}","${drVal.toFixed(2)}","${crVal.toFixed(2)}"`);
   });
 
-  csvRows.push(`"TOTAL","","","${totalDebit.toFixed(2)}","${totalCredit.toFixed(2)}"`);
-
-  const csvString = csvRows.join("\n");
-  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-  
   const link = document.createElement("a");
   link.href = url;
-  link.setAttribute("download", `Statement_${accountName.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
+  link.setAttribute("download", `Statement_${accountName.replace(/\s+/g, '_')}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
