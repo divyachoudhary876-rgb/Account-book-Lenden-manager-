@@ -17,28 +17,31 @@ export default function PurchaseStockEntryForm({ firm }) {
   const [invoiceNumber, setInvoiceNumber] = useState(`PUR-${Math.floor(100000 + Math.random() * 900000)}`);
 
   useEffect(() => {
-    loadAccountsAndStock();
-    window.addEventListener('storage', loadAccountsAndStock);
-    window.addEventListener('accounts_master_updated', loadAccountsAndStock);
+    loadData();
+    window.addEventListener('storage', loadData);
+    window.addEventListener('accounts_updated', loadData);
     return () => {
-      window.removeEventListener('storage', loadAccountsAndStock);
-      window.removeEventListener('accounts_master_updated', loadAccountsAndStock);
+      window.removeEventListener('storage', loadData);
+      window.removeEventListener('accounts_updated', loadData);
     };
   }, [firm]);
 
-  const loadAccountsAndStock = () => {
-    // Strictly fetch accounts from Create Account Head List
+  const loadData = () => {
     const accs = getAccountHeads(activeFirmId);
     setSuppliers(accs);
-    if (accs.length > 0 && !selectedSupplier) setSelectedSupplier(accs[0].account_name);
+    if (accs.length > 0) setSelectedSupplier(accs[0].account_name);
 
     const items = getStockItemsByFirm(activeFirmId);
     setStockItems(items);
-    if (items.length > 0 && !selectedItem) setSelectedItem(items[0].item_name);
+    if (items.length > 0) setSelectedItem(items[0].item_name);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!selectedSupplier) {
+      alert("⚠️ Pehle 'Create Account Head' se account banayein!");
+      return;
+    }
     try {
       const qtyNum = parseFloat(quantity || 0);
       const rateNum = parseFloat(unitRate || 0);
@@ -47,17 +50,15 @@ export default function PurchaseStockEntryForm({ firm }) {
       const payload = {
         supplier_account: selectedSupplier,
         item_name: selectedItem,
-        quantity,
-        unit_rate: unitRate,
-        grand_total: grandTotal,
+        quantity, unit_rate: unitRate, grand_total: grandTotal,
         invoice_number: invoiceNumber
       };
 
       const entry = processPurchaseInvoiceSubmission(activeFirmId, payload);
-      alert(`✓ Purchase Inward Bill #${entry.id} saved! Stock increased (+IN).`);
+      alert(`✓ Purchase Inward Bill #${entry.id} saved!`);
       setQuantity(''); setUnitRate('');
       setInvoiceNumber(`PUR-${Math.floor(100000 + Math.random() * 900000)}`);
-      loadAccountsAndStock();
+      loadData();
     } catch (err) { alert(err.message); }
   };
 
@@ -68,11 +69,15 @@ export default function PurchaseStockEntryForm({ firm }) {
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Supplier Account (From Master Accounts List) *</label>
+            <label style={labelStyle}>Supplier / Vendor Account (User Created Accounts) *</label>
             <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} style={inputStyle} required>
-              {suppliers.map(s => (
-                <option key={s.id} value={s.account_name}>{s.account_name} ({s.account_group || 'GENERAL'})</option>
-              ))}
+              {suppliers.length === 0 ? (
+                <option value="">No Accounts Found! Pehle Naya Account Banayein</option>
+              ) : (
+                suppliers.map(s => (
+                  <option key={s.id} value={s.account_name}>{s.account_name} ({s.account_group || 'GENERAL'})</option>
+                ))
+              )}
             </select>
           </div>
           <div>
