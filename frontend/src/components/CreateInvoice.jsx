@@ -30,17 +30,17 @@ export default function CreateInvoice({ firm }) {
   const loadAccountsAndStock = () => {
     const accs = getAccountHeads(activeFirmId);
     setCustomerAccounts(accs);
-    if (accs.length > 0 && !selectedCustomer) setSelectedCustomer(accs[0].account_name);
+    if (accs.length > 0) setSelectedCustomer(accs[0].account_name);
 
     const items = getStockItemsByFirm(activeFirmId);
     setStockItems(items);
-    if (items.length > 0 && !selectedItem) setSelectedItem(items[0].id);
+    if (items.length > 0) setSelectedItem(items[0].id);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selectedCustomer) {
-      alert("⚠️ Select an Account!");
+      alert("⚠️ Select an Account first!");
       return;
     }
     try {
