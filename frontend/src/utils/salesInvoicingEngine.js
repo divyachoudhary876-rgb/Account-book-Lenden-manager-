@@ -12,7 +12,7 @@ export const processSalesInvoiceSubmission = (firmId, payload) => {
   const requestedQty = parseFloat(payload.quantity || 0);
   if (requestedQty <= 0) throw new Error("⚠️ Quantity must be greater than 0.");
 
-  // ZERO-STOCK PROTECTION CHECK
+  // Zero-Stock Guard
   const masterItems = getStockItemsByFirm(targetId);
   const targetItem = masterItems.find(i => i.id === payload.item_id || i.item_name === payload.item_name);
 
@@ -44,7 +44,7 @@ export const processSalesInvoiceSubmission = (firmId, payload) => {
   // 1. Deduct Stock (-OUT)
   updateStockMovement(targetId, targetItem.id, requestedQty, 'OUT');
 
-  // 2. Post Journal Entry
+  // 2. Post Double-Entry Journal Voucher
   const voucherKey = `app_vouchers_${targetId}`;
   const vouchers = JSON.parse(localStorage.getItem(voucherKey) || '[]');
   vouchers.unshift({
@@ -85,4 +85,45 @@ export const quickCreateCustomerAccount = (firmId, accountData) => {
   localStorage.setItem(key, JSON.stringify(accounts));
   window.dispatchEvent(new Event('storage'));
   return newAcc;
+};
+
+export const processPurchaseInvoiceSubmission = (firmId, payload) => {
+  const targetId = firmId || 'FIRM-001';
+  if (!payload.supplier_account) throw new Error("⚠️ Select Supplier Account.");
+  const qty = parseFloat(payload.quantity || 0);
+
+  const purchaseId = payload.invoice_number || `PUR-${Math.floor(100000 + Math.random() * 900000)}`;
+  const currentDate = new Date().toISOString().split('T')[0];
+
+  const purchaseData = {
+    id: purchaseId,
+    supplier_account: payload.supplier_account,
+    item_name: payload.item_name,
+    quantity: qty,
+    unit_rate: parseFloat(payload.unit_rate || 0),
+    grand_total: parseFloat(payload.grand_total || 0),
+    date: currentDate
+  };
+
+  updateStockMovement(targetId, payload.item_id || payload.item_name, qty, 'IN');
+
+  const purKey = `app_purchase_invoices_${targetId}`;
+  const purList = JSON.parse(localStorage.getItem(purKey) || '[]');
+  purList.unshift(purchaseData);
+  localStorage.setItem(purKey, JSON.stringify(purList));
+
+  window.dispatchEvent(new Event('storage'));
+  return purchaseData;
+};
+
+// Explicit Named Export Required by PurchaseStockEntryForm.jsx
+export const getPurchaseInvoicesByFirm = (firmId) => {
+  const targetId = firmId || 'FIRM-001';
+  const key = `app_purchase_invoices_${targetId}`;
+  let invoices = [];
+  try {
+    const raw = localStorage.getItem(key);
+    invoices = raw ? JSON.parse(raw) : [];
+  } catch (e) { invoices = []; }
+  return invoices;
 };
