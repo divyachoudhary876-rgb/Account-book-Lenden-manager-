@@ -21,7 +21,11 @@ export default function VoucherEntryForm({ firm }) {
   useEffect(() => {
     loadAccounts();
     window.addEventListener('storage', loadAccounts);
-    return () => window.removeEventListener('storage', loadAccounts);
+    window.addEventListener('account_updated', loadAccounts);
+    return () => {
+      window.removeEventListener('storage', loadAccounts);
+      window.removeEventListener('account_updated', loadAccounts);
+    };
   }, [firm]);
 
   const loadAccounts = () => {
@@ -102,7 +106,6 @@ export default function VoucherEntryForm({ firm }) {
 
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         
-        {/* 1. Dedicated Voucher Type Selector */}
         <div style={{ marginBottom: '12px' }}>
           <label style={labelStyle}>Select Voucher Type *</label>
           <select value={voucherType} onChange={e => setVoucherType(e.target.value)} style={inputStyle}>
@@ -115,7 +118,6 @@ export default function VoucherEntryForm({ firm }) {
           </select>
         </div>
 
-        {/* 2. Dedicated Account Dropdowns (Loads All User Created Accounts) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
             <label style={labelStyle}>Debit Account (Dr) *</label>
