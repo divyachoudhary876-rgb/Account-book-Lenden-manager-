@@ -1,4 +1,4 @@
-name: Build Android Release APK
+name: Build Business Book APK
 
 on:
   push:
@@ -22,12 +22,12 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Step 1: Install Dependencies with Legacy Flag to prevent ERESOLVE
+      # Step 1: Install Dependencies using Legacy Peer Flag to bypass ERESOLVE conflict
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
-      # Step 2: Auto-Bump Version Code & Name
+      # Step 2: Auto-Bump Build Versioning
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
@@ -40,29 +40,29 @@ jobs:
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      # Step 3: Compile Web Bundle
-      - name: Build Production Web Bundle
+      # Step 3: Compile Web Bundle with Vite
+      - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Generate & Sync Android Native Folder
-      - name: Force Capacitor Native Sync
+      # Step 4: Sync Capacitor Android Native Folder
+      - name: Capacitor Sync
         working-directory: frontend
         run: |
           rm -rf android
           npx @capacitor/cli add android
           npx @capacitor/cli sync android
 
-      # Step 5: Build Debug APK
-      - name: Build APK
+      # Step 5: Build Debug APK Binary
+      - name: Build Android Release APK
         working-directory: frontend/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # Step 6: Upload Output APK
-      - name: Upload APK Binary Artifact
+      # Step 6: Upload Output APK Artifact
+      - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: AccountBook-v1.0.${{ github.run_number }}-release
+          name: BusinessBook-v1.0.${{ github.run_number }}-APK
           path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
