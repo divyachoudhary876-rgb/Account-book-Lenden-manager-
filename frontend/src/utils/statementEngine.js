@@ -9,16 +9,7 @@ export const getAccountHeads = (firmId) => {
     accounts = raw ? JSON.parse(raw) : [];
   } catch (e) { accounts = []; }
 
-  // Default Master Accounts Seed if empty
-  if (accounts.length === 0) {
-    accounts = [
-      { id: 'ACC-1', account_name: 'Rk Supplier A/C' },
-      { id: 'ACC-2', account_name: 'Diesel Account' },
-      { id: 'ACC-3', account_name: 'Cash-in-Hand A/C' },
-      { id: 'ACC-4', account_name: 'Tractor Kiraya (DIRECT_EXPENSES)' }
-    ];
-    localStorage.setItem(key, JSON.stringify(accounts));
-  }
+  // Clean initialization without dummy accounts
   return accounts;
 };
 
@@ -31,16 +22,7 @@ export const getAccountLedgerStatement = (firmId, accountName, fromDate, toDate)
     vouchers = raw ? JSON.parse(raw) : [];
   } catch (e) { vouchers = []; }
 
-  // Seed sample transactions if none exist for Rk Supplier A/C to guarantee data visibility
-  if (vouchers.length === 0 && accountName === 'Rk Supplier A/C') {
-    vouchers = [
-      { id: 'PUR-1021', date: '2026-08-10', voucher_type: 'PURCHASE', dr_account: 'Purchase Account', cr_account: 'Rk Supplier A/C', amount: 15000 },
-      { id: 'PV-402', date: '2026-08-18', voucher_type: 'PAYMENT', dr_account: 'Rk Supplier A/C', cr_account: 'Cash-in-Hand A/C', amount: 10000 },
-      { id: 'JV-809', date: '2026-08-25', voucher_type: 'JOURNAL', dr_account: 'Rk Supplier A/C', cr_account: 'Discount Received', amount: 10000 }
-    ];
-    localStorage.setItem(key, JSON.stringify(vouchers));
-  }
-
+  // Strict User Transaction Filter (No Hardcoded Fallback Seed Data)
   return vouchers.filter(v => {
     const matchAccount = (v.dr_account === accountName || v.cr_account === accountName);
     const vDate = v.date || new Date().toISOString().split('T')[0];
@@ -51,7 +33,7 @@ export const getAccountLedgerStatement = (firmId, accountName, fromDate, toDate)
 
 export const downloadCSVStatement = (firmName, accountName, transactions) => {
   if (!transactions || transactions.length === 0) {
-    alert("⚠️ Is selected account aur date range me download karne ke liye koi transactions nahi hain.");
+    alert("⚠️ No transactions found for export in the selected range.");
     return;
   }
 
@@ -74,7 +56,7 @@ export const downloadCSVStatement = (firmName, accountName, transactions) => {
     totalCredit += crVal;
 
     const particulars = isDebit ? `To ${t.cr_account}` : `By ${t.dr_account}`;
-    csvRows.push(`"${t.date || '2026-08-31'}","${t.id}","${particulars}","${drVal.toFixed(2)}","${crVal.toFixed(2)}"`);
+    csvRows.push(`"${t.date || ''}","${t.id}","${particulars}","${drVal.toFixed(2)}","${crVal.toFixed(2)}"`);
   });
 
   csvRows.push(`"TOTAL","","","${totalDebit.toFixed(2)}","${totalCredit.toFixed(2)}"`);
