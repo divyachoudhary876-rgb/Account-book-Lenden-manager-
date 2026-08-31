@@ -34,7 +34,7 @@ export default function AccountStatementView({ firm, defaultAccount }) {
 
   const handlePrintPDF = () => {
     if (statementData.length === 0) {
-      alert("⚠️ No transactions to print for selected account.");
+      alert("⚠️ No transactions found to print for this account.");
       return;
     }
     window.print();
@@ -47,12 +47,12 @@ export default function AccountStatementView({ firm, defaultAccount }) {
   return (
     <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       
-      {/* Title Header */}
+      {/* Title */}
       <div style={{ marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
         <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📖 Account Milan & General Ledger Statement</h3>
       </div>
 
-      {/* Account Selection Filter */}
+      {/* Account Selector */}
       <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
@@ -63,7 +63,7 @@ export default function AccountStatementView({ firm, defaultAccount }) {
               style={dropdownStyle}
             >
               {accounts.length === 0 ? (
-                <option value="">No Accounts Found (Create New Account First)</option>
+                <option value="">No Accounts Available</option>
               ) : (
                 accounts.map(acc => (
                   <option key={acc.id} value={acc.account_name}>{acc.account_name}</option>
@@ -85,7 +85,7 @@ export default function AccountStatementView({ firm, defaultAccount }) {
         </div>
       </div>
 
-      {/* Header & Export Controls */}
+      {/* Header & Export Actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
         <div>
           <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>{firmName}</div>
@@ -100,7 +100,7 @@ export default function AccountStatementView({ firm, defaultAccount }) {
         </div>
       </div>
 
-      {/* Table Container Fix: Added Overflow-X Auto wrapper */}
+      {/* Touch-Scroll Table Wrapper */}
       <div style={{ overflowX: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '450px' }}>
           <thead>
@@ -148,4 +148,4 @@ export default function AccountStatementView({ firm, defaultAccount }) {
 const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' };
 const dropdownStyle = { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', backgroundColor: '#ffffff', color: '#0f172a', boxSizing: 'border-box' };
 const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' };
-const actionBtnStyle = (bg) => ({ backgroundColor: bg, color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' });
+const actionBtnStyle = (bg) => ({ backgroundColor: bg, color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'cursor' });
