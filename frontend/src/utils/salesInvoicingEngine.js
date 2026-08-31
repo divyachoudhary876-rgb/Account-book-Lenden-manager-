@@ -12,7 +12,6 @@ export const processSalesInvoiceSubmission = (firmId, payload) => {
   const requestedQty = parseFloat(payload.quantity || 0);
   if (requestedQty <= 0) throw new Error("⚠️ Quantity must be greater than 0.");
 
-  // Zero-Stock Guard
   const masterItems = getStockItemsByFirm(targetId);
   const targetItem = masterItems.find(i => i.id === payload.item_id || i.item_name === payload.item_name);
 
@@ -32,7 +31,7 @@ export const processSalesInvoiceSubmission = (firmId, payload) => {
     unit: targetItem.unit,
     quantity: requestedQty,
     unit_rate: parseFloat(payload.unit_rate),
-    gst_rate: parseFloat(payload.gst_rate || 18),
+    gst_rate: parseFloat(payload.gst_rate || 0), // 0% GST Supported
     taxable_amount: parseFloat(payload.taxable_amount),
     tax_amount: parseFloat(payload.tax_amount),
     grand_total: parseFloat(payload.grand_total),
@@ -41,10 +40,8 @@ export const processSalesInvoiceSubmission = (firmId, payload) => {
     created_at: new Date().toISOString()
   };
 
-  // 1. Deduct Stock (-OUT)
   updateStockMovement(targetId, targetItem.id, requestedQty, 'OUT');
 
-  // 2. Post Double-Entry Journal Voucher
   const voucherKey = `app_vouchers_${targetId}`;
   const vouchers = JSON.parse(localStorage.getItem(voucherKey) || '[]');
   vouchers.unshift({
@@ -58,7 +55,6 @@ export const processSalesInvoiceSubmission = (firmId, payload) => {
   });
   localStorage.setItem(voucherKey, JSON.stringify(vouchers));
 
-  // 3. Save Invoice Record
   const salesKey = `app_sales_invoices_${targetId}`;
   const salesList = JSON.parse(localStorage.getItem(salesKey) || '[]');
   salesList.unshift(invoiceData);
@@ -91,6 +87,7 @@ export const processPurchaseInvoiceSubmission = (firmId, payload) => {
   const targetId = firmId || 'FIRM-001';
   if (!payload.supplier_account) throw new Error("⚠️ Select Supplier Account.");
   const qty = parseFloat(payload.quantity || 0);
+  if (qty <= 0) throw new Error("⚠️ Enter valid quantity.");
 
   const purchaseId = payload.invoice_number || `PUR-${Math.floor(100000 + Math.random() * 900000)}`;
   const currentDate = new Date().toISOString().split('T')[0];
@@ -101,6 +98,9 @@ export const processPurchaseInvoiceSubmission = (firmId, payload) => {
     item_name: payload.item_name,
     quantity: qty,
     unit_rate: parseFloat(payload.unit_rate || 0),
+    gst_rate: parseFloat(payload.gst_rate || 0),
+    taxable_amount: parseFloat(payload.taxable_amount || 0),
+    tax_amount: parseFloat(payload.tax_amount || 0),
     grand_total: parseFloat(payload.grand_total || 0),
     date: currentDate
   };
@@ -116,14 +116,7 @@ export const processPurchaseInvoiceSubmission = (firmId, payload) => {
   return purchaseData;
 };
 
-// Explicit Named Export Required by PurchaseStockEntryForm.jsx
 export const getPurchaseInvoicesByFirm = (firmId) => {
   const targetId = firmId || 'FIRM-001';
-  const key = `app_purchase_invoices_${targetId}`;
-  let invoices = [];
-  try {
-    const raw = localStorage.getItem(key);
-    invoices = raw ? JSON.parse(raw) : [];
-  } catch (e) { invoices = []; }
-  return invoices;
+  return JSON.parse(localStorage.getItem(`app_purchase_invoices_${targetId}`) || '[]');
 };
