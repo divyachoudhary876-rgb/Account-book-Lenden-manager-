@@ -10,31 +10,27 @@ const DEFAULT_SYSTEM_ACCOUNTS = [
 export const getAccountHeads = (firmId) => {
   const targetId = firmId || 'FIRM-001';
   const key = `app_accounts_${targetId}`;
-  let accounts = [];
+  let storedAccounts = [];
 
   try {
     const raw = localStorage.getItem(key);
     if (raw) {
-      accounts = JSON.parse(raw);
+      storedAccounts = JSON.parse(raw);
     }
   } catch (e) {
-    accounts = [];
+    storedAccounts = [];
   }
 
-  // Preserve custom accounts and ensure default system accounts exist
-  if (!accounts || accounts.length === 0) {
-    accounts = [...DEFAULT_SYSTEM_ACCOUNTS];
-  } else {
-    DEFAULT_SYSTEM_ACCOUNTS.forEach(def => {
-      const exists = accounts.some(a => a.account_name.toLowerCase() === def.account_name.toLowerCase());
-      if (!exists) {
-        accounts.unshift(def);
-      }
-    });
-  }
+  // Prepend default system accounts if missing, without wiping user accounts
+  DEFAULT_SYSTEM_ACCOUNTS.forEach(sysAcc => {
+    const exists = storedAccounts.some(a => a.account_name.toLowerCase() === sysAcc.account_name.toLowerCase());
+    if (!exists) {
+      storedAccounts.unshift(sysAcc);
+    }
+  });
 
-  localStorage.setItem(key, JSON.stringify(accounts));
-  return accounts;
+  localStorage.setItem(key, JSON.stringify(storedAccounts));
+  return storedAccounts;
 };
 
 export const createQuickAccountHead = (firmId, accountData) => {
@@ -53,7 +49,7 @@ export const createQuickAccountHead = (firmId, accountData) => {
   }
 
   const newAccount = {
-    id: `ACC-${Date.now()}`,
+    id: `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     account_name: name,
     account_group: accountData.account_group || 'SUNDRY_DEBTOR',
     gstin: accountData.gstin || '',
@@ -62,6 +58,9 @@ export const createQuickAccountHead = (firmId, accountData) => {
 
   accounts.push(newAccount);
   localStorage.setItem(key, JSON.stringify(accounts));
+  
+  // Custom Global Event for Real-Time UI Sync across open tabs/forms
+  window.dispatchEvent(new Event('account_updated'));
   window.dispatchEvent(new Event('storage'));
   return newAccount;
 };
@@ -85,7 +84,7 @@ export const getAccountLedgerStatement = (firmId, accountName, fromDate, toDate)
 
 export const downloadCSVStatement = (firmName, accountName, transactions) => {
   if (!transactions || transactions.length === 0) {
-    alert("⚠️ Selected account me export karne ke liye koi transactions nahi hain.");
+    alert("⚠️ No transactions to export for this account.");
     return;
   }
 
@@ -94,32 +93,21 @@ export const downloadCSVStatement = (firmName, accountName, transactions) => {
   csvRows.push(`"Firm: ${firmName}"`);
   csvRows.push(`"Generated Date: ${new Date().toLocaleDateString()}"`);
   csvRows.push("");
-  csvRows.push(`"Date","Voucher Ref","Particulars / Narration","Debit (Rs)","Credit (Rs)"`);
-
-  let totalDebit = 0;
-  let totalCredit = 0;
+  csvRows.push(`"Date","Voucher Ref","Particulars","Debit (Rs)","Credit (Rs)"`);
 
   transactions.forEach(t => {
     const isDebit = t.dr_account === accountName;
     const drVal = isDebit ? parseFloat(t.amount || 0) : 0;
     const crVal = !isDebit ? parseFloat(t.amount || 0) : 0;
-    
-    totalDebit += drVal;
-    totalCredit += crVal;
-
     const particulars = isDebit ? `To ${t.cr_account}` : `By ${t.dr_account}`;
     csvRows.push(`"${t.date || ''}","${t.id}","${particulars}","${drVal.toFixed(2)}","${crVal.toFixed(2)}"`);
   });
 
-  csvRows.push(`"TOTAL","","","${totalDebit.toFixed(2)}","${totalCredit.toFixed(2)}"`);
-
-  const csvString = csvRows.join("\n");
-  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-  
   const link = document.createElement("a");
   link.href = url;
-  link.setAttribute("download", `Statement_${accountName.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
+  link.setAttribute("download", `Statement_${accountName.replace(/\s+/g, '_')}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
