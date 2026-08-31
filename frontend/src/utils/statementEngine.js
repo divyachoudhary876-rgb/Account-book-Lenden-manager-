@@ -1,84 +1,102 @@
 // frontend/src/utils/statementEngine.js
 
-// Fetch ONLY user-created accounts from Master Storage
+// Universal Account Master Lookup Engine
 export const getAccountHeads = (firmId) => {
-  const targetId = firmId || 'FIRM-001';
-  const primaryKey = `app_accounts_${targetId}`;
-  const secondaryKey = `app_accounts_master_${targetId}`;
-  let accounts = [];
+  let combinedAccounts = [];
 
   try {
-    const primaryData = JSON.parse(localStorage.getItem(primaryKey) || 'null');
-    const secondaryData = JSON.parse(localStorage.getItem(secondaryKey) || 'null');
+    // 1. Scan all localStorage keys for any account entries
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('app_accounts') || key.startsWith('app_account_masters'))) {
+        const rawData = localStorage.getItem(key);
+        if (rawData) {
+          const parsed = JSON.parse(rawData);
+          if (Array.isArray(parsed)) {
+            combinedAccounts = combinedAccounts.concat(parsed);
+          }
+        }
+      }
+    }
 
-    let rawList = [];
-    if (Array.isArray(primaryData)) rawList = rawList.concat(primaryData);
-    if (Array.isArray(secondaryData)) rawList = rawList.concat(secondaryData);
-
-    // Deduplicate accounts created by user
+    // 2. Deduplicate by Account Name (Case-Insensitive)
     const accountMap = new Map();
-    rawList.forEach(item => {
-      if (item && item.account_name) {
-        const normKey = item.account_name.trim().toLowerCase();
-        if (!accountMap.has(normKey)) {
-          accountMap.set(normKey, {
-            id: item.id || `ACC-${Date.now()}`,
-            account_name: item.account_name.trim(),
-            account_group: item.account_group || 'GENERAL'
+    combinedAccounts.forEach(acc => {
+      if (acc && acc.account_name) {
+        const cleanName = acc.account_name.trim();
+        if (!accountMap.has(cleanName.toLowerCase())) {
+          accountMap.set(cleanName.toLowerCase(), {
+            id: acc.id || `ACC-${Date.now()}-${Math.random()}`,
+            account_name: cleanName,
+            account_group: acc.account_group || acc.sub_group || 'GENERAL'
           });
         }
       }
     });
 
-    accounts = Array.from(accountMap.values());
+    combinedAccounts = Array.from(accountMap.values());
   } catch (e) {
-    accounts = [];
+    combinedAccounts = [];
   }
 
-  // Pure User Accounts List (Zero Pre-seeded Default Accounts)
-  return accounts;
+  // Save back to master global store
+  if (combinedAccounts.length > 0) {
+    localStorage.setItem('app_accounts_master_global', JSON.stringify(combinedAccounts));
+    if (firmId) {
+      localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(combinedAccounts));
+    }
+  }
+
+  return combinedAccounts;
 };
 
-// Pure Custom Account Creation
+// Create Account Head Logic (Pushes to Global Master Store)
 export const createQuickAccountHead = (firmId, accountData) => {
-  const targetId = firmId || 'FIRM-001';
   if (!accountData.account_name || !accountData.account_name.trim()) {
-    throw new Error("⚠️ Account Name is required.");
+    throw new Error("⚠️ Account / Party Name is required.");
   }
 
-  const primaryKey = `app_accounts_${targetId}`;
-  const currentAccounts = getAccountHeads(targetId);
   const trimmedName = accountData.account_name.trim();
+  const currentAccounts = getAccountHeads(firmId);
 
   const exists = currentAccounts.some(a => a.account_name.toLowerCase() === trimmedName.toLowerCase());
   if (exists) {
-    throw new Error(`⚠️ Account "${trimmedName}" already exists.`);
+    throw new Error(`⚠️ Account "${trimmedName}" already exists in Master Registry.`);
   }
 
   const newAccount = {
     id: `ACC-${Date.now()}`,
     account_name: trimmedName,
     account_group: accountData.account_group || 'SUNDRY_DEBTORS',
-    gstin: accountData.gstin || '',
-    phone: accountData.phone || ''
+    created_at: new Date().toISOString()
   };
 
   currentAccounts.push(newAccount);
-  localStorage.setItem(primaryKey, JSON.stringify(currentAccounts));
 
-  // Trigger sync across all forms
-  window.dispatchEvent(new Event('accounts_updated'));
+  // Sync across all storage keys
+  const targetId = firmId || 'FIRM-001';
+  localStorage.setItem(`app_accounts_${targetId}`, JSON.stringify(currentAccounts));
+  localStorage.setItem('app_accounts_master_global', JSON.stringify(currentAccounts));
+
+  // Dispatch event for real-time reactivity
+  window.dispatchEvent(new Event('accounts_master_updated'));
   window.dispatchEvent(new Event('storage'));
   return newAccount;
 };
 
 export const getAccountLedgerStatement = (firmId, accountName, fromDate, toDate) => {
-  const targetId = firmId || 'FIRM-001';
-  const key = `app_vouchers_${targetId}`;
   let vouchers = [];
   try {
-    const raw = localStorage.getItem(key);
-    vouchers = raw ? JSON.parse(raw) : [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('app_vouchers')) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) vouchers = vouchers.concat(parsed);
+        }
+      }
+    }
   } catch (e) { vouchers = []; }
 
   return vouchers.filter(v => {
