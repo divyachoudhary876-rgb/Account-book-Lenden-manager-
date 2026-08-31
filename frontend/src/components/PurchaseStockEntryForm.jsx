@@ -115,32 +115,34 @@ export default function PurchaseStockEntryForm({ firm }) {
         <div style={{ padding: '8px 12px', backgroundColor: '#0f172a', color: '#fff', fontWeight: 'bold', fontSize: '12px' }}>
           📋 Purchase Inward History Records
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f1f5f9' }}>
-              <th style={{ padding: '8px', textAlign: 'left' }}>Bill #</th>
-              <th style={{ padding: '8px', textAlign: 'left' }}>Supplier</th>
-              <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
-              <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {purchaseList.length === 0 ? (
-              <tr><td colSpan="4" style={{ textAlign: 'center', padding: '12px', color: '#94a3b8' }}>No purchase records found.</td></tr>
-            ) : (
-              purchaseList.map(p => (
-                <tr key={p.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '8px', fontWeight: 'bold' }}>{p.id}</td>
-                  <td style={{ padding: '8px' }}>{p.supplier_account}</td>
-                  <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>₹{p.grand_total}</td>
-                  <td style={{ padding: '8px', textAlign: 'center' }}>
-                    <button onClick={() => setViewPurchasePdf(p)} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>📄 Download PDF</button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f1f5f9' }}>
+                <th style={{ padding: '8px', textAlign: 'left' }}>Bill #</th>
+                <th style={{ padding: '8px', textAlign: 'left' }}>Supplier</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
+                <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchaseList.length === 0 ? (
+                <tr><td colSpan="4" style={{ textAlign: 'center', padding: '12px', color: '#94a3b8' }}>No purchase records found.</td></tr>
+              ) : (
+                purchaseList.map(p => (
+                  <tr key={p.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '8px', fontWeight: 'bold' }}>{p.id}</td>
+                    <td style={{ padding: '8px' }}>{p.supplier_account}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>₹{p.grand_total}</td>
+                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                      <button onClick={() => setViewPurchasePdf(p)} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>📄 Download PDF</button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
     </div>
