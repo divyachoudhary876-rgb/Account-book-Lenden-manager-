@@ -18,29 +18,29 @@ export default function CreateInvoice({ firm }) {
   const [invoiceNumber, setInvoiceNumber] = useState(`INV-${Math.floor(100000 + Math.random() * 900000)}`);
 
   useEffect(() => {
-    loadAccountsAndStock();
-    window.addEventListener('storage', loadAccountsAndStock);
-    window.addEventListener('accounts_master_updated', loadAccountsAndStock);
+    loadData();
+    window.addEventListener('storage', loadData);
+    window.addEventListener('accounts_master_updated', loadData);
     return () => {
-      window.removeEventListener('storage', loadAccountsAndStock);
-      window.removeEventListener('accounts_master_updated', loadAccountsAndStock);
+      window.removeEventListener('storage', loadData);
+      window.removeEventListener('accounts_master_updated', loadData);
     };
   }, [firm]);
 
-  const loadAccountsAndStock = () => {
+  const loadData = () => {
     const accs = getAccountHeads(activeFirmId);
     setCustomerAccounts(accs);
-    if (accs.length > 0) setSelectedCustomer(accs[0].account_name);
+    if (accs.length > 0 && !selectedCustomer) setSelectedCustomer(accs[0].account_name);
 
     const items = getStockItemsByFirm(activeFirmId);
     setStockItems(items);
-    if (items.length > 0) setSelectedItem(items[0].id);
+    if (items.length > 0 && !selectedItem) setSelectedItem(items[0].id);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selectedCustomer) {
-      alert("⚠️ Select an Account first!");
+      alert("⚠️ Please select an Account Head from the dropdown.");
       return;
     }
     try {
@@ -63,7 +63,7 @@ export default function CreateInvoice({ firm }) {
       alert(`✓ Sales Invoice #${invoiceData.id} posted!`);
       setQuantity(''); setUnitRate('');
       setInvoiceNumber(`INV-${Math.floor(100000 + Math.random() * 900000)}`);
-      loadAccountsAndStock();
+      loadData();
     } catch (err) { alert(err.message); }
   };
 
@@ -72,10 +72,10 @@ export default function CreateInvoice({ firm }) {
       <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>🧾 Enterprise GST Sales Bill Entry</h3>
 
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        <label style={labelStyle}>Select Party / Customer Account (From Master List) *</label>
+        <label style={labelStyle}>Select Party / Customer Account (From Chart of Accounts) *</label>
         <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} style={inputStyle} required>
           {customerAccounts.length === 0 ? (
-            <option value="">No Accounts Found!</option>
+            <option value="">No Accounts Available</option>
           ) : (
             customerAccounts.map(a => (
               <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
