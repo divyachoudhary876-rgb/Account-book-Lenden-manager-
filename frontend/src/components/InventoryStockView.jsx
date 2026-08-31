@@ -1,124 +1,188 @@
 // frontend/src/components/InventoryStockView.jsx
 
 import React, { useState, useEffect } from 'react';
-import {
-  getStockItemsByFirm,
-  addNewStockItem,
+import { 
+  getStockItemsByFirm, 
+  addNewStockItem, 
   deleteStockItem,
-  purgeAndClearInventoryData
+  purgeAndClearInventoryData,
+  UNITS_OF_MEASUREMENT 
 } from '../utils/stockInventoryEngine.js';
 
 export default function InventoryStockView({ firm }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
+  const activeFirmId = firm?.id;
+
   const [items, setItems] = useState([]);
+  const [editingId, setEditingId] = useState(null);
   const [itemName, setItemName] = useState('');
   const [unit, setUnit] = useState('Pcs');
-  const [openingStock, setOpeningStock] = useState('');
-  const [saleRate, setSaleRate] = useState('');
-  const [purchaseRate, setPurchaseRate] = useState('');
+  const [openingStock, setOpeningStock] = useState('0');
 
   useEffect(() => {
-    loadStock();
-    const handleStorage = () => loadStock();
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    loadInventory();
+    const handleStorageChange = () => loadInventory();
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, [firm]);
 
-  const loadStock = () => {
-    setItems(getStockItemsByFirm(activeFirmId));
+  const loadInventory = () => {
+    const list = getStockItemsByFirm(activeFirmId);
+    setItems(Array.isArray(list) ? list : []);
   };
 
-  const handleAdd = (e) => {
+  const handleSaveItem = (e) => {
     e.preventDefault();
+    if (!itemName.trim()) return alert("❌ Please enter Stock Item Name.");
+
     try {
       addNewStockItem(activeFirmId, {
+        id: editingId,
         item_name: itemName,
-        unit,
-        current_stock: openingStock,
-        opening_stock: openingStock,
-        sale_rate: saleRate,
-        purchase_rate: purchaseRate
+        unit: unit,
+        opening_stock: openingStock
       });
-      setItemName('');
-      setOpeningStock('');
-      setSaleRate('');
-      setPurchaseRate('');
-      loadStock();
+
+      alert(`✓ Stock Item "${itemName}" ${editingId ? 'updated' : 'created'} successfully!`);
+      resetForm();
+      loadInventory();
     } catch (err) {
-      alert(err.message);
+      alert(`❌ Operation Failed: ${err.message}`);
     }
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to delete this stock item?')) {
-      deleteStockItem(activeFirmId, id);
-      loadStock();
+  const handleEditClick = (item) => {
+    setEditingId(item.id);
+    setItemName(item.item_name);
+    setUnit(item.unit);
+    setOpeningStock(item.current_stock);
+  };
+
+  const handleDeleteClick = (item) => {
+    if (window.confirm(`⚠️ Are you sure you want to delete "${item.item_name}"?`)) {
+      deleteStockItem(activeFirmId, item.id);
+      alert(`✓ Stock Item "${item.item_name}" deleted.`);
+      loadInventory();
     }
   };
 
-  const handleClear = () => {
-    if (window.confirm('Clear all inventory master items?')) {
-      purgeAndClearInventoryData(activeFirmId);
-      loadStock();
-    }
+  const resetForm = () => {
+    setEditingId(null);
+    setItemName('');
+    setUnit('Pcs');
+    setOpeningStock('0');
   };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h3 style={{ margin: 0, color: '#0f172a' }}>📦 Master Inventory Management</h3>
-        <button onClick={handleClear} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-          🗑️ Clear Inventory
-        </button>
+    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+        <div>
+          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📦 Master Inventory & Stock Balance</h3>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Aa (TRADING)'}</span>
+        </div>
       </div>
 
-      <form onSubmit={handleAdd} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: '8px', marginBottom: '20px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        <input type="text" placeholder="Item Name *" value={itemName} onChange={e => setItemName(e.target.value)} style={inputStyle} required />
-        <select value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle}>
-          <option value="Pcs">Pcs</option>
-          <option value="Tons">Tons</option>
-          <option value="Thousand">Thousand</option>
-          <option value="Kg">Kg</option>
-          <option value="Bags">Bags</option>
-        </select>
-        <input type="number" placeholder="Opening Stock" value={openingStock} onChange={e => setOpeningStock(e.target.value)} style={inputStyle} />
-        <input type="number" placeholder="Sale Rate (₹)" value={saleRate} onChange={e => setSaleRate(e.target.value)} style={inputStyle} />
-        <input type="number" placeholder="Purchase Rate (₹)" value={purchaseRate} onChange={e => setPurchaseRate(e.target.value)} style={inputStyle} />
-        <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
-          + Add
-        </button>
+      {/* Dynamic Item Form (Create & Edit Mode) */}
+      <form onSubmit={handleSaveItem} style={{ display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+        <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#334155' }}>
+          {editingId ? '✏️ Edit Stock Item' : '➕ Register New Stock Item'}
+        </div>
+
+        <div>
+          <label style={labelStyle}>Item Name *</label>
+          <input
+            type="text"
+            placeholder="e.g. Gehun / Sarson / Red Brick"
+            value={itemName}
+            onChange={e => setItemName(e.target.value)}
+            style={inputStyle}
+            required
+          />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>Measurement Unit *</label>
+            <select value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle}>
+              {UNITS_OF_MEASUREMENT.map(u => (
+                <option key={u.code} value={u.code}>{u.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Stock Balance</label>
+            <input
+              type="number"
+              value={openingStock}
+              onChange={e => setOpeningStock(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="submit"
+            style={{ flex: 1, backgroundColor: editingId ? '#059669' : '#2563eb', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+          >
+            {editingId ? '💾 Update Stock Item' : '➕ Save & Register Stock Item'}
+          </button>
+          
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              style={{ backgroundColor: '#64748b', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-        <thead>
-          <tr style={{ backgroundColor: '#f1f5f9', color: '#475569', borderBottom: '1px solid #cbd5e1' }}>
-            <th style={{ padding: '8px', textAlign: 'left' }}>Item Name</th>
-            <th style={{ padding: '8px', textAlign: 'center' }}>Unit</th>
-            <th style={{ padding: '8px', textAlign: 'right' }}>Current Stock</th>
-            <th style={{ padding: '8px', textAlign: 'right' }}>Sale Rate</th>
-            <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.length === 0 ? (
-            <tr><td colSpan="5" style={{ textAlign: 'center', padding: '16px', color: '#94a3b8' }}>No stock items found.</td></tr>
-          ) : (
-            items.map(item => (
-              <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.item_name}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>{item.unit}</td>
-                <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: item.current_stock > 0 ? '#059669' : '#dc2626' }}>{item.current_stock}</td>
-                <td style={{ padding: '8px', textAlign: 'right' }}>₹{item.sale_rate}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>
-                  <button onClick={() => handleDelete(item.id)} style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>Delete</button>
+      {/* Stock Items Directory with Action Controls */}
+      <div style={{ overflowX: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '400px' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+              <th style={{ padding: '10px', textAlign: 'left' }}>Item Name</th>
+              <th style={{ padding: '10px', textAlign: 'center' }}>Unit</th>
+              <th style={{ padding: '10px', textAlign: 'right' }}>Current Stock</th>
+              <th style={{ padding: '10px', textAlign: 'center' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
+                  No stock items registered.
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              items.map((item, idx) => (
+                <tr key={item?.id || idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>📦 {item?.item_name}</td>
+                  <td style={{ padding: '10px', textAlign: 'center' }}>
+                    <span style={{ backgroundColor: '#e2e8f0', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px' }}>{item?.unit}</span>
+                  </td>
+                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: (item?.current_stock || 0) > 0 ? '#059669' : '#dc2626' }}>
+                    {item?.current_stock} {item?.unit}
+                  </td>
+                  <td style={{ padding: '10px', textAlign: 'center' }}>
+                    <button onClick={() => handleEditClick(item)} style={{ backgroundColor: '#3b82f6', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', marginRight: '6px', cursor: 'pointer', fontSize: '11px' }}>✏️ Edit</button>
+                    <button onClick={() => handleDeleteClick(item)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>🗑️ Delete</button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
     </div>
   );
 }
 
-const inputStyle = { padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' };
+const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' };
+const inputStyle = { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' };
