@@ -7,29 +7,43 @@ import {
   updateJournalVoucher,
   downloadJournalCSV 
 } from '../utils/journalEngine.js';
+import { getAccountHeads } from '../utils/statementEngine.js';
 
 export default function JournalRegisterView({ firm, onSelectAccount }) {
   const activeFirmId = firm?.id || 'FIRM-001';
-  const firmName = firm?.legal_name || 'Aa (TRADING)';
+  const firmName = firm?.legal_name || 'Neelkanth Int Udyog';
 
   const [vouchers, setVouchers] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  
+  // Modal Edit States
   const [editingVoucher, setEditingVoucher] = useState(null);
   const [editDr, setEditDr] = useState('');
   const [editCr, setEditCr] = useState('');
   const [editAmount, setEditAmount] = useState('');
 
   useEffect(() => {
-    loadVouchers();
-    window.addEventListener('storage', loadVouchers);
-    return () => window.removeEventListener('storage', loadVouchers);
+    loadData();
+    window.addEventListener('storage', loadData);
+    window.addEventListener('accounts_master_updated', loadData);
+    return () => {
+      window.removeEventListener('storage', loadData);
+      window.removeEventListener('accounts_master_updated', loadData);
+    };
   }, [firm]);
 
-  const loadVouchers = () => setVouchers(getJournalVouchersByFirm(activeFirmId));
+  const loadData = () => {
+    const voucherList = getJournalVouchersByFirm(activeFirmId);
+    setVouchers(voucherList);
+
+    const masterAccounts = getAccountHeads(activeFirmId);
+    setAccounts(masterAccounts);
+  };
 
   const handleDelete = (id) => {
     if (window.confirm("⚠️ Delete this journal voucher entry? Account ledgers will adjust automatically.")) {
       deleteJournalVoucher(activeFirmId, id);
-      loadVouchers();
+      loadData();
     }
   };
 
@@ -42,14 +56,24 @@ export default function JournalRegisterView({ firm, onSelectAccount }) {
 
   const handleSaveEdit = (e) => {
     e.preventDefault();
+    if (!editDr || !editCr) {
+      alert("⚠️ Please select valid Debit and Credit accounts.");
+      return;
+    }
+    if (editDr === editCr) {
+      alert("⚠️ Debit and Credit accounts cannot be the same.");
+      return;
+    }
+
     updateJournalVoucher(activeFirmId, {
       ...editingVoucher,
       dr_account: editDr,
       cr_account: editCr,
       amount: parseFloat(editAmount)
     });
+
     setEditingVoucher(null);
-    loadVouchers();
+    loadData();
   };
 
   const handlePrintPDF = () => {
@@ -85,24 +109,47 @@ export default function JournalRegisterView({ firm, onSelectAccount }) {
         </div>
       </div>
 
-      {/* Inline Edit Modal Popup */}
+      {/* Edit Modal Popup with Dynamic Account Dropdowns */}
       {editingVoucher && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
           <form onSubmit={handleSaveEdit} style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', maxWidth: '380px', width: '100%', border: '1px solid #cbd5e1' }}>
-            <h4 style={{ margin: '0 0 14px 0', color: '#0f172a' }}>✏️ Edit Voucher Entry</h4>
+            <h4 style={{ margin: '0 0 14px 0', color: '#0f172a', fontSize: '16px' }}>✏️ Edit Voucher Entry</h4>
             
+            {/* Debit Account Dropdown Selection */}
             <div style={{ marginBottom: '10px' }}>
-              <label style={labelStyle}>Debit Account (Dr)</label>
-              <input type="text" value={editDr} onChange={e => setEditDr(e.target.value)} style={inputStyle} required />
+              <label style={labelStyle}>Debit Account (Dr) *</label>
+              <select value={editDr} onChange={e => setEditDr(e.target.value)} style={selectStyle} required>
+                {accounts.length === 0 ? (
+                  <option value="">No Accounts Found</option>
+                ) : (
+                  accounts.map(acc => (
+                    <option key={acc.id} value={acc.account_name}>
+                      {acc.account_name} ({acc.account_group || 'GENERAL'})
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
 
+            {/* Credit Account Dropdown Selection */}
             <div style={{ marginBottom: '10px' }}>
-              <label style={labelStyle}>Credit Account (Cr)</label>
-              <input type="text" value={editCr} onChange={e => setEditCr(e.target.value)} style={inputStyle} required />
+              <label style={labelStyle}>Credit Account (Cr) *</label>
+              <select value={editCr} onChange={e => setEditCr(e.target.value)} style={selectStyle} required>
+                {accounts.length === 0 ? (
+                  <option value="">No Accounts Found</option>
+                ) : (
+                  accounts.map(acc => (
+                    <option key={acc.id} value={acc.account_name}>
+                      {acc.account_name} ({acc.account_group || 'GENERAL'})
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
 
+            {/* Amount Input */}
             <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>Amount (₹)</label>
+              <label style={labelStyle}>Amount (₹) *</label>
               <input type="number" step="0.01" value={editAmount} onChange={e => setEditAmount(e.target.value)} style={inputStyle} required />
             </div>
 
@@ -164,6 +211,7 @@ export default function JournalRegisterView({ firm, onSelectAccount }) {
 
 const linkStyle = { color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold' };
 const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' };
+const selectStyle = { width: '100%', padding: '9px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff' };
 const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' };
 const actionBtnStyle = (bg) => ({ backgroundColor: bg, color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' });
 const btnStyle = (bg) => ({ backgroundColor: bg, color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' });
