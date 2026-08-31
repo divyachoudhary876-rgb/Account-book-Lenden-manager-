@@ -102,7 +102,7 @@ export default function VoucherEntryForm({ firm }) {
 
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         
-        {/* Complete 6 Voucher Types List */}
+        {/* 1. Dedicated Voucher Type Selector */}
         <div style={{ marginBottom: '12px' }}>
           <label style={labelStyle}>Select Voucher Type *</label>
           <select value={voucherType} onChange={e => setVoucherType(e.target.value)} style={inputStyle}>
@@ -115,6 +115,7 @@ export default function VoucherEntryForm({ firm }) {
           </select>
         </div>
 
+        {/* 2. Dedicated Account Dropdowns (Loads All User Created Accounts) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
             <label style={labelStyle}>Debit Account (Dr) *</label>
