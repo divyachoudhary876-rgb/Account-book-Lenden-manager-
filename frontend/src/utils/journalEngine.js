@@ -1,26 +1,34 @@
 // frontend/src/utils/journalEngine.js
 
+import { getAccountHeads } from './statementEngine.js';
+
 export const getJournalVouchersByFirm = (firmId) => {
   const targetId = firmId || 'FIRM-001';
-  const key = `app_vouchers_${targetId}`;
   let vouchers = [];
-  try {
-    const raw = localStorage.getItem(key);
-    vouchers = raw ? JSON.parse(raw) : [];
-  } catch (e) { 
-    vouchers = []; 
-  }
-  return vouchers;
-};
 
-export const deleteJournalVoucher = (firmId, voucherId) => {
-  const targetId = firmId || 'FIRM-001';
-  const key = `app_vouchers_${targetId}`;
-  const existingVouchers = getJournalVouchersByFirm(targetId);
-  const updated = existingVouchers.filter(v => v.id !== voucherId);
-  localStorage.setItem(key, JSON.stringify(updated));
-  window.dispatchEvent(new Event('storage'));
-  return updated;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('app_vouchers')) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) vouchers = vouchers.concat(parsed);
+        }
+      }
+    }
+
+    // Deduplicate vouchers by ID
+    const voucherMap = new Map();
+    vouchers.forEach(v => {
+      if (v && v.id) voucherMap.set(v.id, v);
+    });
+    vouchers = Array.from(voucherMap.values());
+  } catch (e) {
+    vouchers = [];
+  }
+
+  return vouchers;
 };
 
 export const updateJournalVoucher = (firmId, updatedVoucher) => {
@@ -30,11 +38,32 @@ export const updateJournalVoucher = (firmId, updatedVoucher) => {
   const index = existingVouchers.findIndex(v => v.id === updatedVoucher.id);
   
   if (index !== -1) {
-    existingVouchers[index] = { ...updatedVoucher, updated_at: new Date().toISOString() };
+    existingVouchers[index] = { 
+      ...updatedVoucher, 
+      updated_at: new Date().toISOString() 
+    };
     localStorage.setItem(key, JSON.stringify(existingVouchers));
+    localStorage.setItem('app_vouchers_global', JSON.stringify(existingVouchers));
+    
+    // Broadcast event across UI
+    window.dispatchEvent(new Event('accounts_master_updated'));
     window.dispatchEvent(new Event('storage'));
   }
   return existingVouchers;
+};
+
+export const deleteJournalVoucher = (firmId, voucherId) => {
+  const targetId = firmId || 'FIRM-001';
+  const key = `app_vouchers_${targetId}`;
+  const existingVouchers = getJournalVouchersByFirm(targetId);
+  const updated = existingVouchers.filter(v => v.id !== voucherId);
+  
+  localStorage.setItem(key, JSON.stringify(updated));
+  localStorage.setItem('app_vouchers_global', JSON.stringify(updated));
+  
+  window.dispatchEvent(new Event('accounts_master_updated'));
+  window.dispatchEvent(new Event('storage'));
+  return updated;
 };
 
 export const downloadJournalCSV = (firmName, vouchers) => {
