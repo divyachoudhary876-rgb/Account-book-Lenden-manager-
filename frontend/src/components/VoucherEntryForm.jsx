@@ -36,7 +36,7 @@ export default function VoucherEntryForm({ firm }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!drAccount || !crAccount) {
-      alert("⚠️ Select Accounts first!");
+      alert("⚠️ Please select Accounts from dropdowns!");
       return;
     }
     try {
@@ -67,10 +67,10 @@ export default function VoucherEntryForm({ firm }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Debit Account (Dr) (From Master List) *</label>
+            <label style={labelStyle}>Debit Account (Dr) (From Chart of Accounts) *</label>
             <select value={drAccount} onChange={e => setDrAccount(e.target.value)} style={inputStyle} required>
               {accounts.length === 0 ? (
-                <option value="">No Accounts Found!</option>
+                <option value="">No Accounts Available</option>
               ) : (
                 accounts.map(a => (
                   <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
@@ -79,10 +79,10 @@ export default function VoucherEntryForm({ firm }) {
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Credit Account (Cr) (From Master List) *</label>
+            <label style={labelStyle}>Credit Account (Cr) (From Chart of Accounts) *</label>
             <select value={crAccount} onChange={e => setCrAccount(e.target.value)} style={inputStyle} required>
               {accounts.length === 0 ? (
-                <option value="">No Accounts Found!</option>
+                <option value="">No Accounts Available</option>
               ) : (
                 accounts.map(a => (
                   <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
