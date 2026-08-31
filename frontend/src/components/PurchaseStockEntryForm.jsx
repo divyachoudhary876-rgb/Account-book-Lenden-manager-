@@ -87,14 +87,14 @@ export default function PurchaseStockEntryForm({ firm }) {
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Supplier Account</label>
-            <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} style={inputStyle}>
+            <label style={labelStyle}>Supplier Account *</label>
+            <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} style={inputStyle} required>
               {suppliers.map(s => <option key={s.id} value={s.account_name}>{s.account_name}</option>)}
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Stock Item to Receive (+IN)</label>
-            <select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} style={inputStyle}>
+            <label style={labelStyle}>Stock Item to Receive (+IN) *</label>
+            <select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} style={inputStyle} required>
               {stockItems.map(i => <option key={i.id} value={i.item_name}>{i.item_name}</option>)}
             </select>
           </div>
