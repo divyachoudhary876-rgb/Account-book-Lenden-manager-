@@ -20,7 +20,7 @@ export default function JournalRegisterView({ firm, onSelectAccount }) {
   const loadVouchers = () => setVouchers(getJournalVouchersByFirm(activeFirmId));
 
   const handleDelete = (id) => {
-    if (window.confirm("Delete this entry? Ledger will adjust automatically.")) {
+    if (window.confirm("⚠️ Delete this journal voucher entry? Account balance will automatically adjust.")) {
       deleteJournalVoucher(activeFirmId, id);
       loadVouchers();
     }
@@ -46,72 +46,84 @@ export default function JournalRegisterView({ firm, onSelectAccount }) {
   };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
-      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>📖 General Journal Register (Day Book)</h3>
+    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      
+      {/* Header */}
+      <div style={{ marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+        <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📖 General Journal Register (Day Book)</h3>
+        <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firm?.legal_name || 'Aa (TRADING)'}</span>
+      </div>
 
+      {/* Edit Modal Popup */}
       {editingVoucher && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <form onSubmit={handleSaveEdit} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', maxWidth: '360px', width: '100%' }}>
-            <h4>✏️ Edit Voucher Entry</h4>
-            <input type="text" value={editDr} onChange={e => setEditDr(e.target.value)} style={inputStyle} placeholder="Dr Account" required />
-            <input type="text" value={editCr} onChange={e => setEditCr(e.target.value)} style={inputStyle} placeholder="Cr Account" required />
-            <input type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} style={inputStyle} placeholder="Amount" required />
-            <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
-              <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px' }}>Save</button>
-              <button type="button" onClick={() => setEditingVoucher(null)} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px' }}>Cancel</button>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
+          <form onSubmit={handleSaveEdit} style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', maxWidth: '380px', width: '100%', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 14px 0', color: '#0f172a' }}>✏️ Edit Voucher Entry</h4>
+            
+            <div style={{ marginBottom: '10px' }}>
+              <label style={labelStyle}>Debit Account (Dr)</label>
+              <input type="text" value={editDr} onChange={e => setEditDr(e.target.value)} style={inputStyle} required />
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <label style={labelStyle}>Credit Account (Cr)</label>
+              <input type="text" value={editCr} onChange={e => setEditCr(e.target.value)} style={inputStyle} required />
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={labelStyle}>Amount (₹)</label>
+              <input type="number" step="0.01" value={editAmount} onChange={e => setEditAmount(e.target.value)} style={inputStyle} required />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setEditingVoucher(null)} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>Cancel</button>
+              <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save Changes</button>
             </div>
           </form>
         </div>
       )}
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-        <thead>
-          <tr style={{ backgroundColor: '#0f172a', color: '#fff' }}>
-            <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
-            <th style={{ padding: '8px', textAlign: 'center' }}>Voucher Type</th>
-            <th style={{ padding: '8px', textAlign: 'left' }}>Particulars (Dr / Cr)</th>
-            <th style={{ padding: '8px', textAlign: 'right' }}>Amount (₹)</th>
-            <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {vouchers.length === 0 ? (
-            <tr style={{ borderBottom: '1px solid #cbd5e1' }}>
-              <td style={{ padding: '8px' }}>2026-08-31</td>
-              <td style={{ padding: '8px', textAlign: 'center', fontWeight: 'bold' }}>JOURNAL</td>
-              <td style={{ padding: '8px' }}>
-                <div>Dr: <span onClick={() => onSelectAccount && onSelectAccount('Cash-in-Hand A/C')} style={linkStyle}>Cash-in-Hand A/C</span></div>
-                <div>Cr: <span onClick={() => onSelectAccount && onSelectAccount('Rk')} style={linkStyle}>Rk</span></div>
-              </td>
-              <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#1e3a8a' }}>₹10000.00</td>
-              <td style={{ padding: '8px', textAlign: 'center' }}>
-                <button onClick={() => handleOpenEdit({ id: 'DEMO-1', dr_account: 'Cash-in-Hand A/C', cr_account: 'Rk', amount: 10000 })} style={btnStyle('#2563eb')}>✏️ Edit</button>
-                <button onClick={() => handleDelete('DEMO-1')} style={btnStyle('#ef4444')}>🗑️ Delete</button>
-              </td>
+      {/* Overflow Wrapper Fix to Prevent Table Breakout */}
+      <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '420px' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '85px' }}>Date</th>
+              <th style={{ padding: '10px', textAlign: 'center', minWidth: '80px' }}>Voucher Type</th>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '130px' }}>Particulars (Dr / Cr)</th>
+              <th style={{ padding: '10px', textAlign: 'right', minWidth: '90px' }}>Amount (₹)</th>
+              <th style={{ padding: '10px', textAlign: 'center', minWidth: '110px' }}>Action</th>
             </tr>
-          ) : (
-            vouchers.map(v => (
-              <tr key={v.id} style={{ borderBottom: '1px solid #cbd5e1' }}>
-                <td style={{ padding: '8px' }}>{v.date || '2026-08-31'}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>{v.voucher_type || 'JOURNAL'}</td>
-                <td style={{ padding: '8px' }}>
-                  <div>Dr: <span onClick={() => onSelectAccount && onSelectAccount(v.dr_account)} style={linkStyle}>{v.dr_account}</span></div>
-                  <div>Cr: <span onClick={() => onSelectAccount && onSelectAccount(v.cr_account)} style={linkStyle}>{v.cr_account}</span></div>
+          </thead>
+          <tbody>
+            {vouchers.map((v) => (
+              <tr key={v.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>{v.date || '2026-08-31'}</td>
+                <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold' }}>{v.voucher_type || 'JOURNAL'}</td>
+                <td style={{ padding: '10px' }}>
+                  <div><strong>Dr:</strong> <span onClick={() => onSelectAccount && onSelectAccount(v.dr_account)} style={linkStyle}>{v.dr_account}</span></div>
+                  <div><strong>Cr:</strong> <span onClick={() => onSelectAccount && onSelectAccount(v.cr_account)} style={linkStyle}>{v.cr_account}</span></div>
                 </td>
-                <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>₹{v.amount}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>
-                  <button onClick={() => handleOpenEdit(v)} style={btnStyle('#2563eb')}>✏️ Edit</button>
-                  <button onClick={() => handleDelete(v.id)} style={btnStyle('#ef4444')}>🗑️ Delete</button>
+                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#1e3a8a', whiteSpace: 'nowrap' }}>
+                  ₹{parseFloat(v.amount || 0).toFixed(2)}
+                </td>
+                <td style={{ padding: '10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                    <button onClick={() => handleOpenEdit(v)} style={btnStyle('#2563eb')}>✏️ Edit</button>
+                    <button onClick={() => handleDelete(v.id)} style={btnStyle('#ef4444')}>🗑️ Delete</button>
+                  </div>
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
     </div>
   );
 }
 
 const linkStyle = { color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold' };
-const inputStyle = { width: '100%', padding: '8px', marginBottom: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', boxSizing: 'border-box' };
-const btnStyle = (bg) => ({ backgroundColor: bg, color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', margin: '0 2px' });
+const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' };
+const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' };
+const btnStyle = (bg) => ({ backgroundColor: bg, color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' });
