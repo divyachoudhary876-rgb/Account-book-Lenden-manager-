@@ -1,67 +1,58 @@
 // frontend/src/utils/statementEngine.js
 
-export const calculateAccountStatement = (accountId, fromDate, toDate) => {
+export const getAccountHeads = (firmId) => {
+  const targetId = firmId || 'FIRM-001';
+  const key = `app_accounts_${targetId}`;
+  let accounts = [];
   try {
-    const accounts = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
-    const journalLines = JSON.parse(localStorage.getItem('app_journal_entries') || '[]');
+    const raw = localStorage.getItem(key);
+    accounts = raw ? JSON.parse(raw) : [];
+  } catch (e) { accounts = []; }
 
-    const account = accounts.find(a => a.id === accountId);
-    if (!account) {
-      return { 
-        account: null, 
-        statementLines: [], 
-        summary: { openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0, closingBalanceType: 'Dr' } 
-      };
-    }
-
-    let runningBalance = parseFloat(account.opening_balance || 0);
-    const isDebitNormal = ['ASSET', 'EXPENSE'].includes(account.primary_type);
-
-    const filteredLines = journalLines
-      .filter(entry => entry.account_id === accountId && entry.date >= fromDate && entry.date <= toDate)
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    let totalDebit = 0;
-    let totalCredit = 0;
-
-    const statementLines = filteredLines.map(line => {
-      const dr = parseFloat(line.debit || 0);
-      const cr = parseFloat(line.credit || 0);
-      totalDebit += dr;
-      totalCredit += cr;
-
-      if (isDebitNormal) {
-        runningBalance += (dr - cr);
-      } else {
-        runningBalance += (cr - dr);
-      }
-
-      return {
-        ...line,
-        debit: dr,
-        credit: cr,
-        runningBalance: Math.abs(runningBalance),
-        balanceType: runningBalance >= 0 ? (isDebitNormal ? 'Dr' : 'Cr') : (isDebitNormal ? 'Cr' : 'Dr')
-      };
-    });
-
-    return {
-      account,
-      statementLines,
-      summary: {
-        openingBalance: parseFloat(account.opening_balance || 0),
-        totalDebit,
-        totalCredit,
-        closingBalance: Math.abs(runningBalance),
-        closingBalanceType: runningBalance >= 0 ? (isDebitNormal ? 'Dr' : 'Cr') : (isDebitNormal ? 'Cr' : 'Dr')
-      }
-    };
-  } catch (error) {
-    console.error("Statement Engine Calculation Error:", error);
-    return {
-      account: null,
-      statementLines: [],
-      summary: { openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0, closingBalanceType: 'Dr' }
-    };
+  if (accounts.length === 0) {
+    accounts = [
+      { id: 'ACC-1', account_name: 'Diesel Account' },
+      { id: 'ACC-2', account_name: 'Cash-in-Hand A/C' },
+      { id: 'ACC-3', account_name: 'Rk Supplier A/C' },
+      { id: 'ACC-4', account_name: 'Coal / Fuel Account' }
+    ];
+    localStorage.setItem(key, JSON.stringify(accounts));
   }
+  return accounts;
+};
+
+export const getAccountLedgerStatement = (firmId, accountName,fromDate, toDate) => {
+  const targetId = firmId || 'FIRM-001';
+  const key = `app_vouchers_${targetId}`;
+  let vouchers = [];
+  try {
+    const raw = localStorage.getItem(key);
+    vouchers = raw ? JSON.parse(raw) : [];
+  } catch (e) { vouchers = []; }
+
+  return vouchers.filter(v => {
+    const matchAccount = (v.dr_account === accountName || v.cr_account === accountName);
+    const vDate = v.date || new Date().toISOString().split('T')[0];
+    const matchDate = (!fromDate || vDate >= fromDate) && (!toDate || vDate <= toDate);
+    return matchAccount && matchDate;
+  });
+};
+
+export const downloadCSVStatement = (firmName, accountName, transactions) => {
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += `STATEMENT OF ACCOUNT: ${accountName}\nFirm: ${firmName}\n\nDate,Voucher Ref,Particulars,Debit (Rs),Credit (Rs)\n`;
+
+  transactions.forEach(t => {
+    const drVal = t.dr_account === accountName ? t.amount : 0;
+    const crVal = t.cr_account === accountName ? t.amount : 0;
+    csvContent += `${t.date || '2026-08-31'},${t.id},${t.dr_account} / ${t.cr_account},${drVal},${crVal}\n`;
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `Statement_${accountName.replace(/\s+/g, '_')}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
