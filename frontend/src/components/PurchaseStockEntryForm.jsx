@@ -17,16 +17,16 @@ export default function PurchaseStockEntryForm({ firm }) {
   const [invoiceNumber, setInvoiceNumber] = useState(`PUR-${Math.floor(100000 + Math.random() * 900000)}`);
 
   useEffect(() => {
-    loadAccountsAndStock();
-    window.addEventListener('storage', loadAccountsAndStock);
-    window.addEventListener('accounts_master_updated', loadAccountsAndStock);
+    loadData();
+    window.addEventListener('storage', loadData);
+    window.addEventListener('accounts_master_updated', loadData);
     return () => {
-      window.removeEventListener('storage', loadAccountsAndStock);
-      window.removeEventListener('accounts_master_updated', loadAccountsAndStock);
+      window.removeEventListener('storage', loadData);
+      window.removeEventListener('accounts_master_updated', loadData);
     };
   }, [firm]);
 
-  const loadAccountsAndStock = () => {
+  const loadData = () => {
     const accs = getAccountHeads(activeFirmId);
     setSuppliers(accs);
     if (accs.length > 0 && !selectedSupplier) setSelectedSupplier(accs[0].account_name);
@@ -39,7 +39,7 @@ export default function PurchaseStockEntryForm({ firm }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selectedSupplier) {
-      alert("⚠️ Select an Account first!");
+      alert("⚠️ Please select an Account Head from the dropdown.");
       return;
     }
     try {
@@ -58,7 +58,7 @@ export default function PurchaseStockEntryForm({ firm }) {
       alert(`✓ Purchase Inward Bill #${entry.id} saved!`);
       setQuantity(''); setUnitRate('');
       setInvoiceNumber(`PUR-${Math.floor(100000 + Math.random() * 900000)}`);
-      loadAccountsAndStock();
+      loadData();
     } catch (err) { alert(err.message); }
   };
 
@@ -69,10 +69,10 @@ export default function PurchaseStockEntryForm({ firm }) {
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Supplier / Vendor Account (From Master List) *</label>
+            <label style={labelStyle}>Supplier / Vendor Account (From Chart of Accounts) *</label>
             <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} style={inputStyle} required>
               {suppliers.length === 0 ? (
-                <option value="">No Accounts Found!</option>
+                <option value="">No Accounts Available</option>
               ) : (
                 suppliers.map(s => (
                   <option key={s.id} value={s.account_name}>{s.account_name} ({s.account_group || 'GENERAL'})</option>
