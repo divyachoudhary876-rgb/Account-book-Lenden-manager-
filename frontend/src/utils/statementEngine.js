@@ -1,58 +1,80 @@
 // frontend/src/utils/statementEngine.js
 
-// Universal Master Account Aggregator (Firm-Agnostic Resolution)
+// Deep Multi-Property Universal Storage Aggregator
 export const getAccountHeads = (firmId) => {
-  let combinedAccounts = [];
+  let rawAccountsList = [];
 
   try {
-    // 1. Scan all localStorage keys for any account registries
+    // 1. Scan ALL localStorage keys starting with app_accounts or related prefixes
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.startsWith('app_accounts') || key.startsWith('app_account_masters'))) {
-        const rawData = localStorage.getItem(key);
-        if (rawData) {
-          const parsed = JSON.parse(rawData);
-          if (Array.isArray(parsed)) {
-            combinedAccounts = combinedAccounts.concat(parsed);
-          }
+      if (key && (
+        key.startsWith('app_accounts') || 
+        key.startsWith('app_account') || 
+        key.includes('accounts') ||
+        key.includes('ledger')
+      )) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              rawAccountsList = rawAccountsList.concat(parsed);
+            } else if (typeof parsed === 'object' && parsed !== null) {
+              if (parsed.account_name || parsed.name) rawAccountsList.push(parsed);
+              else rawAccountsList = rawAccountsList.concat(Object.values(parsed));
+            }
+          } catch (e) { /* Ignore non-JSON strings */ }
         }
       }
     }
 
-    // 2. Deduplicate accounts by clean, case-insensitive Account Name
+    // 2. Normalize and Deduplicate Accounts (Handles all field name variants)
     const accountMap = new Map();
-    combinedAccounts.forEach(acc => {
-      if (acc && acc.account_name) {
-        const cleanName = acc.account_name.trim();
-        if (!accountMap.has(cleanName.toLowerCase())) {
-          accountMap.set(cleanName.toLowerCase(), {
-            id: acc.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            account_name: cleanName,
-            account_group: acc.account_group || acc.sub_group || 'GENERAL'
-          });
+    rawAccountsList.forEach(item => {
+      if (item && typeof item === 'object') {
+        const accName = item.account_name || item.name || item.party_name;
+        if (accName && typeof accName === 'string' && accName.trim() !== '') {
+          const cleanName = accName.trim();
+          const normKey = cleanName.toLowerCase();
+          
+          if (!accountMap.has(normKey)) {
+            accountMap.set(normKey, {
+              id: item.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+              account_name: cleanName,
+              account_group: item.sub_group || item.account_group || item.primary_type || 'GENERAL',
+              primary_type: item.primary_type || 'Assets',
+              opening_balance: parseFloat(item.opening_balance || 0),
+              balance_type: item.balance_type || 'Dr',
+              gstin: item.gstin || item.gstin_number || '',
+              mobile: item.mobile || item.phone || ''
+            });
+          }
         }
       }
     });
 
-    combinedAccounts = Array.from(accountMap.values());
-  } catch (e) {
-    combinedAccounts = [];
+    rawAccountsList = Array.from(accountMap.values());
+  } catch (err) {
+    rawAccountsList = [];
   }
 
-  // 3. Mirror consolidated master back to active keys for rapid access
-  if (combinedAccounts.length > 0) {
-    localStorage.setItem('app_accounts_master_global', JSON.stringify(combinedAccounts));
-    if (firmId) {
-      localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(combinedAccounts));
-    }
+  // 3. Mirror master list back to common keys for fast secondary reads
+  if (rawAccountsList.length > 0) {
+    try {
+      const jsonStr = JSON.stringify(rawAccountsList);
+      localStorage.setItem('app_global_master_accounts', jsonStr);
+      localStorage.setItem('app_accounts', jsonStr);
+      if (firmId) localStorage.setItem(`app_accounts_${firmId}`, jsonStr);
+    } catch (e) { console.error("Mirror sync error", e); }
   }
 
-  return combinedAccounts;
+  return rawAccountsList;
 };
 
-// Create Account Head Logic
+// Create Quick Account Head Engine
 export const createQuickAccountHead = (firmId, accountData) => {
-  if (!accountData.account_name || !accountData.account_name.trim()) {
+  if (!accountData || !accountData.account_name || !accountData.account_name.trim()) {
     throw new Error("⚠️ Account / Party Name is required.");
   }
 
@@ -61,24 +83,29 @@ export const createQuickAccountHead = (firmId, accountData) => {
 
   const exists = currentAccounts.some(a => a.account_name.toLowerCase() === trimmedName.toLowerCase());
   if (exists) {
-    throw new Error(`⚠️ Account "${trimmedName}" already exists in Master Registry.`);
+    throw new Error(`⚠️ Account "${trimmedName}" already exists in Party Master.`);
   }
 
   const newAccount = {
     id: `ACC-${Date.now()}`,
     account_name: trimmedName,
-    account_group: accountData.account_group || 'SUNDRY_DEBTORS',
+    primary_type: accountData.primary_type || 'Assets',
+    sub_group: accountData.sub_group || accountData.account_group || 'SUNDRY_DEBTORS',
+    account_group: accountData.sub_group || accountData.account_group || 'SUNDRY_DEBTORS',
+    opening_balance: parseFloat(accountData.opening_balance || 0),
+    balance_type: accountData.balance_type || 'Dr',
+    gstin: accountData.gstin || '',
+    mobile: accountData.mobile || '',
     created_at: new Date().toISOString()
   };
 
   currentAccounts.push(newAccount);
 
-  // Synchronize across all active firm contexts
-  const targetId = firmId || 'FIRM-001';
-  localStorage.setItem(`app_accounts_${targetId}`, JSON.stringify(currentAccounts));
-  localStorage.setItem('app_accounts_master_global', JSON.stringify(currentAccounts));
+  const jsonStr = JSON.stringify(currentAccounts);
+  localStorage.setItem('app_global_master_accounts', jsonStr);
+  localStorage.setItem('app_accounts', jsonStr);
+  if (firmId) localStorage.setItem(`app_accounts_${firmId}`, jsonStr);
 
-  // Trigger reactive storage events across open components
   window.dispatchEvent(new Event('accounts_master_updated'));
   window.dispatchEvent(new Event('storage'));
   return newAccount;
