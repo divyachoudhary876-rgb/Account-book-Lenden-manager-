@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { getStockItemsByFirm } from '../utils/stockInventoryEngine.js';
-import { getAccountHeads } from '../utils/statementEngine.js';
-import { processSalesInvoiceSubmission, quickCreateCustomerAccount } from '../utils/salesInvoicingEngine.js';
+import { getAccountHeads, createQuickAccountHead } from '../utils/statementEngine.js';
+import { processSalesInvoiceSubmission } from '../utils/salesInvoicingEngine.js';
 
 export default function CreateInvoice({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
@@ -20,7 +20,7 @@ export default function CreateInvoice({ firm }) {
   const [gstRate, setGstRate] = useState('18');
   const [invoiceNumber, setInvoiceNumber] = useState(`INV-${Math.floor(100000 + Math.random() * 900000)}`);
 
-  const [showModal, setShowModal] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [newAccName, setNewAccName] = useState('');
   const [printableInvoice, setPrintableInvoice] = useState(null);
 
@@ -42,7 +42,17 @@ export default function CreateInvoice({ firm }) {
     setSalesHistory(JSON.parse(localStorage.getItem(`app_sales_invoices_${activeFirmId}`) || '[]'));
   };
 
-  const currentItemObj = stockItems.find(i => i.id === selectedItem || i.item_name === selectedItem);
+  const handleQuickCreateAccount = (e) => {
+    e.preventDefault();
+    try {
+      const created = createQuickAccountHead(activeFirmId, { account_name: newAccName, account_group: 'SUNDRY_DEBTOR' });
+      alert(`✓ Account "${created.account_name}" created successfully!`);
+      setShowAccountModal(false);
+      setNewAccName('');
+      loadData();
+      setSelectedCustomer(created.account_name);
+    } catch (err) { alert(err.message); }
+  };
 
   const qtyNum = parseFloat(quantity || 0);
   const rateNum = parseFloat(unitRate || 0);
@@ -51,24 +61,14 @@ export default function CreateInvoice({ firm }) {
   const taxAmount = (parseFloat(taxableAmount) * (gstNum / 100)).toFixed(2);
   const grandTotal = (parseFloat(taxableAmount) + parseFloat(taxAmount)).toFixed(2);
 
-  const handleCreateAcc = (e) => {
-    e.preventDefault();
-    try {
-      const created = quickCreateCustomerAccount(activeFirmId, { account_name: newAccName });
-      setShowModal(false);
-      setNewAccName('');
-      loadData();
-      setSelectedCustomer(created.account_name);
-    } catch (err) { alert(err.message); }
-  };
-
   const handleSubmit = (e) => {
     e.preventDefault();
     try {
+      const selectedItemObj = stockItems.find(i => i.id === selectedItem || i.item_name === selectedItem);
       const invoiceData = processSalesInvoiceSubmission(activeFirmId, {
         customer_account: selectedCustomer,
-        item_id: currentItemObj?.id,
-        item_name: currentItemObj?.item_name,
+        item_id: selectedItemObj?.id,
+        item_name: selectedItemObj?.item_name,
         quantity, unit_rate: unitRate, gst_rate: gstRate,
         taxable_amount: taxableAmount, tax_amount: taxAmount, grand_total: grandTotal,
         invoice_number: invoiceNumber
@@ -85,19 +85,21 @@ export default function CreateInvoice({ firm }) {
     <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
       <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>🧾 Enterprise GST Sales Bill Entry</h3>
 
-      {showModal && (
+      {/* Quick Create Account Modal */}
+      {showAccountModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <form onSubmit={handleCreateAcc} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', maxWidth: '360px', width: '100%' }}>
-            <h4>➕ Quick Add Customer Account</h4>
-            <input type="text" placeholder="Customer Name *" value={newAccName} onChange={e => setNewAccName(e.target.value)} style={inputStyle} required />
+          <form onSubmit={handleQuickCreateAccount} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', maxWidth: '360px', width: '100%' }}>
+            <h4 style={{ margin: '0 0 10px 0' }}>➕ Create Account</h4>
+            <input type="text" placeholder="Account Name *" value={newAccName} onChange={e => setNewAccName(e.target.value)} style={inputStyle} required />
             <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
-              <button type="submit" style={btnStyle('#2563eb')}>Save</button>
-              <button type="button" onClick={() => setShowModal(false)} style={btnStyle('#64748b')}>Cancel</button>
+              <button type="submit" style={btnStyle('#2563eb')}>Save Account</button>
+              <button type="button" onClick={() => setShowAccountModal(false)} style={btnStyle('#64748b')}>Cancel</button>
             </div>
           </form>
         </div>
       )}
 
+      {/* Printable PDF Modal */}
       {printableInvoice && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', maxWidth: '480px', width: '100%' }}>
@@ -116,8 +118,10 @@ export default function CreateInvoice({ firm }) {
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
           <label style={labelStyle}>Customer Account *</label>
-          <button type="button" onClick={() => setShowModal(true)} style={{ color: '#2563eb', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>+ New Customer</button>
+          <button type="button" onClick={() => setShowAccountModal(true)} style={{ color: '#2563eb', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>+ Create Account</button>
         </div>
+        
+        {/* Dynamic Accounts Dropdown */}
         <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} style={inputStyle} required>
           {customerAccounts.map(a => <option key={a.id} value={a.account_name}>{a.account_name}</option>)}
         </select>
@@ -130,8 +134,6 @@ export default function CreateInvoice({ firm }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
           <input type="number" placeholder="Qty" value={quantity} onChange={e => setQuantity(e.target.value)} style={inputStyle} required />
           <input type="number" placeholder="Rate" value={unitRate} onChange={e => setUnitRate(e.target.value)} style={inputStyle} required />
-          
-          {/* Complete GST Slabs List Including 0% */}
           <select value={gstRate} onChange={e => setGstRate(e.target.value)} style={inputStyle}>
             <option value="0">0% GST (Exempt)</option>
             <option value="5">5% GST</option>
