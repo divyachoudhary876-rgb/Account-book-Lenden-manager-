@@ -21,7 +21,7 @@ export const getAccountHeads = (firmId) => {
     accounts = [];
   }
 
-  // Preserve user-created accounts and merge baseline system accounts
+  // Preserve custom accounts and ensure default system accounts exist
   if (!accounts || accounts.length === 0) {
     accounts = [...DEFAULT_SYSTEM_ACCOUNTS];
   } else {
@@ -85,7 +85,7 @@ export const getAccountLedgerStatement = (firmId, accountName, fromDate, toDate)
 
 export const downloadCSVStatement = (firmName, accountName, transactions) => {
   if (!transactions || transactions.length === 0) {
-    alert("⚠️ No transactions to export.");
+    alert("⚠️ Selected account me export karne ke liye koi transactions nahi hain.");
     return;
   }
 
@@ -94,21 +94,32 @@ export const downloadCSVStatement = (firmName, accountName, transactions) => {
   csvRows.push(`"Firm: ${firmName}"`);
   csvRows.push(`"Generated Date: ${new Date().toLocaleDateString()}"`);
   csvRows.push("");
-  csvRows.push(`"Date","Voucher Ref","Particulars","Debit (Rs)","Credit (Rs)"`);
+  csvRows.push(`"Date","Voucher Ref","Particulars / Narration","Debit (Rs)","Credit (Rs)"`);
+
+  let totalDebit = 0;
+  let totalCredit = 0;
 
   transactions.forEach(t => {
     const isDebit = t.dr_account === accountName;
     const drVal = isDebit ? parseFloat(t.amount || 0) : 0;
     const crVal = !isDebit ? parseFloat(t.amount || 0) : 0;
+    
+    totalDebit += drVal;
+    totalCredit += crVal;
+
     const particulars = isDebit ? `To ${t.cr_account}` : `By ${t.dr_account}`;
     csvRows.push(`"${t.date || ''}","${t.id}","${particulars}","${drVal.toFixed(2)}","${crVal.toFixed(2)}"`);
   });
 
-  const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  csvRows.push(`"TOTAL","","","${totalDebit.toFixed(2)}","${totalCredit.toFixed(2)}"`);
+
+  const csvString = csvRows.join("\n");
+  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
+  
   const link = document.createElement("a");
   link.href = url;
-  link.setAttribute("download", `Statement_${accountName.replace(/\s+/g, '_')}.csv`);
+  link.setAttribute("download", `Statement_${accountName.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
