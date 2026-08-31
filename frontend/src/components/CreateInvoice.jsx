@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getStockItemsByFirm } from '../utils/stockInventoryEngine.js';
-import { getAccountHeads, createQuickAccountHead } from '../utils/statementEngine.js';
+import { getAccountHeads } from '../utils/statementEngine.js';
 import { processSalesInvoiceSubmission } from '../utils/salesInvoicingEngine.js';
 
 export default function CreateInvoice({ firm }) {
@@ -18,49 +18,52 @@ export default function CreateInvoice({ firm }) {
   const [invoiceNumber, setInvoiceNumber] = useState(`INV-${Math.floor(100000 + Math.random() * 900000)}`);
 
   useEffect(() => {
-    loadAccountsAndStock();
-    window.addEventListener('storage', loadAccountsAndStock);
-    window.addEventListener('accounts_master_updated', loadAccountsAndStock);
+    loadData();
+    window.addEventListener('storage', loadData);
+    window.addEventListener('accounts_updated', loadData);
     return () => {
-      window.removeEventListener('storage', loadAccountsAndStock);
-      window.removeEventListener('accounts_master_updated', loadAccountsAndStock);
+      window.removeEventListener('storage', loadData);
+      window.removeEventListener('accounts_updated', loadData);
     };
   }, [firm]);
 
-  const loadAccountsAndStock = () => {
-    // Strictly fetch accounts from Create Account Head List
+  const loadData = () => {
     const accs = getAccountHeads(activeFirmId);
     setCustomerAccounts(accs);
-    if (accs.length > 0 && !selectedCustomer) setSelectedCustomer(accs[0].account_name);
+    if (accs.length > 0) setSelectedCustomer(accs[0].account_name);
 
     const items = getStockItemsByFirm(activeFirmId);
     setStockItems(items);
-    if (items.length > 0 && !selectedItem) setSelectedItem(items[0].id);
+    if (items.length > 0) setSelectedItem(items[0].id);
   };
-
-  const qtyNum = parseFloat(quantity || 0);
-  const rateNum = parseFloat(unitRate || 0);
-  const gstNum = parseFloat(gstRate || 0);
-  const taxableAmount = (qtyNum * rateNum).toFixed(2);
-  const taxAmount = (parseFloat(taxableAmount) * (gstNum / 100)).toFixed(2);
-  const grandTotal = (parseFloat(taxableAmount) + parseFloat(taxAmount)).toFixed(2);
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!selectedCustomer) {
+      alert("⚠️ Pehle 'Create Account Head' se account banayein!");
+      return;
+    }
     try {
-      const currentItemObj = stockItems.find(i => i.id === selectedItem || i.item_name === selectedItem);
+      const selectedItemObj = stockItems.find(i => i.id === selectedItem || i.item_name === selectedItem);
+      const qtyNum = parseFloat(quantity || 0);
+      const rateNum = parseFloat(unitRate || 0);
+      const gstNum = parseFloat(gstRate || 0);
+      const taxable = (qtyNum * rateNum).toFixed(2);
+      const tax = (parseFloat(taxable) * (gstNum / 100)).toFixed(2);
+      const total = (parseFloat(taxable) + parseFloat(tax)).toFixed(2);
+
       const invoiceData = processSalesInvoiceSubmission(activeFirmId, {
         customer_account: selectedCustomer,
-        item_id: currentItemObj?.id,
-        item_name: currentItemObj?.item_name,
+        item_id: selectedItemObj?.id,
+        item_name: selectedItemObj?.item_name,
         quantity, unit_rate: unitRate, gst_rate: gstRate,
-        taxable_amount: taxableAmount, tax_amount: taxAmount, grand_total: grandTotal,
+        taxable_amount: taxable, tax_amount: tax, grand_total: total,
         invoice_number: invoiceNumber
       });
       alert(`✓ Sales Invoice #${invoiceData.id} posted!`);
       setQuantity(''); setUnitRate('');
       setInvoiceNumber(`INV-${Math.floor(100000 + Math.random() * 900000)}`);
-      loadAccountsAndStock();
+      loadData();
     } catch (err) { alert(err.message); }
   };
 
@@ -69,11 +72,15 @@ export default function CreateInvoice({ firm }) {
       <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>🧾 Enterprise GST Sales Bill Entry</h3>
 
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        <label style={labelStyle}>Select Party / Customer Account (From Master Accounts List) *</label>
+        <label style={labelStyle}>Select Party / Customer Account (User Created Accounts) *</label>
         <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} style={inputStyle} required>
-          {customerAccounts.map(a => (
-            <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
-          ))}
+          {customerAccounts.length === 0 ? (
+            <option value="">No Accounts Found! Pehle Naya Account Banayein</option>
+          ) : (
+            customerAccounts.map(a => (
+              <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
+            ))
+          )}
         </select>
 
         <label style={labelStyle}>Select Stock Item (-OUT) *</label>
@@ -94,7 +101,7 @@ export default function CreateInvoice({ firm }) {
         </div>
 
         <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', width: '100%', marginTop: '10px', cursor: 'pointer' }}>
-          💾 Post Sales Invoice
+          💾 Save & Post Sales Invoice
         </button>
       </form>
     </div>
