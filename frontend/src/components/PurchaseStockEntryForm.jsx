@@ -17,29 +17,29 @@ export default function PurchaseStockEntryForm({ firm }) {
   const [invoiceNumber, setInvoiceNumber] = useState(`PUR-${Math.floor(100000 + Math.random() * 900000)}`);
 
   useEffect(() => {
-    loadData();
-    window.addEventListener('storage', loadData);
-    window.addEventListener('accounts_updated', loadData);
+    loadAccountsAndStock();
+    window.addEventListener('storage', loadAccountsAndStock);
+    window.addEventListener('accounts_master_updated', loadAccountsAndStock);
     return () => {
-      window.removeEventListener('storage', loadData);
-      window.removeEventListener('accounts_updated', loadData);
+      window.removeEventListener('storage', loadAccountsAndStock);
+      window.removeEventListener('accounts_master_updated', loadAccountsAndStock);
     };
   }, [firm]);
 
-  const loadData = () => {
+  const loadAccountsAndStock = () => {
     const accs = getAccountHeads(activeFirmId);
     setSuppliers(accs);
-    if (accs.length > 0) setSelectedSupplier(accs[0].account_name);
+    if (accs.length > 0 && !selectedSupplier) setSelectedSupplier(accs[0].account_name);
 
     const items = getStockItemsByFirm(activeFirmId);
     setStockItems(items);
-    if (items.length > 0) setSelectedItem(items[0].item_name);
+    if (items.length > 0 && !selectedItem) setSelectedItem(items[0].item_name);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selectedSupplier) {
-      alert("⚠️ Pehle 'Create Account Head' se account banayein!");
+      alert("⚠️ Select an Account first!");
       return;
     }
     try {
@@ -58,7 +58,7 @@ export default function PurchaseStockEntryForm({ firm }) {
       alert(`✓ Purchase Inward Bill #${entry.id} saved!`);
       setQuantity(''); setUnitRate('');
       setInvoiceNumber(`PUR-${Math.floor(100000 + Math.random() * 900000)}`);
-      loadData();
+      loadAccountsAndStock();
     } catch (err) { alert(err.message); }
   };
 
@@ -69,10 +69,10 @@ export default function PurchaseStockEntryForm({ firm }) {
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Supplier / Vendor Account (User Created Accounts) *</label>
+            <label style={labelStyle}>Supplier / Vendor Account (From Master List) *</label>
             <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} style={inputStyle} required>
               {suppliers.length === 0 ? (
-                <option value="">No Accounts Found! Pehle Naya Account Banayein</option>
+                <option value="">No Accounts Found!</option>
               ) : (
                 suppliers.map(s => (
                   <option key={s.id} value={s.account_name}>{s.account_name} ({s.account_group || 'GENERAL'})</option>
