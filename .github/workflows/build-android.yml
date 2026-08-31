@@ -22,45 +22,37 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # FIX: Added --legacy-peer-deps --force flags to resolve npm ERESOLVE error
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
-      # Step 2: Auto-Bump Android Versioning
       - name: Auto-Bump Android Versioning
         working-directory: frontend
         run: |
           BUILD_NUMBER=${{ github.run_number }}
           VERSION_NAME="1.0.${BUILD_NUMBER}"
-          echo "Setting Version Code: ${BUILD_NUMBER}, Version Name: ${VERSION_NAME}"
-          
           if [ -d "android/app" ]; then
             sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUMBER}/g" android/app/build.gradle
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      # Step 3: Build Web Application
       - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      # Step 4: Sync Capacitor Android Folder
-      - name: Capacitor Sync
+      - name: Sync Capacitor Android Folder
         working-directory: frontend
         run: |
           rm -rf android
           npx @capacitor/cli add android
           npx @capacitor/cli sync android
 
-      # Step 5: Build Debug APK
-      - name: Build Android Release APK
+      - name: Build Android Debug APK
         working-directory: frontend/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # Step 6: Upload Output APK Binary Artifact
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
