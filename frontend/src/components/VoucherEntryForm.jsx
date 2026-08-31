@@ -1,7 +1,7 @@
 // frontend/src/components/VoucherEntryForm.jsx
 
 import React, { useState, useEffect } from 'react';
-import { getAccountHeads, createQuickAccountHead } from '../utils/statementEngine.js';
+import { getAccountHeads } from '../utils/statementEngine.js';
 import { processVoucherEntrySubmission } from '../utils/voucherPostingEngine.js';
 
 export default function VoucherEntryForm({ firm }) {
@@ -14,43 +14,23 @@ export default function VoucherEntryForm({ firm }) {
   const [amount, setAmount] = useState('');
   const [narration, setNarration] = useState('');
 
-  const [showModal, setShowModal] = useState(false);
-  const [newAccName, setNewAccName] = useState('');
-  const [newAccGroup, setNewAccGroup] = useState('SUNDRY_DEBTOR');
-
   useEffect(() => {
     loadAccounts();
     window.addEventListener('storage', loadAccounts);
-    window.addEventListener('account_updated', loadAccounts);
+    window.addEventListener('accounts_master_updated', loadAccounts);
     return () => {
       window.removeEventListener('storage', loadAccounts);
-      window.removeEventListener('account_updated', loadAccounts);
+      window.removeEventListener('accounts_master_updated', loadAccounts);
     };
   }, [firm]);
 
   const loadAccounts = () => {
+    // Strictly fetch accounts from Create Account Head List
     const list = getAccountHeads(activeFirmId);
     setAccounts(list);
     if (list.length > 0) {
       if (!drAccount) setDrAccount(list[0].account_name);
       if (!crAccount) setCrAccount(list[1]?.account_name || list[0].account_name);
-    }
-  };
-
-  const handleQuickAdd = (e) => {
-    e.preventDefault();
-    try {
-      const created = createQuickAccountHead(activeFirmId, {
-        account_name: newAccName,
-        account_group: newAccGroup
-      });
-      alert(`✓ Account "${created.account_name}" added successfully!`);
-      setShowModal(false);
-      setNewAccName('');
-      loadAccounts();
-      setDrAccount(created.account_name);
-    } catch (err) {
-      alert(err.message);
     }
   };
 
@@ -69,40 +49,12 @@ export default function VoucherEntryForm({ firm }) {
       alert(`✓ Voucher ${created.id} Posted Successfully!`);
       setAmount('');
       setNarration('');
-    } catch (err) {
-      alert(err.message);
-    }
+    } catch (err) { alert(err.message); }
   };
 
   return (
     <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
-      
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-        <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📒 Double-Entry Voucher Posting</h3>
-        <button type="button" onClick={() => setShowModal(true)} style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-          ➕ Quick Add Account
-        </button>
-      </div>
-
-      {showModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
-          <form onSubmit={handleQuickAdd} style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', maxWidth: '380px', width: '100%', border: '1px solid #cbd5e1' }}>
-            <h4 style={{ margin: '0 0 12px 0', color: '#0f172a' }}>➕ Add New Ledger Account</h4>
-            <input type="text" placeholder="Account Name *" value={newAccName} onChange={e => setNewAccName(e.target.value)} style={inputStyle} required />
-            <select value={newAccGroup} onChange={e => setNewAccGroup(e.target.value)} style={inputStyle}>
-              <option value="SUNDRY_DEBTOR">Customer (Sundry Debtor)</option>
-              <option value="SUNDRY_CREDITOR">Supplier (Sundry Creditor)</option>
-              <option value="EXPENSE">Expense Account</option>
-              <option value="INCOME">Income Account</option>
-              <option value="BANK">Bank Account</option>
-            </select>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
-              <button type="button" onClick={() => setShowModal(false)} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px' }}>Cancel</button>
-              <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold' }}>Save</button>
-            </div>
-          </form>
-        </div>
-      )}
+      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>📒 Double-Entry Voucher Posting</h3>
 
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         
@@ -120,15 +72,19 @@ export default function VoucherEntryForm({ firm }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Debit Account (Dr) *</label>
+            <label style={labelStyle}>Debit Account (Dr) (From Master List) *</label>
             <select value={drAccount} onChange={e => setDrAccount(e.target.value)} style={inputStyle} required>
-              {accounts.map(a => <option key={a.id} value={a.account_name}>{a.account_name}</option>)}
+              {accounts.map(a => (
+                <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
+              ))}
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Credit Account (Cr) *</label>
+            <label style={labelStyle}>Credit Account (Cr) (From Master List) *</label>
             <select value={crAccount} onChange={e => setCrAccount(e.target.value)} style={inputStyle} required>
-              {accounts.map(a => <option key={a.id} value={a.account_name}>{a.account_name}</option>)}
+              {accounts.map(a => (
+                <option key={a.id} value={a.account_name}>{a.account_name} ({a.account_group || 'GENERAL'})</option>
+              ))}
             </select>
           </div>
         </div>
@@ -147,7 +103,6 @@ export default function VoucherEntryForm({ firm }) {
           💾 Post Voucher Entry
         </button>
       </form>
-
     </div>
   );
 }
