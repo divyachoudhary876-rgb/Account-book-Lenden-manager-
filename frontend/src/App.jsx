@@ -11,6 +11,7 @@ import FirmProfileSettingsView from './components/FirmProfileSettingsView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
+import MaterialConsumptionView from './components/MaterialConsumptionView.jsx';
 import BillSettlementView from './components/BillSettlementView.jsx';
 import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
 import InventoryStockView from './components/InventoryStockView.jsx';
@@ -103,7 +104,7 @@ export default function App() {
       setSelectedFY(created.label);
       setIsAddFYModalOpen(false);
       refreshState();
-      alert(`✓ ${created.label} (01-Apr-${newFYStartYear} to 31-Mar-${parseInt(newFYStartYear, 10) + 1}) registered successfully!`);
+      alert(`✓ ${created.label} registered successfully!`);
     } catch (err) {
       alert(err.message);
     }
@@ -271,6 +272,7 @@ export default function App() {
             {currentView === 'sales' && <CreateInvoice firm={activeFirm} />}
             {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} />}
             {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} />}
+            {currentView === 'consumption' && <MaterialConsumptionView firm={activeFirm} />}
             {currentView === 'settlement' && <BillSettlementView firm={activeFirm} />}
             {currentView === 'inventory' && <InventoryStockView firm={activeFirm} />}
             {currentView === 'production' && <BhattaProductionMasterView firm={activeFirm} />}
