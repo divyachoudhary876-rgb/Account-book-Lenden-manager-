@@ -1,15 +1,20 @@
 // frontend/src/utils/voucherPostingEngine.js
 
-export const processVoucherEntrySubmission = (firmId, payload) => {
+export const processCompoundVoucherSubmission = (firmId, payload) => {
   const targetId = firmId || 'FIRM-001';
-  if (!payload.dr_account || !payload.cr_account) {
-    throw new Error("⚠️ Both Debit and Credit accounts are required.");
-  }
-  if (!payload.amount || parseFloat(payload.amount) <= 0) {
-    throw new Error("⚠️ Please enter a valid positive amount.");
-  }
-  if (payload.dr_account === payload.cr_account) {
-    throw new Error("⚠️ Debit and Credit accounts cannot be the same.");
+  const { voucher_date, voucher_type, debit_lines, credit_lines, narration } = payload;
+
+  if (!debit_lines || debit_lines.length === 0) throw new Error("⚠️ Kam se kam ek Debit Line honi chahiye.");
+  if (!credit_lines || credit_lines.length === 0) throw new Error("⚠️ Kam se kam ek Credit Line honi chahiye.");
+
+  // Calculate Totals
+  const totalDebit = debit_lines.reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
+  const totalCredit = credit_lines.reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
+
+  // Strict Balanced Double-Entry Rule Check
+  const diff = Math.abs(totalDebit - totalCredit);
+  if (diff > 0.01) {
+    throw new Error(`⚠️ Unbalanced Journal Entry! Total Debit (₹${totalDebit.toFixed(2)}) aur Total Credit (₹${totalCredit.toFixed(2)}) match nahi kar rahe hain. Difference: ₹${diff.toFixed(2)}`);
   }
 
   const key = `app_vouchers_${targetId}`;
@@ -21,13 +26,17 @@ export const processVoucherEntrySubmission = (firmId, payload) => {
 
   const newVoucher = {
     id: `VOUCH-${Date.now()}`,
-    voucher_date: payload.voucher_date || new Date().toISOString().split('T')[0],
-    date: payload.voucher_date || new Date().toISOString().split('T')[0], // Backwards compatibility key
-    voucher_type: payload.voucher_type || 'JOURNAL',
-    dr_account: payload.dr_account,
-    cr_account: payload.cr_account,
-    amount: parseFloat(payload.amount),
-    narration: payload.narration || '',
+    voucher_date: voucher_date || new Date().toISOString().split('T')[0],
+    date: voucher_date || new Date().toISOString().split('T')[0],
+    voucher_type: voucher_type || 'JOURNAL',
+    debit_lines,
+    credit_lines,
+    total_amount: totalDebit,
+    // Flattened primary accounts for backwards compatibility with daybook & ledger statements
+    dr_account: debit_lines.map(d => `${d.account_name} (₹${d.amount})`).join(', '),
+    cr_account: credit_lines.map(c => `${c.account_name} (₹${c.amount})`).join(', '),
+    amount: totalDebit,
+    narration: narration || '',
     created_at: new Date().toISOString()
   };
 
