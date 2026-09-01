@@ -50,11 +50,19 @@ jobs:
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      - name: Generate Persistent Dedicated Keystore
+      - name: Inject Persistent Dedicated Keystore
         working-directory: frontend/android/app
         run: |
           if [ ! -f "release.keystore" ]; then
-            keytool -genkey -v -keystore release.keystore -alias accountbookkey -keyalg RSA -keysize 2048 -validity 10000 -storepass "Neelkanth@2026" -keypass "Neelkanth@2026" -dname "CN=Neelkanth, OU=Accounting, O=Enterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
+            keytool -genkeypair -v \
+              -keystore release.keystore \
+              -alias accountbookkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 20000 \
+              -storepass "Neelkanth@2026" \
+              -keypass "Neelkanth@2026" \
+              -dname "CN=Neelkanth, OU=Accounting, O=Enterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
           fi
 
       - name: Grant Gradle Execution Permission
