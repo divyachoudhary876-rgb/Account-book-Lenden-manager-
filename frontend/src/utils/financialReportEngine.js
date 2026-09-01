@@ -3,96 +3,79 @@
 import { getAllUniversalVouchers, getAccountHeads } from './statementEngine.js';
 import { getStockItemsByFirm } from './stockInventoryEngine.js';
 
-/**
- * Universal Financial Reports Generator: Computes P&L and Balance Sheet dynamically
- */
-export const generateFinancialStatements = (firmId) => {
-  const targetId = firmId || 'FIRM-001';
-  const vouchers = getAllUniversalVouchers(targetId);
-  const stockItems = getStockItemsByFirm(targetId);
-  const accounts = getAccountHeads(targetId);
+export const generateFinancialStatements = (firmId = 'FIRM-001') => {
+  const vouchers = getAllUniversalVouchers(firmId);
+  const stockItems = getStockItemsByFirm(firmId);
+  const accounts = getAccountHeads(firmId);
 
-  let totalSalesRevenue = 0;
-  let totalPurchasesCost = 0;
+  let salesRevenue = 0;
+  let purchasesCost = 0;
   let directExpenses = 0;
   let indirectExpenses = 0;
   let otherIncome = 0;
 
-  // Account Balances Registry for Balance Sheet
-  const accountBalances = {};
-  accounts.forEach(acc => {
-    accountBalances[acc.account_name] = {
-      group: acc.account_group || acc.primary_type || 'GENERAL',
-      subGroup: acc.sub_group || '',
-      debit: 0,
-      credit: 0
-    };
+  const ledgerTotals = {};
+  accounts.forEach(a => {
+    ledgerTotals[a.account_name] = { primary_type: a.primary_type, sub_group: a.sub_group, dr: 0, cr: 0 };
   });
 
-  // Calculate voucher impacts
   vouchers.forEach(v => {
     const amt = parseFloat(v.amount || 0);
-    const vType = (v.voucher_type || '').toUpperCase();
-    const dr = v.dr_account || '';
-    const cr = v.cr_account || '';
+    const type = (v.voucher_type || '').toUpperCase();
+    const dr = v.dr_account;
+    const cr = v.cr_account;
 
-    // Register Ledger balances
-    if (!accountBalances[dr]) accountBalances[dr] = { group: 'EXPENSES', subGroup: 'GENERAL', debit: 0, credit: 0 };
-    if (!accountBalances[cr]) accountBalances[cr] = { group: 'INCOME', subGroup: 'GENERAL', debit: 0, credit: 0 };
+    if (!ledgerTotals[dr]) ledgerTotals[dr] = { primary_type: 'EXPENSES', sub_group: 'General', dr: 0, cr: 0 };
+    if (!ledgerTotals[cr]) ledgerTotals[cr] = { primary_type: 'INCOME', sub_group: 'General', dr: 0, cr: 0 };
 
-    accountBalances[dr].debit += amt;
-    accountBalances[cr].credit += amt;
+    ledgerTotals[dr].dr += amt;
+    ledgerTotals[cr].cr += amt;
 
-    // Classify for Profit & Loss
-    if (vType === 'SALES' || cr.toLowerCase().includes('sale') || cr.toLowerCase().includes('revenue')) {
-      totalSalesRevenue += amt;
-    } else if (vType === 'PURCHASE' || dr.toLowerCase().includes('purchase') || dr.toLowerCase().includes('diesel')) {
-      totalPurchasesCost += amt;
-    } else if (dr.toLowerCase().includes('expense') || dr.toLowerCase().includes('labor') || dr.toLowerCase().includes('kharcha')) {
+    if (type === 'SALES' || cr.toLowerCase().includes('sales')) {
+      salesRevenue += amt;
+    } else if (type === 'PURCHASE' || dr.toLowerCase().includes('purchase') || dr.toLowerCase().includes('diesel')) {
+      purchasesCost += amt;
+    } else if (dr.toLowerCase().includes('expense') || dr.toLowerCase().includes('labor') || dr.toLowerCase().includes('maint')) {
       directExpenses += amt;
-    } else if (cr.toLowerCase().includes('income') || cr.toLowerCase().includes('interest')) {
+    } else if (cr.toLowerCase().includes('income')) {
       otherIncome += amt;
     }
   });
 
-  // Current Stock Valuation (Closing Stock)
-  const totalStockValuation = stockItems.reduce((acc, curr) => {
-    const qty = parseFloat(curr.current_stock || 0);
-    const rate = parseFloat(curr.unit_purchase_price || curr.purchase_rate || 0);
-    return acc + (qty * rate);
+  const closingStockValuation = stockItems.reduce((sum, item) => {
+    return sum + (parseFloat(item.current_stock || 0) * parseFloat(item.unit_purchase_price || 0));
   }, 0);
 
-  // Trading & P&L Calculation
-  const grossProfit = totalSalesRevenue + totalStockValuation - (totalPurchasesCost + directExpenses);
+  const grossProfit = salesRevenue + closingStockValuation - (purchasesCost + directExpenses);
   const netProfit = grossProfit + otherIncome - indirectExpenses;
 
-  // Balance Sheet Assets & Liabilities
-  let totalSundryDebtors = 0;
-  let totalSundryCreditors = 0;
+  let totalDebtors = 0;
+  let totalCreditors = 0;
   let totalCashBank = 0;
 
-  Object.entries(accountBalances).forEach(([name, data]) => {
-    const net = data.debit - data.credit;
+  Object.entries(ledgerTotals).forEach(([name, val]) => {
+    const net = val.dr - val.cr;
     const nameLower = name.toLowerCase();
 
-    if (data.group.includes('DEBTOR') || nameLower.includes('customer') || nameLower.includes('traders')) {
-      if (net > 0) totalSundryDebtors += net;
-    } else if (data.group.includes('CREDITOR') || nameLower.includes('supplier') || nameLower.includes('pump') || nameLower.includes('padgad')) {
-      if (net < 0) totalSundryCreditors += Math.abs(net);
-    } else if (data.group.includes('CASH') || data.group.includes('BANK') || nameLower.includes('cash') || nameLower.includes('bank') || nameLower.includes('sbi')) {
+    if (val.primary_type === 'ASSETS' || nameLower.includes('customer') || nameLower.includes('sharma')) {
+      if (net > 0 && !nameLower.includes('cash') && !nameLower.includes('bank')) totalDebtors += net;
+    }
+    if (val.primary_type === 'LIABILITIES' || nameLower.includes('supplier') || nameLower.includes('pump') || nameLower.includes('kisan')) {
+      if (net < 0) totalCreditors += Math.abs(net);
+    }
+    if (nameLower.includes('cash') || nameLower.includes('bank') || nameLower.includes('sbi')) {
       totalCashBank += net;
     }
   });
 
-  const totalCurrentAssets = totalSundryDebtors + totalCashBank + totalStockValuation;
-  const totalLiabilities = totalSundryCreditors;
+  const totalCurrentAssets = totalDebtors + totalCashBank + closingStockValuation;
 
   return {
     tradingAndPL: {
-      salesRevenue: totalSalesRevenue,
-      purchasesCost: totalPurchasesCost,
+      salesRevenue,
+      purchasesCost,
       directExpenses,
-      closingStock: totalStockValuation,
+      closingStock: closingStockValuation,
       grossProfit,
       otherIncome,
       indirectExpenses,
@@ -100,14 +83,14 @@ export const generateFinancialStatements = (firmId) => {
     },
     balanceSheet: {
       assets: {
-        sundryDebtors: totalSundryDebtors,
+        sundryDebtors: totalDebtors,
         cashAndBank: totalCashBank,
-        closingStock: totalStockValuation,
+        closingStock: closingStockValuation,
         totalAssets: totalCurrentAssets
       },
       liabilities: {
-        sundryCreditors: totalSundryCreditors,
-        capitalAccount: totalCurrentAssets - totalLiabilities, // Balanced Net Worth
+        sundryCreditors: totalCreditors,
+        capitalAccount: totalCurrentAssets - totalCreditors,
         totalLiabilitiesAndEquity: totalCurrentAssets
       }
     }
