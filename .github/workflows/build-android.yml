@@ -22,15 +22,17 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Install Frontend Dependencies
+      - name: Clean Conflicting Locks & Install Dependencies
         working-directory: frontend
-        run: npm install --legacy-peer-deps --force
+        run: |
+          rm -f package-lock.json
+          npm install --legacy-peer-deps --force
 
       - name: Build Web Application
         working-directory: frontend
         run: npm run build
 
-      - name: Ensure Clean & Complete Capacitor Android Project
+      - name: Sync Capacitor Android Project
         working-directory: frontend
         run: |
           if [ ! -f "android/settings.gradle" ]; then
@@ -39,18 +41,18 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      - name: Auto-Bump Android Versioning
+      - name: Increment Version Code
         working-directory: frontend
         run: |
           BUILD_NUMBER=${{ github.run_number }}
           VERSION_NAME="1.0.${BUILD_NUMBER}"
-          echo "Setting Version Code: ${BUILD_NUMBER}, Version Name: ${VERSION_NAME}"
+          echo "Building Version ${VERSION_NAME} (Code: ${BUILD_NUMBER})"
           if [ -d "android/app" ]; then
             sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUMBER}/g" android/app/build.gradle
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
 
-      - name: Inject Persistent Dedicated Keystore
+      - name: Generate Persistent Dedicated Keystore
         working-directory: frontend/android/app
         run: |
           if [ ! -f "release.keystore" ]; then
@@ -65,15 +67,39 @@ jobs:
               -dname "CN=Neelkanth, OU=Accounting, O=Enterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
           fi
 
-      - name: Grant Gradle Execution Permission
+      - name: Configure Gradle Signing
+        working-directory: frontend/android/app
+        run: |
+          python3 -c "
+          with open('build.gradle', 'r') as f:
+              c = f.read()
+          signing = '''
+              signingConfigs {
+                  release {
+                      storeFile file('release.keystore')
+                      storePassword 'Neelkanth@2026'
+                      keyAlias 'accountbookkey'
+                      keyPassword 'Neelkanth@2026'
+                  }
+              }
+          '''
+          if 'signingConfigs {' not in c:
+              c = c.replace('android {', 'android {' + signing)
+              c = c.replace('buildTypes {\n        debug {', 'buildTypes {\n        debug {\n            signingConfig signingConfigs.release')
+              c = c.replace('buildTypes {\n        release {', 'buildTypes {\n        release {\n            signingConfig signingConfigs.release')
+              with open('build.gradle', 'w') as f:
+                  f.write(c)
+          "
+
+      - name: Grant Gradle Permissions
         working-directory: frontend/android
         run: chmod +x gradlew
 
-      - name: Build Android Debug APK
+      - name: Assemble Release Signed APK
         working-directory: frontend/android
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload Signed Release APK
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-v1.0.${{ github.run_number }}-APK
