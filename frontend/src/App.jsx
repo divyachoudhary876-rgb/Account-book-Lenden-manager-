@@ -1,128 +1,192 @@
 // frontend/src/App.jsx
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
-import NavbarHeader from './components/NavbarHeader.jsx';
-import CreateFirmForm from './components/CreateFirmForm.jsx';
-import AccountingDashboard from './components/AccountingDashboard.jsx';
-
+import React, { useState, useEffect, Component } from 'react';
+import { getActiveFirm, getFirmsRegistry, setActiveFirmId, DEFAULT_FIRM } from './utils/multiFirmEngine.js';
 import { filterMenuByIndustry } from './utils/industryEngine.js';
-import { getActiveFirm } from './utils/multiFirmEngine.js';
 
-// Lazy load heavy enterprise components to reduce initial launch bundle size
-const CreateAccountHeadModal = lazy(() => import('./components/CreateAccountHeadModal.jsx'));
-const InventoryStockView = lazy(() => import('./components/InventoryStockView.jsx'));
-const CreateInvoice = lazy(() => import('./components/CreateInvoice.jsx'));
-const PurchaseStockEntryForm = lazy(() => import('./components/PurchaseStockEntryForm.jsx'));
-const VoucherEntryForm = lazy(() => import('./components/VoucherEntryForm.jsx'));
-const BhattaProductionMasterView = lazy(() => import('./components/BhattaProductionMasterView.jsx'));
-const BillSettlementView = lazy(() => import('./components/BillSettlementView.jsx'));
-const AccountStatementView = lazy(() => import('./components/AccountStatementView.jsx'));
-const JournalRegisterView = lazy(() => import('./components/JournalRegisterView.jsx'));
-const FinancialReportsView = lazy(() => import('./components/FinancialReportsView.jsx'));
-const SecurityBackupSettings = lazy(() => import('./components/SecurityBackupSettings.jsx'));
-const DataPurgeView = lazy(() => import('./components/DataPurgeView.jsx'));
+// Components
+import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
+import AccountingDashboard from './components/AccountingDashboard.jsx';
+import CreateInvoice from './components/CreateInvoice.jsx';
+import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
+import InventoryStockView from './components/InventoryStockView.jsx';
+import AccountStatementView from './components/AccountStatementView.jsx';
+import CreateFirmForm from './components/CreateFirmForm.jsx';
+import SecurityBackupSettings from './components/SecurityBackupSettings.jsx';
+import AppUpdateBanner from './components/AppUpdateBanner.jsx';
+
+// Error Boundary to prevent any dark/blank crash screen
+class SafeErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("App Crash Caught:", error, errorInfo);
+  }
+  handleReset = () => {
+    localStorage.clear();
+    window.location.reload();
+  };
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '24px', textAlign: 'center', backgroundColor: '#0f172a', color: '#ffffff', minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+          <h2 style={{ color: '#ef4444' }}>⚠️ System Recovery Mode</h2>
+          <p style={{ color: '#94a3b8', maxWidth: '400px', fontSize: '13px' }}>
+            The application encountered a runtime initialization error. Click below to restore default configuration safely.
+          </p>
+          <button 
+            onClick={this.handleReset}
+            style={{ backgroundColor: '#10b981', color: '#ffffff', border: 'none', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '12px' }}
+          >
+            🔄 Safe Reset & Launch
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
-  const [firm, setFirm] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeFirm, setActiveFirm] = useState(DEFAULT_FIRM);
+  const [firmsList, setFirmsList] = useState([DEFAULT_FIRM]);
+  const [currentView, setCurrentView] = useState('dashboard');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isHydrating, setIsHydrating] = useState(true);
+  const [isCreatingFirm, setIsCreatingFirm] = useState(false);
+
+  const refreshFirmContext = () => {
+    try {
+      const firm = getActiveFirm() || DEFAULT_FIRM;
+      const list = getFirmsRegistry() || [DEFAULT_FIRM];
+      setActiveFirm(firm);
+      setFirmsList(list);
+    } catch {
+      setActiveFirm(DEFAULT_FIRM);
+      setFirmsList([DEFAULT_FIRM]);
+    }
+  };
 
   useEffect(() => {
-    // Instant micro-task execution to hydrate initial state
-    requestAnimationFrame(() => {
-      const currentFirm = getActiveFirm();
-      if (currentFirm) {
-        setFirm(currentFirm);
-        setActiveTab('dashboard');
-      } else {
-        setActiveTab('firm_setup');
-      }
-      setIsHydrating(false);
-    });
+    refreshFirmContext();
+    window.addEventListener('app_state_updated', refreshFirmContext);
+    return () => window.removeEventListener('app_state_updated', refreshFirmContext);
   }, []);
 
-  const handleSaveFirm = (newFirm) => {
-    setFirm(newFirm);
-    setActiveTab('dashboard');
-  };
+  const rawNavigation = [
+    { key: 'dashboard', label: '📊 Dashboard', category: 'ALL' },
+    { key: 'sales', label: '🧾 Sales Invoicing', category: 'ALL' },
+    { key: 'purchase', label: '🛍️ Purchase Inward', category: 'ALL' },
+    { key: 'inventory', label: '📦 Live Stock & UOM', category: 'ALL' },
+    { key: 'milan', label: '📑 Account Milan / Statement', category: 'ALL' },
+    { key: 'backup', label: '🛡️ Backup & Restore', category: 'ALL' }
+  ];
 
-  const handleNavigate = (tabId) => {
-    setActiveTab(tabId);
-    setIsMenuOpen(false);
-  };
-
-  if (isHydrating) {
-    return null; // Inline HTML loader in index.html will remain visible during this split second
-  }
-
-  const menuList = filterMenuByIndustry(firm?.industry_type || 'TRADING');
+  const allowedNav = filterMenuByIndustry(rawNavigation, activeFirm?.category || 'TRADING');
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: 'Arial, sans-serif' }}>
-      
-      <NavbarHeader
-        firm={firm}
-        activeTab={activeTab}
-        onNavigate={handleNavigate}
-        onToggleMenu={() => setIsMenuOpen(!isMenuOpen)}
-      />
+    <SafeErrorBoundary>
+      <div style={{ minHeight: '100vh', backgroundColor: '#f1f5f9', color: '#0f172a', display: 'flex', flexDirection: 'column' }}>
+        
+        {/* App Update Notification */}
+        <AppUpdateBanner />
 
-      {isMenuOpen && firm && (
-        <div style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '16px', borderBottom: '2px solid #2563eb' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '10px', color: '#94a3b8' }}>
-            {firm.legal_name.toUpperCase()} ({firm.industry_type}) WORKFLOW MENU
+        {/* Global Navbar */}
+        <header style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '20px' }}>📒</span>
+            <div>
+              <div style={{ fontWeight: '800', fontSize: '15px' }}>Account Book</div>
+              <div style={{ fontSize: '10px', color: '#38bdf8' }}>ENTERPRISE ERP</div>
+            </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '8px' }}>
-            {menuList.map((item) => (
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Firm Selector */}
+            <select
+              value={activeFirm?.id || DEFAULT_FIRM.id}
+              onChange={(e) => {
+                if (e.target.value === 'NEW_FIRM') {
+                  setIsCreatingFirm(true);
+                } else {
+                  setActiveFirmId(e.target.value);
+                  refreshFirmContext();
+                }
+              }}
+              style={{ backgroundColor: '#1e293b', color: '#ffffff', border: '1px solid #334155', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}
+            >
+              {firmsList.map(f => (
+                <option key={f.id} value={f.id}>{f.legal_name || f.trade_name} ({f.category || 'TRADING'})</option>
+              ))}
+              <option value="NEW_FIRM">➕ Add New Firm...</option>
+            </select>
+
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              style={{ backgroundColor: '#2563eb', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              ☰ Menu
+            </button>
+          </div>
+        </header>
+
+        {/* Slide-out Menu Drawer */}
+        {isMenuOpen && (
+          <div style={{ backgroundColor: '#1e293b', borderBottom: '2px solid #334155', padding: '12px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+            {allowedNav.map(item => (
               <button
-                key={item.id}
-                onClick={() => handleNavigate(item.id)}
+                key={item.key}
+                onClick={() => {
+                  setCurrentView(item.key);
+                  setIsCreatingFirm(false);
+                  setIsMenuOpen(false);
+                }}
                 style={{
-                  backgroundColor: activeTab === item.id ? '#2563eb' : '#1e293b',
+                  backgroundColor: currentView === item.key ? '#0284c7' : '#0f172a',
                   color: '#ffffff',
                   border: '1px solid #334155',
-                  padding: '10px 12px',
+                  padding: '8px 10px',
                   borderRadius: '6px',
-                  textAlign: 'left',
-                  fontWeight: 'bold',
-                  fontSize: '12px',
-                  cursor: 'pointer'
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  textAlign: 'left'
                 }}
               >
-                {item.icon} {item.label}
+                {item.label}
               </button>
             ))}
           </div>
-        </div>
-      )}
-
-      <main style={{ padding: '16px', maxWidth: '1000px', margin: '0 auto' }}>
-        {!firm || activeTab === 'firm_setup' ? (
-          <CreateFirmForm onSave={handleSaveFirm} existingFirm={firm} />
-        ) : (
-          <Suspense fallback={
-            <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-              ⚡ Loading module...
-            </div>
-          }>
-            {activeTab === 'dashboard' && <AccountingDashboard firm={firm} onNavigate={handleNavigate} />}
-            {activeTab === 'create_account' && <CreateAccountHeadModal firm={firm} onClose={() => setActiveTab('dashboard')} />}
-            {activeTab === 'inventory' && <InventoryStockView firm={firm} />}
-            {activeTab === 'billing' && <CreateInvoice firm={firm} />}
-            {activeTab === 'purchase' && <PurchaseStockEntryForm firm={firm} />}
-            {activeTab === 'vouchers' && <VoucherEntryForm firm={firm} />}
-            {activeTab === 'bhatta_prod' && firm.industry_type === 'BRICK_KILN' && <BhattaProductionMasterView firm={firm} />}
-            {activeTab === 'settlement' && <BillSettlementView firm={firm} />}
-            {activeTab === 'ledger' && <AccountStatementView firm={firm} />}
-            {activeTab === 'journal' && <JournalRegisterView firm={firm} />}
-            {activeTab === 'reports' && <FinancialReportsView firm={firm} />}
-            {activeTab === 'backup' && <SecurityBackupSettings />}
-            {activeTab === 'purge' && <DataPurgeView />}
-          </Suspense>
         )}
-      </main>
 
-    </div>
+        {/* Main Content Area */}
+        <main style={{ flex: 1, padding: '14px', maxWidth: '1000px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+          {isCreatingFirm ? (
+            <CreateFirmForm 
+              onFirmCreated={() => {
+                setIsCreatingFirm(false);
+                refreshFirmContext();
+                setCurrentView('dashboard');
+              }}
+              onCancel={() => setIsCreatingFirm(false)}
+            />
+          ) : (
+            <>
+              {currentView === 'dashboard' && <EnterpriseDashboard firm={activeFirm} onNavigate={(view) => setCurrentView(view)} />}
+              {currentView === 'sales' && <CreateInvoice firm={activeFirm} />}
+              {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} />}
+              {currentView === 'inventory' && <InventoryStockView firm={activeFirm} />}
+              {currentView === 'milan' && <AccountStatementView firm={activeFirm} />}
+              {currentView === 'backup' && <SecurityBackupSettings firm={activeFirm} />}
+            </>
+          )}
+        </main>
+
+      </div>
+    </SafeErrorBoundary>
   );
 }
