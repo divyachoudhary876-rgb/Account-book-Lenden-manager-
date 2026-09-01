@@ -1,13 +1,17 @@
 // frontend/src/components/InventoryStockView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { getStockItemsByFirm, saveStockItemMaster, deleteStockItemMaster } from '../utils/stockInventoryEngine.js';
+import { 
+  getStockItemsByFirm, 
+  saveStockItemMaster, 
+  deleteStockItemMaster, 
+  STANDARD_MEASUREMENT_UNITS 
+} from '../utils/stockInventoryEngine.js';
 
 export default function InventoryStockView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
   const [stockList, setStockList] = useState([]);
   
-  // Modal / Form States
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [itemName, setItemName] = useState('');
@@ -44,7 +48,7 @@ export default function InventoryStockView({ firm }) {
   const openEditModal = (item) => {
     setEditingId(item.id);
     setItemName(item.item_name);
-    setUnit(item.unit || 'Units');
+    setUnit(item.unit || 'Pcs');
     setCurrentStock(item.current_stock.toString());
     setPurchaseRate(item.unit_purchase_price.toString());
     setSellingPrice((item.selling_price || item.unit_purchase_price).toString());
@@ -52,7 +56,7 @@ export default function InventoryStockView({ firm }) {
   };
 
   const handleDelete = (item) => {
-    if (window.confirm(`⚠️ Are you sure you want to delete "${item.item_name}"?`)) {
+    if (window.confirm(`Are you sure you want to delete "${item.item_name}"?`)) {
       deleteStockItemMaster(activeFirmId, item.id);
       loadStockData();
     }
@@ -61,7 +65,7 @@ export default function InventoryStockView({ firm }) {
   const handleSave = (e) => {
     e.preventDefault();
     if (!itemName.trim()) {
-      alert("⚠️ Item Name is required.");
+      alert("Item Name is required.");
       return;
     }
 
@@ -111,9 +115,9 @@ export default function InventoryStockView({ firm }) {
         </span>
       </div>
 
-      {/* Table Container */}
+      {/* Table */}
       <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '600px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '650px' }}>
           <thead>
             <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
               <th style={{ padding: '10px 12px', textAlign: 'left' }}>Item / Material</th>
@@ -128,7 +132,7 @@ export default function InventoryStockView({ firm }) {
             {stockList.length === 0 ? (
               <tr>
                 <td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
-                  No inventory items. Click <strong>"+ Add New Item"</strong> to create your stock list.
+                  No inventory items found. Click <strong>"+ Add New Item"</strong> to create items.
                 </td>
               </tr>
             ) : (
@@ -142,8 +146,8 @@ export default function InventoryStockView({ firm }) {
                     <td style={{ padding: '10px 12px', fontWeight: 'bold', color: '#1e293b' }}>
                       {item.item_name}
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'center', color: '#64748b' }}>
-                      <span style={{ backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>
+                    <td style={{ padding: '10px', textAlign: 'center', color: '#475569' }}>
+                      <span style={{ backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
                         {item.unit || 'Units'}
                       </span>
                     </td>
@@ -196,7 +200,7 @@ export default function InventoryStockView({ firm }) {
                 <label style={labelStyle}>Item / Material Name *</label>
                 <input 
                   type="text" 
-                  placeholder="e.g. Red Bricks 9 Inch / Diesel / Coal" 
+                  placeholder="e.g. Raw Material A / Finished Item / Fuel" 
                   value={itemName} 
                   onChange={e => setItemName(e.target.value)} 
                   style={inputStyle} 
@@ -204,23 +208,55 @@ export default function InventoryStockView({ firm }) {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={labelStyle}>Unit of Measurement *</label>
-                  <select value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle}>
-                    <option value="Pcs">Pcs (नग / ईंटें)</option>
-                    <option value="Liters">Liters (लीटर)</option>
-                    <option value="Tons">Tons (टन)</option>
-                    <option value="Bags">Bags (थैली)</option>
-                    <option value="Kg">Kilograms (किलो)</option>
-                    <option value="Trips">Trips (गाड़ी / ट्रिप)</option>
+                  <label style={labelStyle}>Measurement Unit (मात्रक) *</label>
+                  <select value={unit} onChange={e => setUnit(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold' }}>
+                    <optgroup label="Quantity & Count (संख्या / गिनती)">
+                      <option value="Pcs">Pcs (Pieces / नग)</option>
+                      <option value="Thousand">Thousand (हजार / K)</option>
+                      <option value="Dozens">Dozens (दर्जन)</option>
+                      <option value="Units">Units (इकाई)</option>
+                    </optgroup>
+                    <optgroup label="Weight & Mass (भार / वजन)">
+                      <option value="MT">MT (Metric Ton / मीट्रिक टन)</option>
+                      <option value="Quintal">Quintal (क्विंटल)</option>
+                      <option value="Kg">Kg (Kilogram / किलोग्राम)</option>
+                      <option value="Grams">Grams (ग्राम)</option>
+                    </optgroup>
+                    <optgroup label="Volume & Liquid (आयतन / तरल)">
+                      <option value="Liters">Liters (लीटर)</option>
+                      <option value="KL">KL (Kiloliter / किलोलीटर)</option>
+                      <option value="ML">ML (Milliliter / मिलीलीटर)</option>
+                    </optgroup>
+                    <optgroup label="Logistics & Volume (ढुलाई / घन आयतन)">
+                      <option value="Trips">Trips (ट्रिप / चक्कर)</option>
+                      <option value="Trolley">Trolley (ट्रॉली)</option>
+                      <option value="Dumper">Dumper (डंपर)</option>
+                      <option value="Gadi">Gadi (गाड़ी / ट्रक लोड)</option>
+                      <option value="Brass">Brass (ब्रास)</option>
+                      <option value="CFT">CFT (Cubic Feet / घन फीट)</option>
+                      <option value="CBM">CBM (Cubic Meter / घन मीटर)</option>
+                    </optgroup>
+                    <optgroup label="Packaging (पैकिंग)">
+                      <option value="Bags">Bags (थैली / कट्टा / बोरी)</option>
+                      <option value="Boxes">Boxes (पेटी / कार्टन)</option>
+                      <option value="Bundles">Bundles (बंडल / गट्ठा)</option>
+                      <option value="Rolls">Rolls (रोल)</option>
+                    </optgroup>
+                    <optgroup label="Length & Area (लम्बाई / क्षेत्रफल)">
+                      <option value="Meters">Meters (मीटर)</option>
+                      <option value="Feet">Feet (फीट)</option>
+                      <option value="SqFt">Sq. Ft. (वर्ग फीट)</option>
+                      <option value="SqYards">Sq. Yards (वर्ग गज)</option>
+                    </optgroup>
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Opening / Current Stock</label>
+                  <label style={labelStyle}>Current Stock</label>
                   <input 
                     type="number" 
-                    step="0.01" 
+                    step="0.001" 
                     value={currentStock} 
                     onChange={e => setCurrentStock(e.target.value)} 
                     style={inputStyle} 
@@ -240,7 +276,7 @@ export default function InventoryStockView({ firm }) {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Expected Selling Rate (₹)</label>
+                  <label style={labelStyle}>Selling Price (₹)</label>
                   <input 
                     type="number" 
                     step="0.01" 
@@ -275,6 +311,6 @@ export default function InventoryStockView({ firm }) {
 }
 
 const modalOverlayStyle = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '16px' };
-const modalBoxStyle = { backgroundColor: '#ffffff', borderRadius: '12px', padding: '18px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' };
+const modalBoxStyle = { backgroundColor: '#ffffff', borderRadius: '12px', padding: '18px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' };
 const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
 const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff' };
