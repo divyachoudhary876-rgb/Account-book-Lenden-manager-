@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getFirmVouchers } from '../utils/journalEngine.js';
+import { downloadJournalPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function JournalRegisterView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
@@ -42,8 +43,13 @@ export default function JournalRegisterView({ firm }) {
           <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📖 General Journal / Day Book</h3>
           <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firmName} | Entries: {filtered.length}</span>
         </div>
-        <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e3a8a', backgroundColor: '#eff6ff', padding: '6px 12px', borderRadius: '6px' }}>
-          Total: ₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button 
+            onClick={() => downloadJournalPDF(firmName, filtered, filterType)} 
+            style={{ backgroundColor: '#dc2626', color: '#ffffff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            📄 Download Journal PDF
+          </button>
         </div>
       </div>
 
