@@ -1,104 +1,22 @@
-name: Build Business Book APK
+# 1. Constant Keystore Parameters (Never Change)
+- name: Configure Static Deterministic Master Keystore
+  working-directory: frontend/android/app
+  run: |
+    keytool -genkeypair -v \
+      -keystore master_release.keystore \
+      -alias businessbook_key \
+      -keyalg RSA \
+      -keysize 2048 \
+      -validity 36500 \
+      -storepass "NeelkanthEnterprise@2026" \
+      -keypass "NeelkanthEnterprise@2026" \
+      -dname "CN=Neelkanth, OU=Accounting, O=NeelkanthEnterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
 
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  build-android:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js v22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Setup Java JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '21'
-
-      - name: Install Frontend Dependencies
-        working-directory: frontend
-        run: |
-          rm -f package-lock.json
-          npm install --legacy-peer-deps --force
-
-      - name: Build Web Application
-        working-directory: frontend
-        run: npm run build
-
-      - name: Ensure Complete Capacitor Android Native Project
-        working-directory: frontend
-        run: |
-          if [ ! -f "android/settings.gradle" ]; then
-            rm -rf android
-            npx @capacitor/cli add android
-          fi
-          npx @capacitor/cli sync android
-
-      - name: Auto-Bump Dynamic Version Code & Name
-        working-directory: frontend/android/app
-        run: |
-          BUILD_NUM=${{ github.run_number }}
-          VERSION_NAME="1.0.${BUILD_NUM}"
-          echo "Setting Monotonic versionCode: ${BUILD_NUM}, versionName: ${VERSION_NAME}"
-          sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUM}/g" build.gradle
-          sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" build.gradle
-
-      - name: Configure Static Deterministic Master Keystore
-        working-directory: frontend/android/app
-        run: |
-          # Constant parameters guarantee identical SHA-256 certificate in every build
-          keytool -genkeypair -v \
-            -keystore master_release.keystore \
-            -alias businessbook_key \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 36500 \
-            -storepass "NeelkanthEnterprise@2026" \
-            -keypass "NeelkanthEnterprise@2026" \
-            -dname "CN=Neelkanth, OU=Accounting, O=NeelkanthEnterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
-
-      - name: Inject Master Signing Configuration into Gradle
-        working-directory: frontend/android/app
-        run: |
-          python3 -c "
-          with open('build.gradle', 'r') as f:
-              c = f.read()
-
-          signing_config = '''
-              signingConfigs {
-                  release {
-                      storeFile file('master_release.keystore')
-                      storePassword 'NeelkanthEnterprise@2026'
-                      keyAlias 'businessbook_key'
-                      keyPassword 'NeelkanthEnterprise@2026'
-                  }
-              }
-          '''
-          if 'signingConfigs {' not in c:
-              c = c.replace('android {', 'android {\n' + signing_config)
-              c = c.replace('buildTypes {\n        debug {', 'buildTypes {\n        debug {\n            signingConfig signingConfigs.release')
-              c = c.replace('buildTypes {\n        release {', 'buildTypes {\n        release {\n            signingConfig signingConfigs.release')
-              with open('build.gradle', 'w') as f:
-                  f.write(c)
-          "
-
-      - name: Grant Gradle Execution Permissions
-        working-directory: frontend/android
-        run: chmod +x gradlew
-
-      - name: Assemble Release-Signed APK
-        working-directory: frontend/android
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Upload In-Place Updateable APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: BusinessBook-v1.0.${{ github.run_number }}-UpdateReady
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+# 2. Auto-Incrementing Version Code
+- name: Auto-Bump Dynamic Version Code & Name
+  working-directory: frontend/android/app
+  run: |
+    BUILD_NUM=${{ github.run_number }}
+    VERSION_NAME="1.0.${BUILD_NUM}"
+    sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUM}/g" build.gradle
+    sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" build.gradle
