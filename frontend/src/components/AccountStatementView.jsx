@@ -11,6 +11,7 @@ export default function AccountStatementView({ firm }) {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('');
   const [statement, setStatement] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const loadData = () => {
     const list = getAccountHeads(activeFirmId);
@@ -37,6 +38,21 @@ export default function AccountStatementView({ firm }) {
     setStatement(st);
   };
 
+  const handlePDFExport = async () => {
+    if (!statement || !statement.entries || statement.entries.length === 0) {
+      alert("⚠️ No voucher entries available to generate PDF.");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      await downloadAccountStatementPDF(statement, firm);
+    } catch (err) {
+      alert("PDF Export Error: " + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div style={{ maxWidth: '950px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '30px' }}>
       
@@ -58,11 +74,21 @@ export default function AccountStatementView({ firm }) {
             📊 CSV Export
           </button>
           <button
-            onClick={() => downloadAccountStatementPDF && downloadAccountStatementPDF(statement, firm)}
-            disabled={!statement || statement.entries.length === 0}
-            style={{ backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: statement?.entries.length ? 'pointer' : 'not-allowed' }}
+            onClick={handlePDFExport}
+            disabled={isExporting || !statement || statement.entries.length === 0}
+            style={{
+              backgroundColor: '#059669',
+              color: '#ffffff',
+              border: 'none',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              cursor: statement?.entries.length ? 'pointer' : 'not-allowed',
+              opacity: isExporting ? 0.7 : 1
+            }}
           >
-            📄 PDF Statement
+            {isExporting ? '⏳ Exporting...' : '📄 Download / Share PDF'}
           </button>
         </div>
       </div>
