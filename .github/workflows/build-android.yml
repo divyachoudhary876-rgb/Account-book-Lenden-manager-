@@ -22,7 +22,7 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Clean Conflicting Locks & Install Dependencies
+      - name: Install Frontend Dependencies
         working-directory: frontend
         run: |
           rm -f package-lock.json
@@ -32,7 +32,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Sync Capacitor Android Project
+      - name: Sync Capacitor Native Android Project
         working-directory: frontend
         run: |
           if [ ! -f "android/settings.gradle" ]; then
@@ -41,12 +41,12 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      - name: Dynamic Monotonic Version Code Bumping
+      - name: Enforce Monotonic Version Bumping
         working-directory: frontend/android/app
         run: |
           BUILD_NUM=${{ github.run_number }}
           VERSION_NAME="1.0.${BUILD_NUM}"
-          echo "Bumping versionCode to ${BUILD_NUM} and versionName to ${VERSION_NAME}"
+          echo "Injecting versionCode: ${BUILD_NUM}, versionName: ${VERSION_NAME}"
           sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUM}/g" build.gradle
           sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" build.gradle
 
@@ -64,7 +64,7 @@ jobs:
             -keypass "NeelkanthEnterprise@2026" \
             -dname "CN=Neelkanth, OU=Accounting, O=NeelkanthEnterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
 
-      - name: Configure Gradle Signing Configs
+      - name: Inject Immutable Signing Configs into Gradle
         working-directory: frontend/android/app
         run: |
           python3 -c "
@@ -97,7 +97,7 @@ jobs:
         working-directory: frontend/android
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload Signed APK Artifact
+      - name: Upload Signed Updateable APK
         uses: actions/upload-artifact@v4
         with:
           name: BusinessBook-v1.0.${{ github.run_number }}-UpdateReady
