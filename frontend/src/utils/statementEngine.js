@@ -1,5 +1,8 @@
 // frontend/src/utils/statementEngine.js
 
+/**
+ * Retrieve all vouchers for a firm
+ */
 export const getAllUniversalVouchers = (firmId = 'FIRM-001') => {
   try {
     const raw = localStorage.getItem(`app_vouchers_${firmId}`);
@@ -9,6 +12,9 @@ export const getAllUniversalVouchers = (firmId = 'FIRM-001') => {
   }
 };
 
+/**
+ * Retrieve account heads for a firm
+ */
 export const getAccountHeads = (firmId = 'FIRM-001') => {
   try {
     const raw = localStorage.getItem(`app_accounts_${firmId}`);
@@ -19,9 +25,9 @@ export const getAccountHeads = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Universal Double-Entry Ledger Generator (Account Milan & Statement)
+ * Generate Double-Entry Account Milan Ledger Statement
  */
-export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
+export const getAccountLedgerStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
   if (!targetAccountName) {
     return {
       accountName: '',
@@ -51,7 +57,6 @@ export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '')
 
   const targetLower = targetAccountName.trim().toLowerCase();
 
-  // Find all entries where targetAccount is on the Debit or Credit side
   const relevantVouchers = vouchers
     .filter(v => {
       const dr = (v.dr_account || v.dr_party || '').trim().toLowerCase();
@@ -113,3 +118,48 @@ export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '')
     closingBalanceType: runningBalance >= 0 ? 'Dr' : 'Cr'
   };
 };
+
+/**
+ * Export account statement to CSV format
+ */
+export const downloadCSVStatement = (statement, firmName = 'Firm') => {
+  if (!statement || !statement.entries) return;
+
+  const headers = ['#', 'Date', 'Voucher Type', 'Ref No', 'Particulars', 'Debit (Rs)', 'Credit (Rs)', 'Balance', 'Type', 'Narration'];
+  const rows = statement.entries.map(e => [
+    e.index,
+    e.date,
+    e.voucher_type,
+    e.voucher_no,
+    `"${e.particulars.replace(/"/g, '""')}"`,
+    e.debit.toFixed(2),
+    e.credit.toFixed(2),
+    e.running_balance.toFixed(2),
+    e.balance_type,
+    `"${(e.narration || '').replace(/"/g, '""')}"`
+  ]);
+
+  const csvContent = [
+    `"Account Statement: ${statement.accountName}"`,
+    `"Firm: ${firmName}"`,
+    `"Opening Balance: Rs. ${statement.openingBalance.toFixed(2)} ${statement.openingBalanceType}"`,
+    '',
+    headers.join(','),
+    ...rows.map(r => r.join(',')),
+    '',
+    `"Total Debit",${statement.totalDebit.toFixed(2)},"Total Credit",${statement.totalCredit.toFixed(2)}`,
+    `"Closing Balance",Rs. ${statement.closingBalance.toFixed(2)} ${statement.closingBalanceType}`
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${statement.accountName.replace(/\s+/g, '_')}_Statement.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// Aliases for backwards compatibility
+export const getAccountStatement = getAccountLedgerStatement;
