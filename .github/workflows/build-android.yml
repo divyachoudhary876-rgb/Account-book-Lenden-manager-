@@ -1,12 +1,11 @@
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
-name: Build and Distribute Business Book APK
+name: Build Business Book APK
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  build-and-release:
+  build-android:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -23,7 +22,7 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Clean & Install Dependencies
+      - name: Clean Conflicting Locks & Install Dependencies
         working-directory: frontend
         run: |
           rm -f package-lock.json
@@ -33,7 +32,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Capacitor Sync
+      - name: Sync Capacitor Android Project
         working-directory: frontend
         run: |
           if [ ! -f "android/settings.gradle" ]; then
@@ -42,15 +41,16 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      - name: Enforce Monotonic Version Code
+      - name: Dynamic Monotonic Version Code Bumping
         working-directory: frontend/android/app
         run: |
           BUILD_NUM=${{ github.run_number }}
           VERSION_NAME="1.0.${BUILD_NUM}"
+          echo "Bumping versionCode to ${BUILD_NUM} and versionName to ${VERSION_NAME}"
           sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUM}/g" build.gradle
           sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" build.gradle
 
-      - name: Configure Deterministic Keystore
+      - name: Configure Static Deterministic Master Keystore
         working-directory: frontend/android/app
         run: |
           rm -f master_release.keystore
@@ -64,12 +64,13 @@ jobs:
             -keypass "NeelkanthEnterprise@2026" \
             -dname "CN=Neelkanth, OU=Accounting, O=NeelkanthEnterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
 
-      - name: Inject Master Signing into Gradle
+      - name: Configure Gradle Signing Configs
         working-directory: frontend/android/app
         run: |
           python3 -c "
           with open('build.gradle', 'r') as f:
-              c = f.read()
+              content = f.read()
+
           signing_block = '''
               signingConfigs {
                   release {
@@ -80,27 +81,24 @@ jobs:
                   }
               }
           '''
-          if 'signingConfigs {' not in c:
-              c = c.replace('android {', 'android {\n' + signing_block)
-              c = c.replace('buildTypes {\n        debug {', 'buildTypes {\n        debug {\n            signingConfig signingConfigs.release')
-              c = c.replace('buildTypes {\n        release {', 'buildTypes {\n        release {\n            signingConfig signingConfigs.release')
+          if 'signingConfigs {' not in content:
+              content = content.replace('android {', 'android {\n' + signing_block)
+              content = content.replace('buildTypes {\n        debug {', 'buildTypes {\n        debug {\n            signingConfig signingConfigs.release')
+              content = content.replace('buildTypes {\n        release {', 'buildTypes {\n        release {\n            signingConfig signingConfigs.release')
               with open('build.gradle', 'w') as f:
-                  f.write(c)
+                  f.write(content)
           "
 
-      - name: Build Signed APK
+      - name: Grant Gradle Execution Permissions
         working-directory: frontend/android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+        run: chmod +x gradlew
 
-      - name: Publish In-App Update Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/heads/main')
+      - name: Assemble Signed Release APK
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload Signed APK Artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Business Book Update v1.0.${{ github.run_number }}
-          body: "Official in-place update release with accounting core sync, stock CRUD, and print-to-PDF engine."
-          files: frontend/android/app/build/outputs/apk/debug/app-debug.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: BusinessBook-v1.0.${{ github.run_number }}-UpdateReady
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
