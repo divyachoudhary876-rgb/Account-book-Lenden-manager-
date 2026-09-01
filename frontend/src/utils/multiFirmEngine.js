@@ -1,62 +1,47 @@
 // frontend/src/utils/multiFirmEngine.js
 
-export const getAllFirms = () => {
+export const DEFAULT_FIRM = {
+  id: 'FIRM-001',
+  legal_name: 'Neelkanth Enterprise',
+  trade_name: 'Neelkanth Group',
+  category: 'TRADING',
+  business_category: 'TRADING',
+  gstin: 'UNREGISTERED',
+  phone: '9829000000',
+  created_at: '2026-04-01T00:00:00.000Z'
+};
+
+export const getFirmsRegistry = () => {
   try {
-    return JSON.parse(localStorage.getItem('app_all_firms_registry') || '[]');
-  } catch (err) {
-    console.error("Failed to parse firm registry:", err);
-    return [];
+    const raw = localStorage.getItem('app_firms_registry');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    localStorage.setItem('app_firms_registry', JSON.stringify([DEFAULT_FIRM]));
+    return [DEFAULT_FIRM];
+  } catch {
+    return [DEFAULT_FIRM];
   }
 };
 
 export const getActiveFirm = () => {
   try {
-    return JSON.parse(localStorage.getItem('active_firm_profile') || 'null');
-  } catch (err) {
-    return null;
+    const firms = getFirmsRegistry();
+    const activeId = localStorage.getItem('app_active_firm_id');
+    const match = firms.find(f => f.id === activeId);
+    if (match) return match;
+
+    // Fallback to first available firm
+    const fallback = firms[0] || DEFAULT_FIRM;
+    localStorage.setItem('app_active_firm_id', fallback.id);
+    return fallback;
+  } catch {
+    return DEFAULT_FIRM;
   }
 };
 
-export const saveOrUpdateFirm = (firmData) => {
-  const existingFirms = getAllFirms();
-  const isEdit = Boolean(firmData.id);
-  
-  const firmId = isEdit ? firmData.id : `FIRM-${Date.now()}`;
-  const updatedFirm = {
-    ...firmData,
-    id: firmId,
-    updated_at: new Date().toISOString()
-  };
-
-  let newRegistry = [];
-  if (isEdit) {
-    newRegistry = existingFirms.map(f => f.id === firmId ? updatedFirm : f);
-  } else {
-    newRegistry = [...existingFirms, updatedFirm];
-    
-    // Initialize isolated local storage namespaces
-    localStorage.setItem(`app_inventory_${firmId}`, JSON.stringify([]));
-    localStorage.setItem(`app_journal_entries_${firmId}`, JSON.stringify([]));
-    localStorage.setItem(`app_account_heads_${firmId}`, JSON.stringify([]));
-  }
-
-  localStorage.setItem('app_all_firms_registry', JSON.stringify(newRegistry));
-  localStorage.setItem('active_firm_profile', JSON.stringify(updatedFirm));
-
-  window.dispatchEvent(new Event('storage'));
-  return updatedFirm;
-};
-
-export const createInitialFirmProfile = (firmPayload) => {
-  return saveOrUpdateFirm(firmPayload);
-};
-
-export const switchActiveFirm = (firmId) => {
-  const existingFirms = getAllFirms();
-  const targetFirm = existingFirms.find(f => f.id === firmId);
-  if (!targetFirm) throw new Error("Selected firm context not found.");
-
-  localStorage.setItem('active_firm_profile', JSON.stringify(targetFirm));
-  window.dispatchEvent(new Event('storage'));
-  return targetFirm;
+export const setActiveFirmId = (firmId) => {
+  localStorage.setItem('app_active_firm_id', firmId);
+  window.dispatchEvent(new Event('app_state_updated'));
 };
