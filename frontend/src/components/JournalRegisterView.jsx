@@ -9,7 +9,7 @@ export default function JournalRegisterView({ firm }) {
   const firmName = firm?.legal_name || firm?.name || 'Enterprise Profile';
 
   const [vouchers, setVouchers] = useState([]);
-  const [sortOrder, setSortOrder] = useState('ASC'); // 'ASC' = Date 1 to 31 | 'DESC' = Latest First
+  const [sortOrder, setSortOrder] = useState('ASC');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [fromDate, setFromDate] = useState('');
@@ -29,7 +29,6 @@ export default function JournalRegisterView({ firm }) {
 
   const filteredVouchers = vouchers.filter(v => {
     const vDate = v.voucher_date || v.date;
-    
     if (fromDate && vDate < fromDate) return false;
     if (toDate && vDate > toDate) return false;
 
