@@ -1,51 +1,10 @@
 // frontend/src/utils/stockInventoryEngine.js
 
-export const STANDARD_MEASUREMENT_UNITS = [
-  // 1. Quantity & Count (संख्या / गिनती)
-  { code: 'Pcs', label: 'Pcs (Pieces / नग)', category: 'COUNT', uqc: 'PCS' },
-  { code: 'Thousand', label: 'Thousand (हजार / K)', category: 'COUNT', uqc: 'THD' },
-  { code: 'Dozens', label: 'Dozens (दर्जन)', category: 'COUNT', uqc: 'DOZ' },
-  { code: 'Units', label: 'Units (इकाई)', category: 'COUNT', uqc: 'UNT' },
-  
-  // 2. Weight & Mass (भार / वजन)
-  { code: 'MT', label: 'MT (Metric Ton / मीट्रिक टन)', category: 'WEIGHT', uqc: 'MTR' },
-  { code: 'Quintal', label: 'Quintal (क्विंटल)', category: 'WEIGHT', uqc: 'QTL' },
-  { code: 'Kg', label: 'Kg (Kilogram / किलोग्राम)', category: 'WEIGHT', uqc: 'KGS' },
-  { code: 'Grams', label: 'Grams (ग्राम)', category: 'WEIGHT', uqc: 'GRM' },
+import { saveUniversalVoucher } from './voucherPostingEngine.js';
 
-  // 3. Volume & Liquid (आयतन / तरल)
-  { code: 'Liters', label: 'Liters (लीटर)', category: 'VOLUME', uqc: 'LTR' },
-  { code: 'KL', label: 'KL (Kiloliter / किलोलीटर)', category: 'VOLUME', uqc: 'KLR' },
-  { code: 'ML', label: 'ML (Milliliter / मिलीलीटर)', category: 'VOLUME', uqc: 'MLT' },
-
-  // 4. Logistics & Bulk Volume (ढुलाई / घन आयतन)
-  { code: 'Trips', label: 'Trips (ट्रिप / चक्कर)', category: 'LOGISTICS', uqc: 'TRP' },
-  { code: 'Trolley', label: 'Trolley (ट्रॉली)', category: 'LOGISTICS', uqc: 'TRL' },
-  { code: 'Dumper', label: 'Dumper (डंपर)', category: 'LOGISTICS', uqc: 'DMP' },
-  { code: 'Gadi', label: 'Gadi (गाड़ी / ट्रक लोड)', category: 'LOGISTICS', uqc: 'GAD' },
-  { code: 'Brass', label: 'Brass (ब्रास)', category: 'LOGISTICS', uqc: 'BRS' },
-  { code: 'CFT', label: 'CFT (Cubic Feet / घन फीट)', category: 'LOGISTICS', uqc: 'CFT' },
-  { code: 'CBM', label: 'CBM (Cubic Meter / घन मीटर)', category: 'LOGISTICS', uqc: 'CUM' },
-
-  // 5. Packaging (पैकिंग)
-  { code: 'Bags', label: 'Bags (थैली / कट्टा / बोरी)', category: 'PACKAGING', uqc: 'BAG' },
-  { code: 'Boxes', label: 'Boxes (पेटी / कार्टन)', category: 'PACKAGING', uqc: 'BOX' },
-  { code: 'Bundles', label: 'Bundles (बंडल / गट्ठा)', category: 'PACKAGING', uqc: 'BDL' },
-  { code: 'Rolls', label: 'Rolls (रोल)', category: 'PACKAGING', uqc: 'ROL' },
-
-  // 6. Length & Area (लम्बाई / क्षेत्रफल)
-  { code: 'Meters', label: 'Meters (मीटर)', category: 'AREA_LENGTH', uqc: 'MTR' },
-  { code: 'Feet', label: 'Feet (फीट)', category: 'AREA_LENGTH', uqc: 'FOT' },
-  { code: 'SqFt', label: 'Sq. Ft. (वर्ग फीट)', category: 'AREA_LENGTH', uqc: 'SQF' },
-  { code: 'SqYards', label: 'Sq. Yards (वर्ग गज)', category: 'AREA_LENGTH', uqc: 'SQY' }
-];
-
-export const DEFAULT_STOCK_STARTER = [
-  { id: 'STK-01', item_name: 'Fuel / Diesel', unit: 'Liters', current_stock: 500, unit_purchase_price: 90, selling_price: 95 },
-  { id: 'STK-02', item_name: 'Finished Goods Batch-A', unit: 'Thousand', current_stock: 50, unit_purchase_price: 5500, selling_price: 7500 },
-  { id: 'STK-03', item_name: 'Raw Material Type-1', unit: 'MT', current_stock: 25, unit_purchase_price: 4200, selling_price: 5500 }
-];
-
+/**
+ * Retrieve inventory stock items for active firm
+ */
 export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
   try {
     const raw = localStorage.getItem(`app_stock_${firmId}`);
@@ -53,82 +12,97 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-    localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(DEFAULT_STOCK_STARTER));
-    return DEFAULT_STOCK_STARTER;
+    
+    // Seed default baseline items if empty
+    const defaultStock = [
+      { id: 'STK-001', item_name: 'Diesel', unit: 'Ltr', current_stock: 500, unit_purchase_price: 90.00, selling_price: 0 },
+      { id: 'STK-002', item_name: 'Coal / Steam Coal', unit: 'MT', current_stock: 25, unit_purchase_price: 8500.00, selling_price: 0 },
+      { id: 'STK-003', item_name: 'Biomass Briquette / Husk', unit: 'MT', current_stock: 40, unit_purchase_price: 4200.00, selling_price: 0 }
+    ];
+    localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(defaultStock));
+    return defaultStock;
   } catch {
-    return DEFAULT_STOCK_STARTER;
+    return [];
   }
 };
 
-export const saveStockItemMaster = (firmId = 'FIRM-001', payload) => {
-  const stockList = getStockItemsByFirm(firmId);
-  const cleanName = (payload.item_name || '').trim();
+/**
+ * Record Internal Fuel / Material Consumption
+ * 1. Validates and deducts physical quantity from stock
+ * 2. Posts an automated Double-Entry Journal Voucher
+ */
+export const recordStockConsumption = (firmId = 'FIRM-001', consumptionData = {}) => {
+  const {
+    item_name = 'Diesel',
+    quantity = 0,
+    consumption_date = new Date().toISOString().split('T')[0],
+    expense_head = 'Tractor Fuel & Running Expense',
+    machinery_ref = 'Tractor',
+    remarks = ''
+  } = consumptionData;
 
-  if (!cleanName) throw new Error("Item Name is required.");
+  const qty = parseFloat(quantity || 0);
+  if (isNaN(qty) || qty <= 0) {
+    throw new Error('⚠️ Consumption quantity zero se adhik honi chahiye.');
+  }
 
-  const itemPayload = {
-    id: payload.id || `STK-${Date.now()}`,
-    item_name: cleanName,
-    unit: payload.unit || 'Pcs',
-    current_stock: parseFloat(payload.current_stock || 0),
-    unit_purchase_price: parseFloat(payload.unit_purchase_price || 0),
-    selling_price: parseFloat(payload.selling_price || 0),
-    updated_at: new Date().toISOString()
+  const stockKey = `app_stock_${firmId}`;
+  const currentStockList = getStockItemsByFirm(firmId);
+
+  const itemIndex = currentStockList.findIndex(
+    i => (i.item_name || '').trim().toLowerCase() === item_name.trim().toLowerCase()
+  );
+
+  if (itemIndex === -1) {
+    throw new Error(`⚠️ Item "${item_name}" stock register me nahi mila.`);
+  }
+
+  const targetItem = currentStockList[itemIndex];
+  const availableQty = parseFloat(targetItem.current_stock || 0);
+  const unitRate = parseFloat(targetItem.unit_purchase_price || targetItem.purchase_rate || 0);
+
+  // NEGATIVE STOCK GUARD
+  if (availableQty - qty < 0) {
+    throw new Error(
+      `⛔ Insufficient Stock Balance!\n\n` +
+      `• Available ${item_name}: ${availableQty.toFixed(2)} ${targetItem.unit || 'Units'}\n` +
+      `• Requested Consumption: ${qty.toFixed(2)} ${targetItem.unit || 'Units'}\n` +
+      `• Shortfall: ${(qty - availableQty).toFixed(2)} ${targetItem.unit || 'Units'}\n\n` +
+      `Pehle Purchase Entry karke stock add karein.`
+    );
+  }
+
+  const totalExpenseAmount = qty * unitRate;
+
+  // 1. Deduct Stock Quantity
+  currentStockList[itemIndex].current_stock = availableQty - qty;
+  currentStockList[itemIndex].updated_at = new Date().toISOString();
+  localStorage.setItem(stockKey, JSON.stringify(currentStockList));
+
+  // 2. Automated Double-Entry Journal Voucher (JV) Posting
+  const narrationText = `Consumed ${qty} ${targetItem.unit || 'Ltr'} ${item_name} in ${machinery_ref} @ ₹${unitRate.toFixed(2)}/${targetItem.unit || 'Unit'}. ${remarks ? '(' + remarks + ')' : ''}`;
+
+  saveUniversalVoucher(firmId, {
+    voucher_type: 'JOURNAL',
+    voucher_date: consumption_date,
+    dr_account: expense_head.trim(),
+    cr_account: `${item_name.trim()} Stock Account`,
+    amount: totalExpenseAmount,
+    reference_no: `CNS-${Date.now().toString().slice(-4)}`,
+    narration: narrationText
+  });
+
+  // 3. Trigger Reactive Global Events
+  window.dispatchEvent(new Event('stock_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+
+  return {
+    success: true,
+    item_name,
+    unit: targetItem.unit || 'Ltr',
+    quantity_consumed: qty,
+    remaining_stock: currentStockList[itemIndex].current_stock,
+    unit_cost: unitRate,
+    total_expense: totalExpenseAmount
   };
-
-  let updatedList;
-  const existingIdx = stockList.findIndex(s => s.id === itemPayload.id || s.item_name.toLowerCase() === cleanName.toLowerCase());
-
-  if (existingIdx >= 0) {
-    updatedList = [...stockList];
-    updatedList[existingIdx] = { ...updatedList[existingIdx], ...itemPayload };
-  } else {
-    updatedList = [itemPayload, ...stockList];
-  }
-
-  localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(updatedList));
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('stock_updated'));
-  return itemPayload;
-};
-
-export const deleteStockItemMaster = (firmId = 'FIRM-001', itemId) => {
-  const stockList = getStockItemsByFirm(firmId);
-  const updatedList = stockList.filter(item => item.id !== itemId);
-  localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(updatedList));
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('stock_updated'));
-  return true;
-};
-
-export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName, qtyDelta, unitRate = 0) => {
-  const stock = getStockItemsByFirm(firmId);
-  let item = stock.find(s => s.item_name.toLowerCase() === itemName.trim().toLowerCase());
-
-  if (!item) {
-    item = {
-      id: `STK-${Date.now()}`,
-      item_name: itemName.trim(),
-      unit: 'Units',
-      current_stock: Math.max(0, qtyDelta),
-      unit_purchase_price: unitRate,
-      selling_price: unitRate * 1.2,
-      updated_at: new Date().toISOString()
-    };
-    stock.push(item);
-  } else {
-    const curStock = parseFloat(item.current_stock || 0);
-    const newStock = curStock + qtyDelta;
-
-    if (qtyDelta > 0 && unitRate > 0) {
-      const curVal = curStock * parseFloat(item.unit_purchase_price || 0);
-      const inwardVal = qtyDelta * unitRate;
-      item.unit_purchase_price = newStock > 0 ? parseFloat(((curVal + inwardVal) / newStock).toFixed(2)) : unitRate;
-    }
-    item.current_stock = newStock;
-    item.updated_at = new Date().toISOString();
-  }
-
-  localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(stock));
-  return item;
 };
