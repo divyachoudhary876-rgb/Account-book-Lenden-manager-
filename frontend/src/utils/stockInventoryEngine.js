@@ -3,7 +3,7 @@
 import { saveUniversalVoucher } from './voucherPostingEngine.js';
 
 /**
- * Retrieve inventory stock items for active firm
+ * Retrieve inventory stock items for the active firm
  */
 export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
   try {
@@ -13,11 +13,12 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
     
-    // Seed default baseline items if empty
+    // Default baseline items for initial setup
     const defaultStock = [
       { id: 'STK-001', item_name: 'Diesel', unit: 'Ltr', current_stock: 500, unit_purchase_price: 90.00, selling_price: 0 },
       { id: 'STK-002', item_name: 'Coal / Steam Coal', unit: 'MT', current_stock: 25, unit_purchase_price: 8500.00, selling_price: 0 },
-      { id: 'STK-003', item_name: 'Biomass Briquette / Husk', unit: 'MT', current_stock: 40, unit_purchase_price: 4200.00, selling_price: 0 }
+      { id: 'STK-003', item_name: 'Pakki Eent (Red Bricks - 1st Class)', unit: 'Pcs', current_stock: 50000, unit_purchase_price: 5.50, selling_price: 7.50 },
+      { id: 'STK-004', item_name: 'Biomass Briquette / Husk', unit: 'MT', current_stock: 40, unit_purchase_price: 4200.00, selling_price: 0 }
     ];
     localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(defaultStock));
     return defaultStock;
@@ -27,9 +28,54 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Record Internal Fuel / Material Consumption
- * 1. Validates and deducts physical quantity from stock
- * 2. Posts an automated Double-Entry Journal Voucher
+ * Update stock quantity for Sales Invoicing, Purchase, and Stock Adjustments
+ * Exported specifically to resolve Vite / Rollup build integration.
+ */
+export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyDelta = 0, unitRate = null) => {
+  if (!itemName) return false;
+
+  const stockKey = `app_stock_${firmId}`;
+  const stockList = getStockItemsByFirm(firmId);
+  const normalizedTarget = itemName.trim().toLowerCase();
+
+  const itemIndex = stockList.findIndex(
+    i => (i.item_name || '').trim().toLowerCase() === normalizedTarget
+  );
+
+  const delta = parseFloat(qtyDelta || 0);
+
+  if (itemIndex !== -1) {
+    const currentStock = parseFloat(stockList[itemIndex].current_stock || 0);
+    const newStock = currentStock + delta; // delta is negative for sales, positive for purchase
+
+    stockList[itemIndex].current_stock = newStock;
+    if (unitRate !== null && !isNaN(parseFloat(unitRate)) && parseFloat(unitRate) > 0) {
+      stockList[itemIndex].unit_purchase_price = parseFloat(unitRate);
+    }
+    stockList[itemIndex].updated_at = new Date().toISOString();
+  } else {
+    // If new item created via invoice/purchase
+    stockList.push({
+      id: `STK-${Date.now()}`,
+      item_name: itemName.trim(),
+      unit: 'Pcs',
+      current_stock: delta > 0 ? delta : 0,
+      unit_purchase_price: unitRate ? parseFloat(unitRate) : 0,
+      selling_price: unitRate ? parseFloat(unitRate) : 0,
+      updated_at: new Date().toISOString()
+    });
+  }
+
+  localStorage.setItem(stockKey, JSON.stringify(stockList));
+  window.dispatchEvent(new Event('stock_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+
+  return true;
+};
+
+/**
+ * Record Internal Material / Fuel Consumption (e.g., Diesel in Tractor)
+ * Deducts physical quantity and automatically posts a Double-Entry Journal Voucher (JV).
  */
 export const recordStockConsumption = (firmId = 'FIRM-001', consumptionData = {}) => {
   const {
@@ -61,7 +107,7 @@ export const recordStockConsumption = (firmId = 'FIRM-001', consumptionData = {}
   const availableQty = parseFloat(targetItem.current_stock || 0);
   const unitRate = parseFloat(targetItem.unit_purchase_price || targetItem.purchase_rate || 0);
 
-  // NEGATIVE STOCK GUARD
+  // STRICT NEGATIVE STOCK GUARD
   if (availableQty - qty < 0) {
     throw new Error(
       `⛔ Insufficient Stock Balance!\n\n` +
@@ -105,4 +151,34 @@ export const recordStockConsumption = (firmId = 'FIRM-001', consumptionData = {}
     unit_cost: unitRate,
     total_expense: totalExpenseAmount
   };
+};
+
+/**
+ * Save or Edit an Item in Stock Master
+ */
+export const saveStockItem = (firmId = 'FIRM-001', itemData = {}) => {
+  const stockKey = `app_stock_${firmId}`;
+  const stockList = getStockItemsByFirm(firmId);
+
+  const newItem = {
+    id: itemData.id || `STK-${Date.now()}`,
+    item_name: itemData.item_name.trim(),
+    unit: itemData.unit || 'Pcs',
+    current_stock: parseFloat(itemData.current_stock || 0),
+    unit_purchase_price: parseFloat(itemData.unit_purchase_price || 0),
+    selling_price: parseFloat(itemData.selling_price || 0),
+    updated_at: new Date().toISOString()
+  };
+
+  const existingIdx = stockList.findIndex(i => i.id === newItem.id);
+  if (existingIdx !== -1) {
+    stockList[existingIdx] = newItem;
+  } else {
+    stockList.push(newItem);
+  }
+
+  localStorage.setItem(stockKey, JSON.stringify(stockList));
+  window.dispatchEvent(new Event('stock_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+  return newItem;
 };
