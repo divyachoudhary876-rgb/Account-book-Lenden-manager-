@@ -1,19 +1,18 @@
 // frontend/src/components/JournalRegisterView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { getFirmVouchers } from '../utils/journalEngine.js';
-import { downloadJournalPDF } from '../utils/pdfDownloadEngine.js';
+import { getAllUniversalVouchers } from '../utils/statementEngine.js';
+import { downloadJournalRegisterPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function JournalRegisterView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
-  const firmName = firm?.legal_name || 'Neelkanth Enterprise';
-
   const [vouchers, setVouchers] = useState([]);
-  const [filterType, setFilterType] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [isExporting, setIsExporting] = useState(false);
 
   const loadVouchers = () => {
-    const list = getFirmVouchers(activeFirmId);
+    const list = getAllUniversalVouchers(activeFirmId);
     setVouchers(list);
   };
 
@@ -21,84 +20,137 @@ export default function JournalRegisterView({ firm }) {
     loadVouchers();
     window.addEventListener('app_state_updated', loadVouchers);
     return () => window.removeEventListener('app_state_updated', loadVouchers);
-  }, [firm, activeFirmId]);
+  }, [activeFirmId]);
 
   const filtered = vouchers.filter(v => {
-    const matchesType = filterType === 'ALL' || v.voucher_type === filterType;
-    const query = searchQuery.toLowerCase();
     const matchesSearch = 
-      (v.dr_account || '').toLowerCase().includes(query) ||
-      (v.cr_account || '').toLowerCase().includes(query) ||
-      (v.narration || '').toLowerCase().includes(query) ||
-      (v.id || '').toLowerCase().includes(query);
-    return matchesType && matchesSearch;
+      (v.dr_account || '').toLowerCase().includes(search.toLowerCase()) ||
+      (v.cr_account || '').toLowerCase().includes(search.toLowerCase()) ||
+      (v.voucher_number || '').toLowerCase().includes(search.toLowerCase()) ||
+      (v.narration || '').toLowerCase().includes(search.toLowerCase());
+
+    const matchesType = typeFilter === 'ALL' || (v.voucher_type || v.type) === typeFilter;
+    return matchesSearch && matchesType;
   });
 
-  const totalAmount = filtered.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
+  const handleExportPDF = async () => {
+    if (filtered.length === 0) {
+      alert("⚠️ No vouchers to export.");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      await downloadJournalRegisterPDF(filtered, firm);
+    } catch (e) {
+      alert("PDF Export Failed: " + e.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+    <div style={{ maxWidth: '950px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '30px' }}>
+      
+      {/* Control Header */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px 20px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📖 General Journal / Day Book</h3>
-          <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firmName} | Entries: {filtered.length}</span>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📝</span> General Journal Register (रोज़नामचा / Daybook)
+          </h3>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Complete Chronological Double-Entry Journal Audit</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button 
-            onClick={() => downloadJournalPDF(firmName, filtered, filterType)} 
-            style={{ backgroundColor: '#dc2626', color: '#ffffff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-          >
-            📄 Download Journal PDF
-          </button>
-        </div>
+
+        <button
+          onClick={handleExportPDF}
+          disabled={isExporting || filtered.length === 0}
+          style={{
+            backgroundColor: '#059669',
+            color: '#ffffff',
+            border: 'none',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            cursor: filtered.length ? 'pointer' : 'not-allowed',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          {isExporting ? '⏳ Saving...' : '📄 Download / Save PDF'}
+        </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', marginBottom: '14px' }}>
-        <input type="text" placeholder="🔍 Search voucher, party, narration..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={inputStyle} />
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} style={inputStyle}>
-          <option value="ALL">All Vouchers</option>
-          <option value="SALES">Sales Invoices</option>
-          <option value="PURCHASE">Purchase Inward</option>
-          <option value="JOURNAL">General Journal</option>
+      {/* Filter Row */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '12px 16px', border: '1px solid #cbd5e1', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          placeholder="🔍 Search by Account, Voucher No, Narration..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ flex: 1, minWidth: '200px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+        />
+        <select
+          value={typeFilter}
+          onChange={e => setTypeFilter(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold' }}
+        >
+          <option value="ALL">All Voucher Types</option>
+          <option value="PAYMENT">Payment (PV)</option>
+          <option value="RECEIPT">Receipt (RV)</option>
+          <option value="CONTRA">Contra</option>
+          <option value="JOURNAL">Journal (JV)</option>
+          <option value="SALES">Sales</option>
+          <option value="PURCHASE">Purchase</option>
         </select>
       </div>
 
-      <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '600px' }}>
+      {/* Register Table */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.04)', overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
           <thead>
             <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-              <th style={{ padding: '9px 10px', textAlign: 'left' }}>Date</th>
-              <th style={{ padding: '9px 10px', textAlign: 'left' }}>Type</th>
-              <th style={{ padding: '9px 10px', textAlign: 'left' }}>Dr / Cr Accounts</th>
-              <th style={{ padding: '9px 10px', textAlign: 'right' }}>Amount (₹)</th>
+              <th style={{ padding: '8px', textAlign: 'center' }}>#</th>
+              <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
+              <th style={{ padding: '8px', textAlign: 'left' }}>Voucher No</th>
+              <th style={{ padding: '8px', textAlign: 'left' }}>Type</th>
+              <th style={{ padding: '8px', textAlign: 'left' }}>Debit (Dr) / Credit (Cr)</th>
+              <th style={{ padding: '8px', textAlign: 'right' }}>Amount (₹)</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>No entries found.</td></tr>
+              <tr>
+                <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+                  No journal records found matching the filters.
+                </td>
+              </tr>
             ) : (
-              filtered.map(v => (
-                <tr key={v.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '9px 10px', whiteSpace: 'nowrap' }}>{v.voucher_date || v.date}</td>
-                  <td style={{ padding: '9px 10px' }}>
-                    <span style={{ backgroundColor: v.voucher_type === 'SALES' ? '#dbeafe' : v.voucher_type === 'PURCHASE' ? '#dcfce7' : '#f1f5f9', color: v.voucher_type === 'SALES' ? '#1e40af' : v.voucher_type === 'PURCHASE' ? '#166534' : '#334155', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>
-                      {v.voucher_type}
+              filtered.map((v, idx) => (
+                <tr key={v.id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '8px', textAlign: 'center', color: '#64748b' }}>{idx + 1}</td>
+                  <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{v.voucher_date || v.date}</td>
+                  <td style={{ padding: '8px', fontWeight: 'bold' }}>{v.voucher_number || v.reference_no}</td>
+                  <td style={{ padding: '8px' }}>
+                    <span style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>
+                      {v.voucher_type || v.type}
                     </span>
                   </td>
-                  <td style={{ padding: '9px 10px' }}>
-                    <div><strong>Dr:</strong> <span style={{ color: '#b91c1c' }}>{v.dr_account}</span></div>
-                    <div><strong>Cr:</strong> <span style={{ color: '#15803d' }}>{v.cr_account}</span></div>
+                  <td style={{ padding: '8px' }}>
+                    <div style={{ fontWeight: 'bold', color: '#059669' }}>Dr: {v.dr_account || v.dr_party}</div>
+                    <div style={{ fontWeight: 'bold', color: '#dc2626', fontSize: '11px' }}>Cr: {v.cr_account || v.cr_party}</div>
                     {v.narration && <div style={{ fontSize: '10px', color: '#64748b' }}>{v.narration}</div>}
                   </td>
-                  <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 'bold' }}>₹{parseFloat(v.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', fontWeight: '800', color: '#0f172a' }}>
+                    ₹{parseFloat(v.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
     </div>
   );
 }
-
-const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' };
