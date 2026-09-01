@@ -26,7 +26,7 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!accountName.trim()) {
-      alert("⚠️ Please enter Account / Party Name.");
+      alert("⚠️ Account / Party Name enter karna zaroori hai.");
       return;
     }
 
@@ -41,7 +41,7 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
         phone
       });
 
-      alert(`✓ Ledger Account "${created.account_name}" Created Successfully!`);
+      alert(`✓ Ledger Account "${created.account_name}" Successfully Created!`);
       setAccountName('');
       setOpeningBalance('0');
       setGstin('');
@@ -53,206 +53,75 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
     }
   };
 
-  const availableSubGroups = ACCOUNT_HIERARCHY[primaryType]?.subGroups || [];
-
   return (
     <div style={overlayStyle}>
       <div style={modalCardStyle}>
-        
-        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h3 style={{ margin: 0, color: '#1e293b', fontSize: '18px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px' }}>➕</span> Create New Ledger Account
+            <span>➕</span> Create New Ledger Account
           </h3>
-          <button 
-            type="button" 
-            onClick={onClose} 
-            style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}
-          >
-            ✕
-          </button>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✕</button>
         </div>
 
         <form onSubmit={handleSubmit}>
-          
-          {/* Account / Party Name */}
-          <div style={{ marginBottom: '14px' }}>
+          <div style={{ marginBottom: '12px' }}>
             <label style={labelStyle}>Account / Party Name *</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Propritor Capital A/C / Shyam Steel" 
-              value={accountName} 
-              onChange={e => setAccountName(e.target.value)} 
-              style={inputStyle} 
-              required 
-            />
+            <input type="text" placeholder="e.g. Propritor Capital A/C / Shyam Steel" value={accountName} onChange={e => setAccountName(e.target.value)} style={inputStyle} required />
           </div>
 
-          {/* 1. Primary Account Type & 2. Accounting Sub-Group */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
             <div>
               <label style={labelStyle}>1. Primary Account Type *</label>
-              <select 
-                value={primaryType} 
-                onChange={e => handlePrimaryTypeChange(e.target.value)} 
-                style={inputStyle}
-              >
-                {Object.entries(ACCOUNT_HIERARCHY).map(([key, item]) => (
-                  <option key={key} value={key}>{item.label}</option>
-                ))}
+              <select value={primaryType} onChange={e => handlePrimaryTypeChange(e.target.value)} style={inputStyle}>
+                {Object.entries(ACCOUNT_HIERARCHY).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
               </select>
             </div>
             <div>
               <label style={labelStyle}>2. Accounting Sub-Group *</label>
-              <select 
-                value={subGroup} 
-                onChange={e => setSubGroup(e.target.value)} 
-                style={inputStyle}
-              >
-                {availableSubGroups.map(sg => (
-                  <option key={sg} value={sg}>{sg}</option>
-                ))}
+              <select value={subGroup} onChange={e => setSubGroup(e.target.value)} style={inputStyle}>
+                {ACCOUNT_HIERARCHY[primaryType]?.subGroups.map(sg => <option key={sg} value={sg}>{sg}</option>)}
               </select>
             </div>
           </div>
 
-          {/* Opening Balance & Balance Type */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
             <div>
               <label style={labelStyle}>Opening Balance (₹)</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                value={openingBalance} 
-                onChange={e => setOpeningBalance(e.target.value)} 
-                style={inputStyle} 
-              />
+              <input type="number" step="0.01" value={openingBalance} onChange={e => setOpeningBalance(e.target.value)} style={inputStyle} />
             </div>
             <div>
               <label style={labelStyle}>Balance Type</label>
-              <select 
-                value={balanceType} 
-                onChange={e => setBalanceType(e.target.value)} 
-                style={inputStyle}
-              >
+              <select value={balanceType} onChange={e => setBalanceType(e.target.value)} style={inputStyle}>
                 <option value="Dr">Debit (Dr)</option>
                 <option value="Cr">Credit (Cr)</option>
               </select>
             </div>
           </div>
 
-          {/* GSTIN & Mobile / Phone */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '18px' }}>
             <div>
               <label style={labelStyle}>GSTIN Number (Optional)</label>
-              <input 
-                type="text" 
-                placeholder="08AAAAA0000A1Z5" 
-                value={gstin} 
-                onChange={e => setGstin(e.target.value)} 
-                style={inputStyle} 
-              />
+              <input type="text" placeholder="08AAAAA0000A1Z5" value={gstin} onChange={e => setGstin(e.target.value)} style={inputStyle} />
             </div>
             <div>
               <label style={labelStyle}>Mobile / Phone</label>
-              <input 
-                type="tel" 
-                placeholder="98290XXXXX" 
-                value={phone} 
-                onChange={e => setPhone(e.target.value)} 
-                style={inputStyle} 
-              />
+              <input type="tel" placeholder="98290XXXXX" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} />
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '12px' }}>
-            <button 
-              type="button" 
-              onClick={onClose} 
-              style={cancelButtonStyle}
-            >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              style={saveButtonStyle}
-            >
-              💾 Save Account
-            </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '10px' }}>
+            <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancel</button>
+            <button type="submit" style={saveBtnStyle}>💾 Save Account</button>
           </div>
-
         </form>
       </div>
     </div>
   );
 }
 
-const overlayStyle = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(15, 23, 42, 0.65)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 9999,
-  padding: '16px'
-};
-
-const modalCardStyle = {
-  backgroundColor: '#ffffff',
-  borderRadius: '16px',
-  padding: '24px 20px',
-  width: '100%',
-  maxWidth: '440px',
-  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
-  boxSizing: 'border-box'
-};
-
-const labelStyle = {
-  display: 'block',
-  fontSize: '12px',
-  fontWeight: 'bold',
-  color: '#334155',
-  marginBottom: '6px'
-};
-
-const inputStyle = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: '8px',
-  border: '1px solid #cbd5e1',
-  fontSize: '13px',
-  boxSizing: 'border-box',
-  backgroundColor: '#ffffff',
-  color: '#0f172a'
-};
-
-const cancelButtonStyle = {
-  backgroundColor: '#94a3b8',
-  color: '#ffffff',
-  border: 'none',
-  padding: '12px',
-  borderRadius: '8px',
-  fontWeight: 'bold',
-  cursor: 'pointer',
-  fontSize: '14px'
-};
-
-const saveButtonStyle = {
-  backgroundColor: '#10b981',
-  color: '#ffffff',
-  border: 'none',
-  padding: '12px',
-  borderRadius: '8px',
-  fontWeight: 'bold',
-  cursor: 'pointer',
-  fontSize: '14px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: '6px'
-};
+const overlayStyle = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '16px' };
+const modalCardStyle = { backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)', boxSizing: 'border-box' };
+const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
+const inputStyle = { width: '100%', padding: '9px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff' };
+const cancelBtnStyle = { backgroundColor: '#94a3b8', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' };
+const saveBtnStyle = { backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' };
