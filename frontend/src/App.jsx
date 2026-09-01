@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { getActiveFirm, getFirmsRegistry, setActiveFirmId } from './utils/multiFirmEngine.js';
 import { getDynamicWorkflowMenu } from './utils/navigationRegistry.js';
+import { getFirmFinancialYears, createFinancialYear } from './utils/financialYearEngine.js';
 
 // Application Core Views
 import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
@@ -27,10 +28,16 @@ export default function App() {
   const [firmsList, setFirmsList] = useState([]);
   const [currentView, setCurrentView] = useState('dashboard');
   
+  // Navigation & Drawer States
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCreatingFirm, setIsCreatingFirm] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+
+  // Financial Year State
+  const [fyList, setFyList] = useState([]);
   const [selectedFY, setSelectedFY] = useState('FY 2026-27');
+  const [isAddFYModalOpen, setIsAddFYModalOpen] = useState(false);
+  const [newFYStartYear, setNewFYStartYear] = useState('2027');
 
   const refreshState = () => {
     const list = getFirmsRegistry();
@@ -40,13 +47,23 @@ export default function App() {
 
     if (list.length === 0) {
       setIsCreatingFirm(true);
+    } else if (firm) {
+      const availableYears = getFirmFinancialYears(firm.id);
+      setFyList(availableYears);
+      if (!availableYears.some(y => y.label === selectedFY)) {
+        setSelectedFY(availableYears[0]?.label || 'FY 2026-27');
+      }
     }
   };
 
   useEffect(() => {
     refreshState();
     window.addEventListener('app_state_updated', refreshState);
-    return () => window.removeEventListener('app_state_updated', refreshState);
+    window.addEventListener('fy_state_updated', refreshState);
+    return () => {
+      window.removeEventListener('app_state_updated', refreshState);
+      window.removeEventListener('fy_state_updated', refreshState);
+    };
   }, []);
 
   const menuItems = getDynamicWorkflowMenu(activeFirm?.category || 'TRADING');
@@ -69,12 +86,36 @@ export default function App() {
     setCurrentView(item.key);
   };
 
+  const handleFYSelectChange = (e) => {
+    const val = e.target.value;
+    if (val === 'ADD_NEW_FY') {
+      setIsAddFYModalOpen(true);
+    } else {
+      setSelectedFY(val);
+      localStorage.setItem(`app_active_fy_${activeFirm?.id}`, val);
+    }
+  };
+
+  const handleCreateFYSubmit = (e) => {
+    e.preventDefault();
+    try {
+      const created = createFinancialYear(activeFirm?.id || 'FIRM-001', newFYStartYear);
+      setSelectedFY(created.label);
+      setIsAddFYModalOpen(false);
+      refreshState();
+      alert(`✓ ${created.label} (01-Apr-${newFYStartYear} to 31-Mar-${parseInt(newFYStartYear, 10) + 1}) registered successfully!`);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
+      {/* 1. In-Place Update Notification */}
       <AppUpdateBanner />
 
-      {/* Classic Header Top Bar */}
+      {/* 2. Top Header Bar */}
       <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {currentView !== 'dashboard' && !isCreatingFirm ? (
@@ -102,8 +143,10 @@ export default function App() {
         </div>
       </div>
 
-      {/* Sub-Header Bar */}
+      {/* 3. Sub-Header: Firm Picker + Dynamic FY Picker + Menu Button */}
       <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        
+        {/* Firm Picker */}
         <div style={{ flex: 1.3, minWidth: '130px' }}>
           <select
             value={isCreatingFirm ? 'CREATE_NEW' : (activeFirm?.id || '')}
@@ -129,17 +172,21 @@ export default function App() {
           </select>
         </div>
 
-        <div style={{ flex: 0.8, minWidth: '100px' }}>
+        {/* Dynamic Financial Year Selector with Add Option */}
+        <div style={{ flex: 0.9, minWidth: '110px' }}>
           <select
             value={selectedFY}
-            onChange={(e) => setSelectedFY(e.target.value)}
+            onChange={handleFYSelectChange}
             style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155' }}
           >
-            <option value="FY 2026-27">FY 2026-27</option>
-            <option value="FY 2025-26">FY 2025-26</option>
+            {fyList.map(fy => (
+              <option key={fy.id} value={fy.label}>{fy.label}</option>
+            ))}
+            <option value="ADD_NEW_FY">➕ Add New FY...</option>
           </select>
         </div>
 
+        {/* Menu Toggle */}
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -148,7 +195,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* 14-Item Workflow Menu Drawer */}
+      {/* 4. 14-Item Workflow Menu Drawer */}
       {isMenuOpen && (
         <div style={{
           backgroundColor: '#0c1322',
@@ -190,7 +237,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Main View Area */}
+      {/* 5. Main Screen View Area */}
       <main style={{ maxWidth: '900px', margin: '0 auto', padding: '14px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
@@ -236,6 +283,59 @@ export default function App() {
         )}
       </main>
 
+      {/* 6. Dynamic Financial Year Creation Modal */}
+      {isAddFYModalOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={modalCardStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '16px', fontWeight: 'bold' }}>
+                📅 Add New Financial Year
+              </h3>
+              <button onClick={() => setIsAddFYModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleCreateFYSubmit}>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                  Starting Year (1st April)
+                </label>
+                <input
+                  type="number"
+                  min="2020"
+                  max="2040"
+                  value={newFYStartYear}
+                  onChange={(e) => setNewFYStartYear(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box' }}
+                  required
+                />
+              </div>
+
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '12px', color: '#166534' }}>
+                <strong>Generated Period:</strong><br />
+                01-Apr-{newFYStartYear} to 31-Mar-{parseInt(newFYStartYear || 0, 10) + 1} (FY {newFYStartYear}-{((parseInt(newFYStartYear || 0, 10) + 1) % 100).toString().padStart(2, '0')})
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAddFYModalOpen(false)}
+                  style={{ flex: 1, backgroundColor: '#e2e8f0', color: '#475569', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{ flex: 1.5, backgroundColor: '#0284c7', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  💾 Create FY
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Directory Head Modal */}
       <CreateAccountHeadModal 
         firm={activeFirm} 
         isOpen={isAccountModalOpen} 
@@ -245,3 +345,27 @@ export default function App() {
     </div>
   );
 }
+
+const modalOverlayStyle = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: 'rgba(15, 23, 42, 0.6)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 9999,
+  padding: '16px'
+};
+
+const modalCardStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '16px',
+  padding: '20px',
+  width: '100%',
+  maxWidth: '400px',
+  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+  boxSizing: 'border-box'
+};
