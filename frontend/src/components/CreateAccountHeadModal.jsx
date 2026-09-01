@@ -17,7 +17,10 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
   const [accountList, setAccountList] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Form states
+  // Form View Visibility State (Default: False taaki Directory puri dikhe)
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  // Form Field States
   const [editingId, setEditingId] = useState(null);
   const [accountName, setAccountName] = useState('');
   const [primaryType, setPrimaryType] = useState('ASSETS');
@@ -34,6 +37,9 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
 
   useEffect(() => {
     loadAccounts();
+    // Modal open hone par default directory list dikhayenge
+    setIsFormOpen(false);
+    handleResetForm();
   }, [activeFirmId, isOpen]);
 
   const handlePrimaryTypeChange = (type) => {
@@ -41,6 +47,11 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
     const config = ACCOUNT_HIERARCHY[type];
     setSubGroup(config.subGroups[0]);
     setBalanceType(config.defaultBalanceType);
+  };
+
+  const openCreateMode = () => {
+    handleResetForm();
+    setIsFormOpen(true);
   };
 
   const handleEditClick = (acc) => {
@@ -52,6 +63,7 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
     setBalanceType(acc.balance_type || 'Dr');
     setGstin(acc.gstin || '');
     setPhone(acc.phone || '');
+    setIsFormOpen(true); // Edit click hone par form open hoga
   };
 
   const handleResetForm = () => {
@@ -65,12 +77,17 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
     setPhone('');
   };
 
+  const handleCancelForm = () => {
+    handleResetForm();
+    setIsFormOpen(false); // Form band karke list par wapas le jayega
+  };
+
   const handleDeleteClick = (acc) => {
     if (window.confirm(`⚠️ Are you sure you want to delete ledger account "${acc.account_name}"?`)) {
       try {
         deleteMasterAccount(activeFirmId, acc.id);
         loadAccounts();
-        if (editingId === acc.id) handleResetForm();
+        if (editingId === acc.id) handleCancelForm();
       } catch (err) {
         alert(err.message);
       }
@@ -98,6 +115,7 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
 
       alert(`✓ Ledger Account "${saved.account_name}" ${editingId ? 'Updated' : 'Created'} Successfully!`);
       handleResetForm();
+      setIsFormOpen(false); // Save ke baad form auto-close hoga taaki updated list dikhe
       loadAccounts();
       if (onAccountCreated) onAccountCreated(saved);
     } catch (err) {
@@ -120,10 +138,10 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
     <div style={overlayStyle}>
       <div style={modalCardStyle}>
         
-        {/* Header */}
+        {/* Modal Top Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
           <h3 style={{ margin: 0, color: '#1e293b', fontSize: '17px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>➕</span> {editingId ? 'Edit Ledger Account' : 'Create New Ledger Account'}
+            <span>📋</span> Chart of Accounts & Ledger Master
           </h3>
           <button 
             type="button" 
@@ -134,174 +152,203 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
           </button>
         </div>
 
-        {/* 1. Account Entry / Edit Form */}
-        <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '18px' }}>
-          
-          <div style={{ marginBottom: '10px' }}>
-            <label style={labelStyle}>Account / Party Name *</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Propritor Capital A/C / Shyam Steel" 
-              value={accountName} 
-              onChange={e => setAccountName(e.target.value)} 
-              style={inputStyle} 
-              required 
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-            <div>
-              <label style={labelStyle}>1. Primary Account Type *</label>
-              <select 
-                value={primaryType} 
-                onChange={e => handlePrimaryTypeChange(e.target.value)} 
-                style={inputStyle}
-              >
-                {Object.entries(ACCOUNT_HIERARCHY).map(([key, item]) => (
-                  <option key={key} value={key}>{item.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>2. Accounting Sub-Group *</label>
-              <select 
-                value={subGroup} 
-                onChange={e => setSubGroup(e.target.value)} 
-                style={inputStyle}
-              >
-                {availableSubGroups.map(sg => (
-                  <option key={sg} value={sg}>{sg}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-            <div>
-              <label style={labelStyle}>Opening Balance (₹)</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                value={openingBalance} 
-                onChange={e => setOpeningBalance(e.target.value)} 
-                style={inputStyle} 
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Balance Type</label>
-              <select 
-                value={balanceType} 
-                onChange={e => setBalanceType(e.target.value)} 
-                style={inputStyle}
-              >
-                <option value="Dr">Debit (Dr)</option>
-                <option value="Cr">Credit (Cr)</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
-            <div>
-              <label style={labelStyle}>GSTIN Number (Optional)</label>
-              <input 
-                type="text" 
-                placeholder="08AAAAA0000A1Z5" 
-                value={gstin} 
-                onChange={e => setGstin(e.target.value)} 
-                style={inputStyle} 
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Mobile / Phone</label>
-              <input 
-                type="tel" 
-                placeholder="98290XXXXX" 
-                value={phone} 
-                onChange={e => setPhone(e.target.value)} 
-                style={inputStyle} 
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: editingId ? '1fr 1fr 1.5fr' : '1fr 1.4fr', gap: '8px' }}>
-            {editingId && (
+        {/* 1. COLLAPSIBLE FORM: Sirf tabhi dikhega jab isFormOpen === true ho */}
+        {isFormOpen ? (
+          <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
+              <strong style={{ color: '#0f172a', fontSize: '14px' }}>
+                {editingId ? '✏️ Edit Ledger Account' : '➕ Create New Ledger Account'}
+              </strong>
               <button 
                 type="button" 
-                onClick={handleResetForm} 
-                style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                onClick={handleCancelForm} 
+                style={{ background: '#e2e8f0', border: 'none', borderRadius: '4px', padding: '3px 8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', color: '#475569' }}
               >
-                Cancel Edit
+                ✕ Close Form
               </button>
-            )}
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <label style={labelStyle}>Account / Party Name *</label>
+              <input 
+                type="text" 
+                placeholder="e.g. Proprietor Capital A/C / Radhey Traders" 
+                value={accountName} 
+                onChange={e => setAccountName(e.target.value)} 
+                style={inputStyle} 
+                required 
+                autoFocus
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <div>
+                <label style={labelStyle}>1. Primary Account Type *</label>
+                <select 
+                  value={primaryType} 
+                  onChange={e => handlePrimaryTypeChange(e.target.value)} 
+                  style={inputStyle}
+                >
+                  {Object.entries(ACCOUNT_HIERARCHY).map(([key, item]) => (
+                    <option key={key} value={key}>{item.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>2. Accounting Sub-Group *</label>
+                <select 
+                  value={subGroup} 
+                  onChange={e => setSubGroup(e.target.value)} 
+                  style={inputStyle}
+                >
+                  {availableSubGroups.map(sg => (
+                    <option key={sg} value={sg}>{sg}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <div>
+                <label style={labelStyle}>Opening Balance (₹)</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  value={openingBalance} 
+                  onChange={e => setOpeningBalance(e.target.value)} 
+                  style={inputStyle} 
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Balance Type</label>
+                <select 
+                  value={balanceType} 
+                  onChange={e => setBalanceType(e.target.value)} 
+                  style={inputStyle}
+                >
+                  <option value="Dr">Debit (Dr)</option>
+                  <option value="Cr">Credit (Cr)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+              <div>
+                <label style={labelStyle}>GSTIN (Optional)</label>
+                <input 
+                  type="text" 
+                  placeholder="08AAAAA0000A1Z5" 
+                  value={gstin} 
+                  onChange={e => setGstin(e.target.value)} 
+                  style={inputStyle} 
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Mobile / Phone</label>
+                <input 
+                  type="tel" 
+                  placeholder="98290XXXXX" 
+                  value={phone} 
+                  onChange={e => setPhone(e.target.value)} 
+                  style={inputStyle} 
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '10px' }}>
+              <button 
+                type="button" 
+                onClick={handleCancelForm} 
+                style={cancelButtonStyle}
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                style={saveButtonStyle}
+              >
+                💾 {editingId ? 'Update Account' : 'Save Account'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          /* 2. DIRECTORY TOP ACTION BAR (Jab form band ho tab bada button dikhega) */
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+              Accounts Directory ({accountList.length})
+            </div>
             <button 
               type="button" 
-              onClick={onClose} 
-              style={cancelButtonStyle}
+              onClick={openCreateMode} 
+              style={{
+                backgroundColor: '#10b981',
+                color: '#ffffff',
+                border: 'none',
+                padding: '9px 16px',
+                borderRadius: '8px',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+              }}
             >
-              Close
-            </button>
-            <button 
-              type="submit" 
-              style={saveButtonStyle}
-            >
-              💾 {editingId ? 'Update Account' : 'Save Account'}
+              ➕ Add New Account
             </button>
           </div>
+        )}
 
-        </form>
-
-        {/* 2. Existing Accounts Directory List */}
+        {/* 3. FULL DIRECTORY DIRECTORY & SEARCH VIEW */}
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
-              📋 Existing Accounts Directory ({accountList.length})
-            </span>
+          <div style={{ marginBottom: '10px' }}>
             <input 
               type="text" 
-              placeholder="🔍 Search party or group..." 
+              placeholder="🔍 Search party name, phone, or group..." 
               value={searchQuery} 
               onChange={e => setSearchQuery(e.target.value)} 
-              style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', width: '180px' }} 
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} 
             />
           </div>
 
-          <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+          <div style={{ maxHeight: isFormOpen ? '200px' : '480px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '10px', transition: 'max-height 0.3s ease' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '400px' }}>
               <thead>
-                <tr style={{ backgroundColor: '#0f172a', color: '#ffffff', position: 'sticky', top: 0 }}>
-                  <th style={{ padding: '8px', textAlign: 'left' }}>Account Name</th>
-                  <th style={{ padding: '8px', textAlign: 'left' }}>Group / Sub-Group</th>
-                  <th style={{ padding: '8px', textAlign: 'right' }}>Opening Bal</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>Actions</th>
+                <tr style={{ backgroundColor: '#0f172a', color: '#ffffff', position: 'sticky', top: 0, zIndex: 1 }}>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Account / Party Name</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'left' }}>Sub-Group</th>
+                  <th style={{ padding: '10px 10px', textAlign: 'right' }}>Opening Bal</th>
+                  <th style={{ padding: '10px', textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredAccounts.length === 0 ? (
                   <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', padding: '16px', color: '#94a3b8' }}>
-                      No accounts matched your search.
+                    <td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
+                      No ledger accounts found. Click <strong>"+ Add New Account"</strong> to create one.
                     </td>
                   </tr>
                 ) : (
                   filteredAccounts.map(acc => (
                     <tr key={acc.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: editingId === acc.id ? '#eff6ff' : '#ffffff' }}>
-                      <td style={{ padding: '8px', fontWeight: 'bold', color: '#1e293b' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 'bold', color: '#1e293b' }}>
                         {acc.account_name}
-                        {acc.phone && <div style={{ fontSize: '10px', color: '#64748b' }}>📞 {acc.phone}</div>}
+                        {acc.phone && <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 'normal' }}>📞 {acc.phone}</div>}
                       </td>
-                      <td style={{ padding: '8px', color: '#475569' }}>
-                        <span style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '10px' }}>
+                      <td style={{ padding: '10px 8px', color: '#475569' }}>
+                        <span style={{ backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '4px', fontSize: '11px' }}>
                           {acc.sub_group}
                         </span>
                       </td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: acc.balance_type === 'Dr' ? '#dc2626' : '#16a34a' }}>
+                      <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 'bold', color: acc.balance_type === 'Dr' ? '#dc2626' : '#16a34a', whiteSpace: 'nowrap' }}>
                         ₹{parseFloat(acc.opening_balance || 0).toFixed(2)} {acc.balance_type}
                       </td>
-                      <td style={{ padding: '8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <button 
                           type="button" 
                           onClick={() => handleEditClick(acc)} 
-                          style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '4px', padding: '3px 6px', marginRight: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}
+                          style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '6px', padding: '5px 10px', marginRight: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
                         >
                           ✏️ Edit
                         </button>
@@ -309,7 +356,7 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
                           <button 
                             type="button" 
                             onClick={() => handleDeleteClick(acc)} 
-                            style={{ backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', fontSize: '10px' }}
+                            style={{ backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', fontSize: '11px' }}
                           >
                             🗑️
                           </button>
@@ -322,6 +369,19 @@ export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccoun
             </table>
           </div>
         </div>
+
+        {/* Modal Bottom Footer (Jab Form Band Ho) */}
+        {!isFormOpen && (
+          <div style={{ marginTop: '14px', textAlign: 'right' }}>
+            <button 
+              type="button" 
+              onClick={onClose} 
+              style={{ backgroundColor: '#64748b', color: '#ffffff', border: 'none', padding: '8px 18px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+            >
+              Close
+            </button>
+          </div>
+        )}
 
       </div>
     </div>
@@ -339,18 +399,18 @@ const overlayStyle = {
   alignItems: 'center',
   justifyContent: 'center',
   zIndex: 9999,
-  padding: '16px'
+  padding: '14px'
 };
 
 const modalCardStyle = {
   backgroundColor: '#ffffff',
   borderRadius: '16px',
-  padding: '20px',
+  padding: '18px',
   width: '100%',
-  maxWidth: '480px',
+  maxWidth: '520px',
   boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
   boxSizing: 'border-box',
-  maxHeight: '92vh',
+  maxHeight: '94vh',
   overflowY: 'auto'
 };
 
