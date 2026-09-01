@@ -22,7 +22,6 @@ export const getActiveFirm = () => {
     const match = firms.find(f => f.id === activeId);
     if (match) return match;
 
-    // Fallback to first existing firm
     localStorage.setItem('app_active_firm_id', firms[0].id);
     return firms[0];
   } catch {
@@ -33,6 +32,33 @@ export const getActiveFirm = () => {
 export const setActiveFirmId = (firmId) => {
   localStorage.setItem('app_active_firm_id', firmId);
   window.dispatchEvent(new Event('app_state_updated'));
+};
+
+export const updateFirmProfile = (firmId, updatedFields) => {
+  try {
+    const firms = getFirmsRegistry();
+    const index = firms.findIndex(f => f.id === firmId);
+
+    if (index === -1) {
+      throw new Error(`Firm with ID "${firmId}" not found.`);
+    }
+
+    const currentFirm = firms[index];
+    const updatedFirm = {
+      ...currentFirm,
+      ...updatedFields,
+      id: currentFirm.id,
+      updated_at: new Date().toISOString()
+    };
+
+    firms[index] = updatedFirm;
+    localStorage.setItem('app_firms_registry', JSON.stringify(firms));
+    window.dispatchEvent(new Event('app_state_updated'));
+
+    return updatedFirm;
+  } catch (err) {
+    throw new Error("Failed to update firm profile: " + err.message);
+  }
 };
 
 export const deleteFirmProfile = (firmId) => {
