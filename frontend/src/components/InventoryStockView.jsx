@@ -1,64 +1,177 @@
 // frontend/src/components/InventoryStockView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { getStockItemsByFirm } from '../utils/stockInventoryEngine.js';
+import { getStockItemsByFirm, saveStockItemMaster, deleteStockItemMaster } from '../utils/stockInventoryEngine.js';
 
 export default function InventoryStockView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
   const [stockList, setStockList] = useState([]);
+  
+  // Modal / Form States
+  const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [itemName, setItemName] = useState('');
+  const [unit, setUnit] = useState('Pcs');
+  const [currentStock, setCurrentStock] = useState('0');
+  const [purchaseRate, setPurchaseRate] = useState('0');
+  const [sellingPrice, setSellingPrice] = useState('0');
 
-  const loadStock = () => {
+  const loadStockData = () => {
     const items = getStockItemsByFirm(activeFirmId);
     setStockList(items);
   };
 
   useEffect(() => {
-    loadStock();
-    window.addEventListener('app_state_updated', loadStock);
-    return () => window.removeEventListener('app_state_updated', loadStock);
+    loadStockData();
+    window.addEventListener('app_state_updated', loadStockData);
+    window.addEventListener('stock_updated', loadStockData);
+    return () => {
+      window.removeEventListener('app_state_updated', loadStockData);
+      window.removeEventListener('stock_updated', loadStockData);
+    };
   }, [firm, activeFirmId]);
 
-  const totalValuation = stockList.reduce((acc, it) => {
-    return acc + (parseFloat(it.current_stock || 0) * parseFloat(it.unit_purchase_price || 0));
+  const openAddModal = () => {
+    setEditingId(null);
+    setItemName('');
+    setUnit('Pcs');
+    setCurrentStock('0');
+    setPurchaseRate('0');
+    setSellingPrice('0');
+    setShowModal(true);
+  };
+
+  const openEditModal = (item) => {
+    setEditingId(item.id);
+    setItemName(item.item_name);
+    setUnit(item.unit || 'Units');
+    setCurrentStock(item.current_stock.toString());
+    setPurchaseRate(item.unit_purchase_price.toString());
+    setSellingPrice((item.selling_price || item.unit_purchase_price).toString());
+    setShowModal(true);
+  };
+
+  const handleDelete = (item) => {
+    if (window.confirm(`⚠️ Are you sure you want to delete "${item.item_name}"?`)) {
+      deleteStockItemMaster(activeFirmId, item.id);
+      loadStockData();
+    }
+  };
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    if (!itemName.trim()) {
+      alert("⚠️ Item Name is required.");
+      return;
+    }
+
+    try {
+      saveStockItemMaster(activeFirmId, {
+        id: editingId,
+        item_name: itemName.trim(),
+        unit: unit,
+        current_stock: currentStock,
+        unit_purchase_price: purchaseRate,
+        selling_price: sellingPrice
+      });
+
+      setShowModal(false);
+      loadStockData();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const totalValuation = stockList.reduce((acc, curr) => {
+    return acc + (parseFloat(curr.current_stock || 0) * parseFloat(curr.unit_purchase_price || 0));
   }, 0);
 
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '16px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
         <div>
-          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📦 Live Stock & Inventory</h3>
+          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📦</span> Live Stock & Inventory
+          </h3>
           <span style={{ fontSize: '11px', color: '#64748b' }}>Perpetual Inventory Valuation (Weighted Average)</span>
         </div>
-        <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#059669', backgroundColor: '#ecfdf5', padding: '6px 12px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
-          Total Valuation: ₹{totalValuation.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-        </div>
+        <button 
+          onClick={openAddModal} 
+          style={{ backgroundColor: '#0284c7', color: '#ffffff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+        >
+          ➕ Add New Item
+        </button>
       </div>
 
-      <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
+      {/* Valuation Badge */}
+      <div style={{ backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', display: 'inline-block' }}>
+        <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#059669' }}>
+          Total Valuation: ₹{totalValuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      </div>
+
+      {/* Table Container */}
+      <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '600px' }}>
           <thead>
             <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-              <th style={{ padding: '9px 10px', textAlign: 'left' }}>Item / Material</th>
-              <th style={{ padding: '9px 10px', textAlign: 'center' }}>Unit</th>
-              <th style={{ padding: '9px 10px', textAlign: 'right' }}>Current Stock</th>
-              <th style={{ padding: '9px 10px', textAlign: 'right' }}>Avg Cost Rate (₹)</th>
-              <th style={{ padding: '9px 10px', textAlign: 'right' }}>Total Value (₹)</th>
+              <th style={{ padding: '10px 12px', textAlign: 'left' }}>Item / Material</th>
+              <th style={{ padding: '10px', textAlign: 'center' }}>Unit</th>
+              <th style={{ padding: '10px 12px', textAlign: 'right' }}>Current Stock</th>
+              <th style={{ padding: '10px 12px', textAlign: 'right' }}>Avg Cost Rate (₹)</th>
+              <th style={{ padding: '10px 12px', textAlign: 'right' }}>Total Value (₹)</th>
+              <th style={{ padding: '10px', textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {stockList.length === 0 ? (
-              <tr><td colSpan="5" style={{ textAlign: 'center', padding: '16px', color: '#94a3b8' }}>No stock items found.</td></tr>
+              <tr>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
+                  No inventory items. Click <strong>"+ Add New Item"</strong> to create your stock list.
+                </td>
+              </tr>
             ) : (
               stockList.map(item => {
                 const stock = parseFloat(item.current_stock || 0);
                 const rate = parseFloat(item.unit_purchase_price || 0);
+                const value = stock * rate;
+
                 return (
-                  <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '9px 10px', fontWeight: 'bold' }}>{item.item_name}</td>
-                    <td style={{ padding: '9px 10px', textAlign: 'center' }}>{item.unit || 'Units'}</td>
-                    <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 'bold', color: stock > 0 ? '#059669' : '#dc2626' }}>{stock.toFixed(2)}</td>
-                    <td style={{ padding: '9px 10px', textAlign: 'right' }}>₹{rate.toFixed(2)}</td>
-                    <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 'bold', color: '#1e3a8a' }}>₹{(stock * rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                  <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 'bold', color: '#1e293b' }}>
+                      {item.item_name}
+                    </td>
+                    <td style={{ padding: '10px', textAlign: 'center', color: '#64748b' }}>
+                      <span style={{ backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>
+                        {item.unit || 'Units'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold', color: stock > 0 ? '#059669' : '#dc2626' }}>
+                      {stock.toFixed(2)}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', color: '#334155' }}>
+                      ₹{rate.toFixed(2)}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold', color: '#1e40af' }}>
+                      ₹{value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td style={{ padding: '10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <button 
+                        onClick={() => openEditModal(item)} 
+                        title="Edit Item" 
+                        style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px 8px', marginRight: '6px', cursor: 'pointer', fontSize: '11px' }}
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(item)} 
+                        title="Delete Item" 
+                        style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}
+                      >
+                        🗑️
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -66,6 +179,102 @@ export default function InventoryStockView({ firm }) {
           </tbody>
         </table>
       </div>
+
+      {/* Add / Edit Item Modal */}
+      {showModal && (
+        <div style={modalOverlayStyle}>
+          <div style={modalBoxStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+              <h4 style={{ margin: 0, color: '#0f172a', fontSize: '16px' }}>
+                {editingId ? '✏️ Edit Stock Item' : '➕ Add New Stock Item'}
+              </h4>
+              <button onClick={() => setShowModal(false)} style={{ border: 'none', background: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleSave} style={{ display: 'grid', gap: '10px' }}>
+              <div>
+                <label style={labelStyle}>Item / Material Name *</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Red Bricks 9 Inch / Diesel / Coal" 
+                  value={itemName} 
+                  onChange={e => setItemName(e.target.value)} 
+                  style={inputStyle} 
+                  required 
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={labelStyle}>Unit of Measurement *</label>
+                  <select value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle}>
+                    <option value="Pcs">Pcs (नग / ईंटें)</option>
+                    <option value="Liters">Liters (लीटर)</option>
+                    <option value="Tons">Tons (टन)</option>
+                    <option value="Bags">Bags (थैली)</option>
+                    <option value="Kg">Kilograms (किलो)</option>
+                    <option value="Trips">Trips (गाड़ी / ट्रिप)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Opening / Current Stock</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    value={currentStock} 
+                    onChange={e => setCurrentStock(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={labelStyle}>Purchase Cost Rate (₹)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    value={purchaseRate} 
+                    onChange={e => setPurchaseRate(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Expected Selling Rate (₹)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    value={sellingPrice} 
+                    onChange={e => setSellingPrice(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setShowModal(false)} 
+                  style={{ flex: 1, backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  style={{ flex: 2, backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  💾 Save Item
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const modalOverlayStyle = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '16px' };
+const modalBoxStyle = { backgroundColor: '#ffffff', borderRadius: '12px', padding: '18px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' };
+const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
+const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff' };
