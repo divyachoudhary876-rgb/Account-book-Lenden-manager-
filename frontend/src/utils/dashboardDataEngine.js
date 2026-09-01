@@ -3,6 +3,9 @@
 import { getAllUniversalVouchers, getAccountHeads } from './statementEngine.js';
 import { getStockItemsByFirm } from './stockInventoryEngine.js';
 
+/**
+ * Compile real-time KPI metrics tailored to business category
+ */
 export const getDynamicDashboardMetrics = (firm) => {
   const firmId = firm?.id || 'FIRM-001';
   const category = (firm?.category || firm?.business_category || 'TRADING').toUpperCase();
@@ -11,6 +14,7 @@ export const getDynamicDashboardMetrics = (firm) => {
   const stockItems = getStockItemsByFirm(firmId);
   const accounts = getAccountHeads(firmId);
 
+  // 1. Double-entry ledger aggregation
   const balanceMap = {};
   accounts.forEach(acc => {
     balanceMap[acc.account_name] = {
@@ -25,6 +29,7 @@ export const getDynamicDashboardMetrics = (firm) => {
 
   let totalSales = 0;
   let totalPurchases = 0;
+  let totalDirectExpenses = 0;
 
   vouchers.forEach(v => {
     const amt = parseFloat(v.amount || 0);
@@ -40,10 +45,11 @@ export const getDynamicDashboardMetrics = (firm) => {
 
     if (type === 'SALES' || cr.toLowerCase().includes('sales')) totalSales += amt;
     if (type === 'PURCHASE' || dr.toLowerCase().includes('purchase') || dr.toLowerCase().includes('diesel')) totalPurchases += amt;
+    if (dr.toLowerCase().includes('expense') || dr.toLowerCase().includes('labor')) totalDirectExpenses += amt;
   });
 
-  let totalReceivables = 0;
-  let totalPayables = 0;
+  let totalReceivables = 0; // Sundry Debtors
+  let totalPayables = 0;    // Sundry Creditors
   let cashAndBank = 0;
 
   Object.entries(balanceMap).forEach(([name, acc]) => {
@@ -65,11 +71,17 @@ export const getDynamicDashboardMetrics = (firm) => {
     }
   });
 
+  // 2. Stock Inventory Valuation
   const totalStockValuation = stockItems.reduce((acc, item) => {
     return acc + (parseFloat(item.current_stock || 0) * parseFloat(item.unit_purchase_price || 0));
   }, 0);
 
-  const categorySpecifics = { category, cards: [], actions: [] };
+  // 3. Category Specific Metrics
+  const categorySpecifics = {
+    category,
+    cards: [],
+    actions: []
+  };
 
   if (category.includes('BRICK') || category.includes('BHATTA')) {
     const rawBricks = stockItems.find(i => i.item_name.toLowerCase().includes('kacchi') || i.item_name.toLowerCase().includes('raw'))?.current_stock || 0;
@@ -107,6 +119,7 @@ export const getDynamicDashboardMetrics = (firm) => {
       { key: 'milan', label: 'Factory Account Milan', icon: '📑', bg: '#7c3aed' }
     ];
   } else {
+    // Standard TRADING / RETAIL / WHOLESALE Category
     const lowStockCount = stockItems.filter(i => parseFloat(i.current_stock || 0) <= 5).length;
 
     categorySpecifics.cards = [
@@ -134,3 +147,6 @@ export const getDynamicDashboardMetrics = (firm) => {
     categorySpecifics
   };
 };
+
+// Aliases for 100% backward compatibility across all legacy components
+export const getCalculatedDashboardMetrics = getDynamicDashboardMetrics;
