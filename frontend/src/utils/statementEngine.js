@@ -1,8 +1,11 @@
 // frontend/src/utils/statementEngine.js
 
-/**
- * Universal Voucher Aggregator: Scans all storage keys for vouchers across firms
- */
+import { getFirmMasterAccounts } from './accountMasterEngine.js';
+
+export const getAccountHeads = (firmId) => {
+  return getFirmMasterAccounts(firmId);
+};
+
 export const getAllUniversalVouchers = (firmId) => {
   let all = [];
   try {
@@ -27,36 +30,6 @@ export const getAllUniversalVouchers = (firmId) => {
   return all;
 };
 
-/**
- * Account Heads Directory: Aggregates chart of accounts
- */
-export const getAccountHeads = (firmId) => {
-  let accounts = [];
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.startsWith('app_accounts') || key.includes('accounts'))) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) accounts = accounts.concat(parsed);
-        }
-      }
-    }
-    const map = new Map();
-    accounts.forEach(a => {
-      if (a && a.account_name) map.set(a.account_name.toLowerCase(), a);
-    });
-    accounts = Array.from(map.values());
-  } catch (e) {
-    accounts = [];
-  }
-  return accounts;
-};
-
-/**
- * Account Milan / Party Ledger Generator
- */
 export const getAccountLedgerStatement = (firmId, accountName) => {
   if (!accountName) {
     return { transactions: [], netBalance: 0, balanceType: 'Cr', totalDebit: 0, totalCredit: 0 };
@@ -70,7 +43,6 @@ export const getAccountLedgerStatement = (firmId, accountName) => {
   let totalCredit = 0;
   let txList = [];
 
-  // Sort chronological
   const sortedVouchers = vouchers.sort((a, b) => 
     new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0)
   );
@@ -116,12 +88,8 @@ export const getAccountLedgerStatement = (firmId, accountName) => {
   };
 };
 
-// Backwards compatibility alias
 export const getAccountStatement = getAccountLedgerStatement;
 
-/**
- * CSV Statement Downloader
- */
 export const downloadCSVStatement = (firmName, accountName, statementData) => {
   const { transactions, netBalance, balanceType, totalDebit, totalCredit } = statementData;
   if (!transactions || transactions.length === 0) {
