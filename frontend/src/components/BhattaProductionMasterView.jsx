@@ -1,224 +1,213 @@
 // frontend/src/components/BhattaProductionMasterView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { 
-  getBrickKilnStock, 
-  processNikasiTransformation, 
-  clearAllDummyKilnData 
-} from '../utils/productionEngine.js';
+import { getStockItemsByFirm } from '../utils/stockInventoryEngine.js';
+import { executeProductionBatch } from '../utils/manufacturingEngine.js';
 
 export default function BhattaProductionMasterView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
-  const [activeTab, setActiveTab] = useState('nikasi');
-  const [stock, setStock] = useState({ RAW_KACHI: 0, PAKKI_AVVAL: 0, PAKKI_DOYAM: 0, PAKKI_RODA: 0 });
 
-  // Nikasi Inputs (Clean Zero Defaults)
-  const [furnaceId, setFurnaceId] = useState('KILN-1');
-  const [rawConsumed, setRawConsumed] = useState('');
-  const [avvalGrade, setAvvalGrade] = useState('');
-  const [doyamGrade, setDoyamGrade] = useState('');
-  const [rodaGrade, setRodaGrade] = useState('');
+  const [stockList, setStockList] = useState([]);
+  const [finishedItem, setFinishedItem] = useState('Pakki Eent (Red Bricks - 1st Class)');
+  const [producedQuantity, setProducedQuantity] = useState('');
+  const [batchRef, setBatchRef] = useState(`CHAMBER-${new Date().getDate()}-${Date.now().toString().slice(-3)}`);
+  const [productionDate, setProductionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [laborCost, setLaborCost] = useState('');
+  const [overheadCost, setOverheadCost] = useState('');
+  
+  // Dynamic Raw Materials list consumed in batch
+  const [consumedMaterials, setConsumedMaterials] = useState([
+    { item_name: 'Coal / Steam Coal', quantity: '' },
+    { item_name: 'Diesel', quantity: '' }
+  ]);
 
-  // Edit Item Modal State
-  const [editingItem, setEditingItem] = useState(null);
-  const [editQty, setEditQty] = useState('');
+  const [status, setStatus] = useState(null);
 
-  useEffect(() => {
-    loadStockData();
-    window.addEventListener('storage', loadStockData);
-    return () => window.removeEventListener('storage', loadStockData);
-  }, [firm]);
-
-  const loadStockData = () => {
-    setStock(getBrickKilnStock(activeFirmId));
+  const loadStock = () => {
+    const list = getStockItemsByFirm(activeFirmId);
+    setStockList(list);
   };
 
-  const handlePostNikasi = (e) => {
+  useEffect(() => {
+    loadStock();
+    window.addEventListener('stock_updated', loadStock);
+    return () => window.removeEventListener('stock_updated', loadStock);
+  }, [activeFirmId]);
+
+  const handleMaterialChange = (index, field, value) => {
+    const updated = [...consumedMaterials];
+    updated[index][field] = value;
+    setConsumedMaterials(updated);
+  };
+
+  const addMaterialRow = () => {
+    setConsumedMaterials([...consumedMaterials, { item_name: stockList[0]?.item_name || 'Diesel', quantity: '' }]);
+  };
+
+  const removeMaterialRow = (index) => {
+    if (consumedMaterials.length <= 1) return;
+    setConsumedMaterials(consumedMaterials.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = (e) => {
     e.preventDefault();
+    setStatus(null);
+
+    const validMaterials = consumedMaterials.filter(m => parseFloat(m.quantity || 0) > 0);
+    if (validMaterials.length === 0) {
+      setStatus({ type: 'error', text: 'Kam se kam ek raw material ki quantity enter karein.' });
+      return;
+    }
+
     try {
-      processNikasiTransformation(activeFirmId, {
-        furnace_id: furnaceId,
-        raw_consumed: rawConsumed,
-        avval: avvalGrade || 0,
-        doyam: doyamGrade || 0,
-        roda: rodaGrade || 0
+      const res = executeProductionBatch(activeFirmId, {
+        production_date: productionDate,
+        batch_ref: batchRef,
+        finished_item_name: finishedItem,
+        finished_quantity: parseFloat(producedQuantity),
+        raw_materials: validMaterials,
+        labor_cost: parseFloat(laborCost || 0),
+        other_overhead: parseFloat(overheadCost || 0)
       });
 
-      alert("✓ Nikasi posted successfully! Finished Bricks updated in stock.");
-      setRawConsumed('');
-      setAvvalGrade('');
-      setDoyamGrade('');
-      setRodaGrade('');
-      loadStockData();
+      setStatus({
+        type: 'success',
+        text: `Production Successful!\n• Manufactured: ${res.produced_quantity.toLocaleString()} units of ${res.produced_item}\n• Total Cost: ₹${res.total_cost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n• Net Cost/Unit: ₹${res.per_unit_cost.toFixed(2)}/unit\n• Raw materials successfully deducted from stock.`
+      });
+
+      setProducedQuantity('');
+      setLaborCost('');
+      setOverheadCost('');
+      loadStock();
     } catch (err) {
-      alert(err.message);
+      setStatus({ type: 'error', text: err.message });
     }
   };
 
-  const handleSaveStockEdit = (e) => {
-    e.preventDefault();
-    if (!editingItem) return;
-
-    const newStockVal = parseInt(editQty || 0, 10);
-    const updatedStock = { ...stock, [editingItem.key]: newStockVal };
-    
-    localStorage.setItem(`app_brick_stock_${activeFirmId}`, JSON.stringify(updatedStock));
-    window.dispatchEvent(new Event('storage'));
-    
-    alert(`✓ Stock for ${editingItem.name} updated to ${newStockVal} NOS.`);
-    setEditingItem(null);
-    loadStockData();
-  };
-
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+    <div style={{ maxWidth: '780px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '30px' }}>
       
-      {/* Title Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-        <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>🧱 Brick Production & Kiln Transformation</h3>
-        <button 
-          onClick={() => { if(window.confirm("Clear all dummy stock data?")) { clearAllDummyKilnData(activeFirmId); loadStockData(); } }}
-          style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-        >
-          🗑️ Clear Demo Data
-        </button>
+      {/* Header */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px 20px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
+            Production & Raw Material Conversion
+          </h3>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Convert Raw Materials & Fuel into Finished Goods</span>
+        </div>
+        <div style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+          Manufacturing Core
+        </div>
       </div>
 
-      {/* Sub Tabs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
-        <button style={subTabStyle(activeTab === 'pathai')} onClick={() => setActiveTab('pathai')}>
-          1. Pathai Labor & Raw Brick Stock (+ IN)
-        </button>
-        <button style={subTabStyle(activeTab === 'nikasi')} onClick={() => setActiveTab('nikasi')}>
-          2. Kiln Unloading / Nikasi (RAW ➔ FINISHED)
-        </button>
-      </div>
-
-      {/* Inline Edit Modal */}
-      {editingItem && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
-          <form onSubmit={handleSaveStockEdit} style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', maxWidth: '380px', width: '100%', border: '1px solid #cbd5e1' }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#0f172a' }}>✏️ Edit Stock Inventory Quantity</h4>
-            <p style={{ fontSize: '12px', color: '#64748b' }}>Item: <strong>{editingItem.name}</strong></p>
-            
-            <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>New Current Stock (NOS/Qty)</label>
-              <input type="number" value={editQty} onChange={e => setEditQty(e.target.value)} style={inputStyle} required />
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setEditingItem(null)} style={{ backgroundColor: '#64748b', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>Cancel</button>
-              <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Update Stock</button>
-            </div>
-          </form>
+      {status && (
+        <div style={{
+          backgroundColor: status.type === 'success' ? '#ecfdf5' : '#fef2f2',
+          border: `1px solid ${status.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+          color: status.type === 'success' ? '#065f46' : '#b91c1c',
+          padding: '12px 16px',
+          borderRadius: '10px',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          whiteSpace: 'pre-line'
+        }}>
+          {status.text}
         </div>
       )}
 
-      {/* Nikasi Form */}
-      {activeTab === 'nikasi' && (
-        <form onSubmit={handlePostNikasi} style={{ display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#1e293b' }}>🔥 Baked Bricks Nikasi Grading</div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div>
-              <label style={labelStyle}>Furnace ID</label>
-              <input type="text" value={furnaceId} onChange={e => setFurnaceId(e.target.value)} style={inputStyle} required />
-            </div>
-            <div>
-              <label style={labelStyle}>Raw Bricks Consumed (NOS) *</label>
-              <input type="number" placeholder="e.g. 10000" value={rawConsumed} onChange={e => setRawConsumed(e.target.value)} style={inputStyle} required />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-            <div>
-              <label style={labelStyle}>Avval Grade (NOS)</label>
-              <input type="number" placeholder="Avval Qty" value={avvalGrade} onChange={e => setAvvalGrade(e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Doyam Grade (NOS)</label>
-              <input type="number" placeholder="Doyam Qty" value={doyamGrade} onChange={e => setDoyamGrade(e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Roda Grade (NOS)</label>
-              <input type="number" placeholder="Roda Qty" value={rodaGrade} onChange={e => setRodaGrade(e.target.value)} style={inputStyle} />
-            </div>
-          </div>
-
-          <button type="submit" style={{ backgroundColor: '#2563eb', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
-            🔄 Post Nikasi & Update Inventory
-          </button>
-        </form>
-      )}
-
-      {/* Stock Table View */}
-      <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden' }}>
-        <div style={{ padding: '10px 14px', backgroundColor: '#0f172a', color: '#ffffff', fontWeight: 'bold', fontSize: '13px' }}>
-          📋 Live Stock Inventory Status (Click Edit to Adjust)
-        </div>
+      <form onSubmit={handleSubmit} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', display: 'grid', gap: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
         
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f1f5f9', color: '#475569', borderBottom: '1px solid #cbd5e1' }}>
-              <th style={{ padding: '10px', textAlign: 'left' }}>Item Name</th>
-              <th style={{ padding: '10px', textAlign: 'center' }}>Stage</th>
-              <th style={{ padding: '10px', textAlign: 'right' }}>Current Stock Qty</th>
-              <th style={{ padding: '10px', textAlign: 'center' }}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-              <td style={{ padding: '10px', fontWeight: 'bold' }}>कच्ची ईंट (Raw Unbaked Brick)</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}><span style={badgeStyle('#fed7aa', '#9a3412')}>RAW_KACHI</span></td>
-              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#2563eb' }}>{stock.RAW_KACHI} NOS</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}>
-                <button onClick={() => { setEditingItem({ key: 'RAW_KACHI', name: 'Raw Brick' }); setEditQty(stock.RAW_KACHI); }} style={editBtnStyle}>✏️ Edit</button>
-              </td>
-            </tr>
-            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-              <td style={{ padding: '10px', fontWeight: 'bold' }}>पक्की ईंट (Avval Grade A)</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}><span style={badgeStyle('#bbf7d0', '#166534')}>FINISHED_AVVAL</span></td>
-              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>{stock.PAKKI_AVVAL} NOS</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}>
-                <button onClick={() => { setEditingItem({ key: 'PAKKI_AVVAL', name: 'Avval Grade' }); setEditQty(stock.PAKKI_AVVAL); }} style={editBtnStyle}>✏️ Edit</button>
-              </td>
-            </tr>
-            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-              <td style={{ padding: '10px', fontWeight: 'bold' }}>पक्की ईंट (Doyam Grade B)</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}><span style={badgeStyle('#e0e7ff', '#3730a3')}>FINISHED_DOYAM</span></td>
-              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>{stock.PAKKI_DOYAM} NOS</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}>
-                <button onClick={() => { setEditingItem({ key: 'PAKKI_DOYAM', name: 'Doyam Grade' }); setEditQty(stock.PAKKI_DOYAM); }} style={editBtnStyle}>✏️ Edit</button>
-              </td>
-            </tr>
-            <tr>
-              <td style={{ padding: '10px', fontWeight: 'bold' }}>रोड़ा ईंट (Roda Grade C)</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}><span style={badgeStyle('#fecdd3', '#9f1239')}>FINISHED_RODA</span></td>
-              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>{stock.PAKKI_RODA} NOS</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}>
-                <button onClick={() => { setEditingItem({ key: 'PAKKI_RODA', name: 'Roda Grade' }); setEditQty(stock.PAKKI_RODA); }} style={editBtnStyle}>✏️ Edit</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        {/* Basic Batch Details */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+          <div>
+            <label style={labelStyle}>Production Date *</label>
+            <input type="date" value={productionDate} onChange={e => setProductionDate(e.target.value)} style={inputStyle} required />
+          </div>
 
+          <div>
+            <label style={labelStyle}>Batch / Chamber Reference *</label>
+            <input type="text" value={batchRef} onChange={e => setBatchRef(e.target.value)} style={inputStyle} required />
+          </div>
+        </div>
+
+        {/* Finished Good Output */}
+        <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px', borderRadius: '12px', display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={{ ...labelStyle, color: '#166534' }}>Output Finished Product (तैयार माल) *</label>
+            <input type="text" value={finishedItem} onChange={e => setFinishedItem(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold' }} required />
+          </div>
+          <div>
+            <label style={{ ...labelStyle, color: '#166534' }}>Produced Quantity (Pcs/MT) *</label>
+            <input type="number" step="0.01" placeholder="e.g. 50000" value={producedQuantity} onChange={e => setProducedQuantity(e.target.value)} style={{ ...inputStyle, fontSize: '14px', fontWeight: 'bold' }} required />
+          </div>
+        </div>
+
+        {/* Consumed Raw Materials List */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label style={{ ...labelStyle, fontSize: '12px', color: '#0f172a' }}>
+              Consumed Raw Materials & Fuels (खपत होने वाला कच्चा माल)
+            </label>
+            <button type="button" onClick={addMaterialRow} style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+              + Add Material
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {consumedMaterials.map((row, idx) => {
+              const matched = stockList.find(s => s.item_name === row.item_name);
+              return (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr auto', gap: '8px', alignItems: 'center' }}>
+                  <select value={row.item_name} onChange={e => handleMaterialChange(idx, 'item_name', e.target.value)} style={{ ...inputStyle, fontWeight: 'bold' }}>
+                    {stockList.map(s => (
+                      <option key={s.id} value={s.item_name}>
+                        {s.item_name} (Avail: {s.current_stock} {s.unit})
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder={`Qty (${matched?.unit || 'Units'})`}
+                    value={row.quantity}
+                    onChange={e => handleMaterialChange(idx, 'quantity', e.target.value)}
+                    style={inputStyle}
+                    required
+                  />
+
+                  {consumedMaterials.length > 1 && (
+                    <button type="button" onClick={() => removeMaterialRow(idx)} style={{ background: '#fee2e2', color: '#991b1b', border: 'none', width: '32px', height: '36px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                      ✕
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Direct Overheads (Labor & Machine) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={labelStyle}>Direct Labor / Pathai / Nikasi Cost (₹)</label>
+            <input type="number" step="0.01" placeholder="e.g. 15000" value={laborCost} onChange={e => setLaborCost(e.target.value)} style={inputStyle} />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Machinery & Other Overheads (₹)</label>
+            <input type="number" step="0.01" placeholder="e.g. 5000" value={overheadCost} onChange={e => setOverheadCost(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+
+        <button type="submit" style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '14px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 6px rgba(15, 23, 42, 0.3)' }}>
+          ⚡ Deduct Raw Materials & Add Finished Stock
+        </button>
+
+      </form>
     </div>
   );
 }
 
-const subTabStyle = (isActive) => ({
-  backgroundColor: isActive ? '#2563eb' : '#e2e8f0',
-  color: isActive ? '#ffffff' : '#334155',
-  border: 'none',
-  padding: '10px',
-  borderRadius: '6px',
-  fontWeight: 'bold',
-  fontSize: '11px',
-  cursor: 'pointer'
-});
-
-const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' };
-const inputStyle = { width: '100%', padding: '9px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff' };
-const badgeStyle = (bg, color) => ({ backgroundColor: bg, color, padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' });
-const editBtnStyle = { backgroundColor: '#2563eb', color: '#ffffff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' };
+const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
+const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a' };
