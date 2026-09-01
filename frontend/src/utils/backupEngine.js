@@ -3,13 +3,13 @@
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 
 /**
- * 1. Export Universal Backup with Native Android Filesystem & Share Support
+ * Robust Multi-Channel Backup Exporter for Mobile & Desktop
  */
 export const exportUniversalBackup = async (firmId = 'FIRM-001', firmName = 'Enterprise') => {
   try {
     const backupPayload = {
       manifest: {
-        app: 'Business Book ERP',
+        app: 'Account Book ERP',
         backupVersion: '2.0.0',
         firmId: firmId,
         firmName: firmName,
@@ -23,50 +23,63 @@ export const exportUniversalBackup = async (firmId = 'FIRM-001', firmName = 'Ent
 
     const sanitizedFirmName = firmName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const dateStamp = new Date().toISOString().split('T')[0];
-    const fileName = `BusinessBook_Backup_${sanitizedFirmName}_${dateStamp}.json`;
+    const fileName = `AccountBook_Backup_${sanitizedFirmName}_${dateStamp}.json`;
     const jsonString = JSON.stringify(backupPayload, null, 2);
 
     let savedPath = null;
     let savedViaNative = false;
 
-    // STEP 1: Try Native Capacitor Filesystem write (Android Documents Directory)
-    try {
-      const writeResult = await Filesystem.writeFile({
-        path: fileName,
-        data: jsonString,
-        directory: Directory.Documents,
-        encoding: Encoding.UTF8
-      });
-      savedPath = writeResult.uri || `Documents/${fileName}`;
-      savedViaNative = true;
-    } catch (nativeErr) {
-      console.warn('Native filesystem write fallback:', nativeErr);
-    }
-
-    // STEP 2: Try Native Mobile Web Share (WhatsApp / Drive / Save to Files)
+    // CHANNEL 1: Android Native Share Sheet (Direct Save to Files / Google Drive / WhatsApp)
     try {
       const file = new File([jsonString], fileName, { type: 'application/json' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
           title: `Account Book Backup - ${firmName}`,
-          text: `Complete Accounting Backup for ${firmName} (${dateStamp})`
+          text: `Financial Backup for ${firmName} (${dateStamp})`
         });
         return {
           success: true,
           fileName,
           count: backupPayload.vouchers.length,
-          method: 'SHARE',
+          method: 'SHARE_SHEET',
           jsonString
         };
       }
     } catch (shareErr) {
-      console.warn('Web share bypassed/cancelled:', shareErr);
+      console.warn('Native share sheet cancelled/bypassed:', shareErr);
     }
 
-    // STEP 3: Fallback Blob anchor download for Desktop/Chrome
+    // CHANNEL 2: Capacitor Native Filesystem Write (Phone Public Documents)
     try {
-      const blob = new Blob([jsonString], { type: 'application/json' });
+      const writeResult = await Filesystem.writeFile({
+        path: fileName,
+        data: jsonString,
+        directory: Directory.Documents,
+        encoding: Encoding.UTF8,
+        recursive: true
+      });
+      savedPath = writeResult.uri || `Documents/${fileName}`;
+      savedViaNative = true;
+    } catch (nativeErr) {
+      console.warn('Capacitor Documents write error, attempting Cache directory fallback:', nativeErr);
+      try {
+        const cacheResult = await Filesystem.writeFile({
+          path: fileName,
+          data: jsonString,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8
+        });
+        savedPath = cacheResult.uri;
+        savedViaNative = true;
+      } catch (cacheErr) {
+        console.warn('Capacitor Cache write fallback error:', cacheErr);
+      }
+    }
+
+    // CHANNEL 3: Standard Browser Download Trigger (Desktop & Web Fallback)
+    try {
+      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
       const downloadUrl = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = downloadUrl;
@@ -82,9 +95,9 @@ export const exportUniversalBackup = async (firmId = 'FIRM-001', firmName = 'Ent
     return {
       success: true,
       fileName,
-      savedPath: savedPath || 'Documents Folder',
+      savedPath: savedPath || 'Phone Storage > Documents',
       count: backupPayload.vouchers.length,
-      method: savedViaNative ? 'NATIVE_FILESYSTEM' : 'DOWNLOAD_TRIGGERED',
+      method: savedViaNative ? 'LOCAL_FILESYSTEM' : 'DOWNLOAD_TRIGGERED',
       jsonString
     };
   } catch (error) {
@@ -93,51 +106,49 @@ export const exportUniversalBackup = async (firmId = 'FIRM-001', firmName = 'Ent
 };
 
 /**
- * 2. Adaptive Backup Restore Engine (From File or Raw JSON String)
+ * Universal Backup Restore Engine (Handles JSON File and Direct Text Paste)
  */
 export const restoreUniversalBackup = async (sourceData, targetFirmId = 'FIRM-001') => {
   let rawData = null;
 
   if (typeof sourceData === 'string') {
-    // Direct JSON string paste
     try {
       rawData = JSON.parse(sourceData);
     } catch {
-      throw new Error('Invalid JSON text format. Please paste valid backup data.');
+      throw new Error('Invalid JSON format. Please paste valid backup data text.');
     }
   } else if (sourceData instanceof File) {
-    // File upload
     rawData = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           resolve(JSON.parse(e.target.result));
         } catch {
-          reject(new Error('Corrupted JSON file. Unable to parse data.'));
+          reject(new Error('Corrupted backup file. Unable to parse JSON structure.'));
         }
       };
-      reader.onerror = () => reject(new Error('Unable to read selected file.'));
+      reader.onerror = () => reject(new Error('Failed to read backup file from storage.'));
       reader.readAsText(sourceData);
     });
   } else {
-    throw new Error('Unsupported backup data source.');
+    throw new Error('Unsupported backup file format.');
   }
 
-  // Normalize legacy vs modern schema
-  const accounts = rawData.accounts || rawData.accountList || rawData.account_heads || [];
-  const vouchers = rawData.vouchers || rawData.voucherList || rawData.journal_entries || [];
-  const stock = rawData.stock || rawData.stockItems || rawData.inventory || [];
+  // Schema Normalization
+  const accounts = rawData.accounts || rawData.accountList || [];
+  const vouchers = rawData.vouchers || rawData.voucherList || [];
+  const stock = rawData.stock || rawData.stockItems || [];
   const firms = rawData.firmsRegistry || rawData.firms || [];
 
   const normalizedAccounts = accounts.map((acc, index) => ({
     id: acc.id || `ACC-${Date.now()}-${index}`,
-    account_name: (acc.account_name || acc.name || acc.party_name || 'General Account').trim(),
+    account_name: (acc.account_name || acc.name || 'General Account').trim(),
     primary_type: (acc.primary_type || acc.type || 'ASSETS').toUpperCase(),
-    sub_group: acc.sub_group || acc.group || 'Sundry Debtors (Customer / देनदार)',
-    opening_balance: parseFloat(acc.opening_balance || acc.opening || 0),
+    sub_group: acc.sub_group || 'Sundry Debtors (Customer / देनदार)',
+    opening_balance: parseFloat(acc.opening_balance || 0),
     balance_type: acc.balance_type || (acc.opening_balance >= 0 ? 'Dr' : 'Cr'),
     gstin: acc.gstin || '',
-    phone: acc.phone || acc.mobile || '',
+    phone: acc.phone || '',
     is_system_locked: Boolean(acc.is_system_locked),
     updated_at: acc.updated_at || new Date().toISOString()
   }));
@@ -149,13 +160,13 @@ export const restoreUniversalBackup = async (sourceData, targetFirmId = 'FIRM-00
     date: vch.voucher_date || vch.date || new Date().toISOString().split('T')[0],
     voucher_type: (vch.voucher_type || vch.type || 'JOURNAL').toUpperCase(),
     type: (vch.voucher_type || vch.type || 'JOURNAL').toUpperCase(),
-    dr_account: (vch.dr_account || vch.debit_account || vch.dr_party || '').trim(),
-    cr_account: (vch.cr_account || vch.credit_account || vch.cr_party || '').trim(),
-    dr_party: (vch.dr_account || vch.debit_account || vch.dr_party || '').trim(),
-    cr_party: (vch.cr_account || vch.credit_account || vch.cr_party || '').trim(),
-    amount: parseFloat(vch.amount || vch.total_amount || 0),
-    reference_no: vch.reference_no || vch.bill_no || `REF-${index + 1}`,
-    narration: vch.narration || vch.remarks || '',
+    dr_account: (vch.dr_account || vch.dr_party || '').trim(),
+    cr_account: (vch.cr_account || vch.cr_party || '').trim(),
+    dr_party: (vch.dr_account || vch.dr_party || '').trim(),
+    cr_party: (vch.cr_account || vch.cr_party || '').trim(),
+    amount: parseFloat(vch.amount || 0),
+    reference_no: vch.reference_no || `REF-${index + 1}`,
+    narration: vch.narration || '',
     created_at: vch.created_at || new Date().toISOString()
   }));
 
@@ -163,13 +174,13 @@ export const restoreUniversalBackup = async (sourceData, targetFirmId = 'FIRM-00
     id: stk.id || `STK-${Date.now()}-${index}`,
     item_name: (stk.item_name || stk.name || 'Stock Item').trim(),
     unit: stk.unit || 'Pcs',
-    current_stock: parseFloat(stk.current_stock || stk.quantity || stk.stock || 0),
-    unit_purchase_price: parseFloat(stk.unit_purchase_price || stk.purchase_rate || stk.cost || 0),
+    current_stock: parseFloat(stk.current_stock || 0),
+    unit_purchase_price: parseFloat(stk.unit_purchase_price || stk.purchase_rate || 0),
     selling_price: parseFloat(stk.selling_price || stk.sale_rate || 0),
     updated_at: stk.updated_at || new Date().toISOString()
   }));
 
-  // Store in active firm partitions
+  // Store in LocalStorage partitions
   localStorage.setItem(`app_accounts_${targetFirmId}`, JSON.stringify(normalizedAccounts));
   localStorage.setItem(`app_vouchers_${targetFirmId}`, JSON.stringify(normalizedVouchers));
   localStorage.setItem(`app_stock_${targetFirmId}`, JSON.stringify(normalizedStock));
@@ -178,7 +189,7 @@ export const restoreUniversalBackup = async (sourceData, targetFirmId = 'FIRM-00
     localStorage.setItem('app_firms_registry', JSON.stringify(firms));
   }
 
-  // Reactive global event trigger
+  // Reactive state refresh
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('stock_updated'));
 
