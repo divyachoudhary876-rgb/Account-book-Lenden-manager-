@@ -22,7 +22,7 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Clean Conflicting Locks & Install Dependencies
+      - name: Install Frontend Dependencies
         working-directory: frontend
         run: |
           rm -f package-lock.json
@@ -32,7 +32,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Sync Capacitor Android Project
+      - name: Ensure Complete Capacitor Android Native Project
         working-directory: frontend
         run: |
           if [ ! -f "android/settings.gradle" ]; then
@@ -41,66 +41,64 @@ jobs:
           fi
           npx @capacitor/cli sync android
 
-      - name: Increment Version Code
-        working-directory: frontend
-        run: |
-          BUILD_NUMBER=${{ github.run_number }}
-          VERSION_NAME="1.0.${BUILD_NUMBER}"
-          echo "Building Version ${VERSION_NAME} (Code: ${BUILD_NUMBER})"
-          if [ -d "android/app" ]; then
-            sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUMBER}/g" android/app/build.gradle
-            sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
-          fi
-
-      - name: Generate Persistent Dedicated Keystore
+      - name: Auto-Bump Dynamic Version Code & Name
         working-directory: frontend/android/app
         run: |
-          if [ ! -f "release.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore release.keystore \
-              -alias accountbookkey \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 20000 \
-              -storepass "Neelkanth@2026" \
-              -keypass "Neelkanth@2026" \
-              -dname "CN=Neelkanth, OU=Accounting, O=Enterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
-          fi
+          BUILD_NUM=${{ github.run_number }}
+          VERSION_NAME="1.0.${BUILD_NUM}"
+          echo "Setting Monotonic versionCode: ${BUILD_NUM}, versionName: ${VERSION_NAME}"
+          sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUM}/g" build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" build.gradle
 
-      - name: Configure Gradle Signing
+      - name: Configure Static Deterministic Master Keystore
+        working-directory: frontend/android/app
+        run: |
+          # Constant parameters guarantee identical SHA-256 certificate in every build
+          keytool -genkeypair -v \
+            -keystore master_release.keystore \
+            -alias businessbook_key \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 36500 \
+            -storepass "NeelkanthEnterprise@2026" \
+            -keypass "NeelkanthEnterprise@2026" \
+            -dname "CN=Neelkanth, OU=Accounting, O=NeelkanthEnterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
+
+      - name: Inject Master Signing Configuration into Gradle
         working-directory: frontend/android/app
         run: |
           python3 -c "
           with open('build.gradle', 'r') as f:
               c = f.read()
-          signing = '''
+
+          signing_config = '''
               signingConfigs {
                   release {
-                      storeFile file('release.keystore')
-                      storePassword 'Neelkanth@2026'
-                      keyAlias 'accountbookkey'
-                      keyPassword 'Neelkanth@2026'
+                      storeFile file('master_release.keystore')
+                      storePassword 'NeelkanthEnterprise@2026'
+                      keyAlias 'businessbook_key'
+                      keyPassword 'NeelkanthEnterprise@2026'
                   }
               }
           '''
           if 'signingConfigs {' not in c:
-              c = c.replace('android {', 'android {' + signing)
+              c = c.replace('android {', 'android {\n' + signing_config)
               c = c.replace('buildTypes {\n        debug {', 'buildTypes {\n        debug {\n            signingConfig signingConfigs.release')
               c = c.replace('buildTypes {\n        release {', 'buildTypes {\n        release {\n            signingConfig signingConfigs.release')
               with open('build.gradle', 'w') as f:
                   f.write(c)
           "
 
-      - name: Grant Gradle Permissions
+      - name: Grant Gradle Execution Permissions
         working-directory: frontend/android
         run: chmod +x gradlew
 
-      - name: Assemble Release Signed APK
+      - name: Assemble Release-Signed APK
         working-directory: frontend/android
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload Build Artifact
+      - name: Upload In-Place Updateable APK
         uses: actions/upload-artifact@v4
         with:
-          name: BusinessBook-v1.0.${{ github.run_number }}-APK
+          name: BusinessBook-v1.0.${{ github.run_number }}-UpdateReady
           path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
