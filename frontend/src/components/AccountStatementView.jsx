@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getAccountHeads, getAccountLedgerStatement, downloadCSVStatement } from '../utils/statementEngine.js';
+import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function AccountStatementView({ firm, initialAccountName }) {
   const activeFirmId = firm?.id || 'FIRM-001';
@@ -35,9 +36,20 @@ export default function AccountStatementView({ firm, initialAccountName }) {
           <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>📑 Account Milan / Party Ledger</h3>
           <span style={{ fontSize: '11px', color: '#64748b' }}>Firm: {firmName}</span>
         </div>
-        <button onClick={() => downloadCSVStatement(firmName, selectedAccount, statement)} style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-          📊 Export Statement CSV
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            onClick={() => downloadCSVStatement(firmName, selectedAccount, statement)} 
+            style={{ backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            📊 CSV
+          </button>
+          <button 
+            onClick={() => downloadAccountStatementPDF(firmName, selectedAccount, statement)} 
+            style={{ backgroundColor: '#dc2626', color: '#ffffff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            📄 Download PDF
+          </button>
+        </div>
       </div>
 
       <div style={{ marginBottom: '14px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
