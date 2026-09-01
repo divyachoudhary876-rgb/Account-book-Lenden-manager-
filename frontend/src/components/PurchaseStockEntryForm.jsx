@@ -31,32 +31,42 @@ export default function PurchaseStockEntryForm({ firm }) {
     setSuppliers(accs);
     if (accs.length > 0 && !selectedSupplier) setSelectedSupplier(accs[0].account_name);
 
-    const items = getStockItemsByFirm(activeFirmId);
+    let items = getStockItemsByFirm(activeFirmId);
+    
+    // Auto-populate Diesel if stock list is empty
+    if (items.length === 0) {
+      items = [{ id: 'ITEM-DIESEL', item_name: 'Diesel', unit: 'Liters', current_stock: 0 }];
+    }
+
     setStockItems(items);
-    if (items.length > 0 && !selectedItem) setSelectedItem(items[0].item_name);
+    if (!selectedItem) setSelectedItem(items[0].item_name);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selectedSupplier) {
-      alert("⚠️ Please select an Account Head from the dropdown.");
+      alert("⚠️ Select a Supplier Account first!");
       return;
     }
     try {
       const qtyNum = parseFloat(quantity || 0);
       const rateNum = parseFloat(unitRate || 0);
-      const grandTotal = (qtyNum * rateNum * 1.18).toFixed(2);
+      const grandTotal = (qtyNum * rateNum).toFixed(2);
 
       const payload = {
         supplier_account: selectedSupplier,
-        item_name: selectedItem,
-        quantity, unit_rate: unitRate, grand_total: grandTotal,
+        item_name: selectedItem, // Passes explicit item name
+        quantity, 
+        unit_rate: unitRate, 
+        grand_total: grandTotal,
         invoice_number: invoiceNumber
       };
 
       const entry = processPurchaseInvoiceSubmission(activeFirmId, payload);
-      alert(`✓ Purchase Inward Bill #${entry.id} saved!`);
-      setQuantity(''); setUnitRate('');
+      alert(`✓ Purchase Inward Bill #${entry.id} saved!\n• Stock Updated: +${quantity}\n• Vendor Credited: ₹${grandTotal}`);
+      
+      setQuantity(''); 
+      setUnitRate('');
       setInvoiceNumber(`PUR-${Math.floor(100000 + Math.random() * 900000)}`);
       loadData();
     } catch (err) { alert(err.message); }
@@ -69,10 +79,10 @@ export default function PurchaseStockEntryForm({ firm }) {
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Supplier / Vendor Account (From Chart of Accounts) *</label>
+            <label style={labelStyle}>Supplier / Vendor Account *</label>
             <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} style={inputStyle} required>
               {suppliers.length === 0 ? (
-                <option value="">No Accounts Available</option>
+                <option value="">No Accounts Found! Pehle Account Head Banayein</option>
               ) : (
                 suppliers.map(s => (
                   <option key={s.id} value={s.account_name}>{s.account_name} ({s.account_group || 'GENERAL'})</option>
@@ -83,7 +93,9 @@ export default function PurchaseStockEntryForm({ firm }) {
           <div>
             <label style={labelStyle}>Stock Item (+IN) *</label>
             <select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} style={inputStyle} required>
-              {stockItems.map(i => <option key={i.id} value={i.item_name}>{i.item_name}</option>)}
+              {stockItems.map(i => (
+                <option key={i.id} value={i.item_name}>{i.item_name} (Avail: {i.current_stock || 0} {i.unit || 'Liters'})</option>
+              ))}
             </select>
           </div>
         </div>
