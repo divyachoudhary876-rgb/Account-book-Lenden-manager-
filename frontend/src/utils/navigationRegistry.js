@@ -1,18 +1,59 @@
 // frontend/src/utils/navigationRegistry.js
 
-export const SORTED_ACCOUNTING_MENU = [
-  { sequence_order: 1, id: 'firm_setup', label: '1. Firm Profile Settings', icon: '⚙️' },
-  { sequence_order: 2, id: 'create_account', label: '2. Create Account Head', icon: '➕' },
-  { sequence_order: 3, id: 'inventory', label: '3. Inventory & Stock Master', icon: '📦' },
-  { sequence_order: 4, id: 'billing', label: '4. Sales Billing & Invoicing', icon: '🧾' },
-  { sequence_order: 5, id: 'purchase', label: '5. Purchase Entry & Inward Stock', icon: '🛍️' },
-  { sequence_order: 6, id: 'vouchers', label: '6. Voucher Entry (JV/PV/RV)', icon: '📒' },
-  { sequence_order: 7, id: 'bhatta_prod', label: '7. Brick Production / Nikasi', icon: '🧱' },
-  { sequence_order: 8, id: 'settlement', label: '8. Bill Settlement (FIFO)', icon: '💳' },
-  { sequence_order: 9, id: 'dashboard', label: '9. Dashboard & Overview', icon: '📊' },
-  { sequence_order: 10, id: 'ledger', label: '10. Account Milan & Ledger', icon: '📖' },
-  { sequence_order: 11, id: 'journal', label: '11. General Journal Register', icon: '📝' },
-  { sequence_order: 12, id: 'reports', label: '12. Financial Reports (P&L / BS)', icon: '📈' },
-  { sequence_order: 13, id: 'backup', label: '13. Data Backup & Protection', icon: '🔒' },
-  { sequence_order: 14, id: 'purge', label: '14. Clear Demo Data', icon: '🗑️' }
-];
+/**
+ * Master 14-Item Accounting Workflow Menu Registry
+ * Dynamic titles adapt according to active firm industry classification
+ */
+export const getDynamicWorkflowMenu = (businessCategory = 'TRADING') => {
+  const cat = (businessCategory || 'TRADING').toUpperCase();
+
+  // Determine industry-specific production slot (#8)
+  let productionModule = null;
+  if (cat.includes('BRICK') || cat.includes('BHATTA')) {
+    productionModule = {
+      order: 8,
+      key: 'production',
+      label: '8. Brick Production / Nikasi',
+      icon: '🧱',
+      type: 'view'
+    };
+  } else if (cat.includes('BIOMASS') || cat.includes('BRIQUETTE')) {
+    productionModule = {
+      order: 8,
+      key: 'production',
+      label: '8. Biomass Plant & Pressing',
+      icon: '🪵',
+      type: 'view'
+    };
+  } else if (cat.includes('MANUFACTURING')) {
+    productionModule = {
+      order: 8,
+      key: 'production',
+      label: '8. Production & Processing WIP',
+      icon: '🏭',
+      type: 'view'
+    };
+  }
+
+  const rawMenu = [
+    { order: 1, key: 'dashboard', label: '1. Firm Dashboard & Overview', icon: '📊', type: 'view' },
+    { order: 2, key: 'firm_settings', label: '2. Firm Profile Settings', icon: '⚙️', type: 'view' },
+    { order: 3, key: 'create_account', label: '3. Create Account Head', icon: '➕', type: 'modal' },
+    { order: 4, key: 'inventory', label: '4. Inventory & Stock Master', icon: '📦', type: 'view' },
+    { order: 5, key: 'sales', label: '5. Sales Billing & Invoicing', icon: '🧾', type: 'view' },
+    { order: 6, key: 'purchase', label: '6. Purchase Entry & Inward Stock', icon: '🛍️', type: 'view' },
+    { order: 7, key: 'vouchers', label: '7. Voucher Entry (JV/PV/RV)', icon: '📒', type: 'view' },
+    ...(productionModule ? [productionModule] : []),
+    { order: 9, key: 'settlement', label: '9. Bill Settlement (FIFO)', icon: '💳', type: 'view' },
+    { order: 10, key: 'milan', label: '10. Account Milan & Ledger', icon: '📖', type: 'view' },
+    { order: 11, key: 'journal', label: '11. General Journal Register', icon: '📝', type: 'view' },
+    { order: 12, key: 'reports', label: '12. Financial Reports (P&L / BS)', icon: '📈', type: 'view' },
+    { order: 13, key: 'backup', label: '13. Data Backup & Protection', icon: '🔒', type: 'view' },
+    { order: 14, key: 'purge', label: '14. Clear Demo Data', icon: '🗑️', type: 'view', isDanger: true }
+  ];
+
+  return rawMenu;
+};
+
+// Aliases for build backwards compatibility
+export const filterMenuByIndustry = (items, category) => getDynamicWorkflowMenu(category);
