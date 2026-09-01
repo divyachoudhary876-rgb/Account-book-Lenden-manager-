@@ -1,13 +1,8 @@
 // frontend/src/utils/navigationRegistry.js
 
-/**
- * Master 14-Item Accounting Workflow Menu Registry
- * Dynamic titles adapt according to active firm industry classification
- */
 export const getDynamicWorkflowMenu = (businessCategory = 'TRADING') => {
   const cat = (businessCategory || 'TRADING').toUpperCase();
 
-  // Determine industry-specific production slot (#8)
   let productionModule = null;
   if (cat.includes('BRICK') || cat.includes('BHATTA')) {
     productionModule = {
@@ -55,5 +50,4 @@ export const getDynamicWorkflowMenu = (businessCategory = 'TRADING') => {
   return rawMenu;
 };
 
-// Aliases for build backwards compatibility
 export const filterMenuByIndustry = (items, category) => getDynamicWorkflowMenu(category);
