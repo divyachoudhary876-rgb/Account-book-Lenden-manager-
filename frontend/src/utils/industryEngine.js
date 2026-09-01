@@ -30,6 +30,9 @@ export const INDUSTRY_SECTORS = {
   }
 };
 
+/**
+ * Returns a flat list of all active industry categories
+ */
 export const getAllAvailableCategories = () => {
   const list = [];
   Object.values(INDUSTRY_SECTORS).forEach(sector => {
@@ -38,6 +41,32 @@ export const getAllAvailableCategories = () => {
   return list;
 };
 
+/**
+ * Filter menu options and dashboard navigation based on active firm industry
+ */
+export const filterMenuByIndustry = (menuItems = [], businessCategory = 'TRADING') => {
+  const cat = (businessCategory || 'TRADING').toUpperCase();
+
+  return menuItems.filter(item => {
+    const key = (item.key || item.id || '').toLowerCase();
+
+    // Production modules only visible for brick kiln & manufacturing
+    if (key.includes('production') || key.includes('bhatta')) {
+      return cat.includes('BRICK') || cat.includes('BHATTA') || cat.includes('MANUFACTURING');
+    }
+
+    // Fleet/Transport modules only for logistics/transport
+    if (key.includes('fleet') || key.includes('trip') || key.includes('vehicle')) {
+      return cat.includes('TRANSPORT') || cat.includes('LOGISTICS');
+    }
+
+    return true;
+  });
+};
+
+/**
+ * Seed initial accounts based on selected business category
+ */
 export const getStarterAccountsForCategory = (categoryCode = 'TRADING') => {
   const baseAccounts = [
     { id: 'ACC-01', account_name: 'Cash-in-Hand', primary_type: 'ASSETS', sub_group: 'Cash-in-Hand (नकद रोकड़)', opening_balance: 0, balance_type: 'Dr', is_system_locked: true },
