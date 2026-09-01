@@ -26,6 +26,10 @@ jobs:
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
+      - name: Build Web Application (Generates dist directory)
+        working-directory: frontend
+        run: npm run build
+
       - name: Sync & Initialize Capacitor Android Project
         working-directory: frontend
         run: |
@@ -44,10 +48,6 @@ jobs:
             sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUMBER}/g" android/app/build.gradle
             sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" android/app/build.gradle
           fi
-
-      - name: Build Web Application
-        working-directory: frontend
-        run: npm run build
 
       - name: Generate Persistent Dedicated Keystore
         working-directory: frontend/android/app
