@@ -3,6 +3,22 @@
 import { saveUniversalVoucher } from './voucherPostingEngine.js';
 
 /**
+ * Standard Statutory Measurement Units (GST & Indian Business Aligned)
+ */
+export const STANDARD_MEASUREMENT_UNITS = [
+  'Pcs (Pieces / नग)',
+  'Ltr (Liters / लीटर)',
+  'MT (Metric Ton / मीट्रिक टन)',
+  'Bags (बोरी / कट्टा)',
+  'Brass (ब्रास / ट्रॉली)',
+  'Kgs (Kilograms / किलोग्राम)',
+  'Quintal (क्विंटल)',
+  'CFT (Cubic Feet / घन फुट)',
+  'Sq.Ft (Square Feet / वर्ग फुट)',
+  'Numbers (संख्या)'
+];
+
+/**
  * Retrieve inventory stock items for the active firm
  */
 export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
@@ -12,13 +28,13 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-    
-    // Default baseline items for initial setup
+
+    // Default statutory baseline items
     const defaultStock = [
       { id: 'STK-001', item_name: 'Diesel', unit: 'Ltr', current_stock: 500, unit_purchase_price: 90.00, selling_price: 0 },
       { id: 'STK-002', item_name: 'Coal / Steam Coal', unit: 'MT', current_stock: 25, unit_purchase_price: 8500.00, selling_price: 0 },
       { id: 'STK-003', item_name: 'Pakki Eent (Red Bricks - 1st Class)', unit: 'Pcs', current_stock: 50000, unit_purchase_price: 5.50, selling_price: 7.50 },
-      { id: 'STK-004', item_name: 'Biomass Briquette / Husk', unit: 'MT', current_stock: 40, unit_purchase_price: 4200.00, selling_price: 0 }
+      { id: 'STK-004', item_name: 'Biomass Briquette / Mustard Husk', unit: 'MT', current_stock: 40, unit_purchase_price: 4200.00, selling_price: 0 }
     ];
     localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(defaultStock));
     return defaultStock;
@@ -28,8 +44,61 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
 };
 
 /**
+ * Save or Update an item in Stock Master
+ */
+export const saveStockItemMaster = (firmId = 'FIRM-001', itemData = {}) => {
+  const stockKey = `app_stock_${firmId}`;
+  const stockList = getStockItemsByFirm(firmId);
+
+  const cleanName = (itemData.item_name || '').trim();
+  if (!cleanName) {
+    throw new Error('⚠️ Stock item name cannot be empty.');
+  }
+
+  const payload = {
+    id: itemData.id || `STK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    item_name: cleanName,
+    unit: itemData.unit || 'Pcs',
+    current_stock: parseFloat(itemData.current_stock || 0),
+    unit_purchase_price: parseFloat(itemData.unit_purchase_price || itemData.purchase_rate || 0),
+    selling_price: parseFloat(itemData.selling_price || itemData.sale_rate || 0),
+    updated_at: new Date().toISOString()
+  };
+
+  const existingIdx = stockList.findIndex(
+    i => i.id === payload.id || (i.item_name || '').trim().toLowerCase() === cleanName.toLowerCase()
+  );
+
+  if (existingIdx !== -1) {
+    stockList[existingIdx] = { ...stockList[existingIdx], ...payload };
+  } else {
+    stockList.push(payload);
+  }
+
+  localStorage.setItem(stockKey, JSON.stringify(stockList));
+  window.dispatchEvent(new Event('stock_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+
+  return payload;
+};
+
+/**
+ * Delete an item from Stock Master
+ */
+export const deleteStockItemMaster = (firmId = 'FIRM-001', itemId = '') => {
+  const stockKey = `app_stock_${firmId}`;
+  const stockList = getStockItemsByFirm(firmId);
+  const updatedList = stockList.filter(i => i.id !== itemId);
+
+  localStorage.setItem(stockKey, JSON.stringify(updatedList));
+  window.dispatchEvent(new Event('stock_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+
+  return true;
+};
+
+/**
  * Update stock quantity for Sales Invoicing, Purchase, and Stock Adjustments
- * Exported specifically to resolve Vite / Rollup build integration.
  */
 export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyDelta = 0, unitRate = null) => {
   if (!itemName) return false;
@@ -46,15 +115,12 @@ export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyD
 
   if (itemIndex !== -1) {
     const currentStock = parseFloat(stockList[itemIndex].current_stock || 0);
-    const newStock = currentStock + delta; // delta is negative for sales, positive for purchase
-
-    stockList[itemIndex].current_stock = newStock;
+    stockList[itemIndex].current_stock = currentStock + delta;
     if (unitRate !== null && !isNaN(parseFloat(unitRate)) && parseFloat(unitRate) > 0) {
       stockList[itemIndex].unit_purchase_price = parseFloat(unitRate);
     }
     stockList[itemIndex].updated_at = new Date().toISOString();
   } else {
-    // If new item created via invoice/purchase
     stockList.push({
       id: `STK-${Date.now()}`,
       item_name: itemName.trim(),
@@ -74,7 +140,7 @@ export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyD
 };
 
 /**
- * Record Internal Material / Fuel Consumption (e.g., Diesel in Tractor)
+ * Record Internal Material / Fuel Consumption (e.g. Diesel in Tractor)
  * Deducts physical quantity and automatically posts a Double-Entry Journal Voucher (JV).
  */
 export const recordStockConsumption = (firmId = 'FIRM-001', consumptionData = {}) => {
@@ -153,32 +219,6 @@ export const recordStockConsumption = (firmId = 'FIRM-001', consumptionData = {}
   };
 };
 
-/**
- * Save or Edit an Item in Stock Master
- */
-export const saveStockItem = (firmId = 'FIRM-001', itemData = {}) => {
-  const stockKey = `app_stock_${firmId}`;
-  const stockList = getStockItemsByFirm(firmId);
-
-  const newItem = {
-    id: itemData.id || `STK-${Date.now()}`,
-    item_name: itemData.item_name.trim(),
-    unit: itemData.unit || 'Pcs',
-    current_stock: parseFloat(itemData.current_stock || 0),
-    unit_purchase_price: parseFloat(itemData.unit_purchase_price || 0),
-    selling_price: parseFloat(itemData.selling_price || 0),
-    updated_at: new Date().toISOString()
-  };
-
-  const existingIdx = stockList.findIndex(i => i.id === newItem.id);
-  if (existingIdx !== -1) {
-    stockList[existingIdx] = newItem;
-  } else {
-    stockList.push(newItem);
-  }
-
-  localStorage.setItem(stockKey, JSON.stringify(stockList));
-  window.dispatchEvent(new Event('stock_updated'));
-  window.dispatchEvent(new Event('app_state_updated'));
-  return newItem;
-};
+// Aliases for backwards compatibility
+export const saveStockItem = saveStockItemMaster;
+export const deleteStockItem = deleteStockItemMaster;
