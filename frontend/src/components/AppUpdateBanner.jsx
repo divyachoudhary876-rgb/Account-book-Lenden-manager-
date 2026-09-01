@@ -1,63 +1,91 @@
 // frontend/src/components/AppUpdateBanner.jsx
 
 import React, { useState, useEffect } from 'react';
-import { checkForSilentAppUpdates, applySilentAppUpdate } from '../utils/otaUpdateEngine.js';
+import { checkForAppUpdates, triggerAppDownload, CURRENT_APP_VERSION } from '../utils/otaUpdateEngine.js';
 
 export default function AppUpdateBanner() {
-  const [updateMeta, setUpdateMeta] = useState(null);
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(false);
 
-  useEffect(() => {
-    // Check for updates on mount and every 30 minutes
-    runCheck();
-    const interval = setInterval(runCheck, 30 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const runCheck = async () => {
-    const info = await checkForSilentAppUpdates();
-    if (info.hasUpdate) {
-      setUpdateMeta(info);
+  const runUpdateCheck = async () => {
+    setIsChecking(true);
+    const result = await checkForAppUpdates();
+    if (result.updateAvailable) {
+      setUpdateInfo(result);
     }
+    setIsChecking(false);
   };
 
-  if (!updateMeta) return null;
+  useEffect(() => {
+    runUpdateCheck();
+  }, []);
+
+  if (isDismissed || !updateInfo || !updateInfo.updateAvailable) {
+    return null;
+  }
 
   return (
-    <div style={bannerStyle}>
-      <div style={{ flex: 1 }}>
-        <strong style={{ fontSize: '13px', display: 'block' }}>🚀 New Version Available ({updateMeta.versionName})</strong>
-        <span style={{ fontSize: '11px', opacity: 0.9 }}>App update bina kisi data loss ya reinstall ke ready hai.</span>
+    <div style={{
+      backgroundColor: '#0f172a',
+      color: '#ffffff',
+      padding: '10px 16px',
+      borderRadius: '8px',
+      margin: '10px 16px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: '10px',
+      borderLeft: '4px solid #10b981',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <span style={{ fontSize: '20px' }}>🚀</span>
+        <div>
+          <div style={{ fontWeight: 'bold', fontSize: '13px' }}>
+            New Update Available: {updateInfo.latestVersion}
+          </div>
+          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+            Current version: v{CURRENT_APP_VERSION.versionName} • Direct in-place upgrade ready
+          </div>
+        </div>
       </div>
-      <button onClick={applySilentAppUpdate} style={updateBtnStyle}>
-        🔄 Update Now
-      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button
+          onClick={() => triggerAppDownload(updateInfo.downloadUrl)}
+          style={{
+            backgroundColor: '#10b981',
+            color: '#ffffff',
+            border: 'none',
+            padding: '6px 14px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          ⬇️ Update Now
+        </button>
+        <button
+          onClick={() => setIsDismissed(true)}
+          style={{
+            backgroundColor: 'transparent',
+            color: '#94a3b8',
+            border: '1px solid #334155',
+            padding: '6px 10px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            cursor: 'pointer'
+          }}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }
-
-const bannerStyle = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  backgroundColor: '#2563eb',
-  color: '#ffffff',
-  padding: '10px 16px',
-  display: 'flex',
-  alignItems: 'center',
-  justify: 'space-between',
-  zIndex: 9999,
-  boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-  fontFamily: 'sans-serif'
-};
-
-const updateBtnStyle = {
-  backgroundColor: '#ffffff',
-  color: '#2563eb',
-  border: 'none',
-  padding: '8px 14px',
-  borderRadius: '6px',
-  fontWeight: 'bold',
-  fontSize: '12px',
-  cursor: 'pointer'
-};
