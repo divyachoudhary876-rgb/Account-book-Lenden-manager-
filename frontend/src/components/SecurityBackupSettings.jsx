@@ -1,58 +1,103 @@
 // frontend/src/components/SecurityBackupSettings.jsx
 
 import React, { useState } from 'react';
-import { exportBackupToDeviceStorage, restoreSystemFromBackupJSON } from '../utils/backupEngine.js';
+import { exportUniversalBackup, restoreUniversalBackup } from '../utils/backupEngine.js';
 
-export default function SecurityBackupSettings() {
-  const [isProcessing, setIsProcessing] = useState(false);
+export default function SecurityBackupSettings({ firm }) {
+  const activeFirmId = firm?.id || 'FIRM-001';
+  const firmName = firm?.legal_name || 'Neelkanth Enterprise';
 
-  const handleDownloadBackup = async () => {
-    setIsProcessing(true);
-    const res = await exportBackupToDeviceStorage();
-    setIsProcessing(false);
-    alert(res.message);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [statusMessage, setStatusMessage] = useState(null);
+
+  const handleExport = () => {
+    try {
+      const res = exportUniversalBackup(activeFirmId, firmName);
+      setStatusMessage({ type: 'success', text: `✓ Backup file created with ${res.count} transactions!` });
+    } catch (e) {
+      setStatusMessage({ type: 'error', text: e.message });
+    }
   };
 
-  const handleFileRestore = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        restoreSystemFromBackupJSON(evt.target.result);
-        alert("✓ System Data restored successfully from backup file!");
-        window.location.reload();
-      } catch (err) {
-        alert(`❌ Restore Failed: ${err.message}`);
-      }
-    };
-    reader.readAsText(file);
+    if (!window.confirm("⚠️ Restoring backup will merge and update all accounts, transactions, and inventory. Proceed?")) {
+      e.target.value = '';
+      return;
+    }
+
+    setIsRestoring(true);
+    setStatusMessage(null);
+
+    try {
+      const result = await restoreUniversalBackup(file, activeFirmId);
+      setStatusMessage({
+        type: 'success',
+        text: `✓ Restore Successful!\n• Accounts: ${result.accountsRestored}\n• Vouchers: ${result.vouchersRestored}\n• Stock SKUs: ${result.stockRestored}`
+      });
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: `❌ Restore Failed: ${err.message}` });
+    } finally {
+      setIsRestoring(false);
+      e.target.value = '';
+    }
   };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <h3 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>🔒 Data Security & Local Storage Backup</h3>
+    <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', maxWidth: '600px', margin: '0 auto', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+      <div style={{ borderBottom: '2px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
+        <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>🛡️</span> Data Backup & Migration Center
+        </h3>
+        <span style={{ fontSize: '11px', color: '#64748b' }}>Active Firm: <strong>{firmName}</strong> ({activeFirmId})</span>
+      </div>
 
-      <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
-        <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>💾 Device Public Backup (Survives App Uninstall)</h4>
-        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b' }}>
-          Save encrypted JSON data to your phone's <strong>Documents</strong> folder so your financial ledgers remain safe even if the app is uninstalled.
-        </p>
+      {statusMessage && (
+        <div style={{
+          backgroundColor: statusMessage.type === 'success' ? '#ecfdf5' : '#fef2f2',
+          border: `1px solid ${statusMessage.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+          color: statusMessage.type === 'success' ? '#065f46' : '#b91c1c',
+          padding: '12px',
+          borderRadius: '8px',
+          marginBottom: '16px',
+          fontSize: '12px',
+          whiteSpace: 'pre-line',
+          fontWeight: '600'
+        }}>
+          {statusMessage.text}
+        </div>
+      )}
 
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'grid', gap: '14px' }}>
+        {/* 1. Export Card */}
+        <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+          <strong style={{ fontSize: '13px', color: '#1e293b' }}>📥 Download Full Data Backup</strong>
+          <p style={{ margin: '4px 0 10px 0', fontSize: '11px', color: '#64748b' }}>
+            Export all ledgers, voucher entries, stock counts, and firm profiles to a standalone JSON file.
+          </p>
           <button
-            onClick={handleDownloadBackup}
-            disabled={isProcessing}
-            style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+            onClick={handleExport}
+            style={{ backgroundColor: '#0284c7', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
           >
-            📲 Download & Save Local Backup
+            💾 Export Backup (.JSON)
           </button>
+        </div>
 
-          <label style={{ backgroundColor: '#2563eb', color: '#fff', padding: '10px 18px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'inline-block' }}>
-            📥 Restore Backup File
-            <input type="file" accept=".json" onChange={handleFileRestore} style={{ display: 'none' }} />
-          </label>
+        {/* 2. Restore Card */}
+        <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+          <strong style={{ fontSize: '13px', color: '#1e293b' }}>📤 Restore Old / Previous App Backup</strong>
+          <p style={{ margin: '4px 0 10px 0', fontSize: '11px', color: '#64748b' }}>
+            Upload your previously downloaded backup JSON file to restore all your financial transactions instantly.
+          </p>
+          <input
+            type="file"
+            accept=".json"
+            onChange={handleFileChange}
+            disabled={isRestoring}
+            style={{ fontSize: '12px' }}
+          />
         </div>
       </div>
     </div>
