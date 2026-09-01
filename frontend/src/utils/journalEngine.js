@@ -1,102 +1,44 @@
 // frontend/src/utils/journalEngine.js
 
-import { getAccountHeads } from './statementEngine.js';
+import { getAllUniversalVouchers } from './statementEngine.js';
+import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
 
-export const getJournalVouchersByFirm = (firmId) => {
-  const targetId = firmId || 'FIRM-001';
-  let vouchers = [];
+export const getFirmVouchers = (firmId = 'FIRM-001') => getAllUniversalVouchers(firmId);
 
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('app_vouchers')) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) vouchers = vouchers.concat(parsed);
-        }
-      }
-    }
+export const saveUniversalVoucher = (firmId = 'FIRM-001', payload) => {
+  const { voucher_date, voucher_type, dr_account, cr_account, amount, narration, reference_no } = payload;
+  const numAmt = parseFloat(amount || 0);
 
-    // Deduplicate vouchers by ID
-    const voucherMap = new Map();
-    vouchers.forEach(v => {
-      if (v && v.id) voucherMap.set(v.id, v);
-    });
-    vouchers = Array.from(voucherMap.values());
-  } catch (e) {
-    vouchers = [];
+  if (!dr_account || !cr_account || numAmt <= 0) {
+    throw new Error("⚠️ Valid Debit Account, Credit Account, and Amount (>0) are required.");
   }
 
-  return vouchers;
-};
+  const vouchers = getAllUniversalVouchers(firmId);
+  const newVoucher = {
+    id: payload.id || `VCH-${Date.now()}`,
+    firm_id: firmId,
+    voucher_date: voucher_date || new Date().toISOString().split('T')[0],
+    date: voucher_date || new Date().toISOString().split('T')[0],
+    voucher_type: (voucher_type || 'JOURNAL').toUpperCase(),
+    dr_account: dr_account.trim(),
+    cr_account: cr_account.trim(),
+    amount: numAmt,
+    reference_no: reference_no || `VCH-${Date.now()}`,
+    narration: narration || '',
+    created_at: new Date().toISOString()
+  };
 
-export const updateJournalVoucher = (firmId, updatedVoucher) => {
-  const targetId = firmId || 'FIRM-001';
-  const key = `app_vouchers_${targetId}`;
-  const existingVouchers = getJournalVouchersByFirm(targetId);
-  const index = existingVouchers.findIndex(v => v.id === updatedVoucher.id);
-  
-  if (index !== -1) {
-    existingVouchers[index] = { 
-      ...updatedVoucher, 
-      updated_at: new Date().toISOString() 
-    };
-    localStorage.setItem(key, JSON.stringify(existingVouchers));
-    localStorage.setItem('app_vouchers_global', JSON.stringify(existingVouchers));
-    
-    // Broadcast event across UI
-    window.dispatchEvent(new Event('accounts_master_updated'));
-    window.dispatchEvent(new Event('storage'));
+  vouchers.unshift(newVoucher);
+  localStorage.setItem(`app_vouchers_${firmId}`, JSON.stringify(vouchers));
+
+  const accounts = getFirmMasterAccounts(firmId);
+  if (!accounts.some(a => a.account_name.toLowerCase() === dr_account.trim().toLowerCase())) {
+    saveMasterAccount(firmId, { account_name: dr_account.trim(), primary_type: 'EXPENSES', sub_group: 'General Ledger' });
   }
-  return existingVouchers;
-};
-
-export const deleteJournalVoucher = (firmId, voucherId) => {
-  const targetId = firmId || 'FIRM-001';
-  const key = `app_vouchers_${targetId}`;
-  const existingVouchers = getJournalVouchersByFirm(targetId);
-  const updated = existingVouchers.filter(v => v.id !== voucherId);
-  
-  localStorage.setItem(key, JSON.stringify(updated));
-  localStorage.setItem('app_vouchers_global', JSON.stringify(updated));
-  
-  window.dispatchEvent(new Event('accounts_master_updated'));
-  window.dispatchEvent(new Event('storage'));
-  return updated;
-};
-
-export const downloadJournalCSV = (firmName, vouchers) => {
-  if (!vouchers || vouchers.length === 0) {
-    alert("⚠️ Journal Register is empty. No records to export.");
-    return;
+  if (!accounts.some(a => a.account_name.toLowerCase() === cr_account.trim().toLowerCase())) {
+    saveMasterAccount(firmId, { account_name: cr_account.trim(), primary_type: 'INCOME', sub_group: 'General Ledger' });
   }
 
-  let csvRows = [];
-  csvRows.push(`"GENERAL JOURNAL REGISTER (DAY BOOK)"`);
-  csvRows.push(`"Firm: ${firmName}"`);
-  csvRows.push(`"Export Date: ${new Date().toLocaleDateString()}"`);
-  csvRows.push("");
-  csvRows.push(`"Date","Voucher Ref","Voucher Type","Debit Account (Dr)","Credit Account (Cr)","Amount (Rs)"`);
-
-  let totalAmount = 0;
-
-  vouchers.forEach(v => {
-    const amt = parseFloat(v.amount || 0);
-    totalAmount += amt;
-    csvRows.push(`"${v.date || ''}","${v.id}","${v.voucher_type || 'JOURNAL'}","${v.dr_account}","${v.cr_account}","${amt.toFixed(2)}"`);
-  });
-
-  csvRows.push(`"TOTAL","","","","","${totalAmount.toFixed(2)}"`);
-
-  const csvString = csvRows.join("\n");
-  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", `Journal_Register_${firmName.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  window.dispatchEvent(new Event('app_state_updated'));
+  return newVoucher;
 };
