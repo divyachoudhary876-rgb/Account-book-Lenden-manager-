@@ -1,122 +1,80 @@
 // frontend/src/utils/salesInvoicingEngine.js
 
-import { getStockItemsByFirm, updateStockMovement } from './stockInventoryEngine.js';
 import { getAccountHeads } from './statementEngine.js';
-
-export const processSalesInvoiceSubmission = (firmId, payload) => {
-  const targetId = firmId || 'FIRM-001';
-  
-  if (!payload.customer_account) throw new Error("⚠️ Please select or create a Customer Account.");
-  if (!payload.item_id) throw new Error("⚠️ Please select a Stock Item.");
-  
-  const requestedQty = parseFloat(payload.quantity || 0);
-  if (requestedQty <= 0) throw new Error("⚠️ Quantity must be greater than 0.");
-
-  const masterItems = getStockItemsByFirm(targetId);
-  const targetItem = masterItems.find(i => i.id === payload.item_id || i.item_name === payload.item_name);
-
-  if (!targetItem) throw new Error("⚠️ Selected Stock Item does not exist in Inventory.");
-  if (targetItem.current_stock < requestedQty) {
-    throw new Error(`🚫 Insufficient Stock! Available: ${targetItem.current_stock} ${targetItem.unit}. Sale Invoice blocked.`);
-  }
-
-  const invoiceId = payload.invoice_number || `INV-${Math.floor(100000 + Math.random() * 900000)}`;
-  const currentDate = new Date().toISOString().split('T')[0];
-
-  const invoiceData = {
-    id: invoiceId,
-    customer_account: payload.customer_account,
-    item_id: targetItem.id,
-    item_name: targetItem.item_name,
-    unit: targetItem.unit,
-    quantity: requestedQty,
-    unit_rate: parseFloat(payload.unit_rate),
-    gst_rate: parseFloat(payload.gst_rate || 0), // 0% GST Supported
-    taxable_amount: parseFloat(payload.taxable_amount),
-    tax_amount: parseFloat(payload.tax_amount),
-    grand_total: parseFloat(payload.grand_total),
-    dispatch_notes: payload.dispatch_notes || '',
-    date: currentDate,
-    created_at: new Date().toISOString()
-  };
-
-  updateStockMovement(targetId, targetItem.id, requestedQty, 'OUT');
-
-  const voucherKey = `app_vouchers_${targetId}`;
-  const vouchers = JSON.parse(localStorage.getItem(voucherKey) || '[]');
-  vouchers.unshift({
-    id: `JV-${invoiceId}`,
-    date: currentDate,
-    voucher_type: 'SALES',
-    dr_account: payload.customer_account,
-    cr_account: 'Sales Account',
-    amount: invoiceData.grand_total,
-    narration: `Sales Bill #${invoiceId} - ${invoiceData.item_name}`
-  });
-  localStorage.setItem(voucherKey, JSON.stringify(vouchers));
-
-  const salesKey = `app_sales_invoices_${targetId}`;
-  const salesList = JSON.parse(localStorage.getItem(salesKey) || '[]');
-  salesList.unshift(invoiceData);
-  localStorage.setItem(salesKey, JSON.stringify(salesList));
-
-  window.dispatchEvent(new Event('storage'));
-  return invoiceData;
-};
-
-export const quickCreateCustomerAccount = (firmId, accountData) => {
-  const targetId = firmId || 'FIRM-001';
-  if (!accountData.account_name) throw new Error("⚠️ Account Name is required.");
-
-  const key = `app_accounts_${targetId}`;
-  const accounts = getAccountHeads(targetId);
-
-  const newAcc = {
-    id: `ACC-${Date.now()}`,
-    account_name: accountData.account_name.trim(),
-    account_group: 'SUNDRY_DEBTOR'
-  };
-
-  accounts.push(newAcc);
-  localStorage.setItem(key, JSON.stringify(accounts));
-  window.dispatchEvent(new Event('storage'));
-  return newAcc;
-};
+import { getStockItemsByFirm } from './stockInventoryEngine.js';
 
 export const processPurchaseInvoiceSubmission = (firmId, payload) => {
   const targetId = firmId || 'FIRM-001';
-  if (!payload.supplier_account) throw new Error("⚠️ Select Supplier Account.");
-  const qty = parseFloat(payload.quantity || 0);
-  if (qty <= 0) throw new Error("⚠️ Enter valid quantity.");
+  const { supplier_account, item_name, quantity, unit_rate, grand_total, invoice_number } = payload;
 
-  const purchaseId = payload.invoice_number || `PUR-${Math.floor(100000 + Math.random() * 900000)}`;
-  const currentDate = new Date().toISOString().split('T')[0];
+  if (!supplier_account) {
+    throw new Error("⚠️ Please select a valid Supplier / Vendor Account.");
+  }
 
-  const purchaseData = {
-    id: purchaseId,
-    supplier_account: payload.supplier_account,
-    item_name: payload.item_name,
-    quantity: qty,
-    unit_rate: parseFloat(payload.unit_rate || 0),
-    gst_rate: parseFloat(payload.gst_rate || 0),
-    taxable_amount: parseFloat(payload.taxable_amount || 0),
-    tax_amount: parseFloat(payload.tax_amount || 0),
-    grand_total: parseFloat(payload.grand_total || 0),
-    date: currentDate
+  const qty = parseFloat(quantity || 0);
+  const rate = parseFloat(unit_rate || 0);
+
+  if (qty <= 0 || rate <= 0) {
+    throw new Error("⚠️ Quantity and Purchase Rate must be greater than zero.");
+  }
+
+  // 1. Multi-Format Stock Item Lookup (By ID, Name, or Normalized Text)
+  const stockKey = `app_stock_items_${targetId}`;
+  let stockItems = getStockItemsByFirm(targetId);
+
+  let targetItem = stockItems.find(i => 
+    i.id === item_name || 
+    i.item_name.toLowerCase() === (item_name || '').toLowerCase()
+  );
+
+  // 2. Auto-Create Stock Item if missing (Prevents "Selected stock item not found" error)
+  if (!targetItem) {
+    const cleanItemName = (item_name && typeof item_name === 'string' && item_name.trim() !== '') ? item_name.trim() : 'Diesel';
+    targetItem = {
+      id: `ITEM-${Date.now()}`,
+      item_name: cleanItemName,
+      unit: cleanItemName.toLowerCase().includes('diesel') ? 'Liters' : 'Pcs',
+      current_stock: 0,
+      unit_purchase_price: rate
+    };
+    stockItems.push(targetItem);
+  }
+
+  // 3. Increment Inventory (+IN)
+  targetItem.current_stock = parseFloat(targetItem.current_stock || 0) + qty;
+  targetItem.unit_purchase_price = rate;
+
+  localStorage.setItem(stockKey, JSON.stringify(stockItems));
+  localStorage.setItem('app_stock_items_global', JSON.stringify(stockItems));
+
+  // 4. Double-Entry Financial Voucher Creation (Debit Purchase/Stock, Credit Supplier)
+  const voucherKey = `app_vouchers_${targetId}`;
+  let vouchers = [];
+  try {
+    const raw = localStorage.getItem(voucherKey);
+    vouchers = raw ? JSON.parse(raw) : [];
+  } catch (e) { vouchers = []; }
+
+  const calculatedTotal = grand_total ? parseFloat(grand_total) : (qty * rate);
+  const purchaseVoucher = {
+    id: `PUR-${Date.now()}`,
+    voucher_date: new Date().toISOString().split('T')[0],
+    date: new Date().toISOString().split('T')[0],
+    voucher_type: 'PURCHASE',
+    dr_account: 'Diesel Expenses', // Expense / Stock Debit
+    cr_account: supplier_account,  // Supplier Credit
+    amount: calculatedTotal,
+    narration: `Purchase Inward Bill #${invoice_number || 'N/A'}: ${targetItem.item_name} (${qty} ${targetItem.unit} @ ₹${rate})`,
+    created_at: new Date().toISOString()
   };
 
-  updateStockMovement(targetId, payload.item_id || payload.item_name, qty, 'IN');
+  vouchers.unshift(purchaseVoucher);
+  localStorage.setItem(voucherKey, JSON.stringify(vouchers));
+  localStorage.setItem('app_vouchers_global', JSON.stringify(vouchers));
 
-  const purKey = `app_purchase_invoices_${targetId}`;
-  const purList = JSON.parse(localStorage.getItem(purKey) || '[]');
-  purList.unshift(purchaseData);
-  localStorage.setItem(purKey, JSON.stringify(purList));
-
+  // Trigger UI update events
+  window.dispatchEvent(new Event('accounts_master_updated'));
   window.dispatchEvent(new Event('storage'));
-  return purchaseData;
-};
 
-export const getPurchaseInvoicesByFirm = (firmId) => {
-  const targetId = firmId || 'FIRM-001';
-  return JSON.parse(localStorage.getItem(`app_purchase_invoices_${targetId}`) || '[]');
+  return purchaseVoucher;
 };
