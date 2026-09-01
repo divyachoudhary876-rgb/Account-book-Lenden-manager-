@@ -1,118 +1,115 @@
 // frontend/src/utils/financialReportEngine.js
 
-import { getAccountHeadsByFirm } from './accountMasterEngine.js';
+import { getAllUniversalVouchers, getAccountHeads } from './statementEngine.js';
+import { getStockItemsByFirm } from './stockInventoryEngine.js';
 
-export const calculateFinancialReports = (firmId) => {
-  let targetId = firmId;
-  if (!targetId) {
-    try {
-      const activeFirm = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
-      targetId = activeFirm.id || 'FIRM-001';
-    } catch (e) {
-      targetId = 'FIRM-001';
-    }
-  }
+/**
+ * Universal Financial Reports Generator: Computes P&L and Balance Sheet dynamically
+ */
+export const generateFinancialStatements = (firmId) => {
+  const targetId = firmId || 'FIRM-001';
+  const vouchers = getAllUniversalVouchers(targetId);
+  const stockItems = getStockItemsByFirm(targetId);
+  const accounts = getAccountHeads(targetId);
 
-  const journalKey = `app_journal_entries_${targetId}`;
-  const journalEntries = JSON.parse(localStorage.getItem(journalKey) || '[]');
-  const accounts = getAccountHeadsByFirm(targetId);
+  let totalSalesRevenue = 0;
+  let totalPurchasesCost = 0;
+  let directExpenses = 0;
+  let indirectExpenses = 0;
+  let otherIncome = 0;
 
+  // Account Balances Registry for Balance Sheet
   const accountBalances = {};
   accounts.forEach(acc => {
-    accountBalances[acc.id] = {
-      id: acc.id,
-      name: acc.name,
-      primary_type: acc.primary_type || 'ASSETS',
-      group_type: acc.group_type,
-      balance: parseFloat(acc.opening_balance || 0)
+    accountBalances[acc.account_name] = {
+      group: acc.account_group || acc.primary_type || 'GENERAL',
+      subGroup: acc.sub_group || '',
+      debit: 0,
+      credit: 0
     };
   });
 
-  // Aggregate Journal Entries
-  journalEntries.forEach(entry => {
-    const amt = parseFloat(entry.amount || 0);
-    
-    if (accountBalances[entry.debit_account_id]) {
-      accountBalances[entry.debit_account_id].balance += amt;
-    } else {
-      accountBalances[entry.debit_account_id] = {
-        id: entry.debit_account_id,
-        name: entry.debit_account_name || 'Debit Head',
-        primary_type: (entry.debit_account_name || '').toLowerCase().includes('expense') ? 'EXPENSES' : 'ASSETS',
-        balance: amt
-      };
-    }
+  // Calculate voucher impacts
+  vouchers.forEach(v => {
+    const amt = parseFloat(v.amount || 0);
+    const vType = (v.voucher_type || '').toUpperCase();
+    const dr = v.dr_account || '';
+    const cr = v.cr_account || '';
 
-    if (accountBalances[entry.credit_account_id]) {
-      accountBalances[entry.credit_account_id].balance -= amt;
-    } else {
-      accountBalances[entry.credit_account_id] = {
-        id: entry.credit_account_id,
-        name: entry.credit_account_name || 'Credit Head',
-        primary_type: (entry.credit_account_name || '').toLowerCase().includes('capital') ? 'LIABILITIES' : 'INCOME',
-        balance: -amt
-      };
-    }
-  });
+    // Register Ledger balances
+    if (!accountBalances[dr]) accountBalances[dr] = { group: 'EXPENSES', subGroup: 'GENERAL', debit: 0, credit: 0 };
+    if (!accountBalances[cr]) accountBalances[cr] = { group: 'INCOME', subGroup: 'GENERAL', debit: 0, credit: 0 };
 
-  // Calculate Profit & Loss (Income vs Expenses)
-  let totalIncome = 0;
-  let totalExpenses = 0;
-  const incomeItems = [];
-  const expenseItems = [];
+    accountBalances[dr].debit += amt;
+    accountBalances[cr].credit += amt;
 
-  Object.values(accountBalances).forEach(acc => {
-    const isExpense = acc.primary_type === 'EXPENSES' || acc.name.toLowerCase().includes('expense') || acc.name.toLowerCase().includes('diesel');
-    const isIncome = acc.primary_type === 'INCOME' || acc.name.toLowerCase().includes('sales');
-
-    if (isExpense) {
-      const expenseVal = Math.abs(acc.balance);
-      if (expenseVal > 0) {
-        totalExpenses += expenseVal;
-        expenseItems.push({ name: acc.name, amount: expenseVal });
-      }
-    } else if (isIncome) {
-      const incomeVal = Math.abs(acc.balance);
-      if (incomeVal > 0) {
-        totalIncome += incomeVal;
-        incomeItems.push({ name: acc.name, amount: incomeVal });
-      }
+    // Classify for Profit & Loss
+    if (vType === 'SALES' || cr.toLowerCase().includes('sale') || cr.toLowerCase().includes('revenue')) {
+      totalSalesRevenue += amt;
+    } else if (vType === 'PURCHASE' || dr.toLowerCase().includes('purchase') || dr.toLowerCase().includes('diesel')) {
+      totalPurchasesCost += amt;
+    } else if (dr.toLowerCase().includes('expense') || dr.toLowerCase().includes('labor') || dr.toLowerCase().includes('kharcha')) {
+      directExpenses += amt;
+    } else if (cr.toLowerCase().includes('income') || cr.toLowerCase().includes('interest')) {
+      otherIncome += amt;
     }
   });
 
-  const netProfit = totalIncome - totalExpenses;
+  // Current Stock Valuation (Closing Stock)
+  const totalStockValuation = stockItems.reduce((acc, curr) => {
+    const qty = parseFloat(curr.current_stock || 0);
+    const rate = parseFloat(curr.unit_purchase_price || curr.purchase_rate || 0);
+    return acc + (qty * rate);
+  }, 0);
 
-  // Calculate Balance Sheet (Assets vs Liabilities)
-  let totalAssets = 0;
-  let totalLiabilities = 0;
-  const assetItems = [];
-  const liabilityItems = [];
+  // Trading & P&L Calculation
+  const grossProfit = totalSalesRevenue + totalStockValuation - (totalPurchasesCost + directExpenses);
+  const netProfit = grossProfit + otherIncome - indirectExpenses;
 
-  Object.values(accountBalances).forEach(acc => {
-    const isExpense = acc.primary_type === 'EXPENSES' || acc.name.toLowerCase().includes('expense') || acc.name.toLowerCase().includes('diesel');
-    const isIncome = acc.primary_type === 'INCOME' || acc.name.toLowerCase().includes('sales');
+  // Balance Sheet Assets & Liabilities
+  let totalSundryDebtors = 0;
+  let totalSundryCreditors = 0;
+  let totalCashBank = 0;
 
-    if (!isExpense && !isIncome) {
-      if (acc.balance >= 0) {
-        totalAssets += acc.balance;
-        if (acc.balance > 0) assetItems.push({ name: acc.name, amount: acc.balance });
-      } else {
-        const liabVal = Math.abs(acc.balance);
-        totalLiabilities += liabVal;
-        if (liabVal > 0) liabilityItems.push({ name: acc.name, amount: liabVal });
-      }
+  Object.entries(accountBalances).forEach(([name, data]) => {
+    const net = data.debit - data.credit;
+    const nameLower = name.toLowerCase();
+
+    if (data.group.includes('DEBTOR') || nameLower.includes('customer') || nameLower.includes('traders')) {
+      if (net > 0) totalSundryDebtors += net;
+    } else if (data.group.includes('CREDITOR') || nameLower.includes('supplier') || nameLower.includes('pump') || nameLower.includes('padgad')) {
+      if (net < 0) totalSundryCreditors += Math.abs(net);
+    } else if (data.group.includes('CASH') || data.group.includes('BANK') || nameLower.includes('cash') || nameLower.includes('bank') || nameLower.includes('sbi')) {
+      totalCashBank += net;
     }
   });
+
+  const totalCurrentAssets = totalSundryDebtors + totalCashBank + totalStockValuation;
+  const totalLiabilities = totalSundryCreditors;
 
   return {
-    totalIncome,
-    totalExpenses,
-    netProfit,
-    incomeItems,
-    expenseItems,
-    totalAssets,
-    totalLiabilities: totalLiabilities + (netProfit > 0 ? netProfit : 0),
-    assetItems,
-    liabilityItems
+    tradingAndPL: {
+      salesRevenue: totalSalesRevenue,
+      purchasesCost: totalPurchasesCost,
+      directExpenses,
+      closingStock: totalStockValuation,
+      grossProfit,
+      otherIncome,
+      indirectExpenses,
+      netProfit
+    },
+    balanceSheet: {
+      assets: {
+        sundryDebtors: totalSundryDebtors,
+        cashAndBank: totalCashBank,
+        closingStock: totalStockValuation,
+        totalAssets: totalCurrentAssets
+      },
+      liabilities: {
+        sundryCreditors: totalSundryCreditors,
+        capitalAccount: totalCurrentAssets - totalLiabilities, // Balanced Net Worth
+        totalLiabilitiesAndEquity: totalCurrentAssets
+      }
+    }
   };
 };
