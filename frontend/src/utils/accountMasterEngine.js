@@ -1,144 +1,134 @@
 // frontend/src/utils/accountMasterEngine.js
 
-export const DEFAULT_MASTER_ACCOUNTS = [
-  { id: 'ACC-001', account_name: 'Cash-in-Hand', account_group: 'CASH_BANK', sub_group: 'CASH', opening_balance: 0, balance_type: 'Dr' },
-  { id: 'ACC-002', account_name: 'Bank Account (Primary)', account_group: 'CASH_BANK', sub_group: 'BANK', opening_balance: 0, balance_type: 'Dr' },
-  { id: 'ACC-003', account_name: 'Kisan Fuel Station (Diesel Pump)', account_group: 'SUNDRY_CREDITORS', sub_group: 'SUNDRY_CREDITORS', opening_balance: 0, balance_type: 'Cr' },
-  { id: 'ACC-004', account_name: 'Krishan Padgad (Vendor)', account_group: 'SUNDRY_CREDITORS', sub_group: 'SUNDRY_CREDITORS', opening_balance: 0, balance_type: 'Cr' },
-  { id: 'ACC-005', account_name: 'Raw Material Supplier', account_group: 'SUNDRY_CREDITORS', sub_group: 'SUNDRY_CREDITORS', opening_balance: 0, balance_type: 'Cr' },
-  { id: 'ACC-006', account_name: 'Sharma Construction (Customer)', account_group: 'SUNDRY_DEBTORS', sub_group: 'SUNDRY_DEBTORS', opening_balance: 0, balance_type: 'Dr' },
-  { id: 'ACC-007', account_name: 'Balaji Traders (Client)', account_group: 'SUNDRY_DEBTORS', sub_group: 'SUNDRY_DEBTORS', opening_balance: 0, balance_type: 'Dr' },
-  { id: 'ACC-008', account_name: 'Diesel Expenses', account_group: 'DIRECT_EXPENSES', sub_group: 'FUEL_EXPENSES', opening_balance: 0, balance_type: 'Dr' },
-  { id: 'ACC-009', account_name: 'Sales & Revenue', account_group: 'INCOME', sub_group: 'DIRECT_INCOME', opening_balance: 0, balance_type: 'Cr' }
-];
+export const ACCOUNT_HIERARCHY = {
+  ASSETS: {
+    label: 'Assets (संपत्ति)',
+    defaultBalanceType: 'Dr',
+    subGroups: [
+      'Sundry Debtors (Customer / देनदार)',
+      'Bank Accounts (बैंक खाते)',
+      'Cash-in-Hand (नकद रोकड़)',
+      'Stock / Inventory (स्टॉक इन्वेंटरी)',
+      'Fixed Assets (मशीनरी / वाहन / संपत्ति)',
+      'Loans & Advances (दिया गया अग्रिम/उधार)'
+    ]
+  },
+  LIABILITIES: {
+    label: 'Liabilities (दायित्व)',
+    defaultBalanceType: 'Cr',
+    subGroups: [
+      'Sundry Creditors (Supplier / लेनदार)',
+      'Diesel & Fuel Pumps (डीजल व पेट्रोल पंप)',
+      'Secured Loans (बैंक ऋण)',
+      'Unsecured Loans (व्यक्तिगत ऋण)',
+      'Duties & Taxes (GST / TDS Payable)'
+    ]
+  },
+  EXPENSES: {
+    label: 'Expenses (खर्च)',
+    defaultBalanceType: 'Dr',
+    subGroups: [
+      'Direct Expenses (पथाई / मजदूरी / निकासी)',
+      'Diesel & Fuel Expenses (ईंधन खर्च)',
+      'Raw Material & Coal Purchases (कोयला व कच्चा माल)',
+      'Indirect Expenses (कार्यालय व सामान्य खर्च)',
+      'Repair & Maintenance (मरम्मत खर्च)'
+    ]
+  },
+  INCOME: {
+    label: 'Income (आय)',
+    defaultBalanceType: 'Cr',
+    subGroups: [
+      'Sales & Operating Revenue (बिक्री व मुख्य आय)',
+      'Briquette / Brick Sales (ईंट व बायोमास बिक्री)',
+      'Other Indirect Income (अन्य आय / ब्याज)'
+    ]
+  },
+  EQUITY: {
+    label: 'Equity (पूंजी)',
+    defaultBalanceType: 'Cr',
+    subGroups: [
+      'Proprietor / Partner Capital A/C (पूंजी खाता)',
+      'Drawings (आहरण खाता)',
+      'Retained Earnings (संचित लाभ)'
+    ]
+  }
+};
 
-/**
- * Universal Account Scanner & Auto-Bootstrap Engine
- */
 export const getFirmMasterAccounts = (firmId) => {
   const targetId = firmId || 'FIRM-001';
-  let mergedAccounts = [];
+  let merged = [];
 
   try {
-    const scopedKey = `app_accounts_${targetId}`;
-    const rawScoped = localStorage.getItem(scopedKey);
-    if (rawScoped) {
-      const parsed = JSON.parse(rawScoped);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        mergedAccounts = mergedAccounts.concat(parsed);
-      }
-    }
-
     for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.startsWith('app_accounts') || key.includes('accounts'))) {
-        const raw = localStorage.getItem(key);
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('app_accounts') || k.includes('accounts'))) {
+        const raw = localStorage.getItem(k);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) mergedAccounts = mergedAccounts.concat(parsed);
-        }
-      }
-    }
-
-    // Harvest parties directly from historical vouchers
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.startsWith('app_vouchers') || key.includes('vouchers'))) {
-        const rawV = localStorage.getItem(key);
-        if (rawV) {
-          const vouchers = JSON.parse(rawV);
-          if (Array.isArray(vouchers)) {
-            vouchers.forEach(v => {
-              if (v.dr_account && v.dr_account.trim() !== '') {
-                mergedAccounts.push({
-                  id: `ACC-AUTO-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-                  account_name: v.dr_account.trim(),
-                  account_group: 'SUNDRY_DEBTORS',
-                  sub_group: 'GENERAL',
-                  opening_balance: 0,
-                  balance_type: 'Dr'
-                });
-              }
-              if (v.cr_account && v.cr_account.trim() !== '') {
-                mergedAccounts.push({
-                  id: `ACC-AUTO-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-                  account_name: v.cr_account.trim(),
-                  account_group: 'SUNDRY_CREDITORS',
-                  sub_group: 'GENERAL',
-                  opening_balance: 0,
-                  balance_type: 'Cr'
-                });
-              }
-            });
-          }
+          if (Array.isArray(parsed)) merged = merged.concat(parsed);
         }
       }
     }
 
     const map = new Map();
-    mergedAccounts.forEach(a => {
-      if (a && a.account_name && a.account_name.trim() !== '') {
-        const normalized = a.account_name.trim();
-        const k = normalized.toLowerCase();
-        if (!map.has(k)) {
-          map.set(k, { ...a, account_name: normalized });
-        }
+    merged.forEach(a => {
+      if (a && a.account_name) {
+        const key = a.account_name.trim().toLowerCase();
+        if (!map.has(key)) map.set(key, { ...a, account_name: a.account_name.trim() });
       }
     });
 
-    let finalAccounts = Array.from(map.values());
-
-    if (finalAccounts.length === 0) {
-      finalAccounts = [...DEFAULT_MASTER_ACCOUNTS];
-      localStorage.setItem(`app_accounts_${targetId}`, JSON.stringify(finalAccounts));
-      localStorage.setItem('app_accounts_global', JSON.stringify(finalAccounts));
-      localStorage.setItem('app_accounts', JSON.stringify(finalAccounts));
+    let result = Array.from(map.values());
+    if (result.length === 0) {
+      result = [
+        { id: 'ACC-01', account_name: 'Cash-in-Hand', primary_type: 'ASSETS', sub_group: 'Cash-in-Hand (नकद रोकड़)', opening_balance: 0, balance_type: 'Dr' },
+        { id: 'ACC-02', account_name: 'State Bank of India', primary_type: 'ASSETS', sub_group: 'Bank Accounts (बैंक खाते)', opening_balance: 0, balance_type: 'Dr' },
+        { id: 'ACC-03', account_name: 'Kisan Fuel Station', primary_type: 'LIABILITIES', sub_group: 'Diesel & Fuel Pumps (डीजल व पेट्रोल पंप)', opening_balance: 0, balance_type: 'Cr' },
+        { id: 'ACC-04', account_name: 'General Customer', primary_type: 'ASSETS', sub_group: 'Sundry Debtors (Customer / देनदार)', opening_balance: 0, balance_type: 'Dr' },
+        { id: 'ACC-05', account_name: 'Diesel Expenses', primary_type: 'EXPENSES', sub_group: 'Diesel & Fuel Expenses (ईंधन खर्च)', opening_balance: 0, balance_type: 'Dr' }
+      ];
+      localStorage.setItem(`app_accounts_${targetId}`, JSON.stringify(result));
     }
-
-    return finalAccounts;
-  } catch (err) {
-    console.error("Account scan error:", err);
-    return DEFAULT_MASTER_ACCOUNTS;
+    return result;
+  } catch (e) {
+    return [];
   }
 };
 
-/**
- * Save or Update Account Head
- */
-export const saveMasterAccount = (firmId, accountData) => {
+export const saveMasterAccount = (firmId, payload) => {
   const targetId = firmId || 'FIRM-001';
-  const existingList = getFirmMasterAccounts(targetId);
+  const accounts = getFirmMasterAccounts(targetId);
+  const cleanName = (payload.account_name || '').trim();
 
-  const cleanName = (accountData.account_name || '').trim();
-  if (!cleanName) throw new Error("⚠️ Account Name cannot be empty.");
+  if (!cleanName) throw new Error("⚠️ Account Name enter karna zaroori hai.");
 
-  const newAccount = {
-    id: accountData.id || `ACC-${Date.now()}`,
+  const newHead = {
+    id: payload.id || `ACC-${Date.now()}`,
     account_name: cleanName,
-    account_group: accountData.account_group || 'SUNDRY_DEBTORS',
-    sub_group: accountData.sub_group || accountData.account_group || 'GENERAL',
-    opening_balance: parseFloat(accountData.opening_balance || 0),
-    balance_type: accountData.balance_type || 'Dr',
-    phone: accountData.phone || '',
+    primary_type: payload.primary_type || 'ASSETS',
+    account_group: payload.sub_group || 'GENERAL',
+    sub_group: payload.sub_group || 'GENERAL',
+    opening_balance: parseFloat(payload.opening_balance || 0),
+    balance_type: payload.balance_type || 'Dr',
+    gstin: (payload.gstin || '').trim(),
+    phone: (payload.phone || '').trim(),
     created_at: new Date().toISOString()
   };
 
-  const updatedList = [
-    newAccount,
-    ...existingList.filter(a => a.account_name.toLowerCase() !== cleanName.toLowerCase())
-  ];
+  const updated = [newHead, ...accounts.filter(a => a.account_name.toLowerCase() !== cleanName.toLowerCase())];
 
-  localStorage.setItem(`app_accounts_${targetId}`, JSON.stringify(updatedList));
-  localStorage.setItem('app_accounts_global', JSON.stringify(updatedList));
-  localStorage.setItem('app_accounts', JSON.stringify(updatedList));
+  localStorage.setItem(`app_accounts_${targetId}`, JSON.stringify(updated));
+  localStorage.setItem('app_accounts_global', JSON.stringify(updated));
+  localStorage.setItem('app_accounts', JSON.stringify(updated));
 
   window.dispatchEvent(new Event('accounts_master_updated'));
   window.dispatchEvent(new Event('storage'));
 
-  return newAccount;
+  return newHead;
 };
 
-// --- Export Aliases to Guarantee Module Interoperability ---
+// Aliases for zero-break build compatibility
 export const getAccountHeadsByFirm = getFirmMasterAccounts;
 export const saveOrUpdateAccountHead = saveMasterAccount;
 export const getAccountHeads = getFirmMasterAccounts;
