@@ -8,46 +8,43 @@ export default function SecurityBackupSettings({ firm }) {
   const firmName = firm?.legal_name || 'Enterprise Profile';
 
   const [statusMessage, setStatusMessage] = useState(null);
-  const [copiedBackup, setCopiedBackup] = useState('');
-  const [pastedJson, setPastedJson] = useState('');
+  const [backupString, setBackupString] = useState('');
+  const [pastedData, setPastedData] = useState('');
   const [showPasteBox, setShowPasteBox] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // 1. Export Trigger
-  const handleExport = async () => {
+  const handleExportBackup = async () => {
     setIsProcessing(true);
     setStatusMessage(null);
     try {
       const res = await exportUniversalBackup(activeFirmId, firmName);
-      setCopiedBackup(res.jsonString);
-      
+      setBackupString(res.jsonString);
+
       setStatusMessage({
         type: 'success',
-        text: `✓ Backup Generated Successfully!\n• File: ${res.fileName}\n• Saved in: Documents/Downloads Folder\n• Transactions: ${res.count}\n\nTip: You can also copy the backup code below or share via WhatsApp/Drive.`
+        text: `✓ Backup File Successfully Generated!\n• File: ${res.fileName}\n• Status: Saved to Phone Documents & Share Window Triggered.\n• Total Vouchers: ${res.count}`
       });
-    } catch (e) {
-      setStatusMessage({ type: 'error', text: `❌ Backup Failed: ${e.message}` });
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: `❌ Backup Failed: ${err.message}` });
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 2. Direct Clipboard Copy
   const handleCopyClipboard = () => {
-    if (!copiedBackup) {
-      alert("Please click 'Export Backup' first.");
+    if (!backupString) {
+      alert("Please export backup first.");
       return;
     }
-    navigator.clipboard.writeText(copiedBackup);
-    alert("✓ Backup JSON copied to clipboard! You can paste and save it anywhere (WhatsApp / Notes).");
+    navigator.clipboard.writeText(backupString);
+    alert("✓ Backup Data Text Copied to Clipboard! You can paste and save it safely in your Notes or WhatsApp.");
   };
 
-  // 3. File Restore
   const handleFileRestore = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (!window.confirm(`⚠️ Restoring backup will update accounts, vouchers, and inventory for "${firmName}". Proceed?`)) {
+    if (!window.confirm(`⚠️ Restoring this backup will replace accounts, vouchers, and stock data for "${firmName}". Proceed?`)) {
       e.target.value = '';
       return;
     }
@@ -58,20 +55,19 @@ export default function SecurityBackupSettings({ firm }) {
       const res = await restoreUniversalBackup(file, activeFirmId);
       setStatusMessage({
         type: 'success',
-        text: `✓ Restore Successful!\n• Accounts: ${res.accountsRestored}\n• Vouchers: ${res.vouchersRestored}\n• Stock SKUs: ${res.stockRestored}`
+        text: `✓ Backup Restored Successfully!\n• Accounts: ${res.accountsRestored}\n• Vouchers: ${res.vouchersRestored}\n• Stock SKUs: ${res.stockRestored}`
       });
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `❌ ${err.message}` });
+      setStatusMessage({ type: 'error', text: `❌ Restore Failed: ${err.message}` });
     } finally {
       setIsProcessing(false);
       e.target.value = '';
     }
   };
 
-  // 4. Paste Text Restore
   const handlePasteRestore = async () => {
-    if (!pastedJson.trim()) {
-      alert("Please paste the backup JSON text first.");
+    if (!pastedData.trim()) {
+      alert("Please paste backup JSON data text first.");
       return;
     }
 
@@ -80,24 +76,24 @@ export default function SecurityBackupSettings({ firm }) {
     setIsProcessing(true);
     setStatusMessage(null);
     try {
-      const res = await restoreUniversalBackup(pastedJson.trim(), activeFirmId);
+      const res = await restoreUniversalBackup(pastedData.trim(), activeFirmId);
       setStatusMessage({
         type: 'success',
-        text: `✓ Restore Successful!\n• Accounts: ${res.accountsRestored}\n• Vouchers: ${res.vouchersRestored}\n• Stock SKUs: ${res.stockRestored}`
+        text: `✓ Backup Restored Successfully!\n• Accounts: ${res.accountsRestored}\n• Vouchers: ${res.vouchersRestored}\n• Stock SKUs: ${res.stockRestored}`
       });
-      setPastedJson('');
+      setPastedData('');
       setShowPasteBox(false);
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `❌ ${err.message}` });
+      setStatusMessage({ type: 'error', text: `❌ Restore Failed: ${err.message}` });
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '30px' }}>
+    <div style={{ maxWidth: '750px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '30px' }}>
       
-      {/* Header Banner */}
+      {/* Header */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '18px 20px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
         <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span>🛡️</span> Data Backup & Migration Center
@@ -125,15 +121,15 @@ export default function SecurityBackupSettings({ firm }) {
       {/* 1. EXPORT BACKUP CARD */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.04)', display: 'grid', gap: '12px' }}>
         <strong style={{ fontSize: '14px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>📥</span> Download & Export Full Data Backup
+          <span>📥</span> Download Full Data Backup
         </strong>
         <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
-          Saves all ledger accounts, vouchers, stock records, and firm settings directly to your phone's storage / Documents folder.
+          Saves all ledger accounts, voucher entries, stock counts, and firm profiles to your phone's storage / Documents folder.
         </p>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
-            onClick={handleExport}
+            onClick={handleExportBackup}
             disabled={isProcessing}
             style={{
               backgroundColor: '#0284c7',
@@ -146,14 +142,13 @@ export default function SecurityBackupSettings({ firm }) {
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              boxShadow: '0 2px 6px rgba(2, 132, 199, 0.3)'
+              gap: '6px'
             }}
           >
-            💾 Export & Share Backup
+            {isProcessing ? '⏳ Generating...' : '💾 Export Backup (.JSON)'}
           </button>
 
-          {copiedBackup && (
+          {backupString && (
             <button
               onClick={handleCopyClipboard}
               style={{
@@ -179,14 +174,13 @@ export default function SecurityBackupSettings({ firm }) {
           <span>📤</span> Restore Old / Previous App Backup
         </strong>
         <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
-          Upload your previously downloaded `.json` backup file from File Manager or paste raw backup code.
+          Upload your previously downloaded backup JSON file to restore all your financial transactions instantly.
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {/* File Picker */}
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>
-              Option A: Select Backup File (.JSON)
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+              Option 1: Choose File from Phone Storage (.JSON)
             </label>
             <input
               type="file"
@@ -201,14 +195,13 @@ export default function SecurityBackupSettings({ firm }) {
             ── OR ──
           </div>
 
-          {/* Paste JSON Option */}
           <div>
             <button
               type="button"
               onClick={() => setShowPasteBox(!showPasteBox)}
               style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}
             >
-              {showPasteBox ? '▲ Hide Paste Box' : '▼ Option B: Paste Backup Text Code directly'}
+              {showPasteBox ? '▲ Hide Paste Box' : '▼ Option 2: Paste Backup JSON Code directly'}
             </button>
 
             {showPasteBox && (
@@ -216,8 +209,8 @@ export default function SecurityBackupSettings({ firm }) {
                 <textarea
                   rows={5}
                   placeholder="Paste your copied JSON backup text here..."
-                  value={pastedJson}
-                  onChange={e => setPastedJson(e.target.value)}
+                  value={pastedData}
+                  onChange={e => setPastedData(e.target.value)}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontFamily: 'monospace', boxSizing: 'border-box' }}
                 />
                 <button
