@@ -15,6 +15,7 @@ export default function JournalRegisterView({ firm }) {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [statusNotification, setStatusNotification] = useState(null);
 
   const loadJournalData = () => {
     const sorted = getSortedJournalRegister(activeFirmId, sortOrder);
@@ -50,13 +51,22 @@ export default function JournalRegisterView({ firm }) {
       alert("⚠️ No journal records found to export.");
       return;
     }
+
     setIsExporting(true);
+    setStatusNotification({ type: 'info', message: '⏳ Generating document and initiating phone storage save...' });
+
     try {
-      await downloadJournalRegisterPDF(filteredVouchers, firm);
+      const res = await downloadJournalRegisterPDF(filteredVouchers, firm);
+      if (res?.success) {
+        setStatusNotification({ type: 'success', message: '✓ Document processed! Check Documents or Share Sheet on your phone.' });
+      } else {
+        setStatusNotification(null);
+      }
     } catch (e) {
-      alert("PDF Export Error: " + e.message);
+      setStatusNotification({ type: 'error', message: `❌ Export Failed: ${e.message}` });
     } finally {
       setIsExporting(false);
+      setTimeout(() => setStatusNotification(null), 6000);
     }
   };
 
@@ -81,7 +91,7 @@ export default function JournalRegisterView({ firm }) {
               backgroundColor: '#0f172a',
               color: '#ffffff',
               border: 'none',
-              padding: '8px 12px',
+              padding: '9px 12px',
               borderRadius: '8px',
               fontSize: '11px',
               fontWeight: 'bold',
@@ -101,20 +111,37 @@ export default function JournalRegisterView({ firm }) {
               backgroundColor: '#059669',
               color: '#ffffff',
               border: 'none',
-              padding: '8px 14px',
+              padding: '9px 16px',
               borderRadius: '8px',
-              fontSize: '11px',
+              fontSize: '12px',
               fontWeight: 'bold',
               cursor: filteredVouchers.length ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px'
+              gap: '6px',
+              boxShadow: '0 2px 6px rgba(5, 150, 105, 0.3)',
+              opacity: isExporting ? 0.7 : 1
             }}
           >
             {isExporting ? '⏳ Saving...' : '📄 Save PDF to Phone'}
           </button>
         </div>
       </div>
+
+      {/* Real-time Status Alert */}
+      {statusNotification && (
+        <div style={{
+          backgroundColor: statusNotification.type === 'error' ? '#fef2f2' : statusNotification.type === 'info' ? '#eff6ff' : '#ecfdf5',
+          border: `1px solid ${statusNotification.type === 'error' ? '#fecaca' : statusNotification.type === 'info' ? '#bfdbfe' : '#a7f3d0'}`,
+          color: statusNotification.type === 'error' ? '#991b1b' : statusNotification.type === 'info' ? '#1e40af' : '#065f46',
+          padding: '12px 16px',
+          borderRadius: '10px',
+          fontSize: '12px',
+          fontWeight: 'bold'
+        }}>
+          {statusNotification.message}
+        </div>
+      )}
 
       {/* Date Range & Search Filters */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px 18px', border: '1px solid #cbd5e1', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
