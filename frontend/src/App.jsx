@@ -6,6 +6,7 @@ import { getDynamicWorkflowMenu } from './utils/navigationRegistry.js';
 
 // Application Core Views
 import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
+import FirmProfileSettingsView from './components/FirmProfileSettingsView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
@@ -26,7 +27,6 @@ export default function App() {
   const [firmsList, setFirmsList] = useState([]);
   const [currentView, setCurrentView] = useState('dashboard');
   
-  // Drawer menu starts closed
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCreatingFirm, setIsCreatingFirm] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -52,7 +52,7 @@ export default function App() {
   const menuItems = getDynamicWorkflowMenu(activeFirm?.category || 'TRADING');
 
   const handleMenuClick = (item) => {
-    setIsMenuOpen(false); // Close drawer upon selection
+    setIsMenuOpen(false);
 
     if (item.key === 'create_account') {
       setIsAccountModalOpen(true);
@@ -60,7 +60,8 @@ export default function App() {
     }
 
     if (item.key === 'firm_settings') {
-      setIsCreatingFirm(true);
+      setIsCreatingFirm(false);
+      setCurrentView('firm_settings');
       return;
     }
 
@@ -71,10 +72,9 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* 1. App Update Banner */}
       <AppUpdateBanner />
 
-      {/* 2. Classic Header Top Bar */}
+      {/* Classic Header Top Bar */}
       <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {currentView !== 'dashboard' && !isCreatingFirm ? (
@@ -102,7 +102,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* 3. Sub-Header: Firm Selector + FY Picker + Menu Button */}
+      {/* Sub-Header Bar */}
       <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
         <div style={{ flex: 1.3, minWidth: '130px' }}>
           <select
@@ -148,7 +148,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* 4. EXACT ORIGINAL WORKFLOW MENU DRAWER */}
+      {/* 14-Item Workflow Menu Drawer */}
       {isMenuOpen && (
         <div style={{
           backgroundColor: '#0c1322',
@@ -190,7 +190,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. Main Active Screen */}
+      {/* Main View Area */}
       <main style={{ maxWidth: '900px', margin: '0 auto', padding: '14px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
@@ -205,7 +205,22 @@ export default function App() {
           />
         ) : (
           <>
-            {currentView === 'dashboard' && <EnterpriseDashboard firm={activeFirm} onNavigate={(view) => setCurrentView(view)} />}
+            {currentView === 'dashboard' && (
+              <EnterpriseDashboard 
+                firm={activeFirm} 
+                onNavigate={(viewKey) => {
+                  if (viewKey === 'firm_settings') setCurrentView('firm_settings');
+                  else setCurrentView(viewKey);
+                }} 
+              />
+            )}
+            {currentView === 'firm_settings' && (
+              <FirmProfileSettingsView 
+                firm={activeFirm} 
+                onNavigateToCreate={() => setIsCreatingFirm(true)}
+                onNavigateDashboard={() => setCurrentView('dashboard')}
+              />
+            )}
             {currentView === 'sales' && <CreateInvoice firm={activeFirm} />}
             {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} />}
             {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} />}
@@ -221,7 +236,6 @@ export default function App() {
         )}
       </main>
 
-      {/* 6. Directory Head Modal (Triggered directly from Menu Item #3) */}
       <CreateAccountHeadModal 
         firm={activeFirm} 
         isOpen={isAccountModalOpen} 
