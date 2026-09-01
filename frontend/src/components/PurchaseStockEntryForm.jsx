@@ -52,7 +52,7 @@ export default function PurchaseStockEntryForm({ firm }) {
         invoice_number: invoiceNumber
       });
 
-      alert(`✓ Purchase Inward Entry Successful!\n• Stock Quantity (+IN): ${res.updatedStock} Units\n• Credited Supplier: ${res.supplier} (₹${res.totalAmount})\n• Synced with Milan, Journal & Reports!`);
+      alert(`✓ Purchase Inward Entry Successful!\n• Stock Quantity (+IN): ${res.updatedStock} Units\n• Credited Supplier: ${res.party} (₹${res.totalAmount})\n• Synced with Milan, Daybook & Reports!`);
 
       setQuantity('');
       setUnitRate('');
@@ -81,7 +81,7 @@ export default function PurchaseStockEntryForm({ firm }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
-            <label style={labelStyle}>Supplier / Vendor *</label>
+            <label style={labelStyle}>Supplier / Vendor Account *</label>
             <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} style={inputStyle} required>
               {suppliers.map(s => <option key={s.id} value={s.account_name}>{s.account_name} ({s.account_group || 'GENERAL'})</option>)}
             </select>
