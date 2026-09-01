@@ -1,53 +1,38 @@
 // frontend/src/utils/navigationRegistry.js
 
-export const getDynamicWorkflowMenu = (businessCategory = 'TRADING') => {
-  const cat = (businessCategory || 'TRADING').toUpperCase();
+/**
+ * 14-Item Standard Accounting & Operational Workflow Registry
+ * Dynamically tailored based on Firm Business Category (BRICK_KILN, TRADING, MANUFACTURING)
+ */
+export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
+  const isBhatta = firmCategory === 'BRICK_KILN' || firmCategory === 'BHATTA';
 
-  let productionModule = null;
-  if (cat.includes('BRICK') || cat.includes('BHATTA')) {
-    productionModule = {
-      order: 8,
-      key: 'production',
-      label: '8. Brick Production / Nikasi',
-      icon: '🧱',
-      type: 'view'
-    };
-  } else if (cat.includes('BIOMASS') || cat.includes('BRIQUETTE')) {
-    productionModule = {
-      order: 8,
-      key: 'production',
-      label: '8. Biomass Plant & Pressing',
-      icon: '🪵',
-      type: 'view'
-    };
-  } else if (cat.includes('MANUFACTURING')) {
-    productionModule = {
-      order: 8,
-      key: 'production',
-      label: '8. Production & Processing WIP',
-      icon: '🏭',
-      type: 'view'
-    };
-  }
-
-  const rawMenu = [
-    { order: 1, key: 'dashboard', label: '1. Firm Dashboard & Overview', icon: '📊', type: 'view' },
-    { order: 2, key: 'firm_settings', label: '2. Firm Profile Settings', icon: '⚙️', type: 'view' },
-    { order: 3, key: 'create_account', label: '3. Create Account Head', icon: '➕', type: 'modal' },
-    { order: 4, key: 'inventory', label: '4. Inventory & Stock Master', icon: '📦', type: 'view' },
-    { order: 5, key: 'sales', label: '5. Sales Billing & Invoicing', icon: '🧾', type: 'view' },
-    { order: 6, key: 'purchase', label: '6. Purchase Entry & Inward Stock', icon: '🛍️', type: 'view' },
-    { order: 7, key: 'vouchers', label: '7. Voucher Entry (JV/PV/RV)', icon: '📒', type: 'view' },
-    ...(productionModule ? [productionModule] : []),
-    { order: 9, key: 'settlement', label: '9. Bill Settlement (FIFO)', icon: '💳', type: 'view' },
-    { order: 10, key: 'milan', label: '10. Account Milan & Ledger', icon: '📖', type: 'view' },
-    { order: 11, key: 'journal', label: '11. General Journal Register', icon: '📝', type: 'view' },
-    { order: 12, key: 'reports', label: '12. Financial Reports (P&L / BS)', icon: '📈', type: 'view' },
-    { order: 13, key: 'backup', label: '13. Data Backup & Protection', icon: '🔒', type: 'view' },
-    { order: 14, key: 'purge', label: '14. Clear Demo Data', icon: '🗑️', type: 'view', isDanger: true }
+  const menu = [
+    { key: 'dashboard', label: 'Dashboard (डैशबोर्ड)', icon: '📊', category: 'CORE' },
+    { key: 'create_account', label: 'Add New Account Head (नया खाता)', icon: '➕', category: 'MASTERS' },
+    { key: 'sales', label: 'Sales / Tax Invoice (बिक्री बिल)', icon: '🧾', category: 'TRANSACTIONS' },
+    { key: 'purchase', label: 'Purchase & Inward Stock (खरीद बिल)', icon: '📦', category: 'TRANSACTIONS' },
+    { key: 'vouchers', label: 'Voucher Entry (JV / PV / RV / Contra)', icon: '📝', category: 'TRANSACTIONS' },
+    { key: 'consumption', label: 'Fuel & Material Consumption (डीजल/खपत)', icon: '🚜', category: 'OPERATIONS' },
+    { key: 'settlement', label: 'Bill Settlement / Khata Milan', icon: '⚖️', category: 'RECONCILIATION' },
+    { key: 'inventory', label: 'Inventory & Stock Count (स्टॉक रजिस्टर)', icon: '📋', category: 'INVENTORY' }
   ];
 
-  return rawMenu;
+  // Bhatta specific production module
+  if (isBhatta) {
+    menu.push({ key: 'production', label: 'Bhatta Kachi/Pakki Production (ईंट पकाई)', icon: '🧱', category: 'OPERATIONS' });
+  }
+
+  menu.push(
+    { key: 'milan', label: 'Account Milan & Ledger (खाता बही)', icon: '📖', category: 'REPORTS' },
+    { key: 'journal', label: 'General Journal Register (रोज़नामचा)', icon: '📑', category: 'REPORTS' },
+    { key: 'reports', label: 'Financial Reports (P&L / Balance Sheet)', icon: '📈', category: 'REPORTS' },
+    { key: 'firm_settings', label: 'Firm Profile & Settings (फर्म विवरण)', icon: '⚙️', category: 'SETTINGS' },
+    { key: 'backup', label: 'Backup & Restore Center (डाटा बैकअप)', icon: '🛡️', category: 'SECURITY' },
+    { key: 'purge', label: 'Factory Reset / Clear Data (डेटा रीसेट)', icon: '🗑️', category: 'SECURITY', isDanger: true }
+  );
+
+  return menu;
 };
 
-export const filterMenuByIndustry = (items, category) => getDynamicWorkflowMenu(category);
+export const filterMenuByIndustry = getDynamicWorkflowMenu;
