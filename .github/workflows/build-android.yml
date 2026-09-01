@@ -22,7 +22,7 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Install Frontend Dependencies (Enforce Legacy Peer Deps)
+      - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --force
 
@@ -30,21 +30,14 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Sync & Initialize Capacitor Android Project
+      - name: Ensure Clean & Complete Capacitor Android Project
         working-directory: frontend
         run: |
-          if [ ! -d "android" ]; then
+          if [ ! -f "android/settings.gradle" ]; then
+            rm -rf android
             npx @capacitor/cli add android
           fi
           npx @capacitor/cli sync android
-
-      - name: Ensure Gradle Executable & Wrapper
-        working-directory: frontend/android
-        run: |
-          if [ ! -f "gradlew" ]; then
-            gradle wrapper
-          fi
-          chmod +x gradlew
 
       - name: Auto-Bump Android Versioning
         working-directory: frontend
@@ -63,6 +56,10 @@ jobs:
           if [ ! -f "release.keystore" ]; then
             keytool -genkey -v -keystore release.keystore -alias accountbookkey -keyalg RSA -keysize 2048 -validity 10000 -storepass "Neelkanth@2026" -keypass "Neelkanth@2026" -dname "CN=Neelkanth, OU=Accounting, O=Enterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
           fi
+
+      - name: Grant Gradle Execution Permission
+        working-directory: frontend/android
+        run: chmod +x gradlew
 
       - name: Build Android Debug APK
         working-directory: frontend/android
