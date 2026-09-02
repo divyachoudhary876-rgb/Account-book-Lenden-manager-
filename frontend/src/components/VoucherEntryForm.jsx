@@ -2,32 +2,33 @@
 
 import React, { useState, useEffect } from 'react';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
-import { saveUniversalVoucher } from '../utils/voucherPostingEngine.js';
+import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine.js';
 import { getAllUniversalVouchers } from '../utils/statementEngine.js';
 
 export default function VoucherEntryForm({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
 
-  // Master Data
   const [accounts, setAccounts] = useState([]);
   const [recentVouchers, setRecentVouchers] = useState([]);
   const [statusMessage, setStatusMessage] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Common Header State
+  // Editing Mode States
+  const [editingVoucherId, setEditingVoucherId] = useState(null);
+
+  // Voucher Header States
   const [voucherType, setVoucherType] = useState('PAYMENT'); // PAYMENT, RECEIPT, CONTRA, JOURNAL
   const [voucherDate, setVoucherDate] = useState(new Date().toISOString().split('T')[0]);
   const [refNo, setRefNo] = useState('');
   const [narration, setNarration] = useState('');
-
-  // Mode Toggle: Simple vs Compound
   const [isCompoundMode, setIsCompoundMode] = useState(false);
 
-  // 1. Simple Mode State
+  // Simple Mode States
   const [drAccount, setDrAccount] = useState('');
   const [crAccount, setCrAccount] = useState('');
   const [simpleAmount, setSimpleAmount] = useState('');
 
-  // 2. Compound Mode Rows State (Default 2 Dr & 1 Cr or vice versa)
+  // Compound Mode States
   const [compoundLines, setCompoundLines] = useState([
     { id: 1, type: 'Dr', account_name: '', amount: '' },
     { id: 2, type: 'Cr', account_name: '', amount: '' }
@@ -37,13 +38,16 @@ export default function VoucherEntryForm({ firm }) {
     const accs = getFirmMasterAccounts(activeFirmId);
     setAccounts(accs);
 
-    if (accs.length >= 2) {
-      if (!drAccount) setDrAccount(accs[0].account_name);
-      if (!crAccount) setCrAccount(accs[1].account_name);
-    }
-
     const vchs = getAllUniversalVouchers(activeFirmId);
-    setRecentVouchers([...vchs].reverse().slice(0, 15));
+    setRecentVouchers([...vchs].reverse());
+
+    if (accs.length > 0 && !editingVoucherId) {
+      const cashAcc = accs.find(a => a.account_name.toLowerCase().includes('cash') || a.account_name.toLowerCase().includes('rokad')) || accs[0];
+      const bankAcc = accs.find(a => a.account_name.toLowerCase().includes('bank')) || accs[1] || accs[0];
+      
+      if (!crAccount) setCrAccount(cashAcc.account_name);
+      if (!drAccount) setDrAccount(bankAcc.account_name);
+    }
   };
 
   useEffect(() => {
@@ -52,7 +56,27 @@ export default function VoucherEntryForm({ firm }) {
     return () => window.removeEventListener('app_state_updated', loadData);
   }, [activeFirmId]);
 
-  // Handle Multi-Line Changes
+  // Statutory Account Group Filtering
+  const cashAndBankAccounts = accounts.filter(a => 
+    a.sub_group?.toLowerCase().includes('cash') || 
+    a.sub_group?.toLowerCase().includes('bank') ||
+    a.account_name.toLowerCase().includes('cash') ||
+    a.account_name.toLowerCase().includes('bank')
+  );
+
+  const getFilteredAccounts = (legType) => {
+    if (voucherType === 'PAYMENT') {
+      return legType === 'Cr' ? (cashAndBankAccounts.length > 0 ? cashAndBankAccounts : accounts) : accounts;
+    }
+    if (voucherType === 'RECEIPT') {
+      return legType === 'Dr' ? (cashAndBankAccounts.length > 0 ? cashAndBankAccounts : accounts) : accounts;
+    }
+    if (voucherType === 'CONTRA') {
+      return cashAndBankAccounts.length > 0 ? cashAndBankAccounts : accounts;
+    }
+    return accounts;
+  };
+
   const handleLineChange = (id, field, value) => {
     setCompoundLines(prev => prev.map(line => line.id === id ? { ...line, [field]: value } : line));
   };
@@ -66,13 +90,12 @@ export default function VoucherEntryForm({ firm }) {
 
   const removeLine = (id) => {
     if (compoundLines.length <= 2) {
-      alert('Kam se kam 2 lines (Dr aur Cr) honi chahiye.');
+      alert('Kam se kam 2 rows (Dr aur Cr) anivarya hain.');
       return;
     }
     setCompoundLines(prev => prev.filter(line => line.id !== id));
   };
 
-  // Live Calculations for Compound Mode
   const totalDebit = compoundLines
     .filter(l => l.type === 'Dr')
     .reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
@@ -83,6 +106,51 @@ export default function VoucherEntryForm({ firm }) {
 
   const difference = Math.abs(Math.round((totalDebit - totalCredit) * 100) / 100);
   const isBalanced = difference === 0 && totalDebit > 0;
+
+  // Edit Voucher Trigger
+  const handleStartEdit = (voucher) => {
+    setEditingVoucherId(voucher.id);
+    setVoucherType(voucher.voucher_type || voucher.type || 'PAYMENT');
+    setVoucherDate(voucher.voucher_date || voucher.date);
+    setRefNo(voucher.reference_no || voucher.voucher_number || '');
+    setNarration(voucher.narration || '');
+
+    if (voucher.is_compound && Array.isArray(voucher.entries)) {
+      setIsCompoundMode(true);
+      setCompoundLines(voucher.entries.map((e, idx) => ({
+        id: Date.now() + idx,
+        type: e.type,
+        account_name: e.account_name,
+        amount: e.amount.toString()
+      })));
+    } else {
+      setIsCompoundMode(false);
+      setDrAccount(voucher.dr_account || voucher.dr_party || '');
+      setCrAccount(voucher.cr_account || voucher.cr_party || '');
+      setSimpleAmount(voucher.amount.toString());
+    }
+
+    setStatusMessage({ type: 'info', text: `✏️ Editing Voucher: ${voucher.reference_no || voucher.voucher_number}` });
+    window.scrollTo({ top: 40, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingVoucherId(null);
+    setRefNo('');
+    setNarration('');
+    setSimpleAmount('');
+    setStatusMessage(null);
+    loadData();
+  };
+
+  // Delete Voucher Trigger
+  const handleDeleteVoucher = (voucherId, ref) => {
+    if (!window.confirm(`Kya aap is voucher (${ref}) ko permanently delete karna chahte hain?`)) return;
+    deleteUniversalVoucher(activeFirmId, voucherId);
+    setStatusMessage({ type: 'success', text: `✓ Voucher ${ref} delete kar diya gaya.` });
+    if (editingVoucherId === voucherId) handleCancelEdit();
+    loadData();
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -95,6 +163,7 @@ export default function VoucherEntryForm({ firm }) {
         }
 
         saveUniversalVoucher(activeFirmId, {
+          id: editingVoucherId,
           voucher_type: voucherType,
           voucher_date: voucherDate,
           reference_no: refNo,
@@ -109,16 +178,13 @@ export default function VoucherEntryForm({ firm }) {
 
         setStatusMessage({
           type: 'success',
-          text: `✓ Multi-Entry (Compound) ${voucherType} Voucher Posted! Total: ₹${totalDebit.toLocaleString('en-IN')}`
+          text: editingVoucherId 
+            ? `✓ Compound Voucher Updated! Total: ₹${totalDebit.toLocaleString('en-IN')}`
+            : `✓ Compound Voucher Posted! Total: ₹${totalDebit.toLocaleString('en-IN')}`
         });
-
-        // Reset rows
-        setCompoundLines([
-          { id: Date.now(), type: 'Dr', account_name: accounts[0]?.account_name || '', amount: '' },
-          { id: Date.now() + 1, type: 'Cr', account_name: accounts[1]?.account_name || '', amount: '' }
-        ]);
       } else {
         saveUniversalVoucher(activeFirmId, {
+          id: editingVoucherId,
           voucher_type: voucherType,
           voucher_date: voucherDate,
           dr_account: drAccount,
@@ -131,36 +197,64 @@ export default function VoucherEntryForm({ firm }) {
 
         setStatusMessage({
           type: 'success',
-          text: `✓ ${voucherType} Voucher Posted Successfully! Amount: ₹${parseFloat(simpleAmount).toLocaleString('en-IN')}`
+          text: editingVoucherId 
+            ? `✓ Voucher Updated! Amount: ₹${parseFloat(simpleAmount).toLocaleString('en-IN')}`
+            : `✓ ${voucherType} Voucher Posted! Amount: ₹${parseFloat(simpleAmount).toLocaleString('en-IN')}`
         });
-
-        setSimpleAmount('');
       }
 
-      setRefNo('');
-      setNarration('');
+      handleCancelEdit();
       loadData();
     } catch (err) {
       setStatusMessage({ type: 'error', text: err.message });
     }
   };
 
+  const filteredVouchers = recentVouchers.filter(v => {
+    const term = searchTerm.toLowerCase();
+    return (
+      (v.voucher_number || '').toLowerCase().includes(term) ||
+      (v.reference_no || '').toLowerCase().includes(term) ||
+      (v.dr_account || '').toLowerCase().includes(term) ||
+      (v.cr_account || '').toLowerCase().includes(term) ||
+      (v.narration || '').toLowerCase().includes(term)
+    );
+  });
+
   return (
-    <div style={{ maxWidth: '850px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '30px' }}>
+    <div style={{ maxWidth: '750px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '40px' }}>
       
-      {/* Main Voucher Entry Card */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
+      {/* 1. EDIT MODE FLOATING NOTICE */}
+      {editingVoucherId && (
+        <div style={{ backgroundColor: '#0284c7', color: '#ffffff', padding: '12px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 12px rgba(2,132,199,0.3)' }}>
+          <div>
+            <strong style={{ fontSize: '13px' }}>✏️ EDIT MODE CHALU HAI</strong>
+            <div style={{ fontSize: '11px', opacity: 0.9 }}>Purane voucher me badlav karke save karein.</div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelEdit}
+            style={{ backgroundColor: '#ffffff', color: '#0284c7', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            ✕ Cancel Edit
+          </button>
+        </div>
+      )}
+
+      {/* 2. MAIN VOUCHER ENTRY FORM */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: `1px solid ${editingVoucherId ? '#0284c7' : '#cbd5e1'}`, boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
         
-        {/* Header Bar & Mode Switcher */}
+        {/* Header with Mode Toggle */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
-              📝 Voucher Entry (रोज़नामचा प्रविष्टि)
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: editingVoucherId ? '#0284c7' : '#0f172a' }}>
+              {editingVoucherId ? '✏️ Modify Voucher Entry' : '📝 Voucher Entry (रोज़नामचा प्रविष्टि)'}
             </h3>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry Journal & Financial Vouchers</span>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>
+              Double-Entry General Ledger & Real-Time Postings
+            </span>
           </div>
 
-          {/* Simple vs Compound Toggle */}
           <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px', gap: '4px' }}>
             <button
               type="button"
@@ -192,23 +286,21 @@ export default function VoucherEntryForm({ firm }) {
                 color: isCompoundMode ? '#ffffff' : '#64748b'
               }}
             >
-              📑 Multi-Row (Multiple Dr / Cr)
+              📑 Multi-Row (Compound)
             </button>
           </div>
         </div>
 
-        {/* Status Message */}
         {statusMessage && (
           <div style={{
-            backgroundColor: statusMessage.type === 'success' ? '#ecfdf5' : '#fef2f2',
-            border: `1px solid ${statusMessage.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
-            color: statusMessage.type === 'success' ? '#065f46' : '#b91c1c',
+            backgroundColor: statusMessage.type === 'success' ? '#ecfdf5' : (statusMessage.type === 'info' ? '#eff6ff' : '#fef2f2'),
+            border: `1px solid ${statusMessage.type === 'success' ? '#a7f3d0' : (statusMessage.type === 'info' ? '#bfdbfe' : '#fecaca')}`,
+            color: statusMessage.type === 'success' ? '#065f46' : (statusMessage.type === 'info' ? '#1d4ed8' : '#b91c1c'),
             padding: '12px 16px',
             borderRadius: '10px',
             fontSize: '12px',
             fontWeight: 'bold',
-            marginBottom: '16px',
-            whiteSpace: 'pre-line'
+            marginBottom: '16px'
           }}>
             {statusMessage.text}
           </div>
@@ -234,7 +326,7 @@ export default function VoucherEntryForm({ firm }) {
                     backgroundColor: voucherType === v.type ? '#0f172a' : '#f8fafc',
                     color: voucherType === v.type ? '#ffffff' : '#334155',
                     border: `1px solid ${voucherType === v.type ? '#0f172a' : '#cbd5e1'}`,
-                    padding: '10px',
+                    padding: '10px 4px',
                     borderRadius: '8px',
                     fontWeight: 'bold',
                     fontSize: '12px',
@@ -251,7 +343,7 @@ export default function VoucherEntryForm({ firm }) {
             </div>
           </div>
 
-          {/* Date & Reference */}
+          {/* Date & Ref No */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
               <label style={labelStyle}>Voucher Date *</label>
@@ -275,58 +367,61 @@ export default function VoucherEntryForm({ firm }) {
             </div>
           </div>
 
-          {/* 1. SIMPLE MODE FORM (1 Dr : 1 Cr) */}
+          {/* 1. SIMPLE MODE: VERTICAL STACKED TO PREVENT TEXT TRUNCATION */}
           {!isCompoundMode ? (
-            <>
-              <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ ...labelStyle, color: '#059669' }}>Debit Account (Dr - नामे) *</label>
-                  <select
-                    value={drAccount}
-                    onChange={e => setDrAccount(e.target.value)}
-                    style={{ ...inputStyle, fontWeight: 'bold' }}
-                    required
-                  >
-                    {accounts.map(a => (
-                      <option key={a.id} value={a.account_name}>
-                        {a.account_name} ({a.sub_group})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'grid', gap: '12px' }}>
+              <div>
+                <label style={{ ...labelStyle, color: '#059669', fontSize: '12px' }}>
+                  Debit Account (Dr - नामे) *
+                </label>
+                <select
+                  value={drAccount}
+                  onChange={e => setDrAccount(e.target.value)}
+                  style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#ffffff' }}
+                  required
+                >
+                  {getFilteredAccounts('Dr').map(a => (
+                    <option key={a.id} value={a.account_name}>
+                      {a.account_name} ({a.sub_group || a.primary_type})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                <div>
-                  <label style={{ ...labelStyle, color: '#dc2626' }}>Credit Account (Cr - जमा) *</label>
-                  <select
-                    value={crAccount}
-                    onChange={e => setCrAccount(e.target.value)}
-                    style={{ ...inputStyle, fontWeight: 'bold' }}
-                    required
-                  >
-                    {accounts.map(a => (
-                      <option key={a.id} value={a.account_name}>
-                        {a.account_name} ({a.sub_group})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label style={{ ...labelStyle, color: '#dc2626', fontSize: '12px' }}>
+                  Credit Account (Cr - जमा) *
+                </label>
+                <select
+                  value={crAccount}
+                  onChange={e => setCrAccount(e.target.value)}
+                  style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#ffffff' }}
+                  required
+                >
+                  {getFilteredAccounts('Cr').map(a => (
+                    <option key={a.id} value={a.account_name}>
+                      {a.account_name} ({a.sub_group || a.primary_type})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
                 <label style={labelStyle}>Transaction Amount (₹) *</label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   step="0.01"
                   placeholder="0.00"
                   value={simpleAmount}
                   onChange={e => setSimpleAmount(e.target.value)}
-                  style={{ ...inputStyle, fontSize: '16px', fontWeight: 'bold', color: '#0f172a' }}
+                  style={{ ...inputStyle, fontSize: '18px', fontWeight: 'bold', color: '#0f172a', backgroundColor: '#ffffff' }}
                   required
                 />
               </div>
-            </>
+            </div>
           ) : (
-            /* 2. COMPOUND MULTI-ROW FORM (Multiple Dr / Cr) */
+            /* 2. COMPOUND MULTI-ROW MODE */
             <div style={{ display: 'grid', gap: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a' }}>
@@ -350,12 +445,9 @@ export default function VoucherEntryForm({ firm }) {
                 </div>
               </div>
 
-              {/* Rows List */}
               <div style={{ display: 'grid', gap: '8px' }}>
-                {compoundLines.map((line, index) => (
-                  <div key={line.id} style={{ display: 'grid', gridTemplateColumns: '80px 1.8fr 1.2fr 36px', gap: '8px', alignItems: 'center', backgroundColor: line.type === 'Dr' ? '#f0fdf4' : '#fef2f2', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${line.type === 'Dr' ? '#bbf7d0' : '#fecaca'}` }}>
-                    
-                    {/* Dr / Cr Selector */}
+                {compoundLines.map((line) => (
+                  <div key={line.id} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 100px 32px', gap: '6px', alignItems: 'center', backgroundColor: line.type === 'Dr' ? '#f0fdf4' : '#fef2f2', padding: '8px', borderRadius: '8px', border: `1px solid ${line.type === 'Dr' ? '#bbf7d0' : '#fecaca'}` }}>
                     <select
                       value={line.type}
                       onChange={e => handleLineChange(line.id, 'type', e.target.value)}
@@ -365,14 +457,13 @@ export default function VoucherEntryForm({ firm }) {
                       <option value="Cr">Cr</option>
                     </select>
 
-                    {/* Account Head Dropdown */}
                     <select
                       value={line.account_name}
                       onChange={e => handleLineChange(line.id, 'account_name', e.target.value)}
                       style={{ ...inputStyle, padding: '7px', fontWeight: 'bold' }}
                       required
                     >
-                      <option value="">-- Select Account Head --</option>
+                      <option value="">-- Select Account --</option>
                       {accounts.map(a => (
                         <option key={a.id} value={a.account_name}>
                           {a.account_name}
@@ -380,9 +471,9 @@ export default function VoucherEntryForm({ firm }) {
                       ))}
                     </select>
 
-                    {/* Amount Input */}
                     <input
                       type="number"
+                      inputMode="decimal"
                       step="0.01"
                       placeholder="Amount ₹"
                       value={line.amount}
@@ -391,7 +482,6 @@ export default function VoucherEntryForm({ firm }) {
                       required
                     />
 
-                    {/* Delete Line Button */}
                     <button
                       type="button"
                       onClick={() => removeLine(line.id)}
@@ -404,49 +494,41 @@ export default function VoucherEntryForm({ firm }) {
                 ))}
               </div>
 
-              {/* Real-time Balancing Box */}
-              <div style={{ backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                <div style={{ display: 'flex', gap: '20px', fontSize: '12px', fontWeight: 'bold' }}>
+              <div style={{ backgroundColor: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '14px', fontSize: '11px', fontWeight: 'bold' }}>
                   <span style={{ color: '#059669' }}>Total Dr: ₹{totalDebit.toFixed(2)}</span>
                   <span style={{ color: '#dc2626' }}>Total Cr: ₹{totalCredit.toFixed(2)}</span>
                 </div>
-
-                <div style={{ fontSize: '12px', fontWeight: '800' }}>
+                <div>
                   {isBalanced ? (
-                    <span style={{ color: '#166534', backgroundColor: '#dcfce7', padding: '4px 8px', borderRadius: '6px' }}>
-                      ✓ Balanced
-                    </span>
+                    <span style={{ color: '#166534', backgroundColor: '#dcfce7', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>✓ Balanced</span>
                   ) : (
-                    <span style={{ color: '#991b1b', backgroundColor: '#fee2e2', padding: '4px 8px', borderRadius: '6px' }}>
-                      ⚠️ Difference: ₹{difference.toFixed(2)}
-                    </span>
+                    <span style={{ color: '#991b1b', backgroundColor: '#fee2e2', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>⚠️ Diff: ₹{difference.toFixed(2)}</span>
                   )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* Narration */}
           <div>
             <label style={labelStyle}>Narration / Remarks</label>
             <input
               type="text"
-              placeholder="e.g. Split payment for diesel and tractor driver advance"
+              placeholder="e.g. Paid cash for office expenses / diesel advance"
               value={narration}
               onChange={e => setNarration(e.target.value)}
               style={inputStyle}
             />
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={isCompoundMode && !isBalanced}
             style={{
-              backgroundColor: isCompoundMode && !isBalanced ? '#94a3b8' : '#059669',
+              backgroundColor: isCompoundMode && !isBalanced ? '#94a3b8' : (editingVoucherId ? '#0284c7' : '#059669'),
               color: '#ffffff',
               border: 'none',
-              padding: '13px',
+              padding: '14px',
               borderRadius: '8px',
               fontSize: '13px',
               fontWeight: 'bold',
@@ -455,58 +537,91 @@ export default function VoucherEntryForm({ firm }) {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '6px',
-              boxShadow: '0 2px 6px rgba(5, 150, 105, 0.3)'
+              boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
             }}
           >
-            💾 Post Double-Entry Voucher
+            {editingVoucherId ? '💾 Save Changes & Update Voucher' : '💾 Post Double-Entry Voucher'}
           </button>
-
         </form>
       </div>
 
-      {/* Recent Daybook / Vouchers Table */}
+      {/* 3. DAYBOOK REGISTER: RESPONSIVE CARDS (GUARANTEED EDIT & DELETE BUTTONS) */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '18px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
           <strong style={{ fontSize: '14px', color: '#0f172a' }}>
-            📖 Recent Daybook & Voucher Register ({recentVouchers.length})
+            📖 Recent Daybook & Voucher Register ({filteredVouchers.length})
           </strong>
+          <input
+            type="text"
+            placeholder="🔍 Search vouchers..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', width: '180px' }}
+          />
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Type</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Debit (Dr) / Credit (Cr)</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentVouchers.length === 0 ? (
-                <tr><td colSpan={4} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>No vouchers recorded yet.</td></tr>
-              ) : (
-                recentVouchers.map((v, idx) => (
-                  <tr key={v.id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{v.voucher_date || v.date}</td>
-                    <td style={{ padding: '8px' }}>
-                      <span style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-                        {v.voucher_type || v.type}
-                      </span>
-                    </td>
-                    <td style={{ padding: '8px' }}>
-                      <div style={{ color: '#059669', fontWeight: 'bold' }}>Dr: {v.dr_account || v.dr_party}</div>
-                      <div style={{ color: '#dc2626', fontWeight: 'bold' }}>Cr: {v.cr_account || v.cr_party}</div>
-                      {v.narration && <small style={{ color: '#64748b' }}>({v.narration})</small>}
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontWeight: '800', color: '#0f172a' }}>
-                      ₹{parseFloat(v.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        {/* Responsive Mobile Voucher List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {filteredVouchers.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
+              No vouchers recorded yet.
+            </div>
+          ) : (
+            filteredVouchers.map((v) => (
+              <div 
+                key={v.id} 
+                style={{ 
+                  backgroundColor: '#f8fafc', 
+                  border: '1px solid #e2e8f0', 
+                  borderRadius: '10px', 
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}
+              >
+                {/* Top Row: Date, Voucher Type & Amount */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>{v.voucher_date || v.date}</span>
+                    <span style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>
+                      {v.voucher_type || v.type}
+                    </span>
+                    {v.reference_no && <span style={{ fontSize: '10px', color: '#0284c7', fontWeight: '600' }}>#{v.reference_no}</span>}
+                  </div>
+                  <strong style={{ fontSize: '15px', color: '#0f172a' }}>
+                    ₹{parseFloat(v.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </strong>
+                </div>
+
+                {/* Middle Row: Accounts Breakdown */}
+                <div style={{ fontSize: '11px', lineHeight: '1.4' }}>
+                  <div style={{ color: '#059669', fontWeight: 'bold' }}>Dr: {v.dr_account || v.dr_party}</div>
+                  <div style={{ color: '#dc2626', fontWeight: 'bold' }}>Cr: {v.cr_account || v.cr_party}</div>
+                  {v.narration && <div style={{ color: '#64748b', fontSize: '10px', marginTop: '2px' }}>({v.narration})</div>}
+                </div>
+
+                {/* Bottom Row: Explicit Action Buttons (Visible on all screens) */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px dashed #cbd5e1', paddingTop: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleStartEdit(v)}
+                    style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    ✏️ Edit Voucher
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteVoucher(v.id, v.reference_no || v.voucher_number)}
+                    style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    🗑️ Delete
+                  </button>
+                </div>
+
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -515,4 +630,4 @@ export default function VoucherEntryForm({ firm }) {
 }
 
 const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
-const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a' };
+const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a' };
