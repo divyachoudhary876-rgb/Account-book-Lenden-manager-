@@ -1,5 +1,9 @@
 // frontend/src/utils/voucherPostingEngine.js
 
+/**
+ * Validates, Stores, Updates, and Deletes Universal Accounting Vouchers
+ * Enforces Double-Entry Equilibrium (Debit === Credit)
+ */
 export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
   const vouchersKey = `app_vouchers_${firmId}`;
   const existingVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
@@ -29,7 +33,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     const validatedEntries = entries.map((line, idx) => {
       const lineAmt = parseFloat(line.amount || 0);
       if (lineAmt <= 0) throw new Error(`Row #${idx + 1}: Amount zero se adhik hona chahiye.`);
-      if (!line.account_name || !line.account_name.trim()) throw new Error(`Row #${idx + 1}: Account Head chunna anivarya hai.`);
+      if (!line.account_name || !line.account_name.trim()) throw new Error(`Row #${idx + 1}: Account Head chuna zaroori hai.`);
 
       if (line.type === 'Dr') totalDebit += lineAmt;
       else if (line.type === 'Cr') totalCredit += lineAmt;
@@ -69,8 +73,8 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
   } else {
     const cleanAmount = parseFloat(amount || 0);
     if (cleanAmount <= 0) throw new Error('⚠️ Amount zero se adhik hona chahiye.');
-    if (!dr_account || !dr_account.trim()) throw new Error('⚠️ Debit account chunna zaroori hai.');
-    if (!cr_account || !cr_account.trim()) throw new Error('⚠️ Credit account chunna zaroori hai.');
+    if (!dr_account || !dr_account.trim()) throw new Error('⚠️ Debit account chunna anivarya hai.');
+    if (!cr_account || !cr_account.trim()) throw new Error('⚠️ Credit account chunna anivarya hai.');
     if (dr_account.trim() === cr_account.trim()) throw new Error('⚠️ Debit aur Credit dono same account nahi ho sakte.');
 
     finalVoucher = {
@@ -109,6 +113,9 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
   return finalVoucher;
 };
 
+/**
+ * Delete Voucher Permanently
+ */
 export const deleteUniversalVoucher = (firmId = 'FIRM-001', voucherId = '') => {
   const vouchersKey = `app_vouchers_${firmId}`;
   const existingVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
