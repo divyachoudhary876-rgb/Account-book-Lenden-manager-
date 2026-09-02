@@ -25,6 +25,9 @@ jobs:
           distribution: 'temurin'
           java-version: 21
 
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
+
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: |
@@ -35,29 +38,25 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Prepare Capacitor Android Native Project
+      - name: Initialize and Sync Capacitor Android
         working-directory: frontend
         run: |
-          # Agar android folder nahi hai toh auto-create karega
-          if [ ! -d "android" ] && [ ! -d "../android" ]; then
+          # Guarantee @capacitor/android is present
+          npm install @capacitor/android@6.1.2 --legacy-peer-deps --force
+          
+          # Initialize Android native project if not present
+          if [ ! -f "android/gradlew" ]; then
+            echo "Scaffolding native Android project..."
+            rm -rf android
             npx cap add android
           fi
+          
+          echo "Syncing web assets to native container..."
           npx cap sync android
 
-      - name: Grant Gradle Permissions & Build Release APK
+      - name: Build Android Release APK
+        working-directory: frontend/android
         run: |
-          # Auto-detect whether android folder is in root or frontend
-          if [ -f "frontend/android/gradlew" ]; then
-            cd frontend/android
-          elif [ -f "android/gradlew" ]; then
-            cd android
-          else
-            echo "Searching for gradlew..."
-            GRADLE_DIR=$(dirname $(find . -name "gradlew" | head -n 1))
-            cd "$GRADLE_DIR"
-          fi
-
-          echo "Working inside: $(pwd)"
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
@@ -65,7 +64,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AccountBook-Release-APK
-          path: |
-            **/build/outputs/apk/release/*.apk
-            **/build/outputs/apk/debug/*.apk
+          path: frontend/android/app/build/outputs/apk/**/*.apk
           retention-days: 14
