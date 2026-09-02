@@ -11,12 +11,13 @@ import {
   getPayrollWorkLogs
 } from '../utils/payrollEngine.js';
 import { saveUniversalVoucher } from '../utils/voucherPostingEngine.js';
-import { getExpenseAccountHeads } from '../utils/accountMasterEngine.js';
+import { getExpenseAccountHeads, getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function PayrollManagementView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
 
   const [entities, setEntities] = useState([]);
+  const [masterAccounts, setMasterAccounts] = useState([]);
   const [selectedEntityId, setSelectedEntityId] = useState('');
   const [summary, setSummary] = useState(null);
   const [activeTab, setActiveTab] = useState('work'); // 'work', 'payment', 'profile'
@@ -39,6 +40,7 @@ export default function PayrollManagementView({ firm }) {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileId, setProfileId] = useState(null);
   const [profileName, setProfileName] = useState('');
+  const [isCustomProfileName, setIsCustomProfileName] = useState(false);
   const [profileType, setProfileType] = useState('PIECE_RATE_LABOUR');
   const [profileRateType, setProfileRateType] = useState('PER_THOUSAND_PCS');
   const [profileRate, setProfileRate] = useState('');
@@ -49,6 +51,10 @@ export default function PayrollManagementView({ firm }) {
   const loadData = () => {
     const list = getPayrollEntities(activeFirmId);
     setEntities(list);
+
+    const accounts = getFirmMasterAccounts(activeFirmId);
+    setMasterAccounts(accounts);
+
     const expenses = getExpenseAccountHeads(activeFirmId);
     setExpenseList(expenses);
 
@@ -69,10 +75,15 @@ export default function PayrollManagementView({ firm }) {
     return () => window.removeEventListener('app_state_updated', loadData);
   }, [activeFirmId, selectedEntityId]);
 
-  const handleEntityChange = (id) => {
-    setSelectedEntityId(id);
+  const handleEntitySelectChange = (val) => {
+    if (val === 'ADD_NEW_ENTITY') {
+      startNewProfile();
+      return;
+    }
+    
+    setSelectedEntityId(val);
     setEditingWorkLogId(null);
-    const ent = entities.find(e => e.id === id);
+    const ent = entities.find(e => e.id === val);
     if (ent) {
       setRate(ent.standard_rate.toString());
       setSummary(getWorkerPayrollSummary(activeFirmId, ent.entity_name));
@@ -80,13 +91,13 @@ export default function PayrollManagementView({ firm }) {
     }
   };
 
-  // 1. EDIT WORKER PROFILE TRIGGER
   const startEditProfile = () => {
     const ent = entities.find(e => e.id === selectedEntityId);
     if (!ent) return;
     setIsEditingProfile(true);
     setProfileId(ent.id);
     setProfileName(ent.entity_name);
+    setIsCustomProfileName(false);
     setProfileType(ent.entity_type);
     setProfileRateType(ent.rate_type);
     setProfileRate(ent.standard_rate.toString());
@@ -94,11 +105,13 @@ export default function PayrollManagementView({ firm }) {
     setActiveTab('profile');
   };
 
-  // 2. NEW WORKER PROFILE TRIGGER
   const startNewProfile = () => {
     setIsEditingProfile(false);
     setProfileId(null);
-    setProfileName('');
+    // Suggest first party from accounts or default empty
+    const candidate = masterAccounts.find(a => a.primary_type === 'LIABILITIES') || masterAccounts[0];
+    setProfileName(candidate?.account_name || '');
+    setIsCustomProfileName(false);
     setProfileType('PIECE_RATE_LABOUR');
     setProfileRateType('PER_THOUSAND_PCS');
     setProfileRate('');
@@ -106,14 +119,11 @@ export default function PayrollManagementView({ firm }) {
     setActiveTab('profile');
   };
 
-  // 3. EDIT WORK ENTRY TRIGGER
   const startEditWorkEntry = (logId) => {
     const logs = getPayrollWorkLogs(activeFirmId);
     const target = logs.find(l => l.id === logId);
-    if (!target) {
-      alert('Work entry log details not found.');
-      return;
-    }
+    if (!target) return;
+    
     setEditingWorkLogId(target.id);
     setWorkDate(target.work_date);
     setUnits(target.work_units.toString());
@@ -132,7 +142,6 @@ export default function PayrollManagementView({ firm }) {
     if (ent) setRate(ent.standard_rate.toString());
   };
 
-  // 4. DELETE WORK ENTRY
   const handleDeleteWorkEntry = (logId) => {
     if (!window.confirm('Kya aap is work entry ko delete karna chahte hain? Iska Journal Voucher bhi delete ho jayega.')) return;
     try {
@@ -144,7 +153,6 @@ export default function PayrollManagementView({ firm }) {
     }
   };
 
-  // WORK ENTRY SUBMIT (CREATE OR UPDATE)
   const handleWorkSubmit = (e) => {
     e.preventDefault();
     setStatus(null);
@@ -173,7 +181,6 @@ export default function PayrollManagementView({ firm }) {
     }
   };
 
-  // PAYMENT VOUCHER SUBMIT
   const handlePaymentSubmit = (e) => {
     e.preventDefault();
     setStatus(null);
@@ -206,14 +213,19 @@ export default function PayrollManagementView({ firm }) {
     }
   };
 
-  // PROFILE SAVE SUBMIT (CREATE OR EDIT)
   const handleProfileSubmit = (e) => {
     e.preventDefault();
     setStatus(null);
+    const finalName = profileName.trim();
+    if (!finalName) {
+      setStatus({ type: 'error', text: 'Worker ya tractor ka naam chunein ya likhein.' });
+      return;
+    }
+
     try {
       const saved = savePayrollEntity(activeFirmId, {
         id: profileId,
-        entity_name: profileName,
+        entity_name: finalName,
         entity_type: profileType,
         rate_type: profileRateType,
         standard_rate: profileRate,
@@ -235,7 +247,6 @@ export default function PayrollManagementView({ firm }) {
     }
   };
 
-  // DELETE PROFILE
   const handleDeleteProfile = () => {
     const ent = entities.find(e => e.id === selectedEntityId);
     if (!ent) return;
@@ -248,10 +259,16 @@ export default function PayrollManagementView({ firm }) {
     loadData();
   };
 
+  // Group entities for structured dropdown view
+  const pieceRateEntities = entities.filter(e => e.entity_type === 'PIECE_RATE_LABOUR');
+  const tractorEntities = entities.filter(e => e.entity_type === 'TRACTOR_MACHINERY');
+  const staffEntities = entities.filter(e => e.entity_type === 'MONTHLY_STAFF');
+  const dailyWagerEntities = entities.filter(e => e.entity_type === 'DAILY_WAGER');
+
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '30px' }}>
       
-      {/* Top Banner */}
+      {/* Top Header Banner */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px 20px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -281,18 +298,21 @@ export default function PayrollManagementView({ firm }) {
           padding: '12px 16px',
           borderRadius: '10px',
           fontSize: '12px',
-          fontWeight: 'bold'
+          fontWeight: 'bold',
+          whiteSpace: 'pre-line'
         }}>
           {status.text}
         </div>
       )}
 
-      {/* Select Worker / Tractor & Live Balance Bar */}
+      {/* Select Worker / Tractor Header Bar */}
       {activeTab !== 'profile' && (
-        <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', border: '1px solid #cbd5e1', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px', alignItems: 'center' }}>
+        <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', border: '1px solid #cbd5e1', display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '16px', alignItems: 'center' }}>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Select Worker / Tractor</label>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>
+                Select Worker / Driver / Tractor (ड्रॉप-डाउन सूची) *
+              </label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="button" onClick={startEditProfile} style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}>
                   ✏️ Edit Profile
@@ -303,16 +323,53 @@ export default function PayrollManagementView({ firm }) {
               </div>
             </div>
 
+            {/* Categorized Dropdown for selection */}
             <select
               value={selectedEntityId}
-              onChange={e => handleEntityChange(e.target.value)}
-              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}
+              onChange={e => handleEntitySelectChange(e.target.value)}
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0f172a' }}
             >
-              {entities.map(ent => (
-                <option key={ent.id} value={ent.id}>
-                  {ent.entity_name} ({ent.entity_type} - ₹{ent.standard_rate}/{ent.rate_type.replace('PER_', '')})
-                </option>
-              ))}
+              {pieceRateEntities.length > 0 && (
+                <optgroup label="🧱 Theka / Piece-Rate Labour">
+                  {pieceRateEntities.map(ent => (
+                    <option key={ent.id} value={ent.id}>
+                      {ent.entity_name} (₹{ent.standard_rate}/{ent.rate_type.replace('PER_', '')})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {tractorEntities.length > 0 && (
+                <optgroup label="🚜 Tractor & Machinery">
+                  {tractorEntities.map(ent => (
+                    <option key={ent.id} value={ent.id}>
+                      {ent.entity_name} (₹{ent.standard_rate}/{ent.rate_type.replace('PER_', '')})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {staffEntities.length > 0 && (
+                <optgroup label="👔 Monthly Staff">
+                  {staffEntities.map(ent => (
+                    <option key={ent.id} value={ent.id}>
+                      {ent.entity_name} (₹{ent.standard_rate}/Mo)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {dailyWagerEntities.length > 0 && (
+                <optgroup label="⏱️ Daily Wagers">
+                  {dailyWagerEntities.map(ent => (
+                    <option key={ent.id} value={ent.id}>
+                      {ent.entity_name} (₹{ent.standard_rate}/{ent.rate_type.replace('PER_', '')})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              <option value="ADD_NEW_ENTITY">➕ + Add New Worker / Tractor Profile...</option>
             </select>
           </div>
 
@@ -397,7 +454,7 @@ export default function PayrollManagementView({ firm }) {
         </form>
       )}
 
-      {/* 2. PAYMENT VOUCHER TAB */}
+      {/* 2. DIRECT PAYMENT VOUCHER TAB */}
       {activeTab === 'payment' && (
         <form onSubmit={handlePaymentSubmit} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', display: 'grid', gap: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
           <strong style={{ fontSize: '14px', color: '#059669' }}>💵 Payment Settlement Voucher (भुगतान प्रविष्टि)</strong>
@@ -433,7 +490,7 @@ export default function PayrollManagementView({ firm }) {
         </form>
       )}
 
-      {/* 3. WORKER PROFILE CREATION & EDIT TAB */}
+      {/* 3. PROFILE CREATION & EDIT TAB (NOW WITH DROPDOWN LIST FOR NAME) */}
       {activeTab === 'profile' && (
         <form onSubmit={handleProfileSubmit} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', display: 'grid', gap: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -445,9 +502,62 @@ export default function PayrollManagementView({ firm }) {
             </button>
           </div>
 
+          {/* WORKER / TRACTOR NAME WITH DUAL DROP-DOWN OR TYPE NEW OPTION */}
           <div>
-            <label style={labelStyle}>Worker / Tractor Name *</label>
-            <input type="text" placeholder="e.g. Ramesh Thekedar" value={profileName} onChange={e => setProfileName(e.target.value)} style={inputStyle} required />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label style={labelStyle}>Worker / Tractor Name *</label>
+              <button
+                type="button"
+                onClick={() => setIsCustomProfileName(!isCustomProfileName)}
+                style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}
+              >
+                {isCustomProfileName ? '📋 Select from Existing Khata List' : '➕ Type New Custom Name'}
+              </button>
+            </div>
+
+            {!isCustomProfileName ? (
+              <select
+                value={profileName}
+                onChange={e => {
+                  if (e.target.value === 'TYPE_NEW') {
+                    setIsCustomProfileName(true);
+                    setProfileName('');
+                  } else {
+                    setProfileName(e.target.value);
+                  }
+                }}
+                style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#ffffff' }}
+                required
+              >
+                <option value="">-- Drop Down List se Naam Select Karein --</option>
+                <optgroup label="🏢 Chart of Accounts / Existing Ledgers">
+                  {masterAccounts.map(acc => (
+                    <option key={acc.id} value={acc.account_name}>
+                      {acc.account_name} ({acc.sub_group})
+                    </option>
+                  ))}
+                </optgroup>
+                <option value="TYPE_NEW">➕ + Type New Name...</option>
+              </select>
+            ) : (
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  placeholder="e.g. Ramesh Thekedar ya Tractor RJ-13"
+                  value={profileName}
+                  onChange={e => setProfileName(e.target.value)}
+                  style={{ ...inputStyle, fontWeight: 'bold' }}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsCustomProfileName(false)}
+                  style={{ backgroundColor: '#e2e8f0', border: 'none', borderRadius: '8px', padding: '0 12px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  List
+                </button>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -455,9 +565,9 @@ export default function PayrollManagementView({ firm }) {
               <label style={labelStyle}>Engagement Type *</label>
               <select value={profileType} onChange={e => setProfileType(e.target.value)} style={inputStyle} required>
                 <option value="PIECE_RATE_LABOUR">Piece-Rate Theka (काम के हिसाब से)</option>
+                <option value="TRACTOR_MACHINERY">Tractor / Machinery Hire (किराया)</option>
                 <option value="MONTHLY_STAFF">Monthly Staff (मासिक वेतन)</option>
                 <option value="DAILY_WAGER">Daily Wager (दैनिक मजदूरी)</option>
-                <option value="TRACTOR_MACHINERY">Tractor / Machinery Hire (किराया)</option>
               </select>
             </div>
 
