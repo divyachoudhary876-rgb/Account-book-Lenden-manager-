@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { getStockItemsByFirm, recordStockConsumption } from '../utils/stockInventoryEngine.js';
+import { getExpenseAccountHeads } from '../utils/accountMasterEngine.js';
 
 export default function MaterialConsumptionView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
 
   const [stockList, setStockList] = useState([]);
+  const [expenseAccounts, setExpenseAccounts] = useState([]);
+  
   const [selectedItem, setSelectedItem] = useState('Diesel');
   const [availableStock, setAvailableStock] = useState(0);
   const [itemUnit, setItemUnit] = useState('Ltr');
@@ -15,27 +18,42 @@ export default function MaterialConsumptionView({ firm }) {
   const [quantity, setQuantity] = useState('');
   const [machineryRef, setMachineryRef] = useState('Tractor No. 1');
   const [expenseHead, setExpenseHead] = useState('Tractor Fuel & Running Expense');
+  const [isCustomExpense, setIsCustomExpense] = useState(false);
+  const [customExpenseName, setCustomExpenseName] = useState('');
+
   const [consumptionDate, setConsumptionDate] = useState(new Date().toISOString().split('T')[0]);
   const [remarks, setRemarks] = useState('');
   const [status, setStatus] = useState(null);
 
-  const loadStock = () => {
-    const list = getStockItemsByFirm(activeFirmId);
-    setStockList(list);
+  const loadData = () => {
+    // 1. Load Stocks
+    const items = getStockItemsByFirm(activeFirmId);
+    setStockList(items);
 
-    if (list.length > 0) {
-      const target = list.find(i => i.item_name.toLowerCase().includes('diesel')) || list[0];
+    if (items.length > 0) {
+      const target = items.find(i => i.item_name.toLowerCase().includes('diesel')) || items[0];
       setSelectedItem(target.item_name);
       setAvailableStock(parseFloat(target.current_stock || 0));
       setItemUnit(target.unit || 'Ltr');
-      setItemRate(parseFloat(target.unit_purchase_price || 0));
+      setItemRate(parseFloat(target.unit_purchase_price || target.purchase_rate || 0));
+    }
+
+    // 2. Load Expense Accounts from Chart of Accounts
+    const expenses = getExpenseAccountHeads(activeFirmId);
+    setExpenseAccounts(expenses);
+    if (expenses.length > 0) {
+      setExpenseHead(expenses[0].account_name);
     }
   };
 
   useEffect(() => {
-    loadStock();
-    window.addEventListener('stock_updated', loadStock);
-    return () => window.removeEventListener('stock_updated', loadStock);
+    loadData();
+    window.addEventListener('stock_updated', loadData);
+    window.addEventListener('app_state_updated', loadData);
+    return () => {
+      window.removeEventListener('stock_updated', loadData);
+      window.removeEventListener('app_state_updated', loadData);
+    };
   }, [activeFirmId]);
 
   const handleItemChange = (name) => {
@@ -44,16 +62,26 @@ export default function MaterialConsumptionView({ firm }) {
     if (item) {
       setAvailableStock(parseFloat(item.current_stock || 0));
       setItemUnit(item.unit || 'Ltr');
-      setItemRate(parseFloat(item.unit_purchase_price || 0));
-      
-      // Auto-adapt Expense Account Suggestion
-      if (name.toLowerCase().includes('diesel')) {
-        setExpenseHead('Tractor Fuel & Running Expense');
-        setMachineryRef('Tractor');
+      setItemRate(parseFloat(item.unit_purchase_price || item.purchase_rate || 0));
+
+      // Intelligent mapping to standard expense heads
+      if (name.toLowerCase().includes('diesel') || name.toLowerCase().includes('fuel')) {
+        const tractorAcc = expenseAccounts.find(a => a.account_name.toLowerCase().includes('tractor') || a.account_name.toLowerCase().includes('fuel'));
+        if (tractorAcc) setExpenseHead(tractorAcc.account_name);
       } else if (name.toLowerCase().includes('coal') || name.toLowerCase().includes('husk')) {
-        setExpenseHead('Bhatta Kiln Burning Expense');
-        setMachineryRef('Kiln / Chamber');
+        const kilnAcc = expenseAccounts.find(a => a.account_name.toLowerCase().includes('kiln') || a.account_name.toLowerCase().includes('burning'));
+        if (kilnAcc) setExpenseHead(kilnAcc.account_name);
       }
+    }
+  };
+
+  const handleExpenseDropdownChange = (val) => {
+    if (val === 'ADD_CUSTOM_EXPENSE') {
+      setIsCustomExpense(true);
+      setCustomExpenseName('');
+    } else {
+      setIsCustomExpense(false);
+      setExpenseHead(val);
     }
   };
 
@@ -63,24 +91,31 @@ export default function MaterialConsumptionView({ firm }) {
     e.preventDefault();
     setStatus(null);
 
+    const finalExpenseAccount = isCustomExpense ? customExpenseName.trim() : expenseHead.trim();
+    if (!finalExpenseAccount) {
+      setStatus({ type: 'error', text: 'Expense account select ya enter karein.' });
+      return;
+    }
+
     try {
       const res = recordStockConsumption(activeFirmId, {
         item_name: selectedItem,
         quantity: quantity,
         consumption_date: consumptionDate,
-        expense_head: expenseHead,
+        expense_head: finalExpenseAccount,
         machinery_ref: machineryRef,
         remarks: remarks
       });
 
       setStatus({
         type: 'success',
-        text: `✓ Success! ${res.quantity_consumed} ${res.unit} ${res.item_name} consumed.\n• Remaining Stock: ${res.remaining_stock.toFixed(2)} ${res.unit}\n• Expense Posted to P&L: ₹${res.total_expense.toFixed(2)}`
+        text: `✓ Success! ${res.quantity_consumed} ${res.unit} ${res.item_name} consumed.\n• Remaining Stock: ${res.remaining_stock.toFixed(2)} ${res.unit}\n• Debited to: ${finalExpenseAccount}\n• P&L Impact: ₹${res.total_expense.toFixed(2)}`
       });
 
       setQuantity('');
       setRemarks('');
-      loadStock();
+      if (isCustomExpense) setIsCustomExpense(false);
+      loadData();
     } catch (err) {
       setStatus({ type: 'error', text: err.message });
     }
@@ -89,7 +124,7 @@ export default function MaterialConsumptionView({ firm }) {
   return (
     <div style={{ maxWidth: '680px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '30px' }}>
       
-      {/* Header Banner */}
+      {/* Header */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px 20px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -98,7 +133,7 @@ export default function MaterialConsumptionView({ firm }) {
           <span style={{ fontSize: '11px', color: '#64748b' }}>Automatic Stock Deduction & Expense Voucher Generator</span>
         </div>
 
-        {/* Live Stock Indicator */}
+        {/* Live Stock Meter */}
         <div style={{ backgroundColor: availableStock > 0 ? '#f0fdf4' : '#fef2f2', border: `1px solid ${availableStock > 0 ? '#bbf7d0' : '#fecaca'}`, padding: '6px 12px', borderRadius: '8px', textAlign: 'right' }}>
           <span style={{ fontSize: '10px', color: availableStock > 0 ? '#166534' : '#991b1b', fontWeight: 'bold', display: 'block' }}>
             AVAILABLE {selectedItem.toUpperCase()}
@@ -124,7 +159,7 @@ export default function MaterialConsumptionView({ firm }) {
         </div>
       )}
 
-      {/* Main Consumption Entry Form */}
+      {/* Main Entry Form */}
       <form onSubmit={handleSubmit} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', display: 'grid', gap: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -174,7 +209,7 @@ export default function MaterialConsumptionView({ firm }) {
             <label style={labelStyle}>Used In / Vehicle Ref *</label>
             <input 
               type="text" 
-              placeholder="e.g. Tractor RJ-13 / Generator / JCB" 
+              placeholder="e.g. Tractor RJ-13 / JCB / Generator" 
               value={machineryRef} 
               onChange={e => setMachineryRef(e.target.value)} 
               style={inputStyle} 
@@ -183,21 +218,48 @@ export default function MaterialConsumptionView({ firm }) {
           </div>
         </div>
 
-        {/* Real-Time Cost Calculation Box */}
+        {/* Real-Time Cost Preview */}
         <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
           <span>Estimated Cost Valuation (@ ₹{itemRate.toFixed(2)}/{itemUnit}):</span>
           <strong style={{ fontSize: '14px', color: '#0f172a' }}>₹{calculatedCost}</strong>
         </div>
 
+        {/* 2. DEBIT EXPENSE LEDGER (DYNAMIC DROPDOWN LIST) */}
         <div>
           <label style={labelStyle}>Debit Expense Ledger (P&L Kharch Khata) *</label>
-          <input 
-            type="text" 
-            value={expenseHead} 
-            onChange={e => setExpenseHead(e.target.value)} 
-            style={{ ...inputStyle, backgroundColor: '#ffffff', fontWeight: '600' }} 
-            required 
-          />
+          {!isCustomExpense ? (
+            <select
+              value={expenseHead}
+              onChange={e => handleExpenseDropdownChange(e.target.value)}
+              style={{ ...inputStyle, fontWeight: 'bold' }}
+              required
+            >
+              {expenseAccounts.map(acc => (
+                <option key={acc.id} value={acc.account_name}>
+                  {acc.account_name} ({acc.sub_group || 'Expense'})
+                </option>
+              ))}
+              <option value="ADD_CUSTOM_EXPENSE">➕ + Type New Expense Ledger...</option>
+            </select>
+          ) : (
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input
+                type="text"
+                placeholder="Enter new expense account name..."
+                value={customExpenseName}
+                onChange={e => setCustomExpenseName(e.target.value)}
+                style={{ ...inputStyle, fontWeight: 'bold' }}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setIsCustomExpense(false)}
+                style={{ backgroundColor: '#e2e8f0', border: 'none', borderRadius: '8px', padding: '0 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                List
+              </button>
+            </div>
+          )}
         </div>
 
         <div>
