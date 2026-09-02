@@ -1,8 +1,5 @@
 // frontend/src/utils/voucherPostingEngine.js
 
-/**
- * Validates, Stores, Updates and Deletes Universal Accounting Vouchers
- */
 export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
   const vouchersKey = `app_vouchers_${firmId}`;
   const existingVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
@@ -100,7 +97,6 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     };
   }
 
-  // Update or Insert
   const existingIdx = existingVouchers.findIndex(v => v.id === finalVoucher.id);
   if (existingIdx !== -1) {
     existingVouchers[existingIdx] = finalVoucher;
