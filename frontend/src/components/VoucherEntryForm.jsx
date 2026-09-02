@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine.js';
 import { getAllUniversalVouchers } from '../utils/statementEngine.js';
+import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 export default function VoucherEntryForm({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
@@ -23,7 +24,7 @@ export default function VoucherEntryForm({ firm }) {
   const [narration, setNarration] = useState('');
   const [isCompoundMode, setIsCompoundMode] = useState(false);
 
-  // Simple Mode States
+  // Simple Mode States (Dr & Cr)
   const [drAccount, setDrAccount] = useState('');
   const [crAccount, setCrAccount] = useState('');
   const [simpleAmount, setSimpleAmount] = useState('');
@@ -221,7 +222,7 @@ export default function VoucherEntryForm({ firm }) {
   return (
     <div style={{ maxWidth: '750px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '40px' }}>
       
-      {/* 1. EDIT MODE FLOATING NOTICE */}
+      {/* 1. EDIT MODE NOTIFICATION BAR */}
       {editingVoucherId && (
         <div style={{ backgroundColor: '#0284c7', color: '#ffffff', padding: '12px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 12px rgba(2,132,199,0.3)' }}>
           <div>
@@ -364,44 +365,29 @@ export default function VoucherEntryForm({ firm }) {
             </div>
           </div>
 
-          {/* SIMPLE MODE (STACKED TO PREVENT TEXT TRUNCATION) */}
+          {/* 1. SIMPLE MODE WITH SEARCHABLE DROPDOWNS */}
           {!isCompoundMode ? (
-            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'grid', gap: '12px' }}>
-              <div>
-                <label style={{ ...labelStyle, color: '#059669', fontSize: '12px' }}>
-                  Debit Account (Dr - नामे) *
-                </label>
-                <select
-                  value={drAccount}
-                  onChange={e => setDrAccount(e.target.value)}
-                  style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#ffffff' }}
-                  required
-                >
-                  {getFilteredAccounts('Dr').map(a => (
-                    <option key={a.id} value={a.account_name}>
-                      {a.account_name} ({a.sub_group || a.primary_type})
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'grid', gap: '14px' }}>
+              
+              {/* Debit Account with Search Bar */}
+              <SearchableAccountDropdown
+                label="Debit Account (Dr - नामे)"
+                accounts={getFilteredAccounts('Dr')}
+                value={drAccount}
+                onChange={val => setDrAccount(val)}
+                colorAccent="#059669"
+                required
+              />
 
-              <div>
-                <label style={{ ...labelStyle, color: '#dc2626', fontSize: '12px' }}>
-                  Credit Account (Cr - जमा) *
-                </label>
-                <select
-                  value={crAccount}
-                  onChange={e => setCrAccount(e.target.value)}
-                  style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#ffffff' }}
-                  required
-                >
-                  {getFilteredAccounts('Cr').map(a => (
-                    <option key={a.id} value={a.account_name}>
-                      {a.account_name} ({a.sub_group || a.primary_type})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Credit Account with Search Bar */}
+              <SearchableAccountDropdown
+                label="Credit Account (Cr - जमा)"
+                accounts={getFilteredAccounts('Cr')}
+                value={crAccount}
+                onChange={val => setCrAccount(val)}
+                colorAccent="#dc2626"
+                required
+              />
 
               <div>
                 <label style={labelStyle}>Transaction Amount (₹) *</label>
@@ -418,7 +404,7 @@ export default function VoucherEntryForm({ firm }) {
               </div>
             </div>
           ) : (
-            /* COMPOUND MULTI-ROW MODE */
+            /* 2. COMPOUND MULTI-ROW MODE WITH SEARCHABLE DROPDOWNS */
             <div style={{ display: 'grid', gap: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a' }}>
@@ -454,19 +440,14 @@ export default function VoucherEntryForm({ firm }) {
                       <option value="Cr">Cr</option>
                     </select>
 
-                    <select
+                    <SearchableAccountDropdown
+                      label=""
+                      accounts={accounts}
                       value={line.account_name}
-                      onChange={e => handleLineChange(line.id, 'account_name', e.target.value)}
-                      style={{ ...inputStyle, padding: '7px', fontWeight: 'bold' }}
-                      required
-                    >
-                      <option value="">-- Select Account --</option>
-                      {accounts.map(a => (
-                        <option key={a.id} value={a.account_name}>
-                          {a.account_name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={val => handleLineChange(line.id, 'account_name', val)}
+                      placeholder="Search Account..."
+                      colorAccent={line.type === 'Dr' ? '#059669' : '#dc2626'}
+                    />
 
                     <input
                       type="number"
@@ -542,7 +523,7 @@ export default function VoucherEntryForm({ firm }) {
         </form>
       </div>
 
-      {/* 3. DAYBOOK REGISTER: RESPONSIVE CARDS (GUARANTEED EDIT & DELETE VISIBILITY) */}
+      {/* 3. DAYBOOK REGISTER WITH EDIT & DELETE BUTTONS */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '18px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
           <strong style={{ fontSize: '14px', color: '#0f172a' }}>
