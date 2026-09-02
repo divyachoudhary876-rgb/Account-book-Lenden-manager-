@@ -1,12 +1,15 @@
-name: Build Business Book APK
+name: Build Android Release APK
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -19,86 +22,42 @@ jobs:
       - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '21'
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Clean Caches & Old Locks
+        run: |
+          cd frontend
+          rm -f package-lock.json
 
       - name: Install Frontend Dependencies
-        working-directory: frontend
         run: |
-          rm -f package-lock.json
+          cd frontend
           npm install --legacy-peer-deps --force
 
       - name: Build Web Application
-        working-directory: frontend
-        run: npm run build
+        run: |
+          cd frontend
+          npm run build
 
       - name: Sync Capacitor Native Android Project
-        working-directory: frontend
         run: |
-          if [ ! -f "android/settings.gradle" ]; then
-            rm -rf android
-            npx @capacitor/cli add android
-          fi
-          npx @capacitor/cli sync android
-
-      - name: Enforce Monotonic Version Bumping
-        working-directory: frontend/android/app
-        run: |
-          BUILD_NUM=${{ github.run_number }}
-          VERSION_NAME="1.0.${BUILD_NUM}"
-          echo "Injecting versionCode: ${BUILD_NUM}, versionName: ${VERSION_NAME}"
-          sed -i "s/versionCode [0-9]*/versionCode ${BUILD_NUM}/g" build.gradle
-          sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/g" build.gradle
-
-      - name: Configure Static Deterministic Master Keystore
-        working-directory: frontend/android/app
-        run: |
-          rm -f master_release.keystore
-          keytool -genkeypair -v \
-            -keystore master_release.keystore \
-            -alias businessbook_key \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 36500 \
-            -storepass "NeelkanthEnterprise@2026" \
-            -keypass "NeelkanthEnterprise@2026" \
-            -dname "CN=Neelkanth, OU=Accounting, O=NeelkanthEnterprise, L=Hanumangarh, ST=Rajasthan, C=IN"
-
-      - name: Inject Immutable Signing Configs into Gradle
-        working-directory: frontend/android/app
-        run: |
-          python3 -c "
-          with open('build.gradle', 'r') as f:
-              content = f.read()
-
-          signing_block = '''
-              signingConfigs {
-                  release {
-                      storeFile file('master_release.keystore')
-                      storePassword 'NeelkanthEnterprise@2026'
-                      keyAlias 'businessbook_key'
-                      keyPassword 'NeelkanthEnterprise@2026'
-                  }
-              }
-          '''
-          if 'signingConfigs {' not in content:
-              content = content.replace('android {', 'android {\n' + signing_block)
-              content = content.replace('buildTypes {\n        debug {', 'buildTypes {\n        debug {\n            signingConfig signingConfigs.release')
-              content = content.replace('buildTypes {\n        release {', 'buildTypes {\n        release {\n            signingConfig signingConfigs.release')
-              with open('build.gradle', 'w') as f:
-                  f.write(content)
-          "
+          cd frontend
+          npx cap sync android
 
       - name: Grant Gradle Execution Permissions
-        working-directory: frontend/android
-        run: chmod +x gradlew
+        run: |
+          cd frontend/android
+          chmod +x gradlew
 
       - name: Assemble Signed Release APK
-        working-directory: frontend/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          cd frontend/android
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload Signed Updateable APK
+      - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: BusinessBook-v1.0.${{ github.run_number }}-UpdateReady
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          name: AccountBook-Release-APK
+          path: frontend/android/app/build/outputs/apk/release/*.apk
+          retention-days: 14
