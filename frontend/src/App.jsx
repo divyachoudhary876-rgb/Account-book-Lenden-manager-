@@ -12,10 +12,11 @@ import CreateInvoice from './components/CreateInvoice.jsx';
 import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
 import MaterialConsumptionView from './components/MaterialConsumptionView.jsx';
+import BhattaProductionMasterView from './components/BhattaProductionMasterView.jsx';
+import PayrollManagementView from './components/PayrollManagementView.jsx';
 import BillSettlementView from './components/BillSettlementView.jsx';
 import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
 import InventoryStockView from './components/InventoryStockView.jsx';
-import BhattaProductionMasterView from './components/BhattaProductionMasterView.jsx';
 import AccountStatementView from './components/AccountStatementView.jsx';
 import JournalRegisterView from './components/JournalRegisterView.jsx';
 import FinancialReportsView from './components/FinancialReportsView.jsx';
@@ -113,7 +114,7 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* 1. In-Place Update Notification */}
+      {/* 1. Update Notification Banner */}
       <AppUpdateBanner />
 
       {/* 2. Top Header Bar */}
@@ -144,7 +145,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* 3. Sub-Header: Firm Picker + Dynamic FY Picker + Menu Button */}
+      {/* 3. Sub-Header: Firm Selector + FY Picker + Menu Button */}
       <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
         
         {/* Firm Picker */}
@@ -173,7 +174,7 @@ export default function App() {
           </select>
         </div>
 
-        {/* Dynamic Financial Year Selector with Add Option */}
+        {/* Financial Year Selector */}
         <div style={{ flex: 0.9, minWidth: '110px' }}>
           <select
             value={selectedFY}
@@ -196,7 +197,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* 4. 14-Item Workflow Menu Drawer */}
+      {/* 4. Complete Workflow Menu Drawer (Now showing Payroll & Wages) */}
       {isMenuOpen && (
         <div style={{
           backgroundColor: '#0c1322',
@@ -238,7 +239,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. Main Screen View Area */}
+      {/* 5. Main Screen Routing View */}
       <main style={{ maxWidth: '900px', margin: '0 auto', padding: '14px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
@@ -273,9 +274,10 @@ export default function App() {
             {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} />}
             {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} />}
             {currentView === 'consumption' && <MaterialConsumptionView firm={activeFirm} />}
+            {currentView === 'production' && <BhattaProductionMasterView firm={activeFirm} />}
+            {currentView === 'payroll' && <PayrollManagementView firm={activeFirm} />}
             {currentView === 'settlement' && <BillSettlementView firm={activeFirm} />}
             {currentView === 'inventory' && <InventoryStockView firm={activeFirm} />}
-            {currentView === 'production' && <BhattaProductionMasterView firm={activeFirm} />}
             {currentView === 'milan' && <AccountStatementView firm={activeFirm} />}
             {currentView === 'journal' && <JournalRegisterView firm={activeFirm} />}
             {currentView === 'reports' && <FinancialReportsView firm={activeFirm} />}
