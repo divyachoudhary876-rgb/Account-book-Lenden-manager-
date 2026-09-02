@@ -1,141 +1,137 @@
 // frontend/src/utils/voucherPostingEngine.js
 
-import { getAccountStatement } from './statementEngine.js';
-
 /**
- * Calculates instantaneous live balance of any ledger account head
+ * Validates and stores universal accounting vouchers (Simple & Compound Multi-Row)
+ * Guarantees strict Double-Entry equilibrium: Total Debit === Total Credit
  */
-export const getAccountLiveBalance = (firmId = 'FIRM-001', accountName = 'Cash-in-Hand') => {
-  const statement = getAccountStatement(firmId, accountName);
-  return {
-    closingBalance: statement.closingBalance || 0,
-    balanceType: statement.closingBalanceType || 'Dr',
-    netValue: statement.closingBalanceType === 'Dr' ? statement.closingBalance : -statement.closingBalance
-  };
-};
+export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
+  const vouchersKey = `app_vouchers_${firmId}`;
+  const existingVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
 
-/**
- * Retrieve all vouchers for a firm
- */
-export const getAllFirmVouchers = (firmId = 'FIRM-001') => {
-  try {
-    const raw = localStorage.getItem(`app_vouchers_${firmId}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
-
-/**
- * Validates & posts a New Voucher or Updates an Existing Voucher
- */
-export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherData = {}) => {
   const {
-    id = null, // If present, it represents EDIT MODE
-    voucher_type = 'PAYMENT',
+    voucher_type = 'JOURNAL',
+    voucher_date = new Date().toISOString().split('T')[0],
+    reference_no = '',
+    narration = '',
+    // Simple 1:1 inputs
     dr_account = '',
     cr_account = '',
     amount = 0,
-    voucher_date = new Date().toISOString().split('T')[0],
-    reference_no = '',
-    narration = ''
-  } = voucherData;
+    // Multi-row compound inputs
+    is_compound = false,
+    entries = [] // Array of { type: 'Dr' | 'Cr', account_name: '', amount: 0 }
+  } = voucherPayload;
 
-  const numAmount = parseFloat(amount || 0);
+  const voucherId = `VCH-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const cleanVoucherType = voucher_type.toUpperCase();
+  const vchNumber = reference_no.trim() || `${cleanVoucherType.slice(0, 2)}-${Date.now().toString().slice(-4)}`;
 
-  // 1. Basic Double-Entry Validations
-  if (!dr_account.trim() || !cr_account.trim()) {
-    throw new Error('⚠️ Debit (Dr) aur Credit (Cr) dono account select karna zaroori hai.');
-  }
+  if (is_compound && Array.isArray(entries) && entries.length > 0) {
+    // 1. Compound Multi-Row Processing
+    let totalDebit = 0;
+    let totalCredit = 0;
 
-  if (dr_account.trim().toLowerCase() === cr_account.trim().toLowerCase()) {
-    throw new Error('⚠️ Debit aur Credit account same nahi ho sakte.');
-  }
-
-  if (isNaN(numAmount) || numAmount <= 0) {
-    throw new Error('⚠️ Voucher amount ₹0.00 se zyada hona chahiye.');
-  }
-
-  const storageKey = `app_vouchers_${firmId}`;
-  const existingVouchers = getAllFirmVouchers(firmId);
-  const isEditing = Boolean(id);
-
-  // 2. NEGATIVE CASH-IN-HAND GUARD (Zero Balance Protection on Edit & Create)
-  const isCreditCash = cr_account.trim().toLowerCase().includes('cash');
-  
-  if (isCreditCash) {
-    const cashStats = getAccountLiveBalance(firmId, cr_account);
-    let effectiveAvailableCash = cashStats.netValue;
-
-    // Agar edit ho raha hai, toh purana credited amount wapas add karke check karenge
-    if (isEditing) {
-      const oldVoucher = existingVouchers.find(v => v.id === id);
-      if (oldVoucher && (oldVoucher.cr_account || '').trim().toLowerCase().includes('cash')) {
-        effectiveAvailableCash += parseFloat(oldVoucher.amount || 0);
+    const validatedEntries = entries.map((line, idx) => {
+      const lineAmt = parseFloat(line.amount || 0);
+      if (lineAmt <= 0) {
+        throw new Error(`Row #${idx + 1}: Amount zero se adhik hona chahiye.`);
       }
-    }
+      if (!line.account_name || !line.account_name.trim()) {
+        throw new Error(`Row #${idx + 1}: Account Head chuna zaroori hai.`);
+      }
 
-    if (effectiveAvailableCash - numAmount < 0) {
-      const shortfall = numAmount - effectiveAvailableCash;
+      if (line.type === 'Dr') totalDebit += lineAmt;
+      else if (line.type === 'Cr') totalCredit += lineAmt;
+
+      return {
+        line_id: `LINE-${Date.now()}-${idx}`,
+        type: line.type,
+        account_name: line.account_name.trim(),
+        amount: lineAmt
+      };
+    });
+
+    // Accounting Golden Rule Check (Rounded to 2 decimals)
+    const diff = Math.abs(Math.round((totalDebit - totalCredit) * 100) / 100);
+    if (diff > 0.01) {
       throw new Error(
-        `⛔ Transaction Blocked: Insufficient Cash Balance!\n\n` +
-        `• Available Cash-in-Hand: ₹${effectiveAvailableCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n` +
-        `• Required Cash Outflow: ₹${numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n` +
-        `• Shortfall: ₹${shortfall.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n\n` +
-        `Cash balance zero se neeche nahi ja sakta.`
+        `⛔ Unbalanced Voucher!\n\n` +
+        `• Total Debit: ₹${totalDebit.toFixed(2)}\n` +
+        `• Total Credit: ₹${totalCredit.toFixed(2)}\n` +
+        `• Difference: ₹${diff.toFixed(2)}\n\n` +
+        `Total Debit aur Total Credit barabar hone chahiye.`
       );
     }
-  }
 
-  // 3. Payload Construction
-  const voucherPayload = {
-    id: id || `VCH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    firm_id: firmId,
-    voucher_number: reference_no ? `VCH-${reference_no}` : (isEditing ? voucherData.voucher_number : `VCH-${Date.now().toString().slice(-6)}`),
-    voucher_date: voucher_date,
-    date: voucher_date,
-    voucher_type: voucher_type.toUpperCase(),
-    type: voucher_type.toUpperCase(),
-    dr_account: dr_account.trim(),
-    cr_account: cr_account.trim(),
-    dr_party: dr_account.trim(),
-    cr_party: cr_account.trim(),
-    amount: numAmount,
-    reference_no: reference_no.trim() || `REF-${Date.now().toString().slice(-4)}`,
-    narration: narration.trim() || `${voucher_type} Entry`,
-    updated_at: new Date().toISOString(),
-    created_at: voucherData.created_at || new Date().toISOString()
-  };
+    const compoundVoucher = {
+      id: voucherId,
+      firm_id: firmId,
+      voucher_number: vchNumber,
+      voucher_date,
+      date: voucher_date,
+      voucher_type: cleanVoucherType,
+      type: cleanVoucherType,
+      reference_no: vchNumber,
+      narration: narration.trim(),
+      amount: totalDebit,
+      is_compound: true,
+      entries: validatedEntries,
+      // String summary representation for backward-compatible Daybook views
+      dr_account: validatedEntries.filter(e => e.type === 'Dr').map(e => `${e.account_name} (₹${e.amount})`).join(', '),
+      cr_account: validatedEntries.filter(e => e.type === 'Cr').map(e => `${e.account_name} (₹${e.amount})`).join(', '),
+      dr_party: validatedEntries.filter(e => e.type === 'Dr').map(e => e.account_name).join(', '),
+      cr_party: validatedEntries.filter(e => e.type === 'Cr').map(e => e.account_name).join(', '),
+      created_at: new Date().toISOString()
+    };
 
-  // 4. Persistence Execution
-  let updatedList = [];
-  if (isEditing) {
-    updatedList = existingVouchers.map(v => v.id === id ? voucherPayload : v);
+    existingVouchers.push(compoundVoucher);
+    localStorage.setItem(vouchersKey, JSON.stringify(existingVouchers));
+
+    window.dispatchEvent(new Event('app_state_updated'));
+    return compoundVoucher;
   } else {
-    updatedList = [voucherPayload, ...existingVouchers];
+    // 2. Simple 1 Dr : 1 Cr Processing
+    const cleanAmount = parseFloat(amount || 0);
+    if (cleanAmount <= 0) {
+      throw new Error('⚠️ Transaction amount zero se adhik hona chahiye.');
+    }
+    if (!dr_account || !dr_account.trim()) {
+      throw new Error('⚠️ Debit account chuna zaroori hai.');
+    }
+    if (!cr_account || !cr_account.trim()) {
+      throw new Error('⚠️ Credit account chuna zaroori hai.');
+    }
+    if (dr_account.trim() === cr_account.trim()) {
+      throw new Error('⚠️ Debit aur Credit dono me same account nahi ho sakta.');
+    }
+
+    const simpleVoucher = {
+      id: voucherId,
+      firm_id: firmId,
+      voucher_number: vchNumber,
+      voucher_date,
+      date: voucher_date,
+      voucher_type: cleanVoucherType,
+      type: cleanVoucherType,
+      dr_account: dr_account.trim(),
+      cr_account: cr_account.trim(),
+      dr_party: dr_account.trim(),
+      cr_party: cr_account.trim(),
+      amount: cleanAmount,
+      reference_no: vchNumber,
+      narration: narration.trim(),
+      is_compound: false,
+      entries: [
+        { type: 'Dr', account_name: dr_account.trim(), amount: cleanAmount },
+        { type: 'Cr', account_name: cr_account.trim(), amount: cleanAmount }
+      ],
+      created_at: new Date().toISOString()
+    };
+
+    existingVouchers.push(simpleVoucher);
+    localStorage.setItem(vouchersKey, JSON.stringify(existingVouchers));
+
+    window.dispatchEvent(new Event('app_state_updated'));
+    return simpleVoucher;
   }
-
-  localStorage.setItem(storageKey, JSON.stringify(updatedList));
-
-  // 5. Reactive Events
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('voucher_created'));
-
-  return voucherPayload;
 };
-
-/**
- * Delete a Voucher with automatic ledger rollback
- */
-export const deleteUniversalVoucher = (firmId = 'FIRM-001', voucherId = '') => {
-  const storageKey = `app_vouchers_${firmId}`;
-  const existing = getAllFirmVouchers(firmId);
-  const filtered = existing.filter(v => v.id !== voucherId);
-
-  localStorage.setItem(storageKey, JSON.stringify(filtered));
-  window.dispatchEvent(new Event('app_state_updated'));
-  return true;
-};
-
-// Aliases for compatibility
-export const postUniversalVoucher = saveUniversalVoucher;
