@@ -56,7 +56,6 @@ export default function VoucherEntryForm({ firm }) {
     return () => window.removeEventListener('app_state_updated', loadData);
   }, [activeFirmId]);
 
-  // Statutory Account Group Filtering
   const cashAndBankAccounts = accounts.filter(a => 
     a.sub_group?.toLowerCase().includes('cash') || 
     a.sub_group?.toLowerCase().includes('bank') ||
@@ -107,7 +106,6 @@ export default function VoucherEntryForm({ firm }) {
   const difference = Math.abs(Math.round((totalDebit - totalCredit) * 100) / 100);
   const isBalanced = difference === 0 && totalDebit > 0;
 
-  // Edit Voucher Trigger
   const handleStartEdit = (voucher) => {
     setEditingVoucherId(voucher.id);
     setVoucherType(voucher.voucher_type || voucher.type || 'PAYMENT');
@@ -143,7 +141,6 @@ export default function VoucherEntryForm({ firm }) {
     loadData();
   };
 
-  // Delete Voucher Trigger
   const handleDeleteVoucher = (voucherId, ref) => {
     if (!window.confirm(`Kya aap is voucher (${ref}) ko permanently delete karna chahte hain?`)) return;
     deleteUniversalVoucher(activeFirmId, voucherId);
@@ -367,7 +364,7 @@ export default function VoucherEntryForm({ firm }) {
             </div>
           </div>
 
-          {/* 1. SIMPLE MODE: VERTICAL STACKED TO PREVENT TEXT TRUNCATION */}
+          {/* SIMPLE MODE (STACKED TO PREVENT TEXT TRUNCATION) */}
           {!isCompoundMode ? (
             <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'grid', gap: '12px' }}>
               <div>
@@ -421,7 +418,7 @@ export default function VoucherEntryForm({ firm }) {
               </div>
             </div>
           ) : (
-            /* 2. COMPOUND MULTI-ROW MODE */
+            /* COMPOUND MULTI-ROW MODE */
             <div style={{ display: 'grid', gap: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a' }}>
@@ -545,7 +542,7 @@ export default function VoucherEntryForm({ firm }) {
         </form>
       </div>
 
-      {/* 3. DAYBOOK REGISTER: RESPONSIVE CARDS (GUARANTEED EDIT & DELETE BUTTONS) */}
+      {/* 3. DAYBOOK REGISTER: RESPONSIVE CARDS (GUARANTEED EDIT & DELETE VISIBILITY) */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '18px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
           <strong style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -560,7 +557,6 @@ export default function VoucherEntryForm({ firm }) {
           />
         </div>
 
-        {/* Responsive Mobile Voucher List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {filteredVouchers.length === 0 ? (
             <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
@@ -580,7 +576,6 @@ export default function VoucherEntryForm({ firm }) {
                   gap: '8px'
                 }}
               >
-                {/* Top Row: Date, Voucher Type & Amount */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>{v.voucher_date || v.date}</span>
@@ -594,14 +589,12 @@ export default function VoucherEntryForm({ firm }) {
                   </strong>
                 </div>
 
-                {/* Middle Row: Accounts Breakdown */}
                 <div style={{ fontSize: '11px', lineHeight: '1.4' }}>
                   <div style={{ color: '#059669', fontWeight: 'bold' }}>Dr: {v.dr_account || v.dr_party}</div>
                   <div style={{ color: '#dc2626', fontWeight: 'bold' }}>Cr: {v.cr_account || v.cr_party}</div>
                   {v.narration && <div style={{ color: '#64748b', fontSize: '10px', marginTop: '2px' }}>({v.narration})</div>}
                 </div>
 
-                {/* Bottom Row: Explicit Action Buttons (Visible on all screens) */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px dashed #cbd5e1', paddingTop: '8px' }}>
                   <button
                     type="button"
