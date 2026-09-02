@@ -2,10 +2,7 @@
 
 /**
  * Standard Multi-Sector Accounting & Operational Workflow Navigation Registry
- * Configures the complete 14+ workflow drawer items with dynamic categorization.
- * 
- * @param {string} firmCategory - 'BRICK_KILN', 'MANUFACTURING', 'TRADING', 'SERVICES', etc.
- * @returns {Array} List of navigational workflow menu objects
+ * Configures the complete 15+ workflow drawer items with dynamic categorization.
  */
 export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
   const isManufacturingOrBhatta = 
@@ -60,7 +57,7 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
     }
   ];
 
-  // 5. PRODUCTION / MANUFACTURING MODULE (Always enabled for Bhatta & Manufacturing firms)
+  // 5. PRODUCTION / MANUFACTURING MODULE
   if (isManufacturingOrBhatta) {
     menu.push({ 
       key: 'production', 
@@ -70,7 +67,15 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
     });
   }
 
-  // 6. RECONCILIATION, STOCK & AUDIT REPORTS
+  // 6. LABOUR, EMPLOYEE & TRACTOR SALARY / WAGES MANAGEMENT (NEW MODULE)
+  menu.push({ 
+    key: 'payroll', 
+    label: 'Labour, Wages & Tractor (मजदूरी/वेतन)', 
+    icon: '👷', 
+    category: 'OPERATIONS' 
+  });
+
+  // 7. RECONCILIATION, STOCK & AUDIT REPORTS
   menu.push(
     { 
       key: 'settlement', 
@@ -103,7 +108,7 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
       category: 'REPORTS' 
     },
 
-    // 7. SETTINGS & SYSTEM SECURITY
+    // 8. SETTINGS & SYSTEM SECURITY
     { 
       key: 'firm_settings', 
       label: 'Firm Profile & Settings (फर्म विवरण)', 
@@ -128,8 +133,5 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
   return menu;
 };
 
-/**
- * Named Export Aliases for Rollup Bundler & Backwards Compatibility
- */
 export const filterMenuByIndustry = getDynamicWorkflowMenu;
 export const getNavigationMenuItems = getDynamicWorkflowMenu;
