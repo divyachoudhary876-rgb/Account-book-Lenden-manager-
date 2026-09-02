@@ -22,7 +22,6 @@ export default function PayrollManagementView({ firm }) {
   const [summary, setSummary] = useState(null);
   const [activeTab, setActiveTab] = useState('work'); // 'work', 'payment', 'profile'
 
-  // Work entry fields
   const [editingWorkLogId, setEditingWorkLogId] = useState(null);
   const [workDate, setWorkDate] = useState(new Date().toISOString().split('T')[0]);
   const [units, setUnits] = useState('');
@@ -31,12 +30,10 @@ export default function PayrollManagementView({ firm }) {
   const [expenseHead, setExpenseHead] = useState('Labor & Pathai Expense (मजदूरी/पथाई)');
   const [expenseList, setExpenseList] = useState([]);
 
-  // Payment fields
   const [payAmount, setPayAmount] = useState('');
   const [payMode, setPayMode] = useState('Cash in Hand (रोकड़)');
   const [payNarration, setPayNarration] = useState('');
 
-  // Profile fields (Create / Edit)
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileId, setProfileId] = useState(null);
   const [profileName, setProfileName] = useState('');
@@ -108,7 +105,6 @@ export default function PayrollManagementView({ firm }) {
   const startNewProfile = () => {
     setIsEditingProfile(false);
     setProfileId(null);
-    // Suggest first party from accounts or default empty
     const candidate = masterAccounts.find(a => a.primary_type === 'LIABILITIES') || masterAccounts[0];
     setProfileName(candidate?.account_name || '');
     setIsCustomProfileName(false);
@@ -259,7 +255,6 @@ export default function PayrollManagementView({ firm }) {
     loadData();
   };
 
-  // Group entities for structured dropdown view
   const pieceRateEntities = entities.filter(e => e.entity_type === 'PIECE_RATE_LABOUR');
   const tractorEntities = entities.filter(e => e.entity_type === 'TRACTOR_MACHINERY');
   const staffEntities = entities.filter(e => e.entity_type === 'MONTHLY_STAFF');
@@ -298,8 +293,7 @@ export default function PayrollManagementView({ firm }) {
           padding: '12px 16px',
           borderRadius: '10px',
           fontSize: '12px',
-          fontWeight: 'bold',
-          whiteSpace: 'pre-line'
+          fontWeight: 'bold'
         }}>
           {status.text}
         </div>
@@ -323,7 +317,6 @@ export default function PayrollManagementView({ firm }) {
               </div>
             </div>
 
-            {/* Categorized Dropdown for selection */}
             <select
               value={selectedEntityId}
               onChange={e => handleEntitySelectChange(e.target.value)}
@@ -490,7 +483,7 @@ export default function PayrollManagementView({ firm }) {
         </form>
       )}
 
-      {/* 3. PROFILE CREATION & EDIT TAB (NOW WITH DROPDOWN LIST FOR NAME) */}
+      {/* 3. PROFILE CREATION & EDIT TAB */}
       {activeTab === 'profile' && (
         <form onSubmit={handleProfileSubmit} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', display: 'grid', gap: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -502,7 +495,6 @@ export default function PayrollManagementView({ firm }) {
             </button>
           </div>
 
-          {/* WORKER / TRACTOR NAME WITH DUAL DROP-DOWN OR TYPE NEW OPTION */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
               <label style={labelStyle}>Worker / Tractor Name *</label>
