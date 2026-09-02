@@ -35,21 +35,37 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Sync Capacitor Native Android Project
+      - name: Prepare Capacitor Android Native Project
         working-directory: frontend
-        run: npx cap sync android
+        run: |
+          # Agar android folder nahi hai toh auto-create karega
+          if [ ! -d "android" ] && [ ! -d "../android" ]; then
+            npx cap add android
+          fi
+          npx cap sync android
 
-      - name: Grant Gradle Execution Permissions
-        working-directory: frontend/android
-        run: chmod +x gradlew
+      - name: Grant Gradle Permissions & Build Release APK
+        run: |
+          # Auto-detect whether android folder is in root or frontend
+          if [ -f "frontend/android/gradlew" ]; then
+            cd frontend/android
+          elif [ -f "android/gradlew" ]; then
+            cd android
+          else
+            echo "Searching for gradlew..."
+            GRADLE_DIR=$(dirname $(find . -name "gradlew" | head -n 1))
+            cd "$GRADLE_DIR"
+          fi
 
-      - name: Assemble Signed Release APK
-        working-directory: frontend/android
-        run: ./gradlew assembleRelease --no-daemon
+          echo "Working inside: $(pwd)"
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
 
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4
         with:
           name: AccountBook-Release-APK
-          path: frontend/android/app/build/outputs/apk/release/*.apk
+          path: |
+            **/build/outputs/apk/release/*.apk
+            **/build/outputs/apk/debug/*.apk
           retention-days: 14
