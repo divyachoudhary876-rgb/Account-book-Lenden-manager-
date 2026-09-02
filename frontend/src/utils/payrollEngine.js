@@ -2,11 +2,8 @@
 
 import { saveUniversalVoucher } from './voucherPostingEngine.js';
 import { getAllUniversalVouchers } from './statementEngine.js';
-import { saveMasterAccount, getFirmMasterAccounts } from './accountMasterEngine.js';
+import { saveMasterAccount } from './accountMasterEngine.js';
 
-/**
- * 1. Fetch all payroll entities for active firm
- */
 export const getPayrollEntities = (firmId = 'FIRM-001') => {
   try {
     const raw = localStorage.getItem(`app_payroll_entities_${firmId}`);
@@ -27,9 +24,6 @@ export const getPayrollEntities = (firmId = 'FIRM-001') => {
   }
 };
 
-/**
- * 2. Save / Edit Worker or Machinery Profile with Linked Ledger Sync
- */
 export const savePayrollEntity = (firmId = 'FIRM-001', data = {}) => {
   const list = getPayrollEntities(firmId);
   const cleanName = (data.entity_name || '').trim();
@@ -42,7 +36,6 @@ export const savePayrollEntity = (firmId = 'FIRM-001', data = {}) => {
     previousName = list[existingIdx].entity_name;
   }
 
-  // Synchronize or create ledger account in Chart of Accounts
   saveMasterAccount(firmId, {
     account_name: cleanName,
     primary_type: 'LIABILITIES',
@@ -51,7 +44,6 @@ export const savePayrollEntity = (firmId = 'FIRM-001', data = {}) => {
     balance_type: 'Cr'
   });
 
-  // If entity renamed, update vouchers linked to old name
   if (previousName && previousName !== cleanName) {
     const vouchersKey = `app_vouchers_${firmId}`;
     const vouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
@@ -75,20 +67,14 @@ export const savePayrollEntity = (firmId = 'FIRM-001', data = {}) => {
     updated_at: new Date().toISOString()
   };
 
-  if (existingIdx !== -1) {
-    list[existingIdx] = updatedEntity;
-  } else {
-    list.push(updatedEntity);
-  }
+  if (existingIdx !== -1) list[existingIdx] = updatedEntity;
+  else list.push(updatedEntity);
 
   localStorage.setItem(`app_payroll_entities_${firmId}`, JSON.stringify(list));
   window.dispatchEvent(new Event('app_state_updated'));
   return updatedEntity;
 };
 
-/**
- * 3. Delete Worker / Tractor Profile
- */
 export const deletePayrollEntity = (firmId = 'FIRM-001', entityId = '') => {
   const list = getPayrollEntities(firmId);
   const updated = list.filter(e => e.id !== entityId);
@@ -97,9 +83,6 @@ export const deletePayrollEntity = (firmId = 'FIRM-001', entityId = '') => {
   return true;
 };
 
-/**
- * 4. Get Work Logs
- */
 export const getPayrollWorkLogs = (firmId = 'FIRM-001') => {
   try {
     return JSON.parse(localStorage.getItem(`app_payroll_work_logs_${firmId}`) || '[]');
@@ -108,12 +91,9 @@ export const getPayrollWorkLogs = (firmId = 'FIRM-001') => {
   }
 };
 
-/**
- * 5. Record or Edit Work Log (Double-Entry Synchronized)
- */
 export const recordWorkLog = (firmId = 'FIRM-001', payload = {}) => {
   const {
-    id, // If present, it's an edit
+    id,
     entity_id,
     work_date = new Date().toISOString().split('T')[0],
     work_units = 0,
@@ -124,13 +104,13 @@ export const recordWorkLog = (firmId = 'FIRM-001', payload = {}) => {
 
   const entities = getPayrollEntities(firmId);
   const entity = entities.find(e => e.id === entity_id);
-  if (!entity) throw new Error('Worker/Machine profile not found.');
+  if (!entity) throw new Error('Worker/Machine profile nahi mili.');
 
   const units = parseFloat(work_units || 0);
   const rate = parseFloat(applied_rate || 0);
   const grossAmount = units * rate;
 
-  if (grossAmount <= 0) throw new Error('Units and rate must be greater than zero.');
+  if (grossAmount <= 0) throw new Error('Units aur rate zero se adhik hone chahiye.');
 
   const logsKey = `app_payroll_work_logs_${firmId}`;
   const logs = getPayrollWorkLogs(firmId);
@@ -140,9 +120,8 @@ export const recordWorkLog = (firmId = 'FIRM-001', payload = {}) => {
   let vchRef = '';
 
   if (id) {
-    // EDIT MODE: Update existing work log and sync existing voucher
     const logIdx = logs.findIndex(l => l.id === id);
-    if (logIdx === -1) throw new Error('Work log not found for editing.');
+    if (logIdx === -1) throw new Error('Work log entry nahi mili.');
 
     vchRef = logs[logIdx].voucher_ref;
     const vchIdx = vouchers.findIndex(v => v.reference_no === vchRef);
@@ -170,7 +149,6 @@ export const recordWorkLog = (firmId = 'FIRM-001', payload = {}) => {
       updated_at: new Date().toISOString()
     };
   } else {
-    // NEW ENTRY MODE
     vchRef = `WRK-${Date.now().toString().slice(-5)}`;
     saveUniversalVoucher(firmId, {
       voucher_type: 'JOURNAL',
@@ -202,9 +180,6 @@ export const recordWorkLog = (firmId = 'FIRM-001', payload = {}) => {
   return { grossAmount, vchRef };
 };
 
-/**
- * 6. Delete Work Log (Removes Corresponding Journal Voucher)
- */
 export const deleteWorkLog = (firmId = 'FIRM-001', logId = '') => {
   const logsKey = `app_payroll_work_logs_${firmId}`;
   const logs = getPayrollWorkLogs(firmId);
@@ -212,13 +187,11 @@ export const deleteWorkLog = (firmId = 'FIRM-001', logId = '') => {
 
   if (!target) return false;
 
-  // Remove corresponding Journal Voucher
   const vouchersKey = `app_vouchers_${firmId}`;
   const vouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
   const updatedVouchers = vouchers.filter(v => v.reference_no !== target.voucher_ref);
   localStorage.setItem(vouchersKey, JSON.stringify(updatedVouchers));
 
-  // Remove work log
   const updatedLogs = logs.filter(l => l.id !== logId);
   localStorage.setItem(logsKey, JSON.stringify(updatedLogs));
 
@@ -226,9 +199,6 @@ export const deleteWorkLog = (firmId = 'FIRM-001', logId = '') => {
   return true;
 };
 
-/**
- * 7. Get Summary & Editable Ledger Entries
- */
 export const getWorkerPayrollSummary = (firmId = 'FIRM-001', entityName = '') => {
   const vouchers = getAllUniversalVouchers(firmId);
   const logs = getPayrollWorkLogs(firmId);
