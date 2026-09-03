@@ -2,11 +2,10 @@
 
 /**
  * Universal JSON Backup Exporter
- * Exports the complete Chart of Accounts, Vouchers, Inventory, and Settings
  */
 export const exportUniversalBackup = (firmId = 'FIRM-001', firmName = 'Firm') => {
   const backupPayload = {
-    version: '2.0.0',
+    version: '2.5.0',
     export_timestamp: new Date().toISOString(),
     firm_id: firmId,
     firm_name: firmName,
@@ -43,8 +42,7 @@ export const exportUniversalBackup = (firmId = 'FIRM-001', firmName = 'Firm') =>
 };
 
 /**
- * Universal JSON Backup Restorer
- * Self-healing parser for previous schema versions and voucher formats
+ * Universal JSON Backup Restorer (Self-Healing Schema Migration)
  */
 export const restoreUniversalBackup = (jsonString) => {
   try {
@@ -52,10 +50,9 @@ export const restoreUniversalBackup = (jsonString) => {
     const rawData = parsed.data || parsed.payload || parsed;
 
     if (!rawData || typeof rawData !== 'object') {
-      throw new Error('Invalid backup archive. No valid data records detected.');
+      throw new Error('Invalid backup file. No data section found.');
     }
 
-    // Write all stored keys back into localStorage
     Object.keys(rawData).forEach((key) => {
       const value = rawData[key];
       if (typeof value === 'object' && value !== null) {
@@ -65,43 +62,42 @@ export const restoreUniversalBackup = (jsonString) => {
       }
     });
 
-    // Schema Self-Healing: Guarantee modern voucher keys and IDs
+    // Self-healing migration for existing vouchers
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('app_vouchers_')) {
         const vchs = JSON.parse(localStorage.getItem(key) || '[]');
-        let modified = false;
+        let changed = false;
 
         vchs.forEach((v, idx) => {
           if (!v.id) {
-            v.id = `VCH-${Date.now()}-${idx}`;
-            modified = true;
+            v.id = `VCH-MIGRATED-${Date.now()}-${idx}`;
+            changed = true;
           }
           if (!v.entries || !Array.isArray(v.entries) || v.entries.length === 0) {
             v.entries = [
               { type: 'Dr', account_name: v.dr_account || v.dr_party || 'General Expense', amount: parseFloat(v.amount || 0) },
               { type: 'Cr', account_name: v.cr_account || v.cr_party || 'Cash in Hand (रोकड़)', amount: parseFloat(v.amount || 0) }
             ];
-            modified = true;
+            changed = true;
           }
         });
 
-        if (modified) {
+        if (changed) {
           localStorage.setItem(key, JSON.stringify(vchs));
         }
       }
     }
 
-    // Trigger state reactivity across all open views
     window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('stock_updated'));
 
     return { 
       success: true, 
-      message: '✓ Backup restored successfully. All ledger accounts, daybooks, and stock records are live.' 
+      message: '✓ Backup successfully restored. All ledgers, stock, and entries are synchronized.' 
     };
   } catch (err) {
-    throw new Error(`Backup restoration failed: ${err.message}`);
+    throw new Error(`Restoration failed: ${err.message}`);
   }
 };
 
