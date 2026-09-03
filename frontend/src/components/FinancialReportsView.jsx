@@ -1,6 +1,5 @@
 // frontend/src/components/FinancialReportsView.jsx
-import React, { useState, useEffect, useMemo } from 'react';
-import { generateFinancialReports } from '../utils/financialReportEngine.js';
+import React, { useState, useMemo } from 'react';
 import { downloadFinancialStatementsReport } from '../utils/pdfDownloadEngine.js';
 
 export default function FinancialReportsView({ firm, transactions = [], accounts = [], onClose }) {
@@ -12,22 +11,11 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
   const firmName = firm?.legal_name || firm?.trade_name || (typeof firm === 'string' ? firm : 'Neelkanth Int Udyog');
   const financialYear = 'FY 2026-27';
 
-  // 1. Resolve Data: Uses financialReportEngine, or localStorage fallback, or prop transactions
+  // Self-Contained Double-Entry Aggregation Engine
   const reportData = useMemo(() => {
-    // Attempt engine generation first
-    try {
-      if (typeof generateFinancialReports === 'function') {
-        const generated = generateFinancialReports();
-        if (generated && generated.trialBalance && generated.trialBalance.rows && generated.trialBalance.rows.length > 0) {
-          return generated;
-        }
-      }
-    } catch (e) {
-      console.warn('generateFinancialReports invocation bypassed:', e);
-    }
-
-    // Secondary: Read from localStorage ledgers/transactions
-    let allTx = Array.isArray(transactions) && transactions.length > 0 ? transactions : [];
+    // 1. Gather all transactions from props or local storage
+    let allTx = Array.isArray(transactions) && transactions.length > 0 ? [...transactions] : [];
+    
     if (allTx.length === 0) {
       try {
         const storedVouchers = JSON.parse(localStorage.getItem('account_book_vouchers') || '[]');
@@ -40,11 +28,22 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
     }
 
     const accountMap = {};
-    (accounts || []).forEach(acc => {
-      accountMap[acc.name] = { name: acc.name, category: acc.category || acc.type || 'ASSETS', debit: 0, credit: 0 };
+
+    // Populate registered accounts
+    (accounts || []).forEach((acc) => {
+      const name = acc.name || acc.account_name;
+      if (name) {
+        accountMap[name] = {
+          name: name,
+          category: acc.category || acc.type || 'ASSETS',
+          debit: 0,
+          credit: 0
+        };
+      }
     });
 
-    allTx.forEach(tx => {
+    // Aggregate debits and credits
+    allTx.forEach((tx) => {
       const amt = parseFloat(tx.amount || 0);
       if (amt <= 0) return;
 
@@ -72,7 +71,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
     let indirectExpenses = 0;
     let indirectIncomes = 0;
 
-    Object.values(accountMap).forEach(acc => {
+    Object.values(accountMap).forEach((acc) => {
       const diff = acc.debit - acc.credit;
       let d = 0;
       let c = 0;
@@ -94,11 +93,19 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
         });
 
         const nameLower = acc.name.toLowerCase();
-        if (nameLower.includes('purchase') || nameLower.includes('khareed')) totalPurchases += d;
-        else if (nameLower.includes('sale') || nameLower.includes('bikri')) totalSales += c;
-        else if (nameLower.includes('diesel') || nameLower.includes('wages') || nameLower.includes('freight')) directExpenses += d;
-        else if (acc.category === 'EXPENSES') indirectExpenses += d;
-        else if (acc.category === 'INCOME') indirectIncomes += c;
+        const catLower = String(acc.category).toUpperCase();
+
+        if (catLower.includes('PURCHASE') || nameLower.includes('purchase') || nameLower.includes('khareed')) {
+          totalPurchases += d;
+        } else if (catLower.includes('SALE') || nameLower.includes('sales') || nameLower.includes('bikri')) {
+          totalSales += c;
+        } else if (nameLower.includes('diesel') || nameLower.includes('wages') || nameLower.includes('freight')) {
+          directExpenses += d;
+        } else if (catLower.includes('EXPENSE')) {
+          indirectExpenses += d;
+        } else if (catLower.includes('INCOME')) {
+          indirectIncomes += c;
+        }
       }
     });
 
@@ -128,7 +135,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
     };
   }, [firm, transactions, accounts]);
 
-  // Safe Export Handler
+  // Safe Export Trigger
   const handlePrintReport = async () => {
     try {
       setIsExporting(true);
@@ -172,7 +179,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
               <span>वित्तीय विवरण (Financial Statements)</span>
             </h1>
             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-              {firmName} | FY 2026-27 | Double-Entry General Ledger
+              {firmName} | {financialYear} | Double-Entry General Ledger
             </div>
           </div>
 
