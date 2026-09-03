@@ -3,8 +3,6 @@ name: Build Android Release APK
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -17,7 +15,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js v20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -65,14 +63,13 @@ jobs:
             echo "GRADLE_DIR=android" >> $GITHUB_ENV
             chmod +x android/gradlew
           else
-            echo "Searching for gradlew across repository..."
             GRADLE_PATH=$(find . -name "gradlew" | head -n 1)
             if [ -n "$GRADLE_PATH" ]; then
               GRADLE_DIR=$(dirname "$GRADLE_PATH")
               echo "GRADLE_DIR=$GRADLE_DIR" >> $GITHUB_ENV
               chmod +x "$GRADLE_PATH"
             else
-              echo "Error: gradlew binary could not be found!"
+              echo "Error: gradlew not found!"
               exit 1
             fi
           fi
