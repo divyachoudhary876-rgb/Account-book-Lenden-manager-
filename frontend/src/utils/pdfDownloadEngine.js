@@ -11,11 +11,11 @@ export const saveDocumentToLocalMemory = async (htmlContent, fileName, shareTitl
   let fileSaved = false;
   let savedPath = '';
 
-  // 1. Android Native Capacitor Filesystem Write (Direct UTF-8 Plain Text)
+  // 1. Android Native Capacitor Filesystem Write
   try {
     const writeResult = await Filesystem.writeFile({
       path: fileName,
-      data: htmlContent, // Direct clean HTML string (No double Base64 encoding)
+      data: htmlContent,
       directory: Directory.Documents,
       encoding: Encoding.UTF8,
       recursive: true
@@ -45,7 +45,7 @@ export const saveDocumentToLocalMemory = async (htmlContent, fileName, shareTitl
       await navigator.share({
         files: [file],
         title: shareTitle,
-        text: `Financial Audit Document: ${fileName}`
+        text: `Document: ${fileName}`
       });
       shareSucceeded = true;
     }
@@ -89,7 +89,194 @@ export const saveDocumentToLocalMemory = async (htmlContent, fileName, shareTitl
 };
 
 /**
- * 1. General Journal Register (Daybook) PDF Exporter
+ * Currency Number to Indian Words Converter
+ */
+function numberToIndianWords(num) {
+  const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  const n = ('000000000' + Math.round(num)).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+  if (!n) return '';
+  let str = '';
+  str += (Number(n[1]) !== 0) ? (a[Number(n[1])] || b[n[1][0]] + ' ' + a[n[1][1]]) + 'Crore ' : '';
+  str += (Number(n[2]) !== 0) ? (a[Number(n[2])] || b[n[2][0]] + ' ' + a[n[2][1]]) + 'Lakh ' : '';
+  str += (Number(n[3]) !== 0) ? (a[Number(n[3])] || b[n[3][0]] + ' ' + a[n[3][1]]) + 'Thousand ' : '';
+  str += (Number(n[4]) !== 0) ? (a[Number(n[4])] || b[n[4][0]] + ' ' + a[n[4][1]]) + 'Hundred ' : '';
+  str += (Number(n[5]) !== 0) ? ((str !== '') ? 'and ' : '') + (a[Number(n[5])] || b[n[5][0]] + ' ' + a[n[5][1]]) : '';
+  return str.trim() ? `${str.trim()} Rupees Only` : 'Zero Rupees Only';
+}
+
+/**
+ * 1. Professional GST Tax Invoice & Purchase Inward Bill Exporter
+ */
+export const generateProfessionalInvoicePDF = async (invoice, firm) => {
+  if (!invoice) return { success: false };
+
+  const isSale = invoice.type === 'SALE' || invoice.invoice_type === 'SALES_TAX_INVOICE' || !invoice.type;
+  const docTitle = isSale ? 'TAX INVOICE' : 'PURCHASE INWARD VOUCHER';
+
+  const firmName = firm?.legal_name || firm?.trade_name || 'NEELKANTH INT UDYOG';
+  const firmCategory = firm?.category || 'Brick Kiln & Biomass Briquettes';
+  const firmGstin = firm?.gstin || '08AAAAA0000A1Z5';
+
+  const invNumber = invoice.invoice_no || invoice.bill_ref || `DOC-${Date.now().toString().slice(-4)}`;
+  const invDate = invoice.date || invoice.invoice_date || invoice.purchase_date || new Date().toISOString().split('T')[0];
+
+  const qty = parseFloat(invoice.quantity || 1);
+  const rate = parseFloat(invoice.rate || invoice.selling_rate || invoice.purchase_rate || 0);
+  const taxable = qty * rate;
+
+  // Standard 5% GST (2.5% CGST + 2.5% SGST)
+  const cgst = taxable * 0.025;
+  const sgst = taxable * 0.025;
+  const grandTotal = taxable + cgst + sgst;
+  const words = numberToIndianWords(grandTotal);
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>${docTitle} - ${invNumber}</title>
+  <style>
+    @page { size: A4; margin: 12mm 15mm; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 15px; font-size: 10pt; line-height: 1.4; background: #ffffff; }
+    .header-table { width: 100%; border-collapse: collapse; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+    .header-table td { vertical-align: top; }
+    .company-title { font-size: 18pt; font-weight: 800; color: #0f172a; margin: 0; text-transform: uppercase; }
+    .company-subtitle { font-size: 9pt; color: #475569; margin-top: 2px; }
+    .invoice-title { font-size: 20pt; font-weight: 900; color: #0284c7; text-align: right; margin: 0; }
+    .meta-details { text-align: right; font-size: 9.5pt; margin-top: 6px; }
+    .party-container { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+    .party-card { width: 48%; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; vertical-align: top; }
+    .party-heading { font-size: 8pt; font-weight: bold; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 6px; }
+    .party-name { font-size: 12.5pt; font-weight: 800; color: #0f172a; margin-bottom: 3px; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    .items-table th { background: #0f172a; color: #ffffff; padding: 8px 10px; font-size: 8.5pt; text-transform: uppercase; }
+    .items-table td { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; font-size: 9.5pt; }
+    .summary-container { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .words-box { width: 55%; vertical-align: top; background: #f8fafc; border-left: 4px solid #0284c7; padding: 12px; border-radius: 6px; font-size: 9pt; }
+    .calc-box { width: 42%; vertical-align: top; }
+    .calc-table { width: 100%; border-collapse: collapse; }
+    .calc-table td { padding: 4px 6px; font-size: 9.5pt; text-align: right; }
+    .total-row td { border-top: 2px solid #0f172a; border-bottom: 2px solid #0f172a; font-weight: 900; font-size: 12pt; background: #f8fafc; padding: 8px 6px; color: #0f172a; }
+    .sign-container { width: 100%; border-collapse: collapse; margin-top: 45px; }
+    .sign-line { border-top: 1px dashed #94a3b8; width: 80%; padding-top: 6px; font-weight: bold; font-size: 9pt; }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <table class="header-table">
+    <tr>
+      <td style="width: 60%;">
+        <div class="company-title">${firmName}</div>
+        <div class="company-subtitle">${firmCategory}</div>
+        <div style="font-size: 8.5pt; color: #64748b; margin-top: 4px;">
+          GSTIN: <strong>${firmGstin}</strong> | Place of Supply: Rajasthan (08)
+        </div>
+      </td>
+      <td style="width: 40%;">
+        <div class="invoice-title">${docTitle}</div>
+        <div class="meta-details">
+          <strong>No:</strong> ${invNumber}<br/>
+          <strong>Date:</strong> ${invDate}
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="party-container">
+    <tr>
+      <td class="party-card">
+        <div class="party-heading">${isSale ? 'Billed To (Customer)' : 'Supplier / Vendor'}</div>
+        <div class="party-name">${invoice.party || invoice.customer || invoice.supplier || 'Cash in Hand (रोकड़)'}</div>
+        <div style="font-size: 9pt; color: #475569;">State: Rajasthan (Code 08)</div>
+        <div style="font-size: 9pt; color: #475569;">GSTIN: Unregistered / Regular</div>
+      </td>
+      <td style="width: 4%;"></td>
+      <td class="party-card">
+        <div class="party-heading">Transport & Challan Details</div>
+        <div style="font-size: 9pt; color: #334155;"><strong>Ref No:</strong> ${invNumber}</div>
+        <div style="font-size: 9pt; color: #334155;"><strong>Vehicle:</strong> Local Transport / Tractor</div>
+        <div style="font-size: 9pt; color: #334155;"><strong>Terms:</strong> Account Settlement / Due on Demand</div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width: 8%; text-align: center;">#</th>
+        <th style="text-align: left;">Item Description</th>
+        <th style="width: 14%; text-align: center;">HSN Code</th>
+        <th style="width: 15%; text-align: right;">Quantity</th>
+        <th style="width: 18%; text-align: right;">Rate (₹)</th>
+        <th style="width: 20%; text-align: right;">Amount (₹)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align: center;">1</td>
+        <td><strong>${invoice.item_name || invoice.stock_item || 'Commercial Goods'}</strong></td>
+        <td style="text-align: center;">6901 / 4401</td>
+        <td style="text-align: right; font-weight: bold;">${qty.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">${rate.toFixed(2)}</td>
+        <td style="text-align: right; font-weight: bold;">${taxable.toFixed(2)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table class="summary-container">
+    <tr>
+      <td class="words-box">
+        <div style="font-size: 8pt; font-weight: bold; color: #64748b; text-transform: uppercase;">Amount in Words:</div>
+        <div style="font-weight: 800; font-size: 9.5pt; color: #0f172a; margin-top: 3px;">${words}</div>
+      </td>
+      <td style="width: 3%;"></td>
+      <td class="calc-box">
+        <table class="calc-table">
+          <tr>
+            <td style="color: #64748b;">Taxable Value:</td>
+            <td style="font-weight: bold;">₹${taxable.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="color: #64748b;">CGST (2.5%):</td>
+            <td>₹${cgst.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="color: #64748b;">SGST (2.5%):</td>
+            <td>₹${sgst.toFixed(2)}</td>
+          </tr>
+          <tr class="total-row">
+            <td>Total:</td>
+            <td>₹${grandTotal.toFixed(2)}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <table class="sign-container">
+    <tr>
+      <td style="width: 50%; vertical-align: bottom;">
+        <div class="sign-line">Receiver Signature</div>
+      </td>
+      <td style="width: 50%; vertical-align: bottom; text-align: right;">
+        <div class="sign-line" style="margin-left: auto;">For ${firmName}<br/><br/>Authorized Signatory</div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const fileName = `${docTitle.replace(/\s+/g, '_')}_${invNumber}_${invDate}.html`;
+  return await saveDocumentToLocalMemory(htmlContent, fileName, `${docTitle} - ${invNumber}`);
+};
+
+/**
+ * 2. General Journal Register (Daybook) PDF Exporter
  */
 export const downloadJournalRegisterPDF = async (vouchers = [], firm) => {
   if (!vouchers || vouchers.length === 0) {
@@ -156,9 +343,7 @@ export const downloadJournalRegisterPDF = async (vouchers = [], firm) => {
         <th style="text-align: right;">Amount (₹)</th>
       </tr>
     </thead>
-    <tbody>
-      ${rows}
-    </tbody>
+    <tbody>${rows}</tbody>
   </table>
   <div class="footer">
     Total Turnover: ₹${totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -170,7 +355,7 @@ export const downloadJournalRegisterPDF = async (vouchers = [], firm) => {
 };
 
 /**
- * 2. Account Milan & Ledger PDF Exporter
+ * 3. Account Milan & Ledger PDF Exporter
  */
 export const downloadAccountStatementPDF = async (statement, firm) => {
   if (!statement || !statement.accountName) return { success: false };
@@ -243,7 +428,7 @@ export const downloadAccountStatementPDF = async (statement, firm) => {
 };
 
 /**
- * 3. Profit & Loss PDF Exporter
+ * 4. Profit & Loss PDF Exporter
  */
 export const downloadProfitAndLossPDF = async (plData, firm) => {
   if (!plData) return { success: false };
@@ -294,7 +479,7 @@ export const downloadProfitAndLossPDF = async (plData, firm) => {
 };
 
 /**
- * 4. Balance Sheet PDF Exporter
+ * 5. Balance Sheet PDF Exporter
  */
 export const downloadBalanceSheetPDF = async (bsData, firm) => {
   if (!bsData) return { success: false };
@@ -344,7 +529,7 @@ export const downloadBalanceSheetPDF = async (bsData, firm) => {
 };
 
 /**
- * 5. Trial Balance PDF Exporter
+ * 6. Trial Balance PDF Exporter
  */
 export const downloadTrialBalancePDF = async (tbData, firm) => {
   if (!tbData || !tbData.entries) return { success: false };
@@ -392,4 +577,7 @@ export const downloadTrialBalancePDF = async (tbData, firm) => {
   return await saveDocumentToLocalMemory(htmlContent, fileName, `Trial Balance - ${firmName}`);
 };
 
-export const downloadInvoicePDF = downloadAccountStatementPDF;
+/**
+ * Universal Alias for Invoices
+ */
+export const downloadInvoicePDF = generateProfessionalInvoicePDF;
