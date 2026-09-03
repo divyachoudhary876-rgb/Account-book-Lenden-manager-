@@ -3,7 +3,7 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
 /**
- * Safe String Extraction (Prevents "e.replace is not a function")
+ * Universal safe firm name resolver
  */
 const getCleanFirmName = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') {
@@ -16,7 +16,7 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * Utility: Convert Numeric Amount to Indian Currency Words
+ * Number to Indian Rupee Words
  */
 const numberToWordsINR = (num) => {
   const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
@@ -54,13 +54,15 @@ const numberToWordsINR = (num) => {
 };
 
 /**
- * Universal Mobile (Capacitor) & Desktop Print/Share Dispatcher
+ * Android WebView-Proof Exporter: Native Share -> Blob Download -> Iframe Print
  */
-const exportHtmlDocument = async (htmlContent, rawFileName = 'Report') => {
-  const safeName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const fullFileName = safeName + '_' + Date.now() + '.html';
+export const exportHtmlDocument = async (htmlContent, rawFileName = 'Report') => {
+  const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fullFileName = cleanName + '_' + Date.now() + '.html';
 
-  // 1. Capacitor Native Storage & Share
+  let handled = false;
+
+  // 1. Android Capacitor Native Share Sheet
   try {
     const writeResult = await Filesystem.writeFile({
       path: fullFileName,
@@ -71,56 +73,224 @@ const exportHtmlDocument = async (htmlContent, rawFileName = 'Report') => {
 
     if (writeResult && writeResult.uri) {
       await Share.share({
-        title: safeName,
-        text: safeName + ' - Account Book Export',
+        title: cleanName,
+        text: 'Account Book Financial Export: ' + cleanName,
         url: writeResult.uri,
-        dialogTitle: 'Save or Share PDF Report'
+        dialogTitle: 'Save or Print Report'
       });
-      return;
+      handled = true;
+      return true;
     }
   } catch (nativeErr) {
-    console.warn('Native Capacitor storage bypassed:', nativeErr);
+    console.warn('Capacitor Share unavailable, triggering Web fallback:', nativeErr);
   }
 
-  // 2. Blob Download Fallback
+  // 2. Direct Blob Download (Works in standard browsers & mobile viewports)
   try {
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fullFileName;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
+    const blobUrl = URL.createObjectURL(blob);
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.href = blobUrl;
+    downloadAnchor.setAttribute('download', fullFileName);
+    downloadAnchor.style.display = 'none';
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
 
     setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 1000);
+      document.body.removeChild(downloadAnchor);
+      URL.revokeObjectURL(blobUrl);
+    }, 1200);
+    handled = true;
   } catch (blobErr) {
-    console.warn('Blob fallback failed:', blobErr);
+    console.warn('Blob download fallback encountered error:', blobErr);
   }
 
-  // 3. Window Print Fallback
+  // 3. Hidden Iframe Printing (Bypasses popup blocker)
   try {
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
-      printWindow.focus();
+    const hiddenIframe = document.createElement('iframe');
+    hiddenIframe.style.position = 'fixed';
+    hiddenIframe.style.right = '0';
+    hiddenIframe.style.bottom = '0';
+    hiddenIframe.style.width = '0';
+    hiddenIframe.style.height = '0';
+    hiddenIframe.style.border = '0';
+    document.body.appendChild(hiddenIframe);
+
+    const doc = hiddenIframe.contentWindow.document;
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        hiddenIframe.contentWindow.focus();
+        hiddenIframe.contentWindow.print();
+      } catch (printErr) {}
       setTimeout(() => {
-        try {
-          printWindow.print();
-        } catch (e) {}
-      }, 500);
-    }
-  } catch (printErr) {
-    console.warn('Window print failed:', printErr);
+        document.body.removeChild(hiddenIframe);
+      }, 2000);
+    }, 400);
+
+    handled = true;
+  } catch (iframeErr) {
+    console.warn('Hidden iframe print failed:', iframeErr);
   }
+
+  return handled;
 };
 
 /**
- * 1. JOURNAL REGISTER EXPORT PDF/PRINT
+ * 1. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L)
+ */
+export const downloadFinancialStatementsReport = async (firmInput, reportData = {}, activeTab = 'TB') => {
+  const firmName = getCleanFirmName(firmInput);
+  const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const { trialBalance, tradingAccount, profitAndLoss } = reportData || {};
+
+  let reportTitle = 'वित्तीय विवरण (Financial Statements)';
+  let tableContentHtml = '';
+
+  if (activeTab === 'TB' || activeTab === '1') {
+    reportTitle = 'तलपट विवरण (Trial Balance Report)';
+    const rows = (trialBalance && Array.isArray(trialBalance.rows)) ? trialBalance.rows : [];
+    
+    const rowsHtml = rows.map((row, idx) => {
+      const bgCol = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      const debCol = row.debit > 0 ? '#059669' : '#0f172a';
+      const debWeight = row.debit > 0 ? 'bold' : 'normal';
+      const crCol = row.credit > 0 ? '#dc2626' : '#0f172a';
+      const crWeight = row.credit > 0 ? 'bold' : 'normal';
+
+      return '<tr style="background-color: ' + bgCol + ';">' +
+        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; font-weight: 600;">' + (row.account_name || 'Account') + '</td>' +
+        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; color: #64748b;">' + (row.primary_type || row.category || 'General') + '</td>' +
+        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: ' + debCol + '; font-weight: ' + debWeight + ';">' +
+          (row.debit > 0 ? parseFloat(row.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-') +
+        '</td>' +
+        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: ' + crCol + '; font-weight: ' + crWeight + ';">' +
+          (row.credit > 0 ? parseFloat(row.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-') +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    const totalDeb = parseFloat(trialBalance?.totalDebit || 0);
+    const totalCr = parseFloat(trialBalance?.totalCredit || 0);
+
+    tableContentHtml = '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 15px;">' +
+      '<thead>' +
+        '<tr style="background-color: #0f172a; color: #ffffff;">' +
+          '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: left;">खाते का नाम (Ledger Account)</th>' +
+          '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: left;">प्रकार (Category)</th>' +
+          '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: right;">नामे (Debit ₹)</th>' +
+          '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: right;">जमा (Credit ₹)</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' +
+        (rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="4" style="text-align:center; padding:15px;">No accounts recorded.</td></tr>') +
+      '</tbody>' +
+      '<tfoot>' +
+        '<tr style="background-color: #f1f5f9; font-weight: bold; font-size: 13px;">' +
+          '<td colspan="2" style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right;">Grand Total:</td>' +
+          '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #059669;">₹' +
+            totalDeb.toLocaleString('en-IN', { minimumFractionDigits: 2 }) +
+          '</td>' +
+          '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #dc2626;">₹' +
+            totalCr.toLocaleString('en-IN', { minimumFractionDigits: 2 }) +
+          '</td>' +
+        '</tr>' +
+      '</tfoot>' +
+    '</table>';
+  } else if (activeTab === 'TRADING' || activeTab === '2') {
+    reportTitle = 'व्यापार खाता (Trading Account Report)';
+    tableContentHtml = '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 15px;">' +
+      '<thead>' +
+        '<tr style="background-color: #0f172a; color: #ffffff;">' +
+          '<th style="padding: 10px; border: 1px solid #0f172a; text-align: left; width: 50%;">व्यय विवरण (Debit / Expenses)</th>' +
+          '<th style="padding: 10px; border: 1px solid #0f172a; text-align: left; width: 50%;">आय व स्टॉक (Credit / Revenue)</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' +
+        '<tr>' +
+          '<td style="padding: 12px; border: 1px solid #cbd5e1; vertical-align: top;">' +
+            '<div>कुल खरीद (Purchases): <strong>₹' + (tradingAccount?.purchases || 0).toFixed(2) + '</strong></div>' +
+            '<div style="margin-top: 6px;">प्रत्यक्ष खर्चे (Direct Expenses): <strong>₹' + (tradingAccount?.directExpenses || 0).toFixed(2) + '</strong></div>' +
+          '</td>' +
+          '<td style="padding: 12px; border: 1px solid #cbd5e1; vertical-align: top;">' +
+            '<div>कुल बिक्री (Sales Revenue): <strong>₹' + (tradingAccount?.sales || 0).toFixed(2) + '</strong></div>' +
+            '<div style="margin-top: 6px;">अंतिम स्टॉक (Closing Stock): <strong>₹' + (tradingAccount?.closingStock || 0).toFixed(2) + '</strong></div>' +
+          '</td>' +
+        '</tr>' +
+      '</tbody>' +
+      '<tfoot>' +
+        '<tr style="background-color: #ecfdf5; font-size: 14px; font-weight: bold;">' +
+          '<td colspan="2" style="padding: 12px; border: 1px solid #a7f3d0; color: #065f46; text-align: right;">' +
+            'सकल लाभ / Gross Profit: ₹' + (tradingAccount?.grossProfit || 0).toFixed(2) +
+          '</td>' +
+        '</tr>' +
+      '</tfoot>' +
+    '</table>';
+  } else {
+    reportTitle = 'लाभ-हानि विवरण (Profit & Loss Statement)';
+    const netProfit = profitAndLoss?.netProfit || 0;
+    const netCol = netProfit >= 0 ? '#059669' : '#dc2626';
+
+    tableContentHtml = '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 15px;">' +
+      '<tbody>' +
+        '<tr style="border-bottom: 1px solid #cbd5e1;">' +
+          '<td style="padding: 10px;">सकल लाभ (Gross Profit b/d):</td>' +
+          '<td style="padding: 10px; text-align: right; font-weight: bold;">₹' + (profitAndLoss?.grossProfit || 0).toFixed(2) + '</td>' +
+        '</tr>' +
+        '<tr style="border-bottom: 1px solid #cbd5e1;">' +
+          '<td style="padding: 10px;">अन्य आय (Indirect Incomes):</td>' +
+          '<td style="padding: 10px; text-align: right; font-weight: bold; color: #059669;">+ ₹' + (profitAndLoss?.indirectIncomes || 0).toFixed(2) + '</td>' +
+        '</tr>' +
+        '<tr style="border-bottom: 1px solid #cbd5e1;">' +
+          '<td style="padding: 10px; color: #dc2626;">कार्यालय व अन्य खर्चे (Indirect Expenses):</td>' +
+          '<td style="padding: 10px; text-align: right; font-weight: bold; color: #dc2626;">- ₹' + (profitAndLoss?.indirectExpenses || 0).toFixed(2) + '</td>' +
+        '</tr>' +
+        '<tr style="background-color: #f8fafc; font-size: 14px; font-weight: bold; border-top: 2px solid #0f172a;">' +
+          '<td style="padding: 12px;">शुद्ध लाभ / Net Profit:</td>' +
+          '<td style="padding: 12px; text-align: right; color: ' + netCol + '; font-size: 15px;">₹' + netProfit.toFixed(2) + '</td>' +
+        '</tr>' +
+      '</tbody>' +
+    '</table>';
+  }
+
+  const printableHtml = '<!DOCTYPE html>' +
+    '<html lang="hi">' +
+      '<head>' +
+        '<meta charset="UTF-8" />' +
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0" />' +
+        '<title>' + reportTitle + ' - ' + firmName + '</title>' +
+        '<style>' +
+          '@media print { body { margin: 0; padding: 8mm; font-size: 12px; } .no-print { display: none !important; } }' +
+          'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 15px; color: #0f172a; }' +
+          '.header-box { border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px; }' +
+          '.firm-title { font-size: 20px; font-weight: 800; margin: 0; text-transform: uppercase; }' +
+        '</style>' +
+      '</head>' +
+      '<body>' +
+        '<div class="header-box">' +
+          '<div style="display: flex; justify-content: space-between; align-items: flex-start;">' +
+            '<div>' +
+              '<h1 class="firm-title">' + firmName + '</h1>' +
+              '<div style="font-size: 11px; color: #64748b; margin-top: 2px;">Double-Entry Ledger System | FY 2026-27</div>' +
+            '</div>' +
+            '<div style="text-align: right; font-size: 11px; color: #475569;">' +
+              '<div><strong>दिनांक:</strong> ' + currentDate + '</div>' +
+              '<div><strong>रिपोर्ट:</strong> ' + reportTitle + '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        tableContentHtml +
+      '</body>' +
+    '</html>';
+
+  return await exportHtmlDocument(printableHtml, reportTitle + '_' + activeTab);
+};
+
+/**
+ * 2. JOURNAL REGISTER EXPORT PDF/PRINT
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -210,150 +380,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
       '</body>' +
     '</html>';
 
-  await exportHtmlDocument(printableHtml, 'Journal_Register_' + firmName);
-};
-
-/**
- * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L)
- */
-export const downloadFinancialStatementsReport = async (firmInput, reportData = {}, activeTab = 'TB') => {
-  const firmName = getCleanFirmName(firmInput);
-  const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const { trialBalance, tradingAccount, profitAndLoss } = reportData || {};
-
-  let reportTitle = 'वित्तीय विवरण (Financial Statements)';
-  let tableContentHtml = '';
-
-  if (activeTab === 'TB') {
-    reportTitle = 'तलपट विवरण (Trial Balance Report)';
-    const rowsHtml = (trialBalance?.rows || []).map((row, idx) => {
-      const bgCol = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-      const debCol = row.debit > 0 ? '#059669' : '#000';
-      const debWeight = row.debit > 0 ? 'bold' : 'normal';
-      const crCol = row.credit > 0 ? '#dc2626' : '#000';
-      const crWeight = row.credit > 0 ? 'bold' : 'normal';
-
-      return '<tr style="background-color: ' + bgCol + ';">' +
-        '<td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 600;">' + row.account_name + '</td>' +
-        '<td style="padding: 8px; border: 1px solid #cbd5e1; color: #64748b;">' + row.primary_type + '</td>' +
-        '<td style="padding: 8px; border: 1px solid #cbd5e1; text-align: right; color: ' + debCol + '; font-weight: ' + debWeight + ';">' +
-          (row.debit > 0 ? row.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-') +
-        '</td>' +
-        '<td style="padding: 8px; border: 1px solid #cbd5e1; text-align: right; color: ' + crCol + '; font-weight: ' + crWeight + ';">' +
-          (row.credit > 0 ? row.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-') +
-        '</td>' +
-      '</tr>';
-    }).join('');
-
-    tableContentHtml = '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 15px;">' +
-      '<thead>' +
-        '<tr style="background-color: #0f172a; color: #ffffff;">' +
-          '<th style="padding: 8px; border: 1px solid #0f172a; text-align: left;">खाता विवरण (Account)</th>' +
-          '<th style="padding: 8px; border: 1px solid #0f172a; text-align: left;">प्रकार (Type)</th>' +
-          '<th style="padding: 8px; border: 1px solid #0f172a; text-align: right;">नामे (Debit ₹)</th>' +
-          '<th style="padding: 8px; border: 1px solid #0f172a; text-align: right;">जमा (Credit ₹)</th>' +
-        '</tr>' +
-      '</thead>' +
-      '<tbody>' +
-        (rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="4" style="text-align:center; padding:15px;">No transactions recorded.</td></tr>') +
-      '</tbody>' +
-      '<tfoot>' +
-        '<tr style="background-color: #f1f5f9; font-weight: bold;">' +
-          '<td colspan="2" style="padding: 8px; border: 1px solid #cbd5e1; text-align: right;">कुल योग (Total):</td>' +
-          '<td style="padding: 8px; border: 1px solid #cbd5e1; text-align: right; color: #059669; font-size: 13px;">₹' +
-            (trialBalance?.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 }) +
-          '</td>' +
-          '<td style="padding: 8px; border: 1px solid #cbd5e1; text-align: right; color: #dc2626; font-size: 13px;">₹' +
-            (trialBalance?.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 }) +
-          '</td>' +
-        '</tr>' +
-      '</tfoot>' +
-    '</table>';
-  } else if (activeTab === 'TRADING') {
-    reportTitle = 'व्यापार खाता (Trading Account Report)';
-    tableContentHtml = '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 15px;">' +
-      '<thead>' +
-        '<tr style="background-color: #0f172a; color: #ffffff;">' +
-          '<th style="padding: 10px; border: 1px solid #0f172a; text-align: left; width: 50%;">व्यय विवरण (Debit / Expenses)</th>' +
-          '<th style="padding: 10px; border: 1px solid #0f172a; text-align: left; width: 50%;">आय व स्टॉक (Credit / Revenue)</th>' +
-        '</tr>' +
-      '</thead>' +
-      '<tbody>' +
-        '<tr>' +
-          '<td style="padding: 12px; border: 1px solid #cbd5e1; vertical-align: top;">' +
-            '<div>कुल खरीद (Purchases): <strong>₹' + (tradingAccount?.purchases || 0).toFixed(2) + '</strong></div>' +
-            '<div style="margin-top: 6px;">प्रत्यक्ष खर्चे (Direct Expenses): <strong>₹' + (tradingAccount?.directExpenses || 0).toFixed(2) + '</strong></div>' +
-          '</td>' +
-          '<td style="padding: 12px; border: 1px solid #cbd5e1; vertical-align: top;">' +
-            '<div>कुल बिक्री (Sales Revenue): <strong>₹' + (tradingAccount?.sales || 0).toFixed(2) + '</strong></div>' +
-            '<div style="margin-top: 6px;">अंतिम स्टॉक (Closing Stock): <strong>₹' + (tradingAccount?.closingStock || 0).toFixed(2) + '</strong></div>' +
-          '</td>' +
-        '</tr>' +
-      '</tbody>' +
-      '<tfoot>' +
-        '<tr style="background-color: #ecfdf5; font-size: 13px; font-weight: bold;">' +
-          '<td colspan="2" style="padding: 10px; border: 1px solid #a7f3d0; color: #065f46; text-align: right;">' +
-            'सकल लाभ / Gross Profit: ₹' + (tradingAccount?.grossProfit || 0).toFixed(2) +
-          '</td>' +
-        '</tr>' +
-      '</tfoot>' +
-    '</table>';
-  } else {
-    reportTitle = 'लाभ-हानि विवरण (Profit & Loss Statement)';
-    const netProfit = profitAndLoss?.netProfit || 0;
-    const netCol = netProfit >= 0 ? '#059669' : '#dc2626';
-
-    tableContentHtml = '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 15px;">' +
-      '<tbody>' +
-        '<tr style="border-bottom: 1px solid #cbd5e1;">' +
-          '<td style="padding: 10px;">सकल लाभ (Gross Profit b/d):</td>' +
-          '<td style="padding: 10px; text-align: right; font-weight: bold;">₹' + (profitAndLoss?.grossProfit || 0).toFixed(2) + '</td>' +
-        '</tr>' +
-        '<tr style="border-bottom: 1px solid #cbd5e1;">' +
-          '<td style="padding: 10px;">अन्य आय (Indirect Incomes):</td>' +
-          '<td style="padding: 10px; text-align: right; font-weight: bold; color: #059669;">+ ₹' + (profitAndLoss?.indirectIncomes || 0).toFixed(2) + '</td>' +
-        '</tr>' +
-        '<tr style="border-bottom: 1px solid #cbd5e1;">' +
-          '<td style="padding: 10px; color: #dc2626;">कार्यालय व अन्य खर्चे (Indirect Expenses):</td>' +
-          '<td style="padding: 10px; text-align: right; font-weight: bold; color: #dc2626;">- ₹' + (profitAndLoss?.indirectExpenses || 0).toFixed(2) + '</td>' +
-        '</tr>' +
-        '<tr style="background-color: #f8fafc; font-size: 13px; font-weight: bold; border-top: 2px solid #0f172a;">' +
-          '<td style="padding: 12px;">शुद्ध लाभ / Net Profit:</td>' +
-          '<td style="padding: 12px; text-align: right; color: ' + netCol + '; font-size: 15px;">₹' + netProfit.toFixed(2) + '</td>' +
-        '</tr>' +
-      '</tbody>' +
-    '</table>';
-  }
-
-  const printableHtml = '<!DOCTYPE html>' +
-    '<html lang="hi">' +
-      '<head>' +
-        '<meta charset="UTF-8" />' +
-        '<title>' + reportTitle + ' - ' + firmName + '</title>' +
-        '<style>' +
-          '@media print { body { margin: 0; padding: 8mm; font-size: 12px; } .no-print { display: none !important; } }' +
-          'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 15px; color: #0f172a; }' +
-          '.header-box { border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px; }' +
-        '</style>' +
-      '</head>' +
-      '<body>' +
-        '<div class="header-box">' +
-          '<div style="display: flex; justify-content: space-between; align-items: flex-start;">' +
-            '<div>' +
-              '<h2 style="margin: 0; font-size: 18px; font-weight: 800; text-transform: uppercase;">' + firmName + '</h2>' +
-              '<div style="font-size: 11px; color: #64748b; margin-top: 2px;">Double-Entry Ledger System | FY 2026-27</div>' +
-            '</div>' +
-            '<div style="text-align: right; font-size: 11px; color: #475569;">' +
-              '<div><strong>दिनांक:</strong> ' + currentDate + '</div>' +
-              '<div><strong>रिपोर्ट:</strong> ' + reportTitle + '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-        tableContentHtml +
-      '</body>' +
-    '</html>';
-
-  await exportHtmlDocument(printableHtml, reportTitle + '_' + activeTab);
+  return await exportHtmlDocument(printableHtml, 'Journal_Register_' + firmName);
 };
 
 /**
@@ -439,7 +466,7 @@ export const generateProfessionalInvoicePDF = async (firmInput, invoice = {}) =>
       '</body>' +
     '</html>';
 
-  await exportHtmlDocument(printableHtml, 'Invoice_' + invNumber);
+  return await exportHtmlDocument(printableHtml, 'Invoice_' + invNumber);
 };
 
 /**
