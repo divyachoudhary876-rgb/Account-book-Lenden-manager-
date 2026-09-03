@@ -61,18 +61,33 @@ export const restoreUniversalBackup = (jsonString) => {
       throw new Error('Invalid backup archive. No valid data records detected.');
     }
 
-    // Identify the active firm ID to ensure cross-firm restore works seamlessly
-    let activeFirmId = localStorage.getItem('app_active_firm');
+    // 1. Resolve Active Firm ID from local memory
+    let activeFirmId = null;
     try {
-      if (activeFirmId && activeFirmId.startsWith('{')) {
-        activeFirmId = JSON.parse(activeFirmId)?.id;
+      const storedActive = localStorage.getItem('app_active_firm');
+      if (storedActive) {
+        if (storedActive.startsWith('{')) {
+          activeFirmId = JSON.parse(storedActive)?.id;
+        } else {
+          activeFirmId = storedActive;
+        }
       }
     } catch {
-      // Keep raw activeFirmId
+      // Fallback
     }
-    const targetFirmId = parsed.firm_id || activeFirmId || 'FIRM-001';
 
-    // 1. Write all stored keys back into localStorage
+    if (!activeFirmId) {
+      // Look for active firm in the raw backup payload
+      for (let key in rawData) {
+        if (key.startsWith('app_vouchers_')) {
+          activeFirmId = key.replace('app_vouchers_', '');
+          break;
+        }
+      }
+    }
+    activeFirmId = activeFirmId || 'FIRM-001';
+
+    // 2. Restore all data records directly
     Object.keys(rawData).forEach((key) => {
       const value = rawData[key];
       if (typeof value === 'object' && value !== null) {
@@ -82,19 +97,30 @@ export const restoreUniversalBackup = (jsonString) => {
       }
     });
 
-    // 2. Cross-firm Mapping: If backup was taken under another firm ID, clone to current active firm
-    if (activeFirmId && targetFirmId !== activeFirmId) {
-      ['accounts', 'vouchers', 'stock', 'sales_invoices', 'purchase_bills', 'payroll_entities', 'payroll_work_logs'].forEach(moduleKey => {
-        const sourceKey = `app_${moduleKey}_${targetFirmId}`;
-        const destKey = `app_${moduleKey}_${activeFirmId}`;
-        const sourceData = localStorage.getItem(sourceKey);
-        if (sourceData && !localStorage.getItem(destKey)) {
-          localStorage.setItem(destKey, sourceData);
+    // 3. Remap Data to Current Active Firm ID if different
+    const sourceFirmId = parsed.firm_id;
+    if (sourceFirmId && sourceFirmId !== activeFirmId) {
+      const modules = [
+        'accounts',
+        'vouchers',
+        'stock',
+        'sales_invoices',
+        'purchase_bills',
+        'payroll_entities',
+        'payroll_work_logs'
+      ];
+
+      modules.forEach((mod) => {
+        const srcKey = `app_${mod}_${sourceFirmId}`;
+        const destKey = `app_${mod}_${activeFirmId}`;
+        const srcData = localStorage.getItem(srcKey);
+        if (srcData) {
+          localStorage.setItem(destKey, srcData);
         }
       });
     }
 
-    // 3. Schema Self-Healing: Guarantee modern voucher keys and IDs
+    // 4. Schema Self-Healing for Universal Vouchers
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('app_vouchers_')) {
@@ -121,48 +147,54 @@ export const restoreUniversalBackup = (jsonString) => {
       }
     }
 
-    // 4. Calculate Exact Counts for the UI Feedback Banner
-    let totalAccounts = 0;
-    let totalVouchers = 0;
-    let totalStock = 0;
+    // 5. Compute Exact Non-Zero Entity Counts
+    let accountsCount = 0;
+    let vouchersCount = 0;
+    let stockCount = 0;
 
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key) {
         if (key.startsWith('app_accounts_')) {
-          const list = JSON.parse(localStorage.getItem(key) || '[]');
-          totalAccounts = Math.max(totalAccounts, list.length);
+          try {
+            const list = JSON.parse(localStorage.getItem(key) || '[]');
+            if (Array.isArray(list)) accountsCount = Math.max(accountsCount, list.length);
+          } catch {}
         } else if (key.startsWith('app_vouchers_')) {
-          const list = JSON.parse(localStorage.getItem(key) || '[]');
-          totalVouchers = Math.max(totalVouchers, list.length);
+          try {
+            const list = JSON.parse(localStorage.getItem(key) || '[]');
+            if (Array.isArray(list)) vouchersCount = Math.max(vouchersCount, list.length);
+          } catch {}
         } else if (key.startsWith('app_stock_')) {
-          const list = JSON.parse(localStorage.getItem(key) || '[]');
-          totalStock = Math.max(totalStock, list.length);
+          try {
+            const list = JSON.parse(localStorage.getItem(key) || '[]');
+            if (Array.isArray(list)) stockCount = Math.max(stockCount, list.length);
+          } catch {}
         }
       }
     }
 
-    // 5. Trigger System-wide Reactive Events
+    // 6. Broadcast Real-Time Events
     window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('stock_updated'));
 
-    // Return all common property variations to satisfy any UI expectations
-    return { 
-      success: true, 
-      message: '✓ Backup restored successfully. All ledger accounts, daybooks, and stock records are live.',
-      accountsCount: totalAccounts,
-      accounts: totalAccounts,
-      vouchersCount: totalVouchers,
-      vouchers: totalVouchers,
-      stockCount: totalStock,
-      stockSKUs: totalStock,
-      stock: totalStock
+    // Return response containing all common key aliases
+    return {
+      success: true,
+      message: '✓ Backup Restored Successfully!',
+      accounts: accountsCount,
+      accountsCount: accountsCount,
+      vouchers: vouchersCount,
+      vouchersCount: vouchersCount,
+      stockSKUs: stockCount,
+      stockCount: stockCount,
+      stock: stockCount
     };
   } catch (err) {
     throw new Error(`Backup restoration failed: ${err.message}`);
   }
 };
 
-// Backwards-compatibility aliases
+// Aliases for backwards compatibility
 export const downloadSystemBackupJSON = exportUniversalBackup;
 export const restoreSystemBackupJSON = restoreUniversalBackup;
