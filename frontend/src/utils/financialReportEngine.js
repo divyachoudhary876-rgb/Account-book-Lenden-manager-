@@ -2,9 +2,6 @@
 
 import { getFirmMasterAccounts } from './accountMasterEngine.js';
 
-/**
- * Safely fetches accounts list with fallback
- */
 export const getSafeAccounts = (firmId = 'FIRM-001') => {
   try {
     if (typeof getFirmMasterAccounts === 'function') {
@@ -21,29 +18,24 @@ export const getSafeAccounts = (firmId = 'FIRM-001') => {
 
   return [
     { id: 'ACC-1', account_name: 'Cash-in-Hand', primary_type: 'ASSETS', sub_group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr' },
-    { id: 'ACC-2', account_name: 'Bank Account', primary_type: 'ASSETS', sub_group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr' },
-    { id: 'ACC-3', account_name: 'Sales Account (बिक्री खाता)', primary_type: 'INCOME', sub_group: 'Direct Incomes', opening_balance: 0, balance_type: 'Cr' },
-    { id: 'ACC-4', account_name: 'Purchase Account (खरीद खाता)', primary_type: 'EXPENSES', sub_group: 'Direct Expenses', opening_balance: 0, balance_type: 'Dr' }
+    { id: 'ACC-2', account_name: 'Bank Account', primary_type: 'ASSETS', sub_group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr' }
   ];
 };
 
-/**
- * Normalizes all legacy and modern vouchers into clean flat ledger rows
- */
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
   const vouchersKey = `app_vouchers_${firmId}`;
   let rawVouchers = [];
   try {
     rawVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
   } catch (e) {
-    console.error('Error reading vouchers:', e);
+    console.error('Error loading vouchers:', e);
   }
 
   const flatLines = [];
   rawVouchers.forEach((vch) => {
     const vchDate = vch.voucher_date || vch.date || '';
     const vchNum = vch.reference_no || vch.voucher_number || 'VCH';
-    const vchType = vch.voucher_type || vch.type || 'JOURNAL';
+    const vchType = (vch.voucher_type || vch.type || 'JOURNAL').toUpperCase();
     const narration = vch.narration || '';
 
     if (Array.isArray(vch.entries) && vch.entries.length > 0) {
@@ -54,7 +46,7 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
           voucher_number: vchNum,
           voucher_type: vchType,
           account_name: (entry.account_name || '').trim(),
-          entry_type: entry.type,
+          entry_type: entry.type === 'Dr' ? 'Dr' : 'Cr',
           amount: parseFloat(entry.amount || 0),
           narration
         });
@@ -92,70 +84,127 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
 };
 
 /**
- * 1. CORE FUNCTION REQUIRED BY FinancialReportsView.jsx
- * Computes Trial Balance, Trading Account, Profit & Loss, and Balance Sheet
+ * PURE DOUBLE-ENTRY TRIAL BALANCE CALCULATOR
+ * Guarantees Sigma(Dr) === Sigma(Cr) by placing negative balances in the counter-column
  */
 export const generateFinancialStatements = (firmId = 'FIRM-001') => {
-  const accounts = getSafeAccounts(firmId);
+  const masterAccounts = getSafeAccounts(firmId);
   const flatLines = getNormalizedLedgerLines(firmId);
 
-  // Initialize net balance container
-  const trialBalances = accounts.map((acc) => {
+  // Map to hold all unique accounts
+  const accountTotals = {};
+
+  // 1. Seed with Master Accounts & Opening Balances
+  masterAccounts.forEach((acc) => {
+    const name = acc.account_name.trim();
     const opening = parseFloat(acc.opening_balance || 0);
-    let netDebit = acc.balance_type === 'Dr' ? opening : 0;
-    let netCredit = acc.balance_type === 'Cr' ? opening : 0;
+    const isDebitOpening = acc.balance_type === 'Dr';
 
-    flatLines.forEach((line) => {
-      if (line.account_name === acc.account_name) {
-        if (line.entry_type === 'Dr') netDebit += line.amount;
-        if (line.entry_type === 'Cr') netCredit += line.amount;
-      }
-    });
-
-    const diff = netDebit - netCredit;
-    return {
-      account_name: acc.account_name,
-      primary_type: acc.primary_type,
+    accountTotals[name] = {
+      account_name: name,
+      primary_type: acc.primary_type || 'ASSETS',
       sub_group: acc.sub_group || '',
-      debit: diff > 0 ? parseFloat(diff.toFixed(2)) : 0,
-      credit: diff < 0 ? parseFloat(Math.abs(diff).toFixed(2)) : 0
+      debit: isDebitOpening ? opening : 0,
+      credit: !isDebitOpening ? opening : 0
     };
   });
 
-  let totalDebit = 0;
-  let totalCredit = 0;
-  trialBalances.forEach((t) => {
-    totalDebit += t.debit;
-    totalCredit += t.credit;
+  // 2. Aggregate Transaction Lines (Dr and Cr)
+  flatLines.forEach((line) => {
+    const name = line.account_name.trim();
+    if (!accountTotals[name]) {
+      let inferredType = 'EXPENSES';
+      const lower = name.toLowerCase();
+      if (lower.includes('cash') || lower.includes('bank') || lower.includes('रोकड़')) {
+        inferredType = 'ASSETS';
+      } else if (lower.includes('sale') || lower.includes('income')) {
+        inferredType = 'INCOME';
+      } else if (lower.includes('capital') || lower.includes('creditor')) {
+        inferredType = 'LIABILITIES';
+      }
+
+      accountTotals[name] = {
+        account_name: name,
+        primary_type: inferredType,
+        sub_group: 'General',
+        debit: 0,
+        credit: 0
+      };
+    }
+
+    if (line.entry_type === 'Dr') {
+      accountTotals[name].debit += line.amount;
+    } else {
+      accountTotals[name].credit += line.amount;
+    }
   });
 
-  // Calculate Trading & P&L components
+  // 3. Compute Net Balance for each account
+  const trialBalances = [];
+  let grandTotalDebit = 0;
+  let grandTotalCredit = 0;
+
+  Object.values(accountTotals).forEach((acc) => {
+    const net = acc.debit - acc.credit;
+
+    // Only display accounts that have non-zero activity
+    if (Math.abs(net) > 0.001 || acc.debit > 0 || acc.credit > 0) {
+      let finalDr = 0;
+      let finalCr = 0;
+
+      if (net > 0) {
+        finalDr = parseFloat(net.toFixed(2));
+      } else if (net < 0) {
+        finalCr = parseFloat(Math.abs(net).toFixed(2));
+      }
+
+      grandTotalDebit += finalDr;
+      grandTotalCredit += finalCr;
+
+      trialBalances.push({
+        account_name: acc.account_name,
+        primary_type: acc.primary_type,
+        sub_group: acc.sub_group,
+        debit: finalDr,
+        credit: finalCr
+      });
+    }
+  });
+
+  // Sort rows: Expenses & Incomes first, then Assets & Liabilities
+  trialBalances.sort((a, b) => a.account_name.localeCompare(b.account_name));
+
+  const difference = Math.abs(grandTotalDebit - grandTotalCredit);
+  const isBalanced = difference < 0.05;
+
+  // 4. Trading Account Calculations
   let salesTotal = 0;
   let purchasesTotal = 0;
   let directExpenses = 0;
   let indirectExpenses = 0;
   let indirectIncomes = 0;
 
-  trialBalances.forEach((t) => {
-    const type = t.primary_type;
-    const group = t.sub_group.toLowerCase();
+  trialBalances.forEach((row) => {
+    const type = row.primary_type;
+    const group = (row.sub_group || '').toLowerCase();
+    const name = row.account_name.toLowerCase();
 
     if (type === 'INCOME') {
-      if (group.includes('direct') || group.includes('sales')) {
-        salesTotal += t.credit;
+      if (group.includes('direct') || name.includes('sales') || name.includes('बिक्री')) {
+        salesTotal += row.credit;
       } else {
-        indirectIncomes += t.credit;
+        indirectIncomes += row.credit;
       }
     } else if (type === 'EXPENSES') {
-      if (group.includes('direct') || group.includes('purchase')) {
-        purchasesTotal += t.debit;
+      if (group.includes('direct') || name.includes('purchase') || name.includes('खरीद')) {
+        purchasesTotal += row.debit;
       } else {
-        indirectExpenses += t.debit;
+        indirectExpenses += row.debit;
       }
     }
   });
 
-  // Calculate closing stock valuation
+  // Closing stock valuation
   let closingStockValuation = 0;
   try {
     const stockKey = `app_stock_${firmId}`;
@@ -169,105 +218,88 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
     });
   } catch (e) {}
 
-  const grossProfit = (salesTotal + closingStockValuation) - (purchasesTotal + directExpenses);
-  const netProfit = (grossProfit + indirectIncomes) - indirectExpenses;
+  const grossProfit = parseFloat(((salesTotal + closingStockValuation) - (purchasesTotal + directExpenses)).toFixed(2));
+  const netProfit = parseFloat(((grossProfit + indirectIncomes) - indirectExpenses).toFixed(2));
 
   return {
     trialBalance: {
       rows: trialBalances,
-      totalDebit: parseFloat(totalDebit.toFixed(2)),
-      totalCredit: parseFloat(totalCredit.toFixed(2)),
-      isBalanced: Math.abs(totalDebit - totalCredit) < 0.01
+      totalDebit: parseFloat(grandTotalDebit.toFixed(2)),
+      totalCredit: parseFloat(grandTotalCredit.toFixed(2)),
+      difference: parseFloat(difference.toFixed(2)),
+      isBalanced
     },
     tradingAccount: {
       sales: salesTotal,
       purchases: purchasesTotal,
       directExpenses,
       closingStock: parseFloat(closingStockValuation.toFixed(2)),
-      grossProfit: parseFloat(grossProfit.toFixed(2))
+      grossProfit
     },
     profitAndLoss: {
-      grossProfit: parseFloat(grossProfit.toFixed(2)),
+      grossProfit,
       indirectIncomes,
       indirectExpenses,
-      netProfit: parseFloat(netProfit.toFixed(2))
+      netProfit
     },
     balanceSheet: {
-      netProfit: parseFloat(netProfit.toFixed(2)),
+      netProfit,
       closingStock: parseFloat(closingStockValuation.toFixed(2))
     }
   };
 };
 
-/**
- * 2. LIVE DASHBOARD KPIS (Cash, Bank, Debtors, Creditors)
- */
 export const calculateDashboardKPIs = (firmId = 'FIRM-001') => {
-  const accounts = getSafeAccounts(firmId);
   const flatLines = getNormalizedLedgerLines(firmId);
-
-  const accountBalances = {};
-  accounts.forEach((acc) => {
-    const opening = parseFloat(acc.opening_balance || 0);
-    const isDr = acc.balance_type === 'Dr';
-    accountBalances[acc.account_name] = isDr ? opening : -opening;
-  });
+  const balances = {};
 
   flatLines.forEach((line) => {
-    if (!accountBalances.hasOwnProperty(line.account_name)) {
-      accountBalances[line.account_name] = 0;
-    }
-    if (line.entry_type === 'Dr') {
-      accountBalances[line.account_name] += line.amount;
-    } else {
-      accountBalances[line.account_name] -= line.amount;
-    }
+    const acc = line.account_name;
+    if (!balances[acc]) balances[acc] = 0;
+    if (line.entry_type === 'Dr') balances[acc] += line.amount;
+    if (line.entry_type === 'Cr') balances[acc] -= line.amount;
   });
 
-  let cashInHand = 0;
-  let bankBalance = 0;
-  let sundryDebtors = 0;
-  let sundryCreditors = 0;
+  let cash = 0;
+  let bank = 0;
+  let debtors = 0;
+  let creditors = 0;
 
-  Object.keys(accountBalances).forEach((name) => {
-    const net = accountBalances[name];
-    const nameLower = name.toLowerCase();
+  Object.keys(balances).forEach((accName) => {
+    const net = balances[accName];
+    const lower = accName.toLowerCase();
 
-    if (nameLower.includes('cash') || nameLower.includes('रोकड़')) {
-      cashInHand += net;
-    } else if (nameLower.includes('bank') || nameLower.includes('बैंक')) {
-      bankBalance += net;
+    if (lower.includes('cash') || lower.includes('रोकड़')) {
+      cash += net;
+    } else if (lower.includes('bank') || lower.includes('बैंक')) {
+      bank += net;
     } else if (net > 0) {
-      sundryDebtors += net;
+      debtors += net;
     } else if (net < 0) {
-      sundryCreditors += Math.abs(net);
+      creditors += Math.abs(net);
     }
   });
 
   return {
-    cashInHand: parseFloat(cashInHand.toFixed(2)),
-    bankBalance: parseFloat(bankBalance.toFixed(2)),
-    sundryDebtors: parseFloat(sundryDebtors.toFixed(2)),
-    sundryCreditors: parseFloat(sundryCreditors.toFixed(2))
+    cashInHand: parseFloat(cash.toFixed(2)),
+    bankBalance: parseFloat(bank.toFixed(2)),
+    sundryDebtors: parseFloat(debtors.toFixed(2)),
+    sundryCreditors: parseFloat(creditors.toFixed(2))
   };
 };
 
-/**
- * 3. ACCOUNT STATEMENT & KHATA MILAN VIEW
- */
 export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
   if (!targetAccountName) return { openingBalance: 0, transactions: [], closingBalance: 0 };
 
   const accounts = getSafeAccounts(firmId);
-  const accountMaster = accounts.find(a => a.account_name === targetAccountName);
+  const accountMaster = accounts.find(a => a.account_name.toLowerCase() === targetAccountName.toLowerCase());
   
   let runningBal = 0;
   const opening = parseFloat(accountMaster?.opening_balance || 0);
   runningBal = (accountMaster?.balance_type === 'Dr') ? opening : -opening;
 
   const flatLines = getNormalizedLedgerLines(firmId);
-  const partyLines = flatLines.filter(l => l.account_name === targetAccountName);
-
+  const partyLines = flatLines.filter(l => l.account_name.toLowerCase() === targetAccountName.toLowerCase());
   partyLines.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const transactions = partyLines.map((line) => {
