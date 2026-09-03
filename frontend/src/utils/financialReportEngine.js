@@ -1,9 +1,18 @@
 // frontend/src/utils/financialReportEngine.js
 
+import { getFirmMasterAccounts } from './accountMasterEngine.js';
+
 /**
- * Safely fetches accounts without relying on strict external exports
+ * Safely fetches accounts list with fallback
  */
 export const getSafeAccounts = (firmId = 'FIRM-001') => {
+  try {
+    if (typeof getFirmMasterAccounts === 'function') {
+      const accs = getFirmMasterAccounts(firmId);
+      if (Array.isArray(accs) && accs.length > 0) return accs;
+    }
+  } catch (e) {}
+
   const accKey = `app_accounts_${firmId}`;
   try {
     const raw = localStorage.getItem(accKey);
@@ -12,10 +21,15 @@ export const getSafeAccounts = (firmId = 'FIRM-001') => {
 
   return [
     { id: 'ACC-1', account_name: 'Cash-in-Hand', primary_type: 'ASSETS', sub_group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr' },
-    { id: 'ACC-2', account_name: 'Bank Account', primary_type: 'ASSETS', sub_group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr' }
+    { id: 'ACC-2', account_name: 'Bank Account', primary_type: 'ASSETS', sub_group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr' },
+    { id: 'ACC-3', account_name: 'Sales Account (बिक्री खाता)', primary_type: 'INCOME', sub_group: 'Direct Incomes', opening_balance: 0, balance_type: 'Cr' },
+    { id: 'ACC-4', account_name: 'Purchase Account (खरीद खाता)', primary_type: 'EXPENSES', sub_group: 'Direct Expenses', opening_balance: 0, balance_type: 'Dr' }
   ];
 };
 
+/**
+ * Normalizes all legacy and modern vouchers into clean flat ledger rows
+ */
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
   const vouchersKey = `app_vouchers_${firmId}`;
   let rawVouchers = [];
@@ -77,6 +91,117 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
   return flatLines;
 };
 
+/**
+ * 1. CORE FUNCTION REQUIRED BY FinancialReportsView.jsx
+ * Computes Trial Balance, Trading Account, Profit & Loss, and Balance Sheet
+ */
+export const generateFinancialStatements = (firmId = 'FIRM-001') => {
+  const accounts = getSafeAccounts(firmId);
+  const flatLines = getNormalizedLedgerLines(firmId);
+
+  // Initialize net balance container
+  const trialBalances = accounts.map((acc) => {
+    const opening = parseFloat(acc.opening_balance || 0);
+    let netDebit = acc.balance_type === 'Dr' ? opening : 0;
+    let netCredit = acc.balance_type === 'Cr' ? opening : 0;
+
+    flatLines.forEach((line) => {
+      if (line.account_name === acc.account_name) {
+        if (line.entry_type === 'Dr') netDebit += line.amount;
+        if (line.entry_type === 'Cr') netCredit += line.amount;
+      }
+    });
+
+    const diff = netDebit - netCredit;
+    return {
+      account_name: acc.account_name,
+      primary_type: acc.primary_type,
+      sub_group: acc.sub_group || '',
+      debit: diff > 0 ? parseFloat(diff.toFixed(2)) : 0,
+      credit: diff < 0 ? parseFloat(Math.abs(diff).toFixed(2)) : 0
+    };
+  });
+
+  let totalDebit = 0;
+  let totalCredit = 0;
+  trialBalances.forEach((t) => {
+    totalDebit += t.debit;
+    totalCredit += t.credit;
+  });
+
+  // Calculate Trading & P&L components
+  let salesTotal = 0;
+  let purchasesTotal = 0;
+  let directExpenses = 0;
+  let indirectExpenses = 0;
+  let indirectIncomes = 0;
+
+  trialBalances.forEach((t) => {
+    const type = t.primary_type;
+    const group = t.sub_group.toLowerCase();
+
+    if (type === 'INCOME') {
+      if (group.includes('direct') || group.includes('sales')) {
+        salesTotal += t.credit;
+      } else {
+        indirectIncomes += t.credit;
+      }
+    } else if (type === 'EXPENSES') {
+      if (group.includes('direct') || group.includes('purchase')) {
+        purchasesTotal += t.debit;
+      } else {
+        indirectExpenses += t.debit;
+      }
+    }
+  });
+
+  // Calculate closing stock valuation
+  let closingStockValuation = 0;
+  try {
+    const stockKey = `app_stock_${firmId}`;
+    const stockItems = JSON.parse(localStorage.getItem(stockKey) || '[]');
+    stockItems.forEach((stk) => {
+      if (!stk.is_service) {
+        const qty = parseFloat(stk.current_stock || 0);
+        const rate = parseFloat(stk.unit_purchase_price || stk.selling_price || 0);
+        if (qty > 0) closingStockValuation += (qty * rate);
+      }
+    });
+  } catch (e) {}
+
+  const grossProfit = (salesTotal + closingStockValuation) - (purchasesTotal + directExpenses);
+  const netProfit = (grossProfit + indirectIncomes) - indirectExpenses;
+
+  return {
+    trialBalance: {
+      rows: trialBalances,
+      totalDebit: parseFloat(totalDebit.toFixed(2)),
+      totalCredit: parseFloat(totalCredit.toFixed(2)),
+      isBalanced: Math.abs(totalDebit - totalCredit) < 0.01
+    },
+    tradingAccount: {
+      sales: salesTotal,
+      purchases: purchasesTotal,
+      directExpenses,
+      closingStock: parseFloat(closingStockValuation.toFixed(2)),
+      grossProfit: parseFloat(grossProfit.toFixed(2))
+    },
+    profitAndLoss: {
+      grossProfit: parseFloat(grossProfit.toFixed(2)),
+      indirectIncomes,
+      indirectExpenses,
+      netProfit: parseFloat(netProfit.toFixed(2))
+    },
+    balanceSheet: {
+      netProfit: parseFloat(netProfit.toFixed(2)),
+      closingStock: parseFloat(closingStockValuation.toFixed(2))
+    }
+  };
+};
+
+/**
+ * 2. LIVE DASHBOARD KPIS (Cash, Bank, Debtors, Creditors)
+ */
 export const calculateDashboardKPIs = (firmId = 'FIRM-001') => {
   const accounts = getSafeAccounts(firmId);
   const flatLines = getNormalizedLedgerLines(firmId);
@@ -127,6 +252,9 @@ export const calculateDashboardKPIs = (firmId = 'FIRM-001') => {
   };
 };
 
+/**
+ * 3. ACCOUNT STATEMENT & KHATA MILAN VIEW
+ */
 export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
   if (!targetAccountName) return { openingBalance: 0, transactions: [], closingBalance: 0 };
 
