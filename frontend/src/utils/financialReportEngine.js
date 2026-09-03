@@ -1,10 +1,21 @@
 // frontend/src/utils/financialReportEngine.js
 
-import { getFirmMasterAccounts } from './accountMasterEngine.js';
-
 /**
- * Normalizes all legacy and modern vouchers for a given firm into flat ledger lines
+ * Safely fetches accounts without relying on strict external exports
  */
+export const getSafeAccounts = (firmId = 'FIRM-001') => {
+  const accKey = `app_accounts_${firmId}`;
+  try {
+    const raw = localStorage.getItem(accKey);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+
+  return [
+    { id: 'ACC-1', account_name: 'Cash-in-Hand', primary_type: 'ASSETS', sub_group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr' },
+    { id: 'ACC-2', account_name: 'Bank Account', primary_type: 'ASSETS', sub_group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr' }
+  ];
+};
+
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
   const vouchersKey = `app_vouchers_${firmId}`;
   let rawVouchers = [];
@@ -15,7 +26,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
   }
 
   const flatLines = [];
-
   rawVouchers.forEach((vch) => {
     const vchDate = vch.voucher_date || vch.date || '';
     const vchNum = vch.reference_no || vch.voucher_number || 'VCH';
@@ -30,7 +40,7 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
           voucher_number: vchNum,
           voucher_type: vchType,
           account_name: (entry.account_name || '').trim(),
-          entry_type: entry.type, // 'Dr' or 'Cr'
+          entry_type: entry.type,
           amount: parseFloat(entry.amount || 0),
           narration
         });
@@ -67,14 +77,10 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
   return flatLines;
 };
 
-/**
- * Calculates Live Dashboard KPI Summary Cards (Cash, Bank, Debtors, Creditors)
- */
 export const calculateDashboardKPIs = (firmId = 'FIRM-001') => {
-  const accounts = getFirmMasterAccounts(firmId);
+  const accounts = getSafeAccounts(firmId);
   const flatLines = getNormalizedLedgerLines(firmId);
 
-  // Compute Net Balance for every registered account
   const accountBalances = {};
   accounts.forEach((acc) => {
     const opening = parseFloat(acc.opening_balance || 0);
@@ -95,23 +101,21 @@ export const calculateDashboardKPIs = (firmId = 'FIRM-001') => {
 
   let cashInHand = 0;
   let bankBalance = 0;
-  let sundryDebtors = 0;   // Market Udhari (Lena)
-  let sundryCreditors = 0; // Vyapari Dena (Dena)
+  let sundryDebtors = 0;
+  let sundryCreditors = 0;
 
-  accounts.forEach((acc) => {
-    const net = accountBalances[acc.account_name] || 0;
-    const nameLower = acc.account_name.toLowerCase();
-    const groupLower = (acc.sub_group || '').toLowerCase();
-    const primaryType = acc.primary_type;
+  Object.keys(accountBalances).forEach((name) => {
+    const net = accountBalances[name];
+    const nameLower = name.toLowerCase();
 
-    if (nameLower.includes('cash') || groupLower.includes('cash')) {
+    if (nameLower.includes('cash') || nameLower.includes('रोकड़')) {
       cashInHand += net;
-    } else if (nameLower.includes('bank') || groupLower.includes('bank')) {
+    } else if (nameLower.includes('bank') || nameLower.includes('बैंक')) {
       bankBalance += net;
-    } else if (primaryType === 'ASSETS' || groupLower.includes('debtor') || groupLower.includes('customer')) {
-      if (net > 0) sundryDebtors += net;
-    } else if (primaryType === 'LIABILITIES' || groupLower.includes('creditor') || groupLower.includes('supplier')) {
-      if (net < 0) sundryCreditors += Math.abs(net);
+    } else if (net > 0) {
+      sundryDebtors += net;
+    } else if (net < 0) {
+      sundryCreditors += Math.abs(net);
     }
   });
 
@@ -123,13 +127,10 @@ export const calculateDashboardKPIs = (firmId = 'FIRM-001') => {
   };
 };
 
-/**
- * Extracts Detailed Khata Statement for a Single Account with Running Balance
- */
 export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
   if (!targetAccountName) return { openingBalance: 0, transactions: [], closingBalance: 0 };
 
-  const accounts = getFirmMasterAccounts(firmId);
+  const accounts = getSafeAccounts(firmId);
   const accountMaster = accounts.find(a => a.account_name === targetAccountName);
   
   let runningBal = 0;
@@ -139,7 +140,6 @@ export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '')
   const flatLines = getNormalizedLedgerLines(firmId);
   const partyLines = flatLines.filter(l => l.account_name === targetAccountName);
 
-  // Sort chronologically
   partyLines.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const transactions = partyLines.map((line) => {
