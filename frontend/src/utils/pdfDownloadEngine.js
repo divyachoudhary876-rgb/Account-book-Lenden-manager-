@@ -1,8 +1,5 @@
 // frontend/src/utils/pdfDownloadEngine.js
 
-/**
- * Helper to convert numbers to Indian Rupee Words
- */
 const numberToWordsINR = (num) => {
   const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
   const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -38,9 +35,140 @@ const numberToWordsINR = (num) => {
   return `${res.trim()} Rupees Only`;
 };
 
+const launchPrintWindow = (htmlContent, defaultFilename = 'Document') => {
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 400);
+  } else {
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${defaultFilename}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+};
+
 /**
- * 1. PROFESSIONAL TAX INVOICE PDF/PRINT GENERATOR
- * Imported and required by CreateInvoice.jsx
+ * 1. JOURNAL REGISTER EXPORT PDF/PRINT
+ * Required by JournalRegisterView.jsx
+ */
+export const downloadJournalRegisterPDF = (firmName = 'Neelkanth Groups', vouchers = []) => {
+  const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const rows = Array.isArray(vouchers) ? vouchers : [];
+
+  let totalAmount = 0;
+  const rowsHtml = rows.map((vch, idx) => {
+    const amt = parseFloat(vch.amount || 0);
+    totalAmount += amt;
+    const dateStr = vch.voucher_date || vch.date || '-';
+    const vchNo = vch.reference_no || vch.voucher_number || `VCH-${idx + 1}`;
+    const vchType = vch.voucher_type || vch.type || 'JOURNAL';
+    const dr = vch.dr_account || vch.dr_party || '-';
+    const cr = vch.cr_account || vch.cr_party || '-';
+    const note = vch.narration || '';
+
+    return `
+      <tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+        <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${idx + 1}</td>
+        <td style="padding: 8px; border: 1px solid #cbd5e1; white-space: nowrap;">${dateStr}</td>
+        <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: bold;">
+          ${vchNo}
+          <div style="font-size: 10px; color: #64748b;">${vchType}</div>
+        </td>
+        <td style="padding: 8px; border: 1px solid #cbd5e1;">
+          <div style="color: #059669; font-weight: 600;">Dr: ${dr}</div>
+          <div style="color: #dc2626; font-weight: 600;">Cr: ${cr}</div>
+          ${note ? `<div style="font-size: 10px; color: #475569; margin-top: 3px;">Note: ${note}</div>` : ''}
+        </td>
+        <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: right; font-weight: bold; color: #0f172a;">
+          ₹${amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const printableHtml = `
+    <!DOCTYPE html>
+    <html lang="hi">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Journal_Register_${firmName.replace(/\s+/g, '_')}</title>
+        <style>
+          @media print {
+            body { margin: 0; padding: 10mm; font-size: 12px; }
+            .no-print { display: none !important; }
+          }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0f172a; margin: 20px; }
+          .header-box { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 15px; }
+          .btn-print { background-color: #0284c7; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th { background-color: #0f172a; color: #ffffff; padding: 8px; border: 1px solid #0f172a; font-size: 11px; }
+          td { padding: 8px; border: 1px solid #cbd5e1; font-size: 11px; vertical-align: top; }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom: 15px; text-align: right;">
+          <button class="btn-print" onclick="window.print()">📥 Save / Print Journal Register as PDF</button>
+        </div>
+        <div class="header-box">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: 800; text-transform: uppercase;">${firmName}</h2>
+              <div style="font-size: 11px; color: #64748b; margin-top: 3px;">Daybook & Journal Voucher Register | Double-Entry System</div>
+            </div>
+            <div style="text-align: right; font-size: 12px; color: #475569;">
+              <div><strong>Export Date:</strong> ${currentDate}</div>
+              <div><strong>Total Records:</strong> ${rows.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 5%;">#</th>
+              <th style="width: 12%; text-align: left;">Date</th>
+              <th style="width: 18%; text-align: left;">Voucher No</th>
+              <th style="width: 47%; text-align: left;">Particulars (Dr / Cr) & Narration</th>
+              <th style="width: 18%; text-align: right;">Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding: 20px;">No journal vouchers found.</td></tr>' : rowsHtml}
+          </tbody>
+          <tfoot>
+            <tr style="background-color: #f1f5f9; font-weight: bold; font-size: 12px;">
+              <td colspan="4" style="text-align: right; padding: 10px 8px; border: 1px solid #cbd5e1;">Grand Total:</td>
+              <td style="text-align: right; padding: 10px 8px; border: 1px solid #cbd5e1; color: #059669; font-size: 13px;">
+                ₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div style="margin-top: 30px; border-top: 1px dashed #cbd5e1; padding-top: 8px; font-size: 10px; color: #94a3b8; text-align: center;">
+          Computer Generated Journal Register | Authorized General Ledger Statement
+        </div>
+      </body>
+    </html>
+  `;
+
+  launchPrintWindow(printableHtml, `Journal_Register_${Date.now()}`);
+};
+
+/**
+ * 2. PROFESSIONAL TAX INVOICE PDF/PRINT GENERATOR
+ * Required by CreateInvoice.jsx
  */
 export const generateProfessionalInvoicePDF = (firm = {}, invoice = {}) => {
   const firmName = firm?.legal_name || firm?.trade_name || 'Neelkanth Groups';
@@ -60,17 +188,15 @@ export const generateProfessionalInvoicePDF = (firm = {}, invoice = {}) => {
 
   const items = Array.isArray(invoice?.items) && invoice.items.length > 0 
     ? invoice.items 
-    : [
-        {
-          item_name: invoice?.item_name || 'Material Goods',
-          quantity: parseFloat(invoice?.quantity || 1),
-          unit: invoice?.unit || 'Units',
-          rate: parseFloat(invoice?.rate || invoice?.amount || 0),
-          tax_rate: parseFloat(invoice?.tax_rate || 0),
-          tax_amount: parseFloat(invoice?.tax_amount || 0),
-          line_total: parseFloat(invoice?.total_amount || invoice?.amount || 0)
-        }
-      ];
+    : [{
+        item_name: invoice?.item_name || 'Material Goods',
+        quantity: parseFloat(invoice?.quantity || 1),
+        unit: invoice?.unit || 'Units',
+        rate: parseFloat(invoice?.rate || invoice?.amount || 0),
+        tax_rate: parseFloat(invoice?.tax_rate || 0),
+        tax_amount: parseFloat(invoice?.tax_amount || 0),
+        line_total: parseFloat(invoice?.total_amount || invoice?.amount || 0)
+      }];
 
   const subtotal = parseFloat(invoice?.subtotal || items.reduce((sum, item) => sum + (parseFloat(item.quantity || 0) * parseFloat(item.rate || 0)), 0));
   const taxTotal = parseFloat(invoice?.tax_total || items.reduce((sum, item) => sum + parseFloat(item.tax_amount || 0), 0));
@@ -206,29 +332,11 @@ export const generateProfessionalInvoicePDF = (firm = {}, invoice = {}) => {
     </html>
   `;
 
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(printableHtml);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-    }, 400);
-  } else {
-    const blob = new Blob([printableHtml], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Invoice_${invNumber}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
+  launchPrintWindow(printableHtml, `Invoice_${invNumber}`);
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT GENERATOR (Trial Balance, Trading, P&L)
+ * 3. FINANCIAL STATEMENTS REPORT GENERATOR (Trial Balance, Trading, P&L)
  * Required by FinancialReportsView.jsx
  */
 export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups', reportData = {}, activeTab = 'TB') => {
@@ -336,7 +444,7 @@ export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups',
     `;
   }
 
-  const printDocumentHtml = `
+  const printableHtml = `
     <!DOCTYPE html>
     <html lang="hi">
       <head>
@@ -376,19 +484,11 @@ export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups',
     </html>
   `;
 
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(printDocumentHtml);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-    }, 400);
-  }
+  launchPrintWindow(printableHtml, `Financial_Statement_${activeTab}`);
 };
 
 /**
- * 3. BACKWARD-COMPATIBILITY ALIAS
+ * 4. BACKWARD-COMPATIBILITY ALIAS
  */
 export const downloadProfitAndLossPDF = (firmName, reportData) => {
   return downloadFinancialStatementsReport(firmName, reportData, 'PL');
