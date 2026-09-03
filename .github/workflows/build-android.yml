@@ -46,51 +46,26 @@ jobs:
           cd frontend
           npm run build
 
-      - name: Ensure Android Native Platform & Sync
+      - name: Fresh Native Android Scaffolding
         run: |
           cd frontend
-          # If gradlew does not exist anywhere, force add android platform
-          if ! find .. -name "gradlew" | grep -q "gradlew"; then
-            echo "gradlew not found. Adding Capacitor Android platform..."
-            npx cap add android || true
+          # If gradlew does not exist in android folder, wipe the partial dir and re-add cleanly
+          if [ ! -f "android/gradlew" ]; then
+            echo "Incomplete Android project detected. Re-scaffolding cleanly..."
+            rm -rf android
+            npx cap add android
           fi
           npx cap sync android
 
-      - name: Locate Gradle Wrapper & Grant Permissions
+      - name: Grant Gradle Permissions & Build Release APK
         run: |
-          echo "Locating gradlew in workspace..."
-          GRADLE_PATH=$(find . -name "gradlew" -type f | head -n 1)
-
-          if [ -z "$GRADLE_PATH" ]; then
-            echo "Attempting to create wrapper using root gradle or fallback..."
-            if [ -d "frontend/android" ]; then
-              cd frontend/android && gradle wrapper || true && cd ../..
-            elif [ -d "android" ]; then
-              cd android && gradle wrapper || true && cd ..
-            fi
-            GRADLE_PATH=$(find . -name "gradlew" -type f | head -n 1)
-          fi
-
-          if [ -n "$GRADLE_PATH" ]; then
-            echo "Found gradlew at: $GRADLE_PATH"
-            chmod +x "$GRADLE_PATH"
-            GRADLE_DIR=$(dirname "$GRADLE_PATH")
-            echo "GRADLE_DIR=$GRADLE_DIR" >> $GITHUB_ENV
-          else
-            echo "CRITICAL: Could not find or generate gradlew. Workspace tree:"
-            pwd
-            find . -maxdepth 3 -not -path '*/.*'
-            exit 1
-          fi
-
-      - name: Build Android Release APK
-        run: |
-          cd "$GRADLE_DIR"
+          cd frontend/android
+          chmod +x gradlew
           ./gradlew clean assembleRelease --no-daemon --stacktrace
 
       - name: Upload Verified Release APK
         uses: actions/upload-artifact@v4
         with:
           name: AccountBook-Release-APK
-          path: "**/app/build/outputs/apk/release/*.apk"
+          path: "frontend/android/app/build/outputs/apk/release/*.apk"
           retention-days: 14
