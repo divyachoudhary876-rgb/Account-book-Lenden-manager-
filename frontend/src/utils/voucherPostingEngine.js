@@ -1,8 +1,8 @@
 // frontend/src/utils/voucherPostingEngine.js
 
 /**
- * Validates, Stores, Updates, and Deletes Universal Accounting Vouchers
- * Enforces Double-Entry Equilibrium (Debit === Credit)
+ * Validates, Stores, Updates, and Deletes Universal Double-Entry Vouchers
+ * Strictly verifies sum(Debit) === sum(Credit)
  */
 export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
   const vouchersKey = `app_vouchers_${firmId}`;
@@ -10,7 +10,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 
   const {
     id = null,
-    voucher_type = 'PAYMENT',
+    voucher_type = 'JOURNAL',
     voucher_date = new Date().toISOString().split('T')[0],
     reference_no = '',
     narration = '',
@@ -32,8 +32,8 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 
     const validatedEntries = entries.map((line, idx) => {
       const lineAmt = parseFloat(line.amount || 0);
-      if (lineAmt <= 0) throw new Error(`Row #${idx + 1}: Amount zero se adhik hona chahiye.`);
-      if (!line.account_name || !line.account_name.trim()) throw new Error(`Row #${idx + 1}: Account Head chuna zaroori hai.`);
+      if (lineAmt <= 0) throw new Error(`Line #${idx + 1}: Amount must be greater than zero.`);
+      if (!line.account_name || !line.account_name.trim()) throw new Error(`Line #${idx + 1}: Account Head is required.`);
 
       if (line.type === 'Dr') totalDebit += lineAmt;
       else if (line.type === 'Cr') totalCredit += lineAmt;
@@ -48,7 +48,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 
     const diff = Math.abs(Math.round((totalDebit - totalCredit) * 100) / 100);
     if (diff > 0.01) {
-      throw new Error(`⛔ Debit aur Credit barabar nahi hain! Difference: ₹${diff.toFixed(2)}`);
+      throw new Error(`⛔ Unbalanced Voucher! Debit (₹${totalDebit.toFixed(2)}) does not match Credit (₹${totalCredit.toFixed(2)}). Difference: ₹${diff.toFixed(2)}`);
     }
 
     finalVoucher = {
@@ -72,10 +72,10 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     };
   } else {
     const cleanAmount = parseFloat(amount || 0);
-    if (cleanAmount <= 0) throw new Error('⚠️ Amount zero se adhik hona chahiye.');
-    if (!dr_account || !dr_account.trim()) throw new Error('⚠️ Debit account chunna anivarya hai.');
-    if (!cr_account || !cr_account.trim()) throw new Error('⚠️ Credit account chunna anivarya hai.');
-    if (dr_account.trim() === cr_account.trim()) throw new Error('⚠️ Debit aur Credit dono same account nahi ho sakte.');
+    if (cleanAmount <= 0) throw new Error('Transaction amount must be greater than zero.');
+    if (!dr_account || !dr_account.trim()) throw new Error('Debit Account selection is required.');
+    if (!cr_account || !cr_account.trim()) throw new Error('Credit Account selection is required.');
+    if (dr_account.trim() === cr_account.trim()) throw new Error('Debit and Credit cannot be the same account.');
 
     finalVoucher = {
       id: id || `VCH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -114,7 +114,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 };
 
 /**
- * Delete Voucher Permanently
+ * Permanently deletes a voucher by ID
  */
 export const deleteUniversalVoucher = (firmId = 'FIRM-001', voucherId = '') => {
   const vouchersKey = `app_vouchers_${firmId}`;
