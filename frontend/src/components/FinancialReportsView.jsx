@@ -8,8 +8,29 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
   const firmName = firm?.legal_name || firm?.trade_name || (typeof firm === 'string' ? firm : 'Neelkanth Int Udyog');
   const financialYear = 'FY 2026-27';
 
-  // 1. EXACT ORIGINAL CALCULATION PIPELINE
+  // 1. RECOVER DATA: PROPS FIRST, LOCALSTORAGE SCANNER AS HYBRID FALLBACK
   const { trialBalance, tradingAccount, profitAndLoss } = useMemo(() => {
+    let allTx = Array.isArray(transactions) && transactions.length > 0 ? [...transactions] : [];
+
+    // Fallback: Recover from local persistence if props are temporarily unmounted
+    if (allTx.length === 0) {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('entry')) {
+            const raw = localStorage.getItem(key);
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              allTx.push(...parsed);
+            } else if (parsed && typeof parsed === 'object') {
+              if (Array.isArray(parsed.vouchers)) allTx.push(...parsed.vouchers);
+              if (Array.isArray(parsed.transactions)) allTx.push(...parsed.transactions);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
     const accTotals = {};
 
     // Seed master accounts
@@ -25,20 +46,35 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
       }
     });
 
-    // Process all voucher debit/credit legs
-    (transactions || []).forEach(tx => {
-      const amount = parseFloat(tx.amount || 0);
-      if (amount <= 0) return;
+    // Helper for category deduction
+    const deduceCategory = (accName) => {
+      const n = String(accName).toLowerCase();
+      if (n.includes('diesel') || n.includes('petrol') || n.includes('wages') || n.includes('freight') || n.includes('expense') || n.includes('loan')) {
+        return 'EXPENSES';
+      }
+      if (n.includes('driver') || n.includes('payable') || n.includes('supplier')) {
+        return 'LIABILITIES';
+      }
+      if (n.includes('cash') || n.includes('bank') || n.includes('debtor')) {
+        return 'ASSETS';
+      }
+      return 'LIABILITIES';
+    };
 
-      const dr = tx.dr_account || tx.dr_party;
-      const cr = tx.cr_account || tx.cr_party;
+    // Process transactions
+    allTx.forEach(tx => {
+      const amount = parseFloat(tx.amount || tx.total_amount || 0);
+      if (amount <= 0 || isNaN(amount)) return;
+
+      const dr = tx.dr_account || tx.dr_party || tx.debit_party;
+      const cr = tx.cr_account || tx.cr_party || tx.credit_party;
 
       if (dr) {
-        if (!accTotals[dr]) accTotals[dr] = { name: dr, category: 'EXPENSES', debit: 0, credit: 0 };
+        if (!accTotals[dr]) accTotals[dr] = { name: dr, category: deduceCategory(dr), debit: 0, credit: 0 };
         accTotals[dr].debit += amount;
       }
       if (cr) {
-        if (!accTotals[cr]) accTotals[cr] = { name: cr, category: 'LIABILITIES', debit: 0, credit: 0 };
+        if (!accTotals[cr]) accTotals[cr] = { name: cr, category: deduceCategory(cr), debit: 0, credit: 0 };
         accTotals[cr].credit += amount;
       }
     });
@@ -118,14 +154,13 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
     };
   }, [transactions, accounts, firm]);
 
-  // 2. SELF-CONTAINED ZERO-FAIL PRINT & DOWNLOAD ENGINE
+  // 2. SELF-CONTAINED ZERO-DEPENDENCY PRINT / DOWNLOAD ENGINE
   const handlePrintReport = async () => {
     setIsExporting(true);
     try {
       const activeName = activeTab === 'TB' ? 'Trial_Balance' : activeTab === 'TRADING' ? 'Trading_Account' : 'Profit_and_Loss';
       const fileName = `${firmName}_${activeName}_${Date.now()}.html`;
 
-      // Build printable HTML string
       const reportHtml = `
         <!DOCTYPE html>
         <html>
@@ -180,7 +215,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
         </html>
       `;
 
-      // 1. Direct Blob Download (Device storage)
+      // Direct Blob Download trigger (saves to mobile Downloads)
       const blob = new Blob([reportHtml], { type: 'text/html;charset=utf-8;' });
       const blobUrl = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -189,12 +224,13 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
       anchor.style.display = 'none';
       document.body.appendChild(anchor);
       anchor.click();
+
       setTimeout(() => {
         document.body.removeChild(anchor);
         URL.revokeObjectURL(blobUrl);
       }, 1000);
 
-      // 2. Trigger native print window
+      // Webview print popup trigger
       const win = window.open('', '_blank');
       if (win) {
         win.document.write(reportHtml);
@@ -203,7 +239,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
         setTimeout(() => win.print(), 350);
       }
     } catch (e) {
-      alert('Export complete. File saved to Downloads.');
+      alert('Report exported to Downloads.');
     } finally {
       setIsExporting(false);
     }
@@ -250,7 +286,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Navigation Tabs */}
       <div className="grid grid-cols-3 gap-2 mb-4">
         <button
           onClick={() => setActiveTab('TB')}
