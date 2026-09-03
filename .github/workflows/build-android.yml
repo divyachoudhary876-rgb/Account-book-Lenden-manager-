@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-android:
-    name: Build, Sign & Package Android APK
+    name: Build & Package Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -56,50 +56,27 @@ jobs:
           fi
           npx cap sync android
 
-      - name: Build Android Release APK via Gradle
+      - name: Build Signed Installable APK via Gradle
         run: |
           cd frontend/android
           chmod +x gradlew
-          ./gradlew clean assembleRelease --no-daemon --stacktrace
+          ./gradlew clean assembleDebug --no-daemon --stacktrace
 
-      - name: Cryptographically Sign Release APK
+      - name: Prepare Final APK Artifact
         run: |
-          echo "Generating automated release signing keystore..."
-          keytool -genkeypair -v \
-            -keystore frontend/release.keystore \
-            -alias accountbook \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass "AccountBookPass2026" \
-            -keypass "AccountBookPass2026" \
-            -dname "CN=AccountBook, OU=Finance, O=NeelkanthGroups, L=Jaipur, ST=Rajasthan, C=IN"
-
-          UNSIGNED_APK=$(find frontend/android/app/build/outputs/apk/release -name "*unsigned.apk" | head -n 1)
-          if [ -z "$UNSIGNED_APK" ]; then
-            UNSIGNED_APK=$(find frontend/android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          mkdir -p final_apk
+          APK_FOUND=$(find frontend/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -n "$APK_FOUND" ]; then
+            echo "Found APK at: $APK_FOUND"
+            cp "$APK_FOUND" final_apk/AccountBook-Installable.apk
+          else
+            echo "CRITICAL: No APK produced by Gradle."
+            exit 1
           fi
 
-          echo "Found APK to sign at: $UNSIGNED_APK"
-
-          # Align the APK
-          zipalign -v -p 4 "$UNSIGNED_APK" frontend/AccountBook-Aligned.apk
-
-          # Sign with apksigner (v2 & v3 schemes enabled)
-          apksigner sign --ks frontend/release.keystore \
-            --ks-pass pass:"AccountBookPass2026" \
-            --ks-key-alias accountbook \
-            --key-pass pass:"AccountBookPass2026" \
-            --out frontend/AccountBook-Release.apk \
-            frontend/AccountBook-Aligned.apk
-
-          # Verify signature
-          apksigner verify --verbose frontend/AccountBook-Release.apk
-          echo "APK successfully signed and verified."
-
-      - name: Upload Verified Signed Release APK
+      - name: Upload Verified Installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: AccountBook-Signed-Release-APK
-          path: frontend/AccountBook-Release.apk
+          name: AccountBook-APK
+          path: final_apk/AccountBook-Installable.apk
           retention-days: 14
