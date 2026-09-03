@@ -2,100 +2,69 @@ name: Build Android Release APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build-android:
+    name: Build & Assemble Android APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js v22
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+          cache-dependency-path: frontend/package.json
 
       - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: 21
+          java-version: '21'
 
       - name: Setup Android SDK Tools
         uses: android-actions/setup-android@v3
 
-      - name: Install Frontend Dependencies
-        working-directory: frontend
+      - name: Clean Dependency Caches
         run: |
-          rm -f package-lock.json
-          npm install --legacy-peer-deps --force
+          cd frontend
+          npm cache clean --force || true
+          rm -rf node_modules package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Build Web Application
-        working-directory: frontend
-        run: npm run build
-
-      - name: Initialize and Sync Capacitor Android
-        working-directory: frontend
         run: |
-          npm install @capacitor/android@6.1.2 --legacy-peer-deps --force
-          if [ ! -f "android/gradlew" ]; then
-            echo "Scaffolding Android container..."
-            rm -rf android
-            npx cap add android
-          fi
+          cd frontend
+          npm run build
+
+      - name: Capacitor Sync Android
+        run: |
+          cd frontend
           npx cap sync android
 
-      - name: Assemble Release APK via Gradle
-        working-directory: frontend/android
+      - name: Grant Gradle Permissions
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          chmod +x android/gradlew
 
-      - name: Cryptographically Sign Release APK (v2 & v3 Scheme)
+      - name: Build Android Release APK
         run: |
-          # 1. Generate dedicated signing key
-          keytool -genkeypair -v \
-            -keystore release.keystore \
-            -alias accountbook \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass "AccountBookPass2026" \
-            -keypass "AccountBookPass2026" \
-            -dname "CN=AccountBook, OU=Engineering, O=NeelkanthGroups, L=Hanumangarh, ST=Rajasthan, C=IN"
+          cd android
+          ./gradlew clean assembleRelease --no-daemon --stacktrace
 
-          # 2. Locate unsigned APK
-          RAW_APK=$(find frontend/android/app/build/outputs/apk/release -name "*unsigned.apk" | head -n 1)
-          if [ -z "$RAW_APK" ]; then
-            RAW_APK=$(find frontend/android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          fi
-          echo "Found raw APK at: $RAW_APK"
-
-          # 3. Locate SDK tools (zipalign & apksigner)
-          BUILD_TOOLS_DIR=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
-          echo "Using Android Build Tools from: $BUILD_TOOLS_DIR"
-
-          # 4. 4-byte Page Alignment
-          $BUILD_TOOLS_DIR/zipalign -v -p 4 "$RAW_APK" aligned-release.apk
-
-          # 5. Sign APK with v2/v3 signature
-          $BUILD_TOOLS_DIR/apksigner sign \
-            --ks release.keystore \
-            --ks-pass pass:"AccountBookPass2026" \
-            --key-pass pass:"AccountBookPass2026" \
-            --out AccountBook-Release-Signed.apk \
-            aligned-release.apk
-
-          # 6. Verify signature integrity
-          $BUILD_TOOLS_DIR/apksigner verify --verbose AccountBook-Release-Signed.apk
-
-      - name: Upload Verified Signed Release APK
+      - name: Upload Verified Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: AccountBook-Installable-APK
-          path: AccountBook-Release-Signed.apk
+          name: AccountBook-Release-APK
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 14
