@@ -41,28 +41,61 @@ jobs:
       - name: Initialize and Sync Capacitor Android
         working-directory: frontend
         run: |
-          # Guarantee @capacitor/android is present
           npm install @capacitor/android@6.1.2 --legacy-peer-deps --force
-          
-          # Initialize Android native project if not present
           if [ ! -f "android/gradlew" ]; then
-            echo "Scaffolding native Android project..."
+            echo "Scaffolding Android container..."
             rm -rf android
             npx cap add android
           fi
-          
-          echo "Syncing web assets to native container..."
           npx cap sync android
 
-      - name: Build Android Release APK
+      - name: Assemble Release APK via Gradle
         working-directory: frontend/android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
-      - name: Upload Signed Release APK
+      - name: Cryptographically Sign Release APK (v2 & v3 Scheme)
+        run: |
+          # 1. Generate dedicated signing key
+          keytool -genkeypair -v \
+            -keystore release.keystore \
+            -alias accountbook \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "AccountBookPass2026" \
+            -keypass "AccountBookPass2026" \
+            -dname "CN=AccountBook, OU=Engineering, O=NeelkanthGroups, L=Hanumangarh, ST=Rajasthan, C=IN"
+
+          # 2. Locate unsigned APK
+          RAW_APK=$(find frontend/android/app/build/outputs/apk/release -name "*unsigned.apk" | head -n 1)
+          if [ -z "$RAW_APK" ]; then
+            RAW_APK=$(find frontend/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          fi
+          echo "Found raw APK at: $RAW_APK"
+
+          # 3. Locate SDK tools (zipalign & apksigner)
+          BUILD_TOOLS_DIR=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          echo "Using Android Build Tools from: $BUILD_TOOLS_DIR"
+
+          # 4. 4-byte Page Alignment
+          $BUILD_TOOLS_DIR/zipalign -v -p 4 "$RAW_APK" aligned-release.apk
+
+          # 5. Sign APK with v2/v3 signature
+          $BUILD_TOOLS_DIR/apksigner sign \
+            --ks release.keystore \
+            --ks-pass pass:"AccountBookPass2026" \
+            --key-pass pass:"AccountBookPass2026" \
+            --out AccountBook-Release-Signed.apk \
+            aligned-release.apk
+
+          # 6. Verify signature integrity
+          $BUILD_TOOLS_DIR/apksigner verify --verbose AccountBook-Release-Signed.apk
+
+      - name: Upload Verified Signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: AccountBook-Release-APK
-          path: frontend/android/app/build/outputs/apk/**/*.apk
+          name: AccountBook-Installable-APK
+          path: AccountBook-Release-Signed.apk
           retention-days: 14
