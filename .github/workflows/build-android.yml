@@ -48,23 +48,43 @@ jobs:
           cd frontend
           npm run build
 
-      - name: Capacitor Sync Android
+      - name: Ensure Android Platform & Capacitor Sync
         run: |
           cd frontend
+          if [ ! -d "android" ] && [ ! -d "../android" ]; then
+            npx cap add android
+          fi
           npx cap sync android
 
-      - name: Grant Gradle Permissions
+      - name: Locate Gradle & Grant Permissions
         run: |
-          chmod +x android/gradlew
+          if [ -f "frontend/android/gradlew" ]; then
+            echo "GRADLE_DIR=frontend/android" >> $GITHUB_ENV
+            chmod +x frontend/android/gradlew
+          elif [ -f "android/gradlew" ]; then
+            echo "GRADLE_DIR=android" >> $GITHUB_ENV
+            chmod +x android/gradlew
+          else
+            echo "Searching for gradlew across repository..."
+            GRADLE_PATH=$(find . -name "gradlew" | head -n 1)
+            if [ -n "$GRADLE_PATH" ]; then
+              GRADLE_DIR=$(dirname "$GRADLE_PATH")
+              echo "GRADLE_DIR=$GRADLE_DIR" >> $GITHUB_ENV
+              chmod +x "$GRADLE_PATH"
+            else
+              echo "Error: gradlew binary could not be found!"
+              exit 1
+            fi
+          fi
 
       - name: Build Android Release APK
         run: |
-          cd android
+          cd $GRADLE_DIR
           ./gradlew clean assembleRelease --no-daemon --stacktrace
 
       - name: Upload Verified Release APK
         uses: actions/upload-artifact@v4
         with:
           name: AccountBook-Release-APK
-          path: android/app/build/outputs/apk/release/*.apk
+          path: "**/app/build/outputs/apk/release/*.apk"
           retention-days: 14
