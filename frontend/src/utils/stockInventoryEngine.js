@@ -3,7 +3,7 @@
 import { saveUniversalVoucher } from './voucherPostingEngine.js';
 
 /**
- * Retrieves stock master list for a firm with fallback initial catalog
+ * Retrieves firm stock inventory items with standard default catalog
  */
 export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
   const stockKey = `app_stock_${firmId}`;
@@ -14,7 +14,7 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
   } catch (e) {
-    console.error('Error loading stock inventory:', e);
+    console.error('Error reading stock items from local storage:', e);
   }
 
   const defaultStock = [
@@ -29,7 +29,97 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
 };
 
 /**
- * 1. MULTI-ITEM SALES INVOICING ENGINE WITH HARD NEGATIVE STOCK PREVENTION
+ * 1. RAW MATERIAL & FUEL CONSUMPTION ENGINE
+ * Deducts fuel/material stock and posts double-entry expense journal
+ */
+export const recordStockConsumption = (firmId = 'FIRM-001', payload = {}) => {
+  const {
+    item_name,
+    quantity = 0,
+    consumption_date = new Date().toISOString().split('T')[0],
+    expense_account = 'Manufacturing & Fuel Expense',
+    batch_ref = '',
+    remarks = ''
+  } = payload;
+
+  const cleanQty = parseFloat(quantity || 0);
+  if (cleanQty <= 0) {
+    throw new Error('Consumption quantity must be greater than zero.');
+  }
+
+  if (!item_name || !item_name.trim()) {
+    throw new Error('Please select a material or fuel item.');
+  }
+
+  const stockKey = `app_stock_${firmId}`;
+  const stockList = getStockItemsByFirm(firmId);
+  const itemIndex = stockList.findIndex(s => s.item_name === item_name.trim());
+
+  if (itemIndex === -1) {
+    throw new Error(`Item "${item_name}" not found in stock master.`);
+  }
+
+  const targetItem = stockList[itemIndex];
+
+  // Hard Negative Stock Verification (excluding service heads)
+  if (!targetItem.is_service) {
+    const currentQty = parseFloat(targetItem.current_stock || 0);
+    if (currentQty < cleanQty) {
+      throw new Error(
+        `⛔ Insufficient Stock! Cannot consume ${cleanQty} ${targetItem.unit}.\n` +
+        `Current available stock is only ${currentQty} ${targetItem.unit}.`
+      );
+    }
+    // Deduct stock balance atomically
+    stockList[itemIndex].current_stock = parseFloat((currentQty - cleanQty).toFixed(3));
+  }
+
+  // Value consumed at current weighted unit purchase price
+  const unitCost = parseFloat(targetItem.unit_purchase_price || targetItem.selling_price || 0);
+  const totalCost = parseFloat((cleanQty * unitCost).toFixed(2));
+  const vchNumber = batch_ref.trim() || `CON-${Date.now().toString().slice(-6)}`;
+
+  // Update persistent stock store
+  localStorage.setItem(stockKey, JSON.stringify(stockList));
+
+  // Double-Entry Posting: Dr Manufacturing Expense : Cr Raw Material Asset
+  saveUniversalVoucher(firmId, {
+    voucher_type: 'JOURNAL',
+    voucher_date: consumption_date,
+    dr_account: expense_account.trim(),
+    cr_account: `${item_name.trim()} (Inventory A/c)`,
+    amount: totalCost > 0 ? totalCost : 1.00,
+    reference_no: vchNumber,
+    narration: `Material Consumed: ${cleanQty} ${targetItem.unit} of ${item_name} ${remarks ? `(${remarks})` : ''}`
+  });
+
+  // Save Consumption Record to Audit Log
+  const consumptionKey = `app_material_consumption_${firmId}`;
+  const existingLogs = JSON.parse(localStorage.getItem(consumptionKey) || '[]');
+  const logRecord = {
+    id: `CON-LOG-${Date.now()}`,
+    voucher_ref: vchNumber,
+    date: consumption_date,
+    item_name: item_name.trim(),
+    quantity: cleanQty,
+    unit: targetItem.unit,
+    unit_cost: unitCost,
+    total_cost: totalCost,
+    expense_account: expense_account.trim(),
+    remarks: remarks.trim()
+  };
+
+  existingLogs.push(logRecord);
+  localStorage.setItem(consumptionKey, JSON.stringify(existingLogs));
+
+  window.dispatchEvent(new Event('stock_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+
+  return logRecord;
+};
+
+/**
+ * 2. MULTI-ITEM SALES INVOICING ENGINE
  */
 export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
   const {
@@ -42,47 +132,44 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
   } = payload;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
-    throw new Error('Kam se kam ek item invoice me jodna anivarya hai.');
+    throw new Error('At least one item must be added to the invoice.');
   }
 
   if (!customer_name || !customer_name.trim()) {
-    throw new Error('Customer / Grahak chunna anivarya hai.');
+    throw new Error('Customer account selection is mandatory.');
   }
 
   const stockKey = `app_stock_${firmId}`;
   const stockList = getStockItemsByFirm(firmId);
 
-  // STEP 1: Strict Negative Stock Verification Across All Lines
+  // Negative stock verification
   for (let i = 0; i < items.length; i++) {
     const line = items[i];
     const qty = parseFloat(line.quantity || 0);
     const rate = parseFloat(line.rate || 0);
 
-    if (qty <= 0) {
-      throw new Error(`Row #${i + 1} (${line.item_name}): Quantity zero se adhik honi chahiye.`);
-    }
-    if (rate < 0) {
-      throw new Error(`Row #${i + 1} (${line.item_name}): Rate negative nahi ho sakti.`);
-    }
+    if (qty <= 0) throw new Error(`Row #${i + 1} (${line.item_name}): Quantity must be greater than zero.`);
+    if (rate < 0) throw new Error(`Row #${i + 1} (${line.item_name}): Rate cannot be negative.`);
 
     const stockItem = stockList.find(s => s.item_name === line.item_name);
     if (stockItem && !stockItem.is_service) {
       const avail = parseFloat(stockItem.current_stock || 0);
       if (avail < qty) {
         throw new Error(
-          `⛔ Negative Stock Blocked!\nItem: "${stockItem.item_name}"\nMaujood Stock: ${avail} ${stockItem.unit}\nMaangi Gayi Quantity: ${qty} ${stockItem.unit}\n\nOver-dispatch rok diya gaya hai.`
+          `⛔ Negative Stock Blocked!\nItem: "${stockItem.item_name}"\n` +
+          `Available: ${avail} ${stockItem.unit}\n` +
+          `Requested: ${qty} ${stockItem.unit}`
         );
       }
     }
   }
 
-  // STEP 2: Atomic Stock Deduction & Subtotal Accumulation
+  // Stock deduction & tax calculation
   let totalTaxable = 0;
   items.forEach(line => {
     const qty = parseFloat(line.quantity);
     const rate = parseFloat(line.rate);
-    const lineTotal = qty * rate;
-    totalTaxable += lineTotal;
+    totalTaxable += (qty * rate);
 
     const stockIdx = stockList.findIndex(s => s.item_name === line.item_name);
     if (stockIdx !== -1 && !stockList[stockIdx].is_service) {
@@ -91,26 +178,20 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
     }
   });
 
-  // Calculate 5% GST (Intra-state: 2.5% CGST + 2.5% SGST)
   const cgst = parseFloat((totalTaxable * 0.025).toFixed(2));
   const sgst = parseFloat((totalTaxable * 0.025).toFixed(2));
   const grandTotal = parseFloat((totalTaxable + cgst + sgst).toFixed(2));
 
-  // STEP 3: Persist Updated Stock Balance
   localStorage.setItem(stockKey, JSON.stringify(stockList));
 
-  // STEP 4: Double-Entry Compound Journal Entry (Customer Dr : Sales & GST Output Cr)
+  // Post Double-Entry Journal Voucher
   const compoundEntries = [
     { type: 'Dr', account_name: customer_name.trim(), amount: grandTotal },
     { type: 'Cr', account_name: 'Sales Account (बिक्री खाता)', amount: totalTaxable }
   ];
 
-  if (cgst > 0) {
-    compoundEntries.push({ type: 'Cr', account_name: 'Output CGST Account (2.5%)', amount: cgst });
-  }
-  if (sgst > 0) {
-    compoundEntries.push({ type: 'Cr', account_name: 'Output SGST Account (2.5%)', amount: sgst });
-  }
+  if (cgst > 0) compoundEntries.push({ type: 'Cr', account_name: 'Output CGST Account (2.5%)', amount: cgst });
+  if (sgst > 0) compoundEntries.push({ type: 'Cr', account_name: 'Output SGST Account (2.5%)', amount: sgst });
 
   saveUniversalVoucher(firmId, {
     voucher_type: 'JOURNAL',
@@ -121,10 +202,9 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
     entries: compoundEntries
   });
 
-  // STEP 5: Save to Dedicated Sales Invoice Registry
+  // Save to sales registry
   const invRegistryKey = `app_sales_invoices_${firmId}`;
   const existingInvoices = JSON.parse(localStorage.getItem(invRegistryKey) || '[]');
-
   const savedInvoice = {
     id: `INV-${Date.now()}`,
     invoice_no,
@@ -151,7 +231,7 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
 };
 
 /**
- * 2. SINGLE-ITEM SALES ENGINE (Backwards-Compatible with Legacy Views)
+ * 3. SINGLE-ITEM SALES ENGINE (Legacy Compatibility)
  */
 export const recordStockSale = (firmId = 'FIRM-001', payload = {}) => {
   const {
@@ -181,7 +261,7 @@ export const recordStockSale = (firmId = 'FIRM-001', payload = {}) => {
 };
 
 /**
- * 3. PURCHASE INWARD & RAW MATERIAL ENGINE (Increases Stock + Updates Creditors)
+ * 4. PURCHASE INWARD ENGINE
  */
 export const recordStockPurchase = (firmId = 'FIRM-001', payload = {}) => {
   const {
@@ -197,25 +277,22 @@ export const recordStockPurchase = (firmId = 'FIRM-001', payload = {}) => {
   const cleanQty = parseFloat(quantity || 0);
   const cleanRate = parseFloat(purchase_rate || 0);
 
-  if (cleanQty <= 0) throw new Error('Purchase quantity zero se adhik honi chahiye.');
-  if (cleanRate <= 0) throw new Error('Purchase rate zero se adhik honi chahiye.');
-  if (!supplier_name || !supplier_name.trim()) throw new Error('Supplier / Vendor chunna anivarya hai.');
-  if (!item_name || !item_name.trim()) throw new Error('Stock item chunna anivarya hai.');
+  if (cleanQty <= 0) throw new Error('Purchase quantity must be greater than zero.');
+  if (cleanRate <= 0) throw new Error('Purchase rate must be greater than zero.');
+  if (!supplier_name || !supplier_name.trim()) throw new Error('Supplier name is mandatory.');
+  if (!item_name || !item_name.trim()) throw new Error('Stock item is mandatory.');
 
   const stockKey = `app_stock_${firmId}`;
   const stockList = getStockItemsByFirm(firmId);
 
-  // Increase Inventory (+IN)
-  const itemIdx = stockList.findIndex(s => s.item_name === item_name);
+  const itemIdx = stockList.findIndex(s => s.item_name === item_name.trim());
   if (itemIdx !== -1) {
     if (!stockList[itemIdx].is_service) {
       const current = parseFloat(stockList[itemIdx].current_stock || 0);
       stockList[itemIdx].current_stock = parseFloat((current + cleanQty).toFixed(3));
     }
-    // Update weighted average or latest purchase rate
     stockList[itemIdx].unit_purchase_price = cleanRate;
   } else {
-    // Auto-create new stock item if not present
     stockList.push({
       id: `STK-${Date.now()}`,
       item_name: item_name.trim(),
@@ -229,11 +306,8 @@ export const recordStockPurchase = (firmId = 'FIRM-001', payload = {}) => {
   }
 
   const grossTotal = parseFloat((cleanQty * cleanRate).toFixed(2));
-
-  // Persist Stock
   localStorage.setItem(stockKey, JSON.stringify(stockList));
 
-  // Post Double-Entry Journal/Purchase Voucher (Purchase A/c Dr : Supplier Cr)
   saveUniversalVoucher(firmId, {
     voucher_type: 'JOURNAL',
     voucher_date: purchase_date,
@@ -244,10 +318,8 @@ export const recordStockPurchase = (firmId = 'FIRM-001', payload = {}) => {
     narration: `Inward Goods Received #${bill_ref} | ${item_name} (${cleanQty} units @ ₹${cleanRate})`
   });
 
-  // Save to Dedicated Purchase Bills Registry
   const purRegistryKey = `app_purchase_bills_${firmId}`;
   const existingBills = JSON.parse(localStorage.getItem(purRegistryKey) || '[]');
-
   const savedPurchase = {
     id: `PUR-${Date.now()}`,
     bill_ref,
