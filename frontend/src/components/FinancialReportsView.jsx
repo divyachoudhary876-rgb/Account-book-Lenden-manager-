@@ -9,25 +9,40 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
   const firmName = firm?.legal_name || firm?.trade_name || (typeof firm === 'string' ? firm : 'Neelkanth Int Udyog');
   const financialYear = 'FY 2026-27';
 
-  // Double-Entry Ledger Calculation Engine
+  // 1. DEDUPLICATED LEDGER CALCULATION ENGINE
   const { trialBalance, tradingAccount, profitAndLoss } = useMemo(() => {
-    let allTx = Array.isArray(transactions) && transactions.length > 0 ? [...transactions] : [];
+    let rawTx = Array.isArray(transactions) && transactions.length > 0 ? [...transactions] : [];
 
-    if (allTx.length === 0) {
+    // Fallback: Scan storage safely with strict deduplication
+    if (rawTx.length === 0) {
       try {
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('entry')) {
-            const parsed = JSON.parse(localStorage.getItem(key));
-            if (Array.isArray(parsed)) allTx.push(...parsed);
-            else if (parsed && typeof parsed === 'object') {
-              if (Array.isArray(parsed.vouchers)) allTx.push(...parsed.vouchers);
-              if (Array.isArray(parsed.transactions)) allTx.push(...parsed.transactions);
+          // Sirf primary authoritative key target karein ya specific keys
+          if (key.includes('voucher') || key.includes('transaction') || key.includes('daybook')) {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) rawTx.push(...parsed);
+              else if (parsed && typeof parsed === 'object') {
+                if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
+                if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
+              }
             }
           }
         }
       } catch (e) {}
     }
+
+    // 🛑 CRITICAL FIX: Deduplicate transactions by ID or unique composite key to prevent double counting
+    const uniqueTxMap = new Map();
+    rawTx.forEach(tx => {
+      const uniqueId = tx.id || tx.voucher_number || tx.reference_no || `${tx.date}-${tx.amount}-${tx.dr_account}-${tx.cr_account}`;
+      if (!uniqueTxMap.has(uniqueId)) {
+        uniqueTxMap.set(uniqueId, tx);
+      }
+    });
+    const allTx = Array.from(uniqueTxMap.values());
 
     const accTotals = {};
     (accounts || []).forEach(a => {
@@ -59,12 +74,14 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
       const cr = tx.cr_account || tx.cr_party || tx.credit_party;
 
       if (dr) {
-        if (!accTotals[dr]) accTotals[dr] = { name: dr, category: deduceCategory(dr), debit: 0, credit: 0 };
-        accTotals[dr].debit += amount;
+        const cleanDr = dr.trim();
+        if (!accTotals[cleanDr]) accTotals[cleanDr] = { name: cleanDr, category: deduceCategory(cleanDr), debit: 0, credit: 0 };
+        accTotals[cleanDr].debit += amount;
       }
       if (cr) {
-        if (!accTotals[cr]) accTotals[cr] = { name: cr, category: deduceCategory(cr), debit: 0, credit: 0 };
-        accTotals[cr].credit += amount;
+        const cleanCr = cr.trim();
+        if (!accTotals[cleanCr]) accTotals[cleanCr] = { name: cleanCr, category: deduceCategory(cleanCr), debit: 0, credit: 0 };
+        accTotals[cleanCr].credit += amount;
       }
     });
 
@@ -126,7 +143,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
     };
   }, [transactions, accounts, firm]);
 
-  // Robust HTML Print & Download Handler
+  // 2. Export Handler
   const handlePrintReport = async () => {
     setIsExporting(true);
     setExportFeedback(null);
@@ -152,7 +169,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
         <html>
         <head>
           <meta charset="utf-8" />
-          <title>${activeName} -${firmName}</title>
+          <title>${activeName} - ${firmName}</title>
           <style>
             @media print { body { margin: 0; padding: 10mm; font-size: 12px; } }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; color: #0f172a; }
@@ -164,7 +181,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
         </head>
         <body>
           <h2>${firmName}</h2>
-          <div class="sub">${financialYear} | Statement: ${activeName.replace(/_/g, ' ')} \vert{} Date:${new Date().toLocaleDateString('en-IN')}</div>
+          <div class="sub">${financialYear} | Statement: ${activeName.replace(/_/g, ' ')} | Date: ${new Date().toLocaleDateString('en-IN')}</div>
           <table>
             <thead>
               <tr>
@@ -188,7 +205,6 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
       `;
 
       let sharedNatively = false;
-
       try {
         const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
         const { Share } = await import('@capacitor/share');
@@ -382,7 +398,6 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
               </span>
             </div>
 
-            {/* Responsive Table Wrapper with Horizontal Scroll */}
             <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <table style={{ width: '100%', minWidth: '320px', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'auto' }}>
                 <thead>
@@ -489,7 +504,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
                 <span>अन्य आय (Indirect Incomes):</span>
                 <strong style={{ color: '#059669' }}>+ ₹{profitAndLoss.indirectIncomes.toFixed(2)}</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px' }}>
                 <span>कार्यालय व अन्य खर्चे (Indirect Expenses):</span>
                 <strong style={{ color: '#dc2626' }}>- ₹{profitAndLoss.indirectExpenses.toFixed(2)}</strong>
               </div>
