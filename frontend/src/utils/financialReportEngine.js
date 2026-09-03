@@ -1,220 +1,170 @@
 // frontend/src/utils/financialReportEngine.js
 
-import { getAllUniversalVouchers, getAccountHeads } from './statementEngine.js';
-import { getStockItemsByFirm } from './stockInventoryEngine.js';
+import { getFirmMasterAccounts } from './accountMasterEngine.js';
 
 /**
- * Generate Mathematically Accurate Trial Balance, P&L, and Balance Sheet
+ * Normalizes all legacy and modern vouchers for a given firm into flat ledger lines
  */
-export const generateFinancialStatements = (firmId = 'FIRM-001') => {
-  const accounts = getAccountHeads(firmId);
-  const vouchers = getAllUniversalVouchers(firmId);
-  const stockItems = getStockItemsByFirm(firmId);
-
-  // 1. Calculate Live Closing Stock Valuation
-  const closingStockValuation = stockItems.reduce((acc, item) => {
-    const qty = parseFloat(item.current_stock || 0);
-    const rate = parseFloat(item.unit_purchase_price || item.purchase_rate || 0);
-    return acc + (qty > 0 ? qty * rate : 0);
-  }, 0);
-
-  // 2. Initialize Ledger Balance Map
-  const ledgerMap = {};
-  accounts.forEach(acc => {
-    ledgerMap[acc.account_name] = {
-      id: acc.id,
-      name: acc.account_name,
-      primary_type: (acc.primary_type || 'ASSETS').toUpperCase(),
-      sub_group: acc.sub_group || 'General',
-      opening: parseFloat(acc.opening_balance || 0),
-      balance_type: acc.balance_type || 'Dr',
-      totalDr: 0,
-      totalCr: 0,
-      closingDr: 0,
-      closingCr: 0,
-      netBalance: 0
-    };
-  });
-
-  // 3. Process all double-entry voucher postings
-  vouchers.forEach(v => {
-    const amt = parseFloat(v.amount || 0);
-    const dr = (v.dr_account || v.dr_party || '').trim();
-    const cr = (v.cr_account || v.cr_party || '').trim();
-
-    if (!ledgerMap[dr]) {
-      ledgerMap[dr] = {
-        name: dr,
-        primary_type: 'EXPENSES',
-        sub_group: 'Direct Expenses',
-        opening: 0,
-        balance_type: 'Dr',
-        totalDr: 0,
-        totalCr: 0
-      };
-    }
-    if (!ledgerMap[cr]) {
-      ledgerMap[cr] = {
-        name: cr,
-        primary_type: 'INCOME',
-        sub_group: 'Sales & Revenue',
-        opening: 0,
-        balance_type: 'Cr',
-        totalDr: 0,
-        totalCr: 0
-      };
-    }
-
-    ledgerMap[dr].totalDr += amt;
-    ledgerMap[cr].totalCr += amt;
-  });
-
-  // 4. Calculate Net Balances and Compile Trial Balance
-  const trialBalance = [];
-  let tbTotalDr = 0;
-  let tbTotalCr = 0;
-
-  Object.values(ledgerMap).forEach(acc => {
-    const rawOpening = acc.balance_type === 'Dr' ? acc.opening : -acc.opening;
-    const netRaw = rawOpening + (acc.totalDr - acc.totalCr);
-
-    if (netRaw > 0) {
-      acc.closingDr = netRaw;
-      acc.closingCr = 0;
-      acc.netBalance = netRaw;
-    } else if (netRaw < 0) {
-      acc.closingDr = 0;
-      acc.closingCr = Math.abs(netRaw);
-      acc.netBalance = -Math.abs(netRaw);
-    } else {
-      acc.closingDr = 0;
-      acc.closingCr = 0;
-      acc.netBalance = 0;
-    }
-
-    if (acc.closingDr > 0 || acc.closingCr > 0 || acc.opening > 0) {
-      trialBalance.push({
-        name: acc.name,
-        primary_type: acc.primary_type,
-        sub_group: acc.sub_group,
-        debit: acc.closingDr,
-        credit: acc.closingCr
-      });
-      tbTotalDr += acc.closingDr;
-      tbTotalCr += acc.closingCr;
-    }
-  });
-
-  // 5. Compile Profit & Loss (Trading & P&L Statement)
-  const directIncomes = [];
-  const directExpenses = [];
-  const indirectIncomes = [];
-  const indirectExpenses = [];
-
-  let totalSalesAndRevenue = 0;
-  let totalCostOfGoodsSold = 0;
-  let totalIndirectIncome = 0;
-  let totalIndirectExpense = 0;
-
-  Object.values(ledgerMap).forEach(acc => {
-    const val = acc.closingDr > 0 ? acc.closingDr : acc.closingCr;
-    if (val === 0) return;
-
-    if (acc.primary_type === 'INCOME') {
-      if (acc.sub_group.toLowerCase().includes('indirect') || acc.sub_group.toLowerCase().includes('other')) {
-        indirectIncomes.push({ name: acc.name, amount: acc.closingCr });
-        totalIndirectIncome += acc.closingCr;
-      } else {
-        directIncomes.push({ name: acc.name, amount: acc.closingCr });
-        totalSalesAndRevenue += acc.closingCr;
-      }
-    } else if (acc.primary_type === 'EXPENSES') {
-      if (acc.sub_group.toLowerCase().includes('indirect') || acc.sub_group.toLowerCase().includes('office') || acc.sub_group.toLowerCase().includes('general')) {
-        indirectExpenses.push({ name: acc.name, amount: acc.closingDr });
-        totalIndirectExpense += acc.closingDr;
-      } else {
-        directExpenses.push({ name: acc.name, amount: acc.closingDr });
-        totalCostOfGoodsSold += acc.closingDr;
-      }
-    }
-  });
-
-  // Add Closing Stock Valuation to Direct Income
-  const tradingCreditTotal = totalSalesAndRevenue + closingStockValuation;
-  const grossProfit = tradingCreditTotal - totalCostOfGoodsSold;
-  const netProfit = grossProfit + totalIndirectIncome - totalIndirectExpense;
-
-  // 6. Compile Balance Sheet
-  const assets = [];
-  const liabilities = [];
-  const capital = [];
-
-  let totalAssets = 0;
-  let totalLiabilities = 0;
-  let totalCapital = 0;
-
-  Object.values(ledgerMap).forEach(acc => {
-    if (acc.primary_type === 'ASSETS') {
-      const amt = acc.closingDr > 0 ? acc.closingDr : -acc.closingCr;
-      assets.push({ name: acc.name, group: acc.sub_group, amount: amt });
-      totalAssets += amt;
-    } else if (acc.primary_type === 'LIABILITIES') {
-      const amt = acc.closingCr > 0 ? acc.closingCr : -acc.closingDr;
-      liabilities.push({ name: acc.name, group: acc.sub_group, amount: amt });
-      totalLiabilities += amt;
-    } else if (acc.primary_type === 'EQUITY') {
-      const amt = acc.closingCr > 0 ? acc.closingCr : -acc.closingDr;
-      capital.push({ name: acc.name, group: acc.sub_group, amount: amt });
-      totalCapital += amt;
-    }
-  });
-
-  // Include Stock Valuation in Current Assets
-  if (closingStockValuation > 0) {
-    assets.push({ name: 'Closing Stock (इन्वेंटरी स्टॉक)', group: 'Current Assets', amount: closingStockValuation });
-    totalAssets += closingStockValuation;
+export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
+  const vouchersKey = `app_vouchers_${firmId}`;
+  let rawVouchers = [];
+  try {
+    rawVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
+  } catch (e) {
+    console.error('Error reading vouchers:', e);
   }
 
-  // Include Net Profit in Capital/Equity
-  const effectiveEquity = totalCapital + netProfit;
-  const totalLiabilitiesAndEquity = totalLiabilities + effectiveEquity;
-  const balanceSheetDifference = Math.abs(totalAssets - totalLiabilitiesAndEquity);
+  const flatLines = [];
+
+  rawVouchers.forEach((vch) => {
+    const vchDate = vch.voucher_date || vch.date || '';
+    const vchNum = vch.reference_no || vch.voucher_number || 'VCH';
+    const vchType = vch.voucher_type || vch.type || 'JOURNAL';
+    const narration = vch.narration || '';
+
+    if (Array.isArray(vch.entries) && vch.entries.length > 0) {
+      vch.entries.forEach((entry) => {
+        flatLines.push({
+          voucher_id: vch.id,
+          date: vchDate,
+          voucher_number: vchNum,
+          voucher_type: vchType,
+          account_name: (entry.account_name || '').trim(),
+          entry_type: entry.type, // 'Dr' or 'Cr'
+          amount: parseFloat(entry.amount || 0),
+          narration
+        });
+      });
+    } else {
+      const amt = parseFloat(vch.amount || 0);
+      if (vch.dr_account) {
+        flatLines.push({
+          voucher_id: vch.id,
+          date: vchDate,
+          voucher_number: vchNum,
+          voucher_type: vchType,
+          account_name: vch.dr_account.trim(),
+          entry_type: 'Dr',
+          amount: amt,
+          narration
+        });
+      }
+      if (vch.cr_account) {
+        flatLines.push({
+          voucher_id: vch.id,
+          date: vchDate,
+          voucher_number: vchNum,
+          voucher_type: vchType,
+          account_name: vch.cr_account.trim(),
+          entry_type: 'Cr',
+          amount: amt,
+          narration
+        });
+      }
+    }
+  });
+
+  return flatLines;
+};
+
+/**
+ * Calculates Live Dashboard KPI Summary Cards (Cash, Bank, Debtors, Creditors)
+ */
+export const calculateDashboardKPIs = (firmId = 'FIRM-001') => {
+  const accounts = getFirmMasterAccounts(firmId);
+  const flatLines = getNormalizedLedgerLines(firmId);
+
+  // Compute Net Balance for every registered account
+  const accountBalances = {};
+  accounts.forEach((acc) => {
+    const opening = parseFloat(acc.opening_balance || 0);
+    const isDr = acc.balance_type === 'Dr';
+    accountBalances[acc.account_name] = isDr ? opening : -opening;
+  });
+
+  flatLines.forEach((line) => {
+    if (!accountBalances.hasOwnProperty(line.account_name)) {
+      accountBalances[line.account_name] = 0;
+    }
+    if (line.entry_type === 'Dr') {
+      accountBalances[line.account_name] += line.amount;
+    } else {
+      accountBalances[line.account_name] -= line.amount;
+    }
+  });
+
+  let cashInHand = 0;
+  let bankBalance = 0;
+  let sundryDebtors = 0;   // Market Udhari (Lena)
+  let sundryCreditors = 0; // Vyapari Dena (Dena)
+
+  accounts.forEach((acc) => {
+    const net = accountBalances[acc.account_name] || 0;
+    const nameLower = acc.account_name.toLowerCase();
+    const groupLower = (acc.sub_group || '').toLowerCase();
+    const primaryType = acc.primary_type;
+
+    if (nameLower.includes('cash') || groupLower.includes('cash')) {
+      cashInHand += net;
+    } else if (nameLower.includes('bank') || groupLower.includes('bank')) {
+      bankBalance += net;
+    } else if (primaryType === 'ASSETS' || groupLower.includes('debtor') || groupLower.includes('customer')) {
+      if (net > 0) sundryDebtors += net;
+    } else if (primaryType === 'LIABILITIES' || groupLower.includes('creditor') || groupLower.includes('supplier')) {
+      if (net < 0) sundryCreditors += Math.abs(net);
+    }
+  });
 
   return {
-    trialBalance: {
-      entries: trialBalance,
-      totalDebit: tbTotalDr,
-      totalCredit: tbTotalCr,
-      isMatched: Math.abs(tbTotalDr - tbTotalCr) < 0.01
-    },
-    profitAndLoss: {
-      directIncomes,
-      directExpenses,
-      closingStockValuation,
-      totalSalesAndRevenue,
-      totalCostOfGoodsSold,
-      grossProfit,
-      indirectIncomes,
-      indirectExpenses,
-      totalIndirectIncome,
-      totalIndirectExpense,
-      netProfit
-    },
-    balanceSheet: {
-      assets,
-      liabilities,
-      capital,
-      closingStockValuation,
-      totalAssets,
-      totalLiabilities,
-      totalCapital,
-      netProfit,
-      effectiveEquity,
-      totalLiabilitiesAndEquity,
-      isTally: balanceSheetDifference < 0.01,
-      difference: balanceSheetDifference
-    }
+    cashInHand: parseFloat(cashInHand.toFixed(2)),
+    bankBalance: parseFloat(bankBalance.toFixed(2)),
+    sundryDebtors: parseFloat(sundryDebtors.toFixed(2)),
+    sundryCreditors: parseFloat(sundryCreditors.toFixed(2))
   };
 };
 
-export const getFinancialStatements = generateFinancialStatements;
+/**
+ * Extracts Detailed Khata Statement for a Single Account with Running Balance
+ */
+export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
+  if (!targetAccountName) return { openingBalance: 0, transactions: [], closingBalance: 0 };
+
+  const accounts = getFirmMasterAccounts(firmId);
+  const accountMaster = accounts.find(a => a.account_name === targetAccountName);
+  
+  let runningBal = 0;
+  const opening = parseFloat(accountMaster?.opening_balance || 0);
+  runningBal = (accountMaster?.balance_type === 'Dr') ? opening : -opening;
+
+  const flatLines = getNormalizedLedgerLines(firmId);
+  const partyLines = flatLines.filter(l => l.account_name === targetAccountName);
+
+  // Sort chronologically
+  partyLines.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const transactions = partyLines.map((line) => {
+    const dr = line.entry_type === 'Dr' ? line.amount : 0;
+    const cr = line.entry_type === 'Cr' ? line.amount : 0;
+    runningBal = runningBal + dr - cr;
+
+    return {
+      date: line.date,
+      voucher_number: line.voucher_number,
+      voucher_type: line.voucher_type,
+      narration: line.narration,
+      debit: dr,
+      credit: cr,
+      runningBalance: Math.abs(runningBal),
+      balanceType: runningBal >= 0 ? 'Dr' : 'Cr'
+    };
+  });
+
+  return {
+    accountName: targetAccountName,
+    openingBalance: Math.abs(opening),
+    openingType: accountMaster?.balance_type || 'Dr',
+    transactions,
+    closingBalance: Math.abs(runningBal),
+    closingType: runningBal >= 0 ? 'Dr' : 'Cr'
+  };
+};
