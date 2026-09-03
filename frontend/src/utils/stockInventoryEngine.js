@@ -3,7 +3,19 @@
 import { saveUniversalVoucher } from './voucherPostingEngine.js';
 
 /**
- * Retrieves firm stock inventory items with standard default catalog
+ * Standard Units of Measurement for Brick Kiln, Biomass, and Transport
+ */
+export const STANDARD_MEASUREMENT_UNITS = [
+  { code: 'Pcs', label: 'Pieces (नग / ईंटें)', allowDecimal: false },
+  { code: 'MT', label: 'Metric Ton (टन - बायोमास / कोयला)', allowDecimal: true },
+  { code: 'Ltr', label: 'Liters (लीटर - डीजल)', allowDecimal: true },
+  { code: 'Trip', label: 'Trip (फेरा - ट्रैक्टर / ढुलाई)', allowDecimal: false },
+  { code: 'Kg', label: 'Kilograms (किलोग्राम)', allowDecimal: true },
+  { code: 'Brass', label: 'Brass (ब्रास - मिट्टी / रेत)', allowDecimal: true }
+];
+
+/**
+ * Retrieves firm stock inventory items with initial fallback catalog
  */
 export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
   const stockKey = `app_stock_${firmId}`;
@@ -29,8 +41,93 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
 };
 
 /**
- * 1. RAW MATERIAL & FUEL CONSUMPTION ENGINE
- * Deducts fuel/material stock and posts double-entry expense journal
+ * 1. MASTER STOCK ITEM CRUD: CREATE / UPDATE ITEM
+ */
+export const saveStockItemMaster = (firmId = 'FIRM-001', itemPayload = {}) => {
+  const stockKey = `app_stock_${firmId}`;
+  const stockList = getStockItemsByFirm(firmId);
+
+  const cleanName = (itemPayload.item_name || '').trim();
+  if (!cleanName) {
+    throw new Error('Item name cannot be empty.');
+  }
+
+  const cleanStock = parseFloat(itemPayload.current_stock || 0);
+  const cleanSellingPrice = parseFloat(itemPayload.selling_price || 0);
+  const cleanPurchasePrice = parseFloat(itemPayload.unit_purchase_price || 0);
+  const isService = Boolean(itemPayload.is_service);
+
+  if (cleanStock < 0) {
+    throw new Error('Opening stock balance cannot be negative.');
+  }
+
+  const existingIdx = stockList.findIndex(
+    s => s.id === itemPayload.id || s.item_name.toLowerCase() === cleanName.toLowerCase()
+  );
+
+  const updatedItem = {
+    id: itemPayload.id || `STK-${Date.now()}`,
+    item_name: cleanName,
+    current_stock: cleanStock,
+    unit: itemPayload.unit || 'Pcs',
+    selling_price: cleanSellingPrice,
+    unit_purchase_price: cleanPurchasePrice,
+    hsn: (itemPayload.hsn || '69010010').trim(),
+    is_service: isService,
+    updated_at: new Date().toISOString()
+  };
+
+  if (existingIdx !== -1) {
+    stockList[existingIdx] = updatedItem;
+  } else {
+    stockList.push(updatedItem);
+  }
+
+  localStorage.setItem(stockKey, JSON.stringify(stockList));
+  window.dispatchEvent(new Event('stock_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+
+  return updatedItem;
+};
+
+/**
+ * 2. MASTER STOCK ITEM CRUD: DELETE ITEM
+ */
+export const deleteStockItemMaster = (firmId = 'FIRM-001', itemId = '') => {
+  const stockKey = `app_stock_${firmId}`;
+  const stockList = getStockItemsByFirm(firmId);
+  const targetItem = stockList.find(s => s.id === itemId);
+
+  if (!targetItem) {
+    throw new Error('Stock item not found.');
+  }
+
+  // Safety Check: Verify if item is referenced in sales invoices
+  const salesHistory = JSON.parse(localStorage.getItem(`app_sales_invoices_${firmId}`) || '[]');
+  const isUsedInSales = salesHistory.some(inv => {
+    if (Array.isArray(inv.items)) {
+      return inv.items.some(it => it.item_name === targetItem.item_name);
+    }
+    return inv.item_name === targetItem.item_name;
+  });
+
+  if (isUsedInSales) {
+    throw new Error(
+      `Cannot delete "${targetItem.item_name}". It is referenced in existing sales invoices.`
+    );
+  }
+
+  const filtered = stockList.filter(s => s.id !== itemId);
+  localStorage.setItem(stockKey, JSON.stringify(filtered));
+
+  window.dispatchEvent(new Event('stock_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+
+  return true;
+};
+
+/**
+ * 3. RAW MATERIAL & FUEL CONSUMPTION ENGINE
  */
 export const recordStockConsumption = (firmId = 'FIRM-001', payload = {}) => {
   const {
@@ -61,7 +158,7 @@ export const recordStockConsumption = (firmId = 'FIRM-001', payload = {}) => {
 
   const targetItem = stockList[itemIndex];
 
-  // Hard Negative Stock Verification (excluding service heads)
+  // Negative Stock Guard
   if (!targetItem.is_service) {
     const currentQty = parseFloat(targetItem.current_stock || 0);
     if (currentQty < cleanQty) {
@@ -70,19 +167,15 @@ export const recordStockConsumption = (firmId = 'FIRM-001', payload = {}) => {
         `Current available stock is only ${currentQty} ${targetItem.unit}.`
       );
     }
-    // Deduct stock balance atomically
     stockList[itemIndex].current_stock = parseFloat((currentQty - cleanQty).toFixed(3));
   }
 
-  // Value consumed at current weighted unit purchase price
   const unitCost = parseFloat(targetItem.unit_purchase_price || targetItem.selling_price || 0);
   const totalCost = parseFloat((cleanQty * unitCost).toFixed(2));
   const vchNumber = batch_ref.trim() || `CON-${Date.now().toString().slice(-6)}`;
 
-  // Update persistent stock store
   localStorage.setItem(stockKey, JSON.stringify(stockList));
 
-  // Double-Entry Posting: Dr Manufacturing Expense : Cr Raw Material Asset
   saveUniversalVoucher(firmId, {
     voucher_type: 'JOURNAL',
     voucher_date: consumption_date,
@@ -93,7 +186,6 @@ export const recordStockConsumption = (firmId = 'FIRM-001', payload = {}) => {
     narration: `Material Consumed: ${cleanQty} ${targetItem.unit} of ${item_name} ${remarks ? `(${remarks})` : ''}`
   });
 
-  // Save Consumption Record to Audit Log
   const consumptionKey = `app_material_consumption_${firmId}`;
   const existingLogs = JSON.parse(localStorage.getItem(consumptionKey) || '[]');
   const logRecord = {
@@ -119,7 +211,7 @@ export const recordStockConsumption = (firmId = 'FIRM-001', payload = {}) => {
 };
 
 /**
- * 2. MULTI-ITEM SALES INVOICING ENGINE
+ * 4. MULTI-ITEM SALES INVOICING ENGINE
  */
 export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
   const {
@@ -142,7 +234,7 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
   const stockKey = `app_stock_${firmId}`;
   const stockList = getStockItemsByFirm(firmId);
 
-  // Negative stock verification
+  // Strict Negative Stock Verification Across All Lines
   for (let i = 0; i < items.length; i++) {
     const line = items[i];
     const qty = parseFloat(line.quantity || 0);
@@ -164,7 +256,6 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
     }
   }
 
-  // Stock deduction & tax calculation
   let totalTaxable = 0;
   items.forEach(line => {
     const qty = parseFloat(line.quantity);
@@ -184,7 +275,6 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
 
   localStorage.setItem(stockKey, JSON.stringify(stockList));
 
-  // Post Double-Entry Journal Voucher
   const compoundEntries = [
     { type: 'Dr', account_name: customer_name.trim(), amount: grandTotal },
     { type: 'Cr', account_name: 'Sales Account (बिक्री खाता)', amount: totalTaxable }
@@ -202,7 +292,6 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
     entries: compoundEntries
   });
 
-  // Save to sales registry
   const invRegistryKey = `app_sales_invoices_${firmId}`;
   const existingInvoices = JSON.parse(localStorage.getItem(invRegistryKey) || '[]');
   const savedInvoice = {
@@ -231,7 +320,7 @@ export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
 };
 
 /**
- * 3. SINGLE-ITEM SALES ENGINE (Legacy Compatibility)
+ * 5. SINGLE-ITEM SALES ENGINE (Legacy Compatibility)
  */
 export const recordStockSale = (firmId = 'FIRM-001', payload = {}) => {
   const {
@@ -261,7 +350,7 @@ export const recordStockSale = (firmId = 'FIRM-001', payload = {}) => {
 };
 
 /**
- * 4. PURCHASE INWARD ENGINE
+ * 6. PURCHASE INWARD ENGINE
  */
 export const recordStockPurchase = (firmId = 'FIRM-001', payload = {}) => {
   const {
