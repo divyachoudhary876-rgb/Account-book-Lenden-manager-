@@ -1,16 +1,238 @@
 // frontend/src/utils/pdfDownloadEngine.js
 
 /**
- * Generates and downloads a clean, printable HTML-based PDF document
- * Optimized for mobile WebViews and Android Capacitor containers
+ * Helper to convert numbers to Indian Rupee Words
+ */
+const numberToWordsINR = (num) => {
+  const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  const inWords = (n) => {
+    let str = '';
+    if (n > 99) {
+      str += a[Math.floor(n / 100)] + 'Hundred ';
+      n %= 100;
+    }
+    if (n > 19) {
+      str += b[Math.floor(n / 10)] + ' ' + a[n % 10];
+    } else {
+      str += a[n];
+    }
+    return str.trim();
+  };
+
+  const amount = Math.floor(Math.abs(num));
+  if (amount === 0) return 'Zero Rupees Only';
+
+  const crore = Math.floor(amount / 10000000);
+  const lakh = Math.floor((amount % 10000000) / 100000);
+  const thousand = Math.floor((amount % 100000) / 1000);
+  const remainder = Math.floor(amount % 1000);
+
+  let res = '';
+  if (crore > 0) res += inWords(crore) + ' Crore ';
+  if (lakh > 0) res += inWords(lakh) + ' Lakh ';
+  if (thousand > 0) res += inWords(thousand) + ' Thousand ';
+  if (remainder > 0) res += inWords(remainder);
+
+  return `${res.trim()} Rupees Only`;
+};
+
+/**
+ * 1. PROFESSIONAL TAX INVOICE PDF/PRINT GENERATOR
+ * Imported and required by CreateInvoice.jsx
+ */
+export const generateProfessionalInvoicePDF = (firm = {}, invoice = {}) => {
+  const firmName = firm?.legal_name || firm?.trade_name || 'Neelkanth Groups';
+  const firmAddress = firm?.registered_address || firm?.address || 'Industrial Area, Rajasthan';
+  const firmGstin = firm?.gstin || 'N/A';
+  const firmPhone = firm?.contact_phone || firm?.phone || '';
+  const firmBank = firm?.bank_name || '';
+  const firmAccNo = firm?.account_number || '';
+  const firmIfsc = firm?.ifsc_code || '';
+
+  const invNumber = invoice?.invoice_number || `INV-${Date.now()}`;
+  const invDate = invoice?.invoice_date || new Date().toISOString().split('T')[0];
+  const customerName = invoice?.customer_name || 'Cash Customer';
+  const customerPhone = invoice?.customer_phone || '';
+  const customerAddress = invoice?.customer_address || '';
+  const customerGstin = invoice?.customer_gstin || 'Unregistered';
+
+  const items = Array.isArray(invoice?.items) && invoice.items.length > 0 
+    ? invoice.items 
+    : [
+        {
+          item_name: invoice?.item_name || 'Material Goods',
+          quantity: parseFloat(invoice?.quantity || 1),
+          unit: invoice?.unit || 'Units',
+          rate: parseFloat(invoice?.rate || invoice?.amount || 0),
+          tax_rate: parseFloat(invoice?.tax_rate || 0),
+          tax_amount: parseFloat(invoice?.tax_amount || 0),
+          line_total: parseFloat(invoice?.total_amount || invoice?.amount || 0)
+        }
+      ];
+
+  const subtotal = parseFloat(invoice?.subtotal || items.reduce((sum, item) => sum + (parseFloat(item.quantity || 0) * parseFloat(item.rate || 0)), 0));
+  const taxTotal = parseFloat(invoice?.tax_total || items.reduce((sum, item) => sum + parseFloat(item.tax_amount || 0), 0));
+  const grandTotal = parseFloat(invoice?.grand_total || invoice?.total_amount || (subtotal + taxTotal));
+
+  const itemsRowsHtml = items.map((item, idx) => {
+    const qty = parseFloat(item.quantity || 0);
+    const rate = parseFloat(item.rate || 0);
+    const lineTotal = parseFloat(item.line_total || (qty * rate));
+    return `
+      <tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+        <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${idx + 1}</td>
+        <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 600;">
+          ${item.item_name}
+          ${item.hsn_sac ? `<div style="font-size: 10px; color: #64748b;">HSN/SAC: ${item.hsn_sac}</div>` : ''}
+        </td>
+        <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${qty} ${item.unit || ''}</td>
+        <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: right;">₹${rate.toFixed(2)}</td>
+        <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: right; font-weight: bold;">₹${lineTotal.toFixed(2)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const printableHtml = `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Invoice_${invNumber}_${firmName.replace(/\s+/g, '_')}</title>
+        <style>
+          @media print {
+            body { margin: 0; padding: 10mm; font-size: 12px; }
+            .no-print { display: none !important; }
+          }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0f172a; margin: 15px; }
+          .header-box { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 15px; }
+          .btn-print { background-color: #0284c7; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th { background-color: #0f172a; color: #ffffff; padding: 8px; border: 1px solid #0f172a; font-size: 11px; }
+          td { padding: 8px; border: 1px solid #cbd5e1; font-size: 11px; }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom: 15px; text-align: right;">
+          <button class="btn-print" onclick="window.print()">🖨️ Print / Save Invoice as PDF</button>
+        </div>
+
+        <div class="header-box">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase;">${firmName}</h2>
+              <div style="font-size: 11px; color: #475569; margin-top: 3px;">${firmAddress}</div>
+              ${firmPhone ? `<div style="font-size: 11px; color: #475569;">Phone: ${firmPhone}</div>` : ''}
+              <div style="font-size: 11px; font-weight: bold; color: #0284c7; margin-top: 2px;">GSTIN: ${firmGstin}</div>
+            </div>
+            <div style="text-align: right;">
+              <h3 style="margin: 0; font-size: 18px; color: #0284c7;">TAX INVOICE</h3>
+              <div style="font-size: 11px; margin-top: 4px;"><strong>Invoice No:</strong> ${invNumber}</div>
+              <div style="font-size: 11px;"><strong>Date:</strong> ${invDate}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; margin-bottom: 15px; background: #f8fafc; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px;">
+          <div>
+            <div style="font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase;">Billed To (Customer Details):</div>
+            <div style="font-size: 13px; font-weight: bold; color: #0f172a; margin-top: 2px;">${customerName}</div>
+            ${customerAddress ? `<div style="font-size: 11px; color: #475569;">${customerAddress}</div>` : ''}
+            ${customerPhone ? `<div style="font-size: 11px; color: #475569;">Phone: ${customerPhone}</div>` : ''}
+            <div style="font-size: 11px; color: #475569;">GSTIN: ${customerGstin}</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase;">Payment Terms:</div>
+            <div style="font-size: 12px; font-weight: bold; color: #059669; margin-top: 2px;">${invoice?.payment_mode || 'Credit Transaction'}</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 5%;">#</th>
+              <th style="width: 50%; text-align: left;">Item Description</th>
+              <th style="width: 15%; text-align: center;">Qty</th>
+              <th style="width: 15%; text-align: right;">Rate (₹)</th>
+              <th style="width: 15%; text-align: right;">Total (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRowsHtml}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4" style="text-align: right; font-weight: bold; border: 1px solid #cbd5e1;">Subtotal:</td>
+              <td style="text-align: right; font-weight: bold; border: 1px solid #cbd5e1;">₹${subtotal.toFixed(2)}</td>
+            </tr>
+            ${taxTotal > 0 ? `
+              <tr>
+                <td colspan="4" style="text-align: right; font-weight: bold; border: 1px solid #cbd5e1;">GST / Tax:</td>
+                <td style="text-align: right; font-weight: bold; border: 1px solid #cbd5e1;">₹${taxTotal.toFixed(2)}</td>
+              </tr>
+            ` : ''}
+            <tr style="background: #f1f5f9; font-size: 13px;">
+              <td colspan="4" style="text-align: right; font-weight: 800; border: 1px solid #0f172a;">Grand Total:</td>
+              <td style="text-align: right; font-weight: 800; color: #059669; border: 1px solid #0f172a;">₹${grandTotal.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div style="margin-top: 10px; font-size: 11px;">
+          <strong>Amount in Words:</strong> ${numberToWordsINR(grandTotal)}
+        </div>
+
+        ${firmBank && firmAccNo ? `
+          <div style="margin-top: 15px; padding: 10px; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 11px;">
+            <strong>Bank Details for NEFT/RTGS:</strong><br />
+            Bank: ${firmBank} | A/c No: ${firmAccNo} | IFSC: ${firmIfsc}
+          </div>
+        ` : ''}
+
+        <div style="display: flex; justify-content: space-between; margin-top: 40px; padding-top: 10px;">
+          <div style="font-size: 10px; color: #94a3b8;">
+            Terms & Conditions:<br />
+            1. Goods once sold will not be taken back.<br />
+            2. Subject to local jurisdiction.
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 11px; font-weight: bold;">For ${firmName}</div>
+            <div style="margin-top: 35px; border-top: 1px solid #0f172a; font-size: 10px; padding-top: 2px;">Authorized Signatory</div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.write(printableHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 400);
+  } else {
+    const blob = new Blob([printableHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Invoice_${invNumber}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+};
+
+/**
+ * 2. FINANCIAL STATEMENTS REPORT GENERATOR (Trial Balance, Trading, P&L)
+ * Required by FinancialReportsView.jsx
  */
 export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups', reportData = {}, activeTab = 'TB') => {
-  const currentDate = new Date().toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric'
-  });
-
+  const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const { trialBalance, tradingAccount, profitAndLoss } = reportData;
 
   let reportTitle = 'वित्तीय विवरण (Financial Statements)';
@@ -41,9 +263,7 @@ export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups',
             <th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: right;">जमा (Credit ₹)</th>
           </tr>
         </thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
+        <tbody>${rowsHtml}</tbody>
         <tfoot>
           <tr style="background-color: #f1f5f9; font-weight: bold;">
             <td colspan="2" style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right;">कुल योग (Total):</td>
@@ -70,31 +290,19 @@ export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups',
         <tbody>
           <tr>
             <td style="padding: 12px; border: 1px solid #cbd5e1; vertical-align: top;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span>कुल खरीद (Purchases):</span>
-                <strong>₹${(tradingAccount?.purchases || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-              </div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span>प्रत्यक्ष खर्चे (Direct Expenses):</span>
-                <strong>₹${(tradingAccount?.directExpenses || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-              </div>
+              <div>कुल खरीद (Purchases): <strong>₹${(tradingAccount?.purchases || 0).toFixed(2)}</strong></div>
+              <div style="margin-top: 6px;">प्रत्यक्ष खर्चे (Direct Expenses): <strong>₹${(tradingAccount?.directExpenses || 0).toFixed(2)}</strong></div>
             </td>
             <td style="padding: 12px; border: 1px solid #cbd5e1; vertical-align: top;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span>कुल बिक्री (Sales Revenue):</span>
-                <strong>₹${(tradingAccount?.sales || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-              </div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span>अंतिम स्टॉक (Closing Stock):</span>
-                <strong>₹${(tradingAccount?.closingStock || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-              </div>
+              <div>कुल बिक्री (Sales Revenue): <strong>₹${(tradingAccount?.sales || 0).toFixed(2)}</strong></div>
+              <div style="margin-top: 6px;">अंतिम स्टॉक (Closing Stock): <strong>₹${(tradingAccount?.closingStock || 0).toFixed(2)}</strong></div>
             </td>
           </tr>
         </tbody>
         <tfoot>
           <tr style="background-color: #ecfdf5; font-size: 14px; font-weight: bold;">
             <td colspan="2" style="padding: 12px; border: 1px solid #a7f3d0; color: #065f46; text-align: right;">
-              सकल लाभ / Gross Profit: ₹${(tradingAccount?.grossProfit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              सकल लाभ / Gross Profit: ₹${(tradingAccount?.grossProfit || 0).toFixed(2)}
             </td>
           </tr>
         </tfoot>
@@ -107,26 +315,20 @@ export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups',
         <tbody>
           <tr style="border-bottom: 1px solid #cbd5e1;">
             <td style="padding: 10px;">सकल लाभ (Gross Profit b/d):</td>
-            <td style="padding: 10px; text-align: right; font-weight: bold;">
-              ₹${(profitAndLoss?.grossProfit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </td>
+            <td style="padding: 10px; text-align: right; font-weight: bold;">₹${(profitAndLoss?.grossProfit || 0).toFixed(2)}</td>
           </tr>
           <tr style="border-bottom: 1px solid #cbd5e1;">
             <td style="padding: 10px;">अन्य आय (Indirect Incomes):</td>
-            <td style="padding: 10px; text-align: right; font-weight: bold; color: #059669;">
-              + ₹${(profitAndLoss?.indirectIncomes || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </td>
+            <td style="padding: 10px; text-align: right; font-weight: bold; color: #059669;">+ ₹${(profitAndLoss?.indirectIncomes || 0).toFixed(2)}</td>
           </tr>
           <tr style="border-bottom: 1px solid #cbd5e1;">
             <td style="padding: 10px; color: #dc2626;">कार्यालय व अन्य खर्चे (Indirect Expenses):</td>
-            <td style="padding: 10px; text-align: right; font-weight: bold; color: #dc2626;">
-              - ₹${(profitAndLoss?.indirectExpenses || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </td>
+            <td style="padding: 10px; text-align: right; font-weight: bold; color: #dc2626;">- ₹${(profitAndLoss?.indirectExpenses || 0).toFixed(2)}</td>
           </tr>
           <tr style="background-color: #f8fafc; font-size: 14px; font-weight: bold; border-top: 2px solid #0f172a;">
             <td style="padding: 12px;">शुद्ध लाभ / Net Profit:</td>
             <td style="padding: 12px; text-align: right; color: ${(profitAndLoss?.netProfit || 0) >= 0 ? '#059669' : '#dc2626'}; font-size: 16px;">
-              ₹${(profitAndLoss?.netProfit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹${(profitAndLoss?.netProfit || 0).toFixed(2)}
             </td>
           </tr>
         </tbody>
@@ -169,17 +371,11 @@ export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups',
             </div>
           </div>
         </div>
-
         ${tableContentHtml}
-
-        <div style="margin-top: 30px; border-top: 1px dashed #cbd5e1; padding-top: 8px; font-size: 10px; color: #94a3b8; text-align: center;">
-          यह वित्तीय विवरण कंप्यूटर द्वारा तैयार किया गया है | Computer Generated Statement
-        </div>
       </body>
     </html>
   `;
 
-  // Standard WebView & Browser PDF/Print Launcher
   const printWindow = window.open('', '_blank');
   if (printWindow) {
     printWindow.document.write(printDocumentHtml);
@@ -188,20 +384,12 @@ export const downloadFinancialStatementsReport = (firmName = 'Neelkanth Groups',
     setTimeout(() => {
       printWindow.print();
     }, 400);
-  } else {
-    // Fallback if popups are restricted in WebView: Render download link
-    const blob = new Blob([printDocumentHtml], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.href = url;
-    downloadAnchor.download = `${firmName}_${activeTab}_Report_${new Date().toISOString().split('T')[0]}.html`;
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    document.body.removeChild(downloadAnchor);
-    URL.revokeObjectURL(url);
   }
 };
 
+/**
+ * 3. BACKWARD-COMPATIBILITY ALIAS
+ */
 export const downloadProfitAndLossPDF = (firmName, reportData) => {
   return downloadFinancialStatementsReport(firmName, reportData, 'PL');
 };
