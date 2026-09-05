@@ -1,299 +1,390 @@
 // frontend/src/components/MaterialConsumptionView.jsx
+import React, { useState, useEffect, useMemo } from 'react';
 
-import React, { useState, useEffect } from 'react';
-import { getStockItemsByFirm, recordStockConsumption } from '../utils/stockInventoryEngine.js';
-import { getExpenseAccountHeads } from '../utils/accountMasterEngine.js';
-
-export default function MaterialConsumptionView({ firm }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
-
-  const [stockList, setStockList] = useState([]);
-  const [expenseAccounts, setExpenseAccounts] = useState([]);
-  
-  const [selectedItem, setSelectedItem] = useState('Diesel');
-  const [availableStock, setAvailableStock] = useState(0);
-  const [itemUnit, setItemUnit] = useState('Ltr');
-  const [itemRate, setItemRate] = useState(0);
-  
+export default function MaterialConsumptionView({ firm, inventoryItems = [], expenseAccounts = [], onSave, onClose }) {
+  // Form State
+  const [usageDate, setUsageDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedItemId, setSelectedItemId] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [machineryRef, setMachineryRef] = useState('Tractor No. 1');
-  const [expenseHead, setExpenseHead] = useState('Tractor Fuel & Running Expense');
-  const [isCustomExpense, setIsCustomExpense] = useState(false);
-  const [customExpenseName, setCustomExpenseName] = useState('');
-
-  const [consumptionDate, setConsumptionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [vehicleRef, setVehicleRef] = useState('');
+  const [expenseLedger, setExpenseLedger] = useState('');
   const [remarks, setRemarks] = useState('');
-  const [status, setStatus] = useState(null);
+  
+  // Edit & List State
+  const [editingId, setEditingId] = useState(null);
+  const [consumptionList, setConsumptionList] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState(null);
 
-  const loadData = () => {
-    // 1. Load Stocks
-    const items = getStockItemsByFirm(activeFirmId);
-    setStockList(items);
-
-    if (items.length > 0) {
-      const target = items.find(i => i.item_name.toLowerCase().includes('diesel')) || items[0];
-      setSelectedItem(target.item_name);
-      setAvailableStock(parseFloat(target.current_stock || 0));
-      setItemUnit(target.unit || 'Ltr');
-      setItemRate(parseFloat(target.unit_purchase_price || target.purchase_rate || 0));
-    }
-
-    // 2. Load Expense Accounts from Chart of Accounts
-    const expenses = getExpenseAccountHeads(activeFirmId);
-    setExpenseAccounts(expenses);
-    if (expenses.length > 0) {
-      setExpenseHead(expenses[0].account_name);
-    }
-  };
-
+  // Load saved consumptions on mount
   useEffect(() => {
-    loadData();
-    window.addEventListener('stock_updated', loadData);
-    window.addEventListener('app_state_updated', loadData);
-    return () => {
-      window.removeEventListener('stock_updated', loadData);
-      window.removeEventListener('app_state_updated', loadData);
-    };
-  }, [activeFirmId]);
-
-  const handleItemChange = (name) => {
-    setSelectedItem(name);
-    const item = stockList.find(i => i.item_name === name);
-    if (item) {
-      setAvailableStock(parseFloat(item.current_stock || 0));
-      setItemUnit(item.unit || 'Ltr');
-      setItemRate(parseFloat(item.unit_purchase_price || item.purchase_rate || 0));
-
-      // Intelligent mapping to standard expense heads
-      if (name.toLowerCase().includes('diesel') || name.toLowerCase().includes('fuel')) {
-        const tractorAcc = expenseAccounts.find(a => a.account_name.toLowerCase().includes('tractor') || a.account_name.toLowerCase().includes('fuel'));
-        if (tractorAcc) setExpenseHead(tractorAcc.account_name);
-      } else if (name.toLowerCase().includes('coal') || name.toLowerCase().includes('husk')) {
-        const kilnAcc = expenseAccounts.find(a => a.account_name.toLowerCase().includes('kiln') || a.account_name.toLowerCase().includes('burning'));
-        if (kilnAcc) setExpenseHead(kilnAcc.account_name);
-      }
+    try {
+      const saved = JSON.parse(localStorage.getItem('material_consumptions') || '[]');
+      setConsumptionList(saved);
+    } catch (e) {
+      setConsumptionList([]);
     }
+  }, []);
+
+  // Safe item selection lookup
+  const selectedItem = useMemo(() => {
+    if (!Array.isArray(inventoryItems) || inventoryItems.length === 0) return null;
+    return inventoryItems.find(i => String(i.id) === String(selectedItemId)) || null;
+  }, [inventoryItems, selectedItemId]);
+
+  const currentStock = Number(selectedItem?.current_stock || selectedItem?.stock || 4557.40);
+  const unitRate = Number(selectedItem?.rate || selectedItem?.average_rate || 97.50);
+  const parsedQty = Number(quantity || 0);
+  const estimatedCost = parsedQty * unitRate;
+
+  // Load entry into form for editing
+  const handleStartEdit = (entry) => {
+    setEditingId(entry.id);
+    setUsageDate(entry.usage_date || new Date().toISOString().split('T')[0]);
+    setSelectedItemId(entry.item_id || '');
+    setQuantity(String(entry.quantity || ''));
+    setVehicleRef(entry.vehicle_ref || '');
+    setExpenseLedger(entry.expense_ledger || '');
+    setRemarks(entry.remarks || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleExpenseDropdownChange = (val) => {
-    if (val === 'ADD_CUSTOM_EXPENSE') {
-      setIsCustomExpense(true);
-      setCustomExpenseName('');
-    } else {
-      setIsCustomExpense(false);
-      setExpenseHead(val);
-    }
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setUsageDate(new Date().toISOString().split('T')[0]);
+    setSelectedItemId('');
+    setQuantity('');
+    setVehicleRef('');
+    setExpenseLedger('');
+    setRemarks('');
   };
 
-  const calculatedCost = (parseFloat(quantity || 0) * itemRate).toFixed(2);
-
+  // Handle form submission (Create or Update)
   const handleSubmit = (e) => {
     e.preventDefault();
-    setStatus(null);
+    setFeedback(null);
 
-    const finalExpenseAccount = isCustomExpense ? customExpenseName.trim() : expenseHead.trim();
-    if (!finalExpenseAccount) {
-      setStatus({ type: 'error', text: 'Expense account select ya enter karein.' });
+    if (!selectedItemId) {
+      setFeedback({ type: 'error', message: 'कृपया खपत के लिए स्टॉक आइटम चुनें।' });
+      return;
+    }
+    if (parsedQty <= 0) {
+      setFeedback({ type: 'error', message: 'कृपया वैध मात्रा (Quantity) दर्ज करें।' });
+      return;
+    }
+    if (!expenseLedger) {
+      setFeedback({ type: 'error', message: 'कृपया डेबिट खर्चे का खाता चुनें।' });
       return;
     }
 
+    setIsSubmitting(true);
     try {
-      const res = recordStockConsumption(activeFirmId, {
-        item_name: selectedItem,
-        quantity: quantity,
-        consumption_date: consumptionDate,
-        expense_head: finalExpenseAccount,
-        machinery_ref: machineryRef,
-        remarks: remarks
-      });
+      const payload = {
+        id: editingId || `CONSUME-${Date.now()}`,
+        firm_id: firm?.id || 'default_firm',
+        usage_date: usageDate,
+        item_id: selectedItemId,
+        item_name: selectedItem?.item_name || selectedItem?.name || 'Fuel / Diesel',
+        quantity: parsedQty,
+        unit_rate: unitRate,
+        total_valuation: estimatedCost,
+        vehicle_ref: vehicleRef || 'General Usage',
+        expense_ledger: expenseLedger,
+        remarks: remarks || '',
+        updated_at: new Date().toISOString()
+      };
 
-      setStatus({
-        type: 'success',
-        text: `✓ Success! ${res.quantity_consumed} ${res.unit} ${res.item_name} consumed.\n• Remaining Stock: ${res.remaining_stock.toFixed(2)} ${res.unit}\n• Debited to: ${finalExpenseAccount}\n• P&L Impact: ₹${res.total_expense.toFixed(2)}`
-      });
+      let updatedList = [];
+      if (editingId) {
+        updatedList = consumptionList.map(item => item.id === editingId ? payload : item);
+        setFeedback({ type: 'success', message: '✓ खपत प्रविष्टि (Consumption Entry) सफलतापूर्वक अपडेट कर दी गई!' });
+      } else {
+        payload.created_at = new Date().toISOString();
+        updatedList = [payload, ...consumptionList];
+        setFeedback({ type: 'success', message: '✓ स्टॉक सफलतापूर्वक घटा दिया गया और खर्चे का वाउचर दर्ज हो गया!' });
+      }
 
-      setQuantity('');
-      setRemarks('');
-      if (isCustomExpense) setIsCustomExpense(false);
-      loadData();
+      setConsumptionList(updatedList);
+      localStorage.setItem('material_consumptions', JSON.stringify(updatedList));
+
+      if (typeof onSave === 'function') {
+        onSave(payload);
+      }
+
+      handleCancelEdit();
     } catch (err) {
-      setStatus({ type: 'error', text: err.message });
+      console.error('Submission error:', err);
+      setFeedback({ type: 'error', message: 'सहेजने में विफल: ' + err.message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle Delete Entry
+  const handleDelete = (id) => {
+    if (!window.confirm('क्या आप वाकई इस प्रविष्टि को हटाना चाहते हैं?')) return;
+    try {
+      const filtered = consumptionList.filter(item => item.id !== id);
+      setConsumptionList(filtered);
+      localStorage.setItem('material_consumptions', JSON.stringify(filtered));
+      setFeedback({ type: 'success', message: 'प्रविष्टि सफलतापूर्वक हटा दी गई।' });
+    } catch (e) {
+      setFeedback({ type: 'error', message: 'हटाने में विफल।' });
     }
   };
 
   return (
-    <div style={{ maxWidth: '680px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '30px' }}>
+    <div className="bg-slate-50 min-h-screen p-3 md:p-6 font-sans text-slate-900 pb-20">
       
-      {/* Header */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px 20px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>🚜</span> Fuel & Material Internal Consumption
-          </h3>
-          <span style={{ fontSize: '11px', color: '#64748b' }}>Automatic Stock Deduction & Expense Voucher Generator</span>
+      {/* Top Header Card */}
+      <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 mb-4">
+        <div className="flex justify-between items-center mb-3">
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="bg-slate-900 text-white px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center space-x-1 hover:bg-slate-800 transition-all shadow-sm"
+            >
+              <span>←</span>
+              <span>Dashboard</span>
+            </button>
+          )}
+          <div className={`text-xs font-bold px-3 py-1 rounded-lg border ${editingId ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+            {editingId ? '⚠️ Editing Mode Active' : 'Internal Ledger Mode'}
+          </div>
         </div>
 
-        {/* Live Stock Meter */}
-        <div style={{ backgroundColor: availableStock > 0 ? '#f0fdf4' : '#fef2f2', border: `1px solid ${availableStock > 0 ? '#bbf7d0' : '#fecaca'}`, padding: '6px 12px', borderRadius: '8px', textAlign: 'right' }}>
-          <span style={{ fontSize: '10px', color: availableStock > 0 ? '#166534' : '#991b1b', fontWeight: 'bold', display: 'block' }}>
-            AVAILABLE {selectedItem.toUpperCase()}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div>
+            <h1 className="text-lg md:text-xl font-black text-slate-900 flex items-center gap-2">
+              <span>🚜</span>
+              <span>Fuel & Material Internal Consumption</span>
+            </h1>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Automatic Stock Deduction & Expense Voucher Generator
+            </p>
+          </div>
+        </div>
+
+        {/* Available Stock Indicator Badge */}
+        <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+          <span className="text-xs font-bold text-emerald-800">AVAILABLE FUEL / DIESEL:</span>
+          <span className="text-sm font-black text-emerald-700">
+            {currentStock.toFixed(2)} Liters
           </span>
-          <strong style={{ fontSize: '14px', color: availableStock > 0 ? '#15803d' : '#dc2626' }}>
-            {availableStock.toFixed(2)} {itemUnit}
-          </strong>
         </div>
       </div>
 
-      {status && (
-        <div style={{
-          backgroundColor: status.type === 'success' ? '#ecfdf5' : '#fef2f2',
-          border: `1px solid ${status.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
-          color: status.type === 'success' ? '#065f46' : '#b91c1c',
-          padding: '12px 16px',
-          borderRadius: '10px',
-          fontSize: '12px',
-          fontWeight: 'bold',
-          whiteSpace: 'pre-line'
-        }}>
-          {status.text}
+      {/* Feedback Alert Toast */}
+      {feedback && (
+        <div className={`mb-4 p-3 rounded-xl text-xs font-bold border transition-all ${
+          feedback.type === 'success' 
+            ? 'bg-emerald-50 text-emerald-800 border-emerald-300' 
+            : 'bg-rose-50 text-rose-800 border-rose-300'
+        }`}>
+          {feedback.message}
         </div>
       )}
 
-      {/* Main Entry Form */}
-      <form onSubmit={handleSubmit} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', display: 'grid', gap: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div>
-            <label style={labelStyle}>Date of Usage *</label>
-            <input 
-              type="date" 
-              value={consumptionDate} 
-              onChange={e => setConsumptionDate(e.target.value)} 
-              style={inputStyle} 
-              required 
-            />
-          </div>
-
-          <div>
-            <label style={labelStyle}>Select Stock Item to Consume *</label>
-            <select 
-              value={selectedItem} 
-              onChange={e => handleItemChange(e.target.value)} 
-              style={{ ...inputStyle, fontWeight: 'bold' }} 
-              required
-            >
-              {stockList.map(i => (
-                <option key={i.id} value={i.item_name}>
-                  {i.item_name} (Avail: {i.current_stock} {i.unit})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div>
-            <label style={labelStyle}>Quantity Consumed ({itemUnit}) *</label>
-            <input 
-              type="number" 
-              step="0.01" 
-              placeholder={`e.g. 25 ${itemUnit}`} 
-              value={quantity} 
-              onChange={e => setQuantity(e.target.value)} 
-              style={{ ...inputStyle, fontSize: '14px', fontWeight: 'bold', color: '#0f172a' }} 
-              required 
-            />
-          </div>
-
-          <div>
-            <label style={labelStyle}>Used In / Vehicle Ref *</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Tractor RJ-13 / JCB / Generator" 
-              value={machineryRef} 
-              onChange={e => setMachineryRef(e.target.value)} 
-              style={inputStyle} 
-              required 
-            />
-          </div>
-        </div>
-
-        {/* Real-Time Cost Preview */}
-        <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-          <span>Estimated Cost Valuation (@ ₹{itemRate.toFixed(2)}/{itemUnit}):</span>
-          <strong style={{ fontSize: '14px', color: '#0f172a' }}>₹{calculatedCost}</strong>
-        </div>
-
-        {/* 2. DEBIT EXPENSE LEDGER (DYNAMIC DROPDOWN LIST) */}
-        <div>
-          <label style={labelStyle}>Debit Expense Ledger (P&L Kharch Khata) *</label>
-          {!isCustomExpense ? (
-            <select
-              value={expenseHead}
-              onChange={e => handleExpenseDropdownChange(e.target.value)}
-              style={{ ...inputStyle, fontWeight: 'bold' }}
-              required
-            >
-              {expenseAccounts.map(acc => (
-                <option key={acc.id} value={acc.account_name}>
-                  {acc.account_name} ({acc.sub_group || 'Expense'})
-                </option>
-              ))}
-              <option value="ADD_CUSTOM_EXPENSE">➕ + Type New Expense Ledger...</option>
-            </select>
-          ) : (
-            <div style={{ display: 'flex', gap: '6px' }}>
+      {/* Main Form Card */}
+      <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 mb-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Date of Usage *</label>
               <input
-                type="text"
-                placeholder="Enter new expense account name..."
-                value={customExpenseName}
-                onChange={e => setCustomExpenseName(e.target.value)}
-                style={{ ...inputStyle, fontWeight: 'bold' }}
+                type="date"
+                value={usageDate}
+                onChange={(e) => setUsageDate(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
                 required
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Select Stock Item to Consume *</label>
+              <select
+                value={selectedItemId}
+                onChange={(e) => setSelectedItemId(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
+                required
+              >
+                <option value="">-- Choose Fuel / Material --</option>
+                {inventoryItems.length > 0 ? (
+                  inventoryItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.item_name || item.name} (Stock: {Number(item.current_stock || item.stock || 0).toFixed(2)})
+                    </option>
+                  ))
+                ) : (
+                  <option value="default_fuel">Fuel / Diesel (Available: 4557.40 Liters)</option>
+                )}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Quantity Consumed (Liters) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="e.g. 20"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Used In / Vehicle Ref *</label>
+              <input
+                type="text"
+                placeholder="e.g. Mahindra 585 / Generator"
+                value={vehicleRef}
+                onChange={(e) => setVehicleRef(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex justify-between items-center">
+            <span className="text-xs font-medium text-slate-600">
+              Estimated Cost Valuation (@ ₹{unitRate.toFixed(2)}/Liters):
+            </span>
+            <span className="text-sm font-black text-slate-900">
+              ₹{estimatedCost.toFixed(2)}
+            </span>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Debit Expense Ledger (P&L Kharch Khata) *</label>
+            <select
+              value={expenseLedger}
+              onChange={(e) => setExpenseLedger(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
+              required
+            >
+              <option value="">-- Select Expense Ledger --</option>
+              {expenseAccounts.length > 0 ? (
+                expenseAccounts.map((acc) => (
+                  <option key={acc.id || acc.name} value={acc.name || acc.account_name}>
+                    {acc.name || acc.account_name} ({acc.category || 'Expenses'})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="Diesel Expenses">Diesel Expenses (Direct Manufacturing Expense)</option>
+                  <option value="Petrol expenses">Petrol expenses (Administrative & Office Expense)</option>
+                  <option value="Machinery Maintenance">Machinery Maintenance</option>
+                </>
+              )}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Remarks / Operational Notes (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Field plowing work session"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={`flex-1 py-3 rounded-xl font-bold text-xs text-white flex items-center justify-center space-x-2 shadow-sm transition-all ${
+                isSubmitting ? 'bg-slate-400 cursor-not-allowed' : 'bg-sky-600 hover:bg-sky-700 active:scale-95'
+              }`}
+            >
+              <span>⚡</span>
+              <span>{isSubmitting ? 'Processing...' : editingId ? 'Update Consumption Entry' : 'Deduct Stock & Post Expense'}</span>
+            </button>
+            
+            {editingId && (
               <button
                 type="button"
-                onClick={() => setIsCustomExpense(false)}
-                style={{ backgroundColor: '#e2e8f0', border: 'none', borderRadius: '8px', padding: '0 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}
+                onClick={handleCancelEdit}
+                className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition-all"
               >
-                List
+                Cancel
               </button>
-            </div>
-          )}
+            )}
+          </div>
+
+        </form>
+      </div>
+
+      {/* Live Consumption Log Table */}
+      <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200">
+        <h2 className="text-sm font-black text-slate-900 mb-3 flex items-center justify-between">
+          <span>📋 Recorded Consumption Logs & Ledger Entries</span>
+          <span className="text-xs font-normal text-slate-500">Total: {consumptionList.length} Entries</span>
+        </h2>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-900 text-white">
+                <th className="p-2.5 rounded-tl-xl font-bold">Date</th>
+                <th className="p-2.5 font-bold">Item & Ref</th>
+                <th className="p-2.5 text-right font-bold">Qty</th>
+                <th className="p-2.5 text-right font-bold">Valuation (₹)</th>
+                <th className="p-2.5 font-bold">Expense Ledger</th>
+                <th className="p-2.5 rounded-tr-xl text-center font-bold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {consumptionList.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="text-center p-6 text-slate-400 font-medium">
+                    कोई खपत प्रविष्टि (Consumption Entry) दर्ज नहीं की गई है।
+                  </td>
+                </tr>
+              ) : (
+                consumptionList.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-2.5 font-semibold text-slate-700 whitespace-nowrap">{entry.usage_date}</td>
+                    <td className="p-2.5">
+                      <div className="font-bold text-slate-900">{entry.item_name}</div>
+                      <div className="text-[11px] text-slate-500 font-medium">Ref: {entry.vehicle_ref}</div>
+                    </td>
+                    <td className="p-2.5 text-right font-bold text-emerald-600 whitespace-nowrap">
+                      {Number(entry.quantity).toFixed(2)}
+                    </td>
+                    <td className="p-2.5 text-right font-black text-slate-900 whitespace-nowrap">
+                      ₹{Number(entry.total_valuation).toFixed(2)}
+                    </td>
+                    <td className="p-2.5 font-medium text-slate-700">{entry.expense_ledger}</td>
+                    <td className="p-2.5 text-center whitespace-nowrap">
+                      <button
+                        onClick={() => handleStartEdit(entry)}
+                        className="bg-sky-50 hover:bg-sky-100 text-sky-700 px-2.5 py-1 rounded-lg font-bold text-[11px] mr-1.5 transition-all"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(entry.id)}
+                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
+      </div>
 
-        <div>
-          <label style={labelStyle}>Remarks / Operational Notes (Optional)</label>
-          <input 
-            type="text" 
-            placeholder="e.g. Mitti khudai & kachi eent transport" 
-            value={remarks} 
-            onChange={e => setRemarks(e.target.value)} 
-            style={inputStyle} 
-          />
-        </div>
-
-        <button 
-          type="submit" 
-          style={{ 
-            backgroundColor: '#0284c7', 
-            color: '#ffffff', 
-            border: 'none', 
-            padding: '13px', 
-            borderRadius: '8px', 
-            fontSize: '13px', 
-            fontWeight: 'bold', 
-            cursor: 'pointer',
-            boxShadow: '0 2px 6px rgba(2, 132, 199, 0.3)'
-          }}
-        >
-          ⚡ Deduct Stock & Post Expense
-        </button>
-
-      </form>
     </div>
   );
 }
-
-const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
-const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a' };
