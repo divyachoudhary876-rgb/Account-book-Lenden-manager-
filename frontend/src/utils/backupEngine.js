@@ -3,7 +3,7 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
 /**
- * 1. EXPORT FIRM BACKUP (Primary & Alias)
+ * 1. EXPORT FIRM BACKUP
  */
 export const exportFirmDataBackup = async (firm, rawBackupData) => {
   const firmName = firm?.legal_name || firm?.trade_name || (typeof firm === 'string' ? firm : 'Neelkanth_Int_Udyog');
@@ -17,7 +17,10 @@ export const exportFirmDataBackup = async (firm, rawBackupData) => {
       export_timestamp: new Date().toISOString(),
       schema_version: '2.0'
     },
-    ...rawBackupData
+    accounts: rawBackupData.accounts || JSON.parse(localStorage.getItem('ledger_accounts') || '[]'),
+    vouchers: rawBackupData.vouchers || JSON.parse(localStorage.getItem('account_book_vouchers') || '[]'),
+    inventory: rawBackupData.inventory || JSON.parse(localStorage.getItem('inventory_items') || '[]'),
+    consumptions: rawBackupData.consumptions || JSON.parse(localStorage.getItem('material_consumptions') || '[]')
   };
 
   const jsonString = JSON.stringify(payload, null, 2);
@@ -66,42 +69,64 @@ export const exportFirmDataBackup = async (firm, rawBackupData) => {
   }
 };
 
-// Export alias matching SecurityBackupSettings.jsx expectation
 export const exportUniversalBackup = exportFirmDataBackup;
 
 /**
- * 2. IMPORT / RESTORE FIRM BACKUP (Primary & Alias)
+ * 2. IMPORT / RESTORE FIRM BACKUP WITH DEEP VALIDATION
  */
 export const restoreFirmDataBackup = async (jsonFileText) => {
   try {
-    const parsedData = JSON.parse(jsonFileText);
-
-    if (!parsedData.backup_metadata || !parsedData.backup_metadata.schema_version) {
-      throw new Error('Invalid backup file format: Missing metadata headers.');
+    if (!jsonFileText || typeof jsonFileText !== 'string') {
+      throw new Error('Backup file text is empty or unreadable.');
     }
 
-    if (Array.isArray(parsedData.accounts)) {
-      localStorage.setItem('ledger_accounts', JSON.stringify(parsedData.accounts));
+    let parsedData;
+    try {
+      parsedData = JSON.parse(jsonFileText);
+    } catch (parseErr) {
+      throw new Error('Invalid JSON syntax: Please ensure you selected a valid .json backup file.');
     }
-    if (Array.isArray(parsedData.vouchers)) {
-      localStorage.setItem('account_book_vouchers', JSON.stringify(parsedData.vouchers));
+
+    // Structural validation check
+    if (!parsedData || typeof parsedData !== 'object') {
+      throw new Error('Invalid backup structure: Root must be a JSON object.');
     }
-    if (Array.isArray(parsedData.inventory)) {
-      localStorage.setItem('inventory_items', JSON.stringify(parsedData.inventory));
+
+    // Flexible metadata check (supports both v1 and v2 backups)
+    const metadata = parsedData.backup_metadata || parsedData.metadata || {};
+    
+    // Extract datasets safely with fallbacks
+    const accounts = parsedData.accounts || parsedData.ledger_accounts || [];
+    const vouchers = parsedData.vouchers || parsedData.account_book_vouchers || parsedData.transactions || [];
+    const inventory = parsedData.inventory || parsedData.inventory_items || [];
+    const consumptions = parsedData.consumptions || parsedData.material_consumptions || [];
+
+    // Ensure at least some transaction data exists
+    if (!Array.isArray(vouchers) && !Array.isArray(accounts)) {
+      throw new Error('Backup validation failed: No valid ledger accounts or vouchers found in file.');
     }
-    if (Array.isArray(parsedData.consumptions)) {
-      localStorage.setItem('material_consumptions', JSON.stringify(parsedData.consumptions));
-    }
+
+    // Commit safely to LocalStorage
+    localStorage.setItem('ledger_accounts', JSON.stringify(accounts));
+    localStorage.setItem('account_book_vouchers', JSON.stringify(vouchers));
+    localStorage.setItem('inventory_items', JSON.stringify(inventory));
+    localStorage.setItem('material_consumptions', JSON.stringify(consumptions));
 
     return {
       success: true,
-      firmName: parsedData.backup_metadata.firm_name,
-      timestamp: parsedData.backup_metadata.export_timestamp
+      firmName: metadata.firm_name || 'Restored Firm',
+      timestamp: metadata.export_timestamp || new Date().toISOString(),
+      stats: {
+        accountsCount: accounts.length,
+        vouchersCount: vouchers.length,
+        inventoryCount: inventory.length,
+        consumptionsCount: consumptions.length
+      }
     };
   } catch (err) {
-    throw new Error('Restore failed: ' + (err.message || 'Malformed JSON content'));
+    console.error('Restore execution error:', err);
+    throw new Error(err.message || 'Restore failed to complete due to an unknown error.');
   }
 };
 
-// Export alias matching SecurityBackupSettings.jsx expectation
 export const restoreUniversalBackup = restoreFirmDataBackup;
