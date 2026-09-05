@@ -134,41 +134,38 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen p-3 md:p-6 font-sans text-slate-900 pb-20">
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '12px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', width: '100%', maxWidth: '100vw', overflowX: 'hidden', color: '#0f172a' }}>
       
       {/* Top Header Card */}
-      <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 mb-4">
-        <div className="flex justify-between items-center mb-3">
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '14px', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           {onClose && (
             <button
               onClick={onClose}
-              className="bg-slate-900 text-white px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center space-x-1 hover:bg-slate-800 transition-all shadow-sm"
+              style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
             >
-              <span>←</span>
-              <span>Dashboard</span>
+              ← Dashboard
             </button>
           )}
-          <div className={`text-xs font-bold px-3 py-1 rounded-lg border ${editingId ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+          <div style={{ fontSize: '11px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: editingId ? '#fef3c7' : '#f1f5f9', color: editingId ? '#92400e' : '#475569', border: editingId ? '1px solid #fde68a' : '1px solid #cbd5e1' }}>
             {editingId ? '⚠️ Editing Mode Active' : 'Internal Ledger Mode'}
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-          <div>
-            <h1 className="text-lg md:text-xl font-black text-slate-900 flex items-center gap-2">
-              <span>🚜</span>
-              <span>Fuel & Material Internal Consumption</span>
-            </h1>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Automatic Stock Deduction & Expense Voucher Generator
-            </p>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>🚜</span>
+            <span>Fuel & Material Internal Consumption</span>
+          </h1>
+          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
+            Automatic Stock Deduction & Expense Voucher Generator
           </div>
         </div>
 
         {/* Available Stock Indicator Badge */}
-        <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
-          <span className="text-xs font-bold text-emerald-800">AVAILABLE FUEL / DIESEL:</span>
-          <span className="text-sm font-black text-emerald-700">
+        <div style={{ marginTop: '12px', padding: '10px 12px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#065f46' }}>AVAILABLE FUEL / DIESEL:</span>
+          <span style={{ fontSize: '13px', fontWeight: 900, color: '#047857' }}>
             {currentStock.toFixed(2)} Liters
           </span>
         </div>
@@ -176,96 +173,88 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
 
       {/* Feedback Alert Toast */}
       {feedback && (
-        <div className={`mb-4 p-3 rounded-xl text-xs font-bold border transition-all ${
-          feedback.type === 'success' 
-            ? 'bg-emerald-50 text-emerald-800 border-emerald-300' 
-            : 'bg-rose-50 text-rose-800 border-rose-300'
-        }`}>
+        <div style={{ marginBottom: '14px', padding: '10px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', backgroundColor: feedback.type === 'success' ? '#ecfdf5' : '#fef2f2', color: feedback.type === 'success' ? '#065f46' : '#991b1b', border: feedback.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca' }}>
           {feedback.message}
         </div>
       )}
 
       {/* Main Form Card */}
-      <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 mb-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '16px', boxSizing: 'border-box' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Date of Usage *</label>
-              <input
-                type="date"
-                value={usageDate}
-                onChange={(e) => setUsageDate(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Select Stock Item to Consume *</label>
-              <select
-                value={selectedItemId}
-                onChange={(e) => setSelectedItemId(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
-                required
-              >
-                <option value="">-- Choose Fuel / Material --</option>
-                {inventoryItems.length > 0 ? (
-                  inventoryItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.item_name || item.name} (Stock: {Number(item.current_stock || item.stock || 0).toFixed(2)})
-                    </option>
-                  ))
-                ) : (
-                  <option value="default_fuel">Fuel / Diesel (Available: 4557.40 Liters)</option>
-                )}
-              </select>
-            </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Date of Usage *</label>
+            <input
+              type="date"
+              value={usageDate}
+              onChange={(e) => setUsageDate(e.target.value)}
+              style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
+              required
+            />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Quantity Consumed (Liters) *</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="e.g. 20"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Used In / Vehicle Ref *</label>
-              <input
-                type="text"
-                placeholder="e.g. Mahindra 585 / Generator"
-                value={vehicleRef}
-                onChange={(e) => setVehicleRef(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
-                required
-              />
-            </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Select Stock Item to Consume *</label>
+            <select
+              value={selectedItemId}
+              onChange={(e) => setSelectedItemId(e.target.value)}
+              style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
+              required
+            >
+              <option value="">-- Choose Fuel / Material --</option>
+              {inventoryItems.length > 0 ? (
+                inventoryItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.item_name || item.name} (Stock: {Number(item.current_stock || item.stock || 0).toFixed(2)})
+                  </option>
+                ))
+              ) : (
+                <option value="default_fuel">Fuel / Diesel (Available: 4557.40 Liters)</option>
+              )}
+            </select>
           </div>
 
-          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex justify-between items-center">
-            <span className="text-xs font-medium text-slate-600">
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Quantity Consumed (Liters) *</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              placeholder="e.g. 20"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
+              required
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Used In / Vehicle Ref *</label>
+            <input
+              type="text"
+              placeholder="e.g. Mahindra 585 / Generator"
+              value={vehicleRef}
+              onChange={(e) => setVehicleRef(e.target.value)}
+              style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
+              required
+            />
+          </div>
+
+          <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
               Estimated Cost Valuation (@ ₹{unitRate.toFixed(2)}/Liters):
             </span>
-            <span className="text-sm font-black text-slate-900">
+            <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>
               ₹{estimatedCost.toFixed(2)}
             </span>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Debit Expense Ledger (P&L Kharch Khata) *</label>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Debit Expense Ledger (P&L Kharch Khata) *</label>
             <select
               value={expenseLedger}
               onChange={(e) => setExpenseLedger(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
+              style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
               required
             >
               <option value="">-- Select Expense Ledger --</option>
@@ -286,33 +275,41 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Remarks / Operational Notes (Optional)</label>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Remarks / Operational Notes (Optional)</label>
             <input
               type="text"
               placeholder="e.g. Field plowing work session"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-sky-500 outline-none"
+              style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`flex-1 py-3 rounded-xl font-bold text-xs text-white flex items-center justify-center space-x-2 shadow-sm transition-all ${
-                isSubmitting ? 'bg-slate-400 cursor-not-allowed' : 'bg-sky-600 hover:bg-sky-700 active:scale-95'
-              }`}
+              style={{
+                flex: 1,
+                padding: '12px',
+                borderRadius: '10px',
+                border: 'none',
+                fontWeight: 'bold',
+                fontSize: '12px',
+                backgroundColor: isSubmitting ? '#94a3b8' : '#0284c7',
+                color: '#ffffff',
+                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 4px rgba(2,132,199,0.2)'
+              }}
             >
-              <span>⚡</span>
-              <span>{isSubmitting ? 'Processing...' : editingId ? 'Update Consumption Entry' : 'Deduct Stock & Post Expense'}</span>
+              ⚡ {isSubmitting ? 'Processing...' : editingId ? 'Update Consumption Entry' : 'Deduct Stock & Post Expense'}
             </button>
             
             {editingId && (
               <button
                 type="button"
                 onClick={handleCancelEdit}
-                className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition-all"
+                style={{ padding: '12px 16px', backgroundColor: '#e2e8f0', color: '#334155', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
               >
                 Cancel
               </button>
@@ -323,58 +320,58 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
       </div>
 
       {/* Live Consumption Log Table */}
-      <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200">
-        <h2 className="text-sm font-black text-slate-900 mb-3 flex items-center justify-between">
-          <span>📋 Recorded Consumption Logs & Ledger Entries</span>
-          <span className="text-xs font-normal text-slate-500">Total: {consumptionList.length} Entries</span>
-        </h2>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
+            📋 Recorded Consumption Logs
+          </h2>
+          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Total: {consumptionList.length}</span>
+        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+        <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', minWidth: '320px', borderCollapse: 'collapse', fontSize: '11px' }}>
             <thead>
-              <tr className="bg-slate-900 text-white">
-                <th className="p-2.5 rounded-tl-xl font-bold">Date</th>
-                <th className="p-2.5 font-bold">Item & Ref</th>
-                <th className="p-2.5 text-right font-bold">Qty</th>
-                <th className="p-2.5 text-right font-bold">Valuation (₹)</th>
-                <th className="p-2.5 font-bold">Expense Ledger</th>
-                <th className="p-2.5 rounded-tr-xl text-center font-bold">Actions</th>
+              <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                <th style={{ padding: '8px 6px', textAlign: 'left', width: '22%' }}>Date</th>
+                <th style={{ padding: '8px 6px', textAlign: 'left', width: '28%' }}>Item & Ref</th>
+                <th style={{ padding: '8px 6px', textAlign: 'right', width: '15%' }}>Qty</th>
+                <th style={{ padding: '8px 6px', textAlign: 'right', width: '20%' }}>Valuation</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', width: '15%' }}>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {consumptionList.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center p-6 text-slate-400 font-medium">
-                    कोई खपत प्रविष्टि (Consumption Entry) दर्ज नहीं की गई है।
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
+                    कोई खपत प्रविष्टि दर्ज नहीं की गई है।
                   </td>
                 </tr>
               ) : (
                 consumptionList.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-2.5 font-semibold text-slate-700 whitespace-nowrap">{entry.usage_date}</td>
-                    <td className="p-2.5">
-                      <div className="font-bold text-slate-900">{entry.item_name}</div>
-                      <div className="text-[11px] text-slate-500 font-medium">Ref: {entry.vehicle_ref}</div>
+                  <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '8px 6px', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>{entry.usage_date}</td>
+                    <td style={{ padding: '8px 6px' }}>
+                      <div style={{ fontWeight: 700, color: '#0f172a' }}>{entry.item_name}</div>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>{entry.vehicle_ref}</div>
                     </td>
-                    <td className="p-2.5 text-right font-bold text-emerald-600 whitespace-nowrap">
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}>
                       {Number(entry.quantity).toFixed(2)}
                     </td>
-                    <td className="p-2.5 text-right font-black text-slate-900 whitespace-nowrap">
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>
                       ₹{Number(entry.total_valuation).toFixed(2)}
                     </td>
-                    <td className="p-2.5 font-medium text-slate-700">{entry.expense_ledger}</td>
-                    <td className="p-2.5 text-center whitespace-nowrap">
+                    <td style={{ padding: '8px 6px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <button
                         onClick={() => handleStartEdit(entry)}
-                        className="bg-sky-50 hover:bg-sky-100 text-sky-700 px-2.5 py-1 rounded-lg font-bold text-[11px] mr-1.5 transition-all"
+                        style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', marginRight: '4px' }}
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDelete(entry.id)}
-                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all"
+                        style={{ backgroundColor: '#ffe4e6', color: '#9f1239', border: 'none', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer' }}
                       >
-                        Delete
+                        Del
                       </button>
                     </td>
                   </tr>
