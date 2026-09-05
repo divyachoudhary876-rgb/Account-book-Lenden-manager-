@@ -18,13 +18,12 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Load and subscribe to live inventory and true chart of accounts
+  // Load and subscribe to live inventory and strictly filtered Expense accounts
   useEffect(() => {
     const syncData = () => {
       const inventory = StorageService.getInventoryItems();
       setItemsList(inventory);
 
-      // Load true user-created ledger accounts from Chart of Accounts
       const storedAccounts = StorageService.getLedgerAccounts();
       const defaultAccounts = [
         { name: 'Diesel Expenses', category: 'Direct Expenses', group: 'Expenses' },
@@ -34,18 +33,51 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
       
       const accMap = new Map();
       
-      // Normalize and preserve actual account groups/categories
+      // Combine defaults and stored accounts, filtering STRICTLY for Expense accounts
       [...defaultAccounts, ...storedAccounts].forEach(acc => {
         const name = acc.name || acc.account_name;
+        const rawCategory = acc.category || acc.account_group || acc.group || 'Expenses';
+        
         if (name) {
-          const trueCategory = acc.category || acc.account_group || acc.group || 'Expenses';
-          accMap.set(name.trim(), { 
-            name: name.trim(), 
-            category: trueCategory 
-          });
+          const lowerCat = String(rawCategory).toLowerCase();
+          const lowerName = String(name).toLowerCase();
+          
+          // Strict filter: Only allow accounts that belong to Expenses
+          const isExpenseAccount = 
+            lowerCat.includes('expense') || 
+            lowerCat.includes('direct') || 
+            lowerCat.includes('indirect') ||
+            lowerName.includes('expense') ||
+            lowerName.includes('maintenance') ||
+            lowerName.includes('fuel') ||
+            lowerName.includes('consumption') ||
+            lowerName.includes('kiraya');
+
+          // Exclude absolute non-expense categories like Capital, Bank, Cash, Sales
+          const isInvalidAccount = 
+            lowerCat.includes('capital') || 
+            lowerCat.includes('asset') || 
+            lowerCat.includes('income') || 
+            lowerCat.includes('liability') ||
+            lowerName.includes('cash-in-hand') ||
+            lowerName.includes('primary bank') ||
+            lowerName.includes('sales & revenue');
+
+          if (isExpenseAccount && !isInvalidAccount) {
+            accMap.set(name.trim(), { 
+              name: name.trim(), 
+              category: rawCategory 
+            });
+          }
         }
       });
       
+      // Fallback if map is empty
+      if (accMap.size === 0) {
+        accMap.set('Diesel Expenses', { name: 'Diesel Expenses', category: 'Direct Expenses' });
+        accMap.set('Machinery Maintenance', { name: 'Machinery Maintenance', category: 'Indirect Expenses' });
+      }
+
       setAccountsList(Array.from(accMap.values()));
       setConsumptionList(StorageService.getMaterialConsumptions());
     };
@@ -288,11 +320,11 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             </span>
           </div>
 
-          {/* Corrected Dropdown Displaying True Account Categories */}
+          {/* Strictly Filtered Expense Ledger Dropdown */}
           <div>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Debit Expense Ledger (P&L Kharch Khata) *</label>
             <select value={expenseLedger} onChange={(e) => setExpenseLedger(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} required>
-              <option value="">-- Select Created Account / Expense Ledger --</option>
+              <option value="">-- Select Expense Ledger Account --</option>
               {accountsList.map((acc, idx) => (
                 <option key={idx} value={acc.name}>
                   {acc.name} ({acc.category})
