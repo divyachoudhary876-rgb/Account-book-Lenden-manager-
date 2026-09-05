@@ -17,24 +17,21 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Sync Live Inventory & Chart of Accounts from LocalStorage directly
+  // Synchronize Live Inventory & Chart of Accounts strictly with localStorage
   useEffect(() => {
     const loadMasterData = () => {
       try {
-        // Load live inventory items created in Inventory module
+        // 1. Load Live Inventory (No dummy data fallbacks)
         const storedInventory = JSON.parse(localStorage.getItem('inventory_items') || '[]');
         if (storedInventory.length > 0) {
           setItemsList(storedInventory);
-        } else if (inventoryItems.length > 0) {
+        } else if (Array.isArray(inventoryItems) && inventoryItems.length > 0) {
           setItemsList(inventoryItems);
         } else {
-          setItemsList([
-            { id: 'item_1', item_name: 'Diesel (Fuel Stock)', unit: 'Ltr', current_stock: 500, purchase_rate: 97.50 },
-            { id: 'item_2', item_name: 'Biomass Briquettes (White Coal)', unit: 'MT', current_stock: 120, purchase_rate: 6500 }
-          ]);
+          setItemsList([]);
         }
 
-        // Load Chart of Accounts for Debit Dropdown
+        // 2. Load Chart of Accounts for Debit Dropdown
         const storedAccounts = JSON.parse(localStorage.getItem('ledger_accounts') || '[]');
         const defaultAccs = [
           { name: 'Diesel Expenses', category: 'EXPENSES' },
@@ -50,11 +47,11 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
         });
         setAccountsList(Array.from(accMap.values()));
 
-        // Load consumption history logs
+        // 3. Load Consumption Logs
         const savedConsumptions = JSON.parse(localStorage.getItem('material_consumptions') || '[]');
         setConsumptionList(savedConsumptions);
       } catch (e) {
-        console.error('Data load error:', e);
+        console.error('Master data sync error:', e);
       }
     };
 
@@ -63,6 +60,7 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
     return () => window.removeEventListener('storage', loadMasterData);
   }, [inventoryItems, expenseAccounts]);
 
+  // Selected item lookup matching exact ID or name
   const selectedItem = useMemo(() => {
     if (!Array.isArray(itemsList) || itemsList.length === 0) return null;
     return itemsList.find(i => String(i.id || i.item_name) === String(selectedItemId)) || null;
@@ -73,6 +71,7 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
   const parsedQty = Number(quantity || 0);
   const estimatedCost = parsedQty * unitRate;
 
+  // Handle Form Submission (Atomic Stock Deduction & Ledger Posting)
   const handleSubmit = (e) => {
     e.preventDefault();
     setFeedback(null);
@@ -111,7 +110,7 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
         created_at: new Date().toISOString()
       };
 
-      // Deduct inventory stock from Live Stock pool
+      // 1. Deduct Stock from Live Inventory Storage Key ('inventory_items')
       const updatedInventory = itemsList.map(item => {
         if (String(item.id || item.item_name) === String(selectedItemId)) {
           const oldStock = Number(item.current_stock || item.stock || 0);
@@ -122,6 +121,7 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
       setItemsList(updatedInventory);
       localStorage.setItem('inventory_items', JSON.stringify(updatedInventory));
 
+      // 2. Save Consumption Entry Log
       let updatedConsumptions = [];
       if (editingId) {
         updatedConsumptions = consumptionList.map(c => c.id === editingId ? payload : c);
@@ -136,6 +136,7 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
 
       if (typeof onSave === 'function') onSave(payload);
 
+      // Reset form
       setEditingId(null);
       setQuantity('');
       setVehicleRef('');
