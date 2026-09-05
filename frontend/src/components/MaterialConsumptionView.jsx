@@ -18,26 +18,35 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Load and subscribe to live inventory and accounts
+  // Load and subscribe to live inventory and true chart of accounts
   useEffect(() => {
     const syncData = () => {
       const inventory = StorageService.getInventoryItems();
       setItemsList(inventory);
 
-      const accounts = StorageService.getLedgerAccounts();
+      // Load true user-created ledger accounts from Chart of Accounts
+      const storedAccounts = StorageService.getLedgerAccounts();
       const defaultAccounts = [
-        { name: 'Diesel Expenses', category: 'EXPENSES' },
-        { name: 'Fuel & Coal Consumption', category: 'EXPENSES' },
-        { name: 'Machinery Maintenance', category: 'EXPENSES' }
+        { name: 'Diesel Expenses', category: 'Direct Expenses', group: 'Expenses' },
+        { name: 'Fuel & Coal Consumption', category: 'Direct Expenses', group: 'Expenses' },
+        { name: 'Machinery Maintenance', category: 'Indirect Expenses', group: 'Expenses' }
       ];
       
       const accMap = new Map();
-      [...defaultAccounts, ...accounts].forEach(acc => {
+      
+      // Normalize and preserve actual account groups/categories
+      [...defaultAccounts, ...storedAccounts].forEach(acc => {
         const name = acc.name || acc.account_name;
-        if (name) accMap.set(name.trim(), { name: name.trim(), category: acc.category || acc.account_group || 'EXPENSES' });
+        if (name) {
+          const trueCategory = acc.category || acc.account_group || acc.group || 'Expenses';
+          accMap.set(name.trim(), { 
+            name: name.trim(), 
+            category: trueCategory 
+          });
+        }
       });
+      
       setAccountsList(Array.from(accMap.values()));
-
       setConsumptionList(StorageService.getMaterialConsumptions());
     };
 
@@ -89,13 +98,11 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
       const currentConsumptions = StorageService.getMaterialConsumptions();
 
       let finalQtyDelta = parsedQty;
-
-      // If editing, calculate difference in quantity to adjust stock correctly
       if (editingId) {
         const existingEntry = currentConsumptions.find(c => c.id === editingId);
         if (existingEntry && String(existingEntry.item_id) === String(selectedItemId)) {
           const oldQty = Number(existingEntry.quantity || 0);
-          finalQtyDelta = parsedQty - oldQty; // Net difference
+          finalQtyDelta = parsedQty - oldQty;
         }
       }
 
@@ -118,7 +125,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
       const updatedInventory = currentInventory.map(item => {
         if (String(item.id || item.item_name) === String(selectedItemId)) {
           const oldStock = Number(item.current_stock || item.stock || 0);
-          // If net delta is positive, deduct from stock. If negative, add back to stock.
           const newStock = Math.max(0, oldStock - finalQtyDelta);
           return { ...item, current_stock: newStock };
         }
@@ -142,7 +148,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
 
       if (typeof onSave === 'function') onSave(payload);
 
-      // Reset Form
       setEditingId(null);
       setQuantity('');
       setVehicleRef('');
@@ -166,7 +171,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 3. CRITICAL FIX: Revert stock back to inventory when a consumption entry is deleted
   const handleDelete = (id) => {
     if (!window.confirm('क्या आप वाकई इस खपत प्रविष्टि को हटाना चाहते हैं? हटाने पर खपत की गई मात्रा वापस स्टॉक में जुड़ जाएगी।')) return;
     
@@ -178,7 +182,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         const targetItemId = entryToDelete.item_id;
         const returnQty = Number(entryToDelete.quantity || 0);
 
-        // Restore quantity back to inventory stock
         const currentInventory = StorageService.getInventoryItems();
         const restoredInventory = currentInventory.map(item => {
           if (String(item.id || item.item_name) === String(targetItemId)) {
@@ -285,6 +288,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             </span>
           </div>
 
+          {/* Corrected Dropdown Displaying True Account Categories */}
           <div>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Debit Expense Ledger (P&L Kharch Khata) *</label>
             <select value={expenseLedger} onChange={(e) => setExpenseLedger(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} required>
