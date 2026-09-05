@@ -43,7 +43,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
 
     syncData();
 
-    // Listen to custom storage sync events and window storage events
     window.addEventListener('app_storage_updated', syncData);
     window.addEventListener('storage', syncData);
 
@@ -53,7 +52,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     };
   }, []);
 
-  // Selected item lookup matching exact ID or name
   const selectedItem = useMemo(() => {
     if (!Array.isArray(itemsList) || itemsList.length === 0) return null;
     return itemsList.find(i => String(i.id || i.item_name) === String(selectedItemId)) || null;
@@ -87,6 +85,20 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
 
     setIsSubmitting(true);
     try {
+      const currentInventory = StorageService.getInventoryItems();
+      const currentConsumptions = StorageService.getMaterialConsumptions();
+
+      let finalQtyDelta = parsedQty;
+
+      // If editing, calculate difference in quantity to adjust stock correctly
+      if (editingId) {
+        const existingEntry = currentConsumptions.find(c => c.id === editingId);
+        if (existingEntry && String(existingEntry.item_id) === String(selectedItemId)) {
+          const oldQty = Number(existingEntry.quantity || 0);
+          finalQtyDelta = parsedQty - oldQty; // Net difference
+        }
+      }
+
       const payload = {
         id: editingId || `CONSUME-${Date.now()}`,
         firm_id: firm?.id || 'firm_default',
@@ -102,20 +114,20 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         created_at: new Date().toISOString()
       };
 
-      // 1. Deduct stock from centralized inventory storage
-      const currentInventory = StorageService.getInventoryItems();
+      // 1. Update Inventory Stock Level Atomically
       const updatedInventory = currentInventory.map(item => {
         if (String(item.id || item.item_name) === String(selectedItemId)) {
           const oldStock = Number(item.current_stock || item.stock || 0);
-          return { ...item, current_stock: Math.max(0, oldStock - parsedQty) };
+          // If net delta is positive, deduct from stock. If negative, add back to stock.
+          const newStock = Math.max(0, oldStock - finalQtyDelta);
+          return { ...item, current_stock: newStock };
         }
         return item;
       });
       StorageService.saveInventoryItems(updatedInventory);
       setItemsList(updatedInventory);
 
-      // 2. Save consumption log
-      const currentConsumptions = StorageService.getMaterialConsumptions();
+      // 2. Save Consumption Log List
       let updatedConsumptions = [];
       if (editingId) {
         updatedConsumptions = currentConsumptions.map(c => c.id === editingId ? payload : c);
@@ -130,7 +142,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
 
       if (typeof onSave === 'function') onSave(payload);
 
-      // Reset form
+      // Reset Form
       setEditingId(null);
       setQuantity('');
       setVehicleRef('');
@@ -154,13 +166,40 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // 3. CRITICAL FIX: Revert stock back to inventory when a consumption entry is deleted
   const handleDelete = (id) => {
-    if (!window.confirm('क्या आप वाकई इस खपत प्रविष्टि को हटाना चाहते हैं?')) return;
-    const currentConsumptions = StorageService.getMaterialConsumptions();
-    const filtered = currentConsumptions.filter(item => item.id !== id);
-    StorageService.saveMaterialConsumptions(filtered);
-    setConsumptionList(filtered);
-    setFeedback({ type: 'success', message: 'प्रविष्टि हटा दी गई।' });
+    if (!window.confirm('क्या आप वाकई इस खपत प्रविष्टि को हटाना चाहते हैं? हटाने पर खपत की गई मात्रा वापस स्टॉक में जुड़ जाएगी।')) return;
+    
+    try {
+      const currentConsumptions = StorageService.getMaterialConsumptions();
+      const entryToDelete = currentConsumptions.find(c => c.id === id);
+
+      if (entryToDelete) {
+        const targetItemId = entryToDelete.item_id;
+        const returnQty = Number(entryToDelete.quantity || 0);
+
+        // Restore quantity back to inventory stock
+        const currentInventory = StorageService.getInventoryItems();
+        const restoredInventory = currentInventory.map(item => {
+          if (String(item.id || item.item_name) === String(targetItemId)) {
+            const currentStk = Number(item.current_stock || item.stock || 0);
+            return { ...item, current_stock: currentStk + returnQty };
+          }
+          return item;
+        });
+
+        StorageService.saveInventoryItems(restoredInventory);
+        setItemsList(restoredInventory);
+      }
+
+      const filtered = currentConsumptions.filter(item => item.id !== id);
+      StorageService.saveMaterialConsumptions(filtered);
+      setConsumptionList(filtered);
+      setFeedback({ type: 'success', message: '✓ प्रविष्टि हटा दी गई और स्टॉक सफलतापूर्वक वापस जोड़ दिया गया।' });
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err) {
+      setFeedback({ type: 'error', message: 'हटाने में विफल: ' + err.message });
+    }
   };
 
   return (
