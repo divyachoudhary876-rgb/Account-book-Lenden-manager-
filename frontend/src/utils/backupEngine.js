@@ -3,8 +3,7 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
 /**
- * 1. EXPORT FIRM BACKUP
- * Saves backup JSON to device storage and triggers native share sheet or browser download.
+ * 1. EXPORT FIRM BACKUP (Primary & Alias)
  */
 export const exportFirmDataBackup = async (firm, rawBackupData) => {
   const firmName = firm?.legal_name || firm?.trade_name || (typeof firm === 'string' ? firm : 'Neelkanth_Int_Udyog');
@@ -23,12 +22,12 @@ export const exportFirmDataBackup = async (firm, rawBackupData) => {
 
   const jsonString = JSON.stringify(payload, null, 2);
 
-  // Strategy 1: Capacitor Native Filesystem & Share Sheet (Android / iOS App)
+  // Strategy 1: Capacitor Native Filesystem & Share Sheet
   try {
     const writeResult = await Filesystem.writeFile({
       path: fileName,
       data: jsonString,
-      directory: Directory.Documents, // Saves to public Documents directory
+      directory: Directory.Documents,
       encoding: Encoding.UTF8
     });
 
@@ -67,20 +66,20 @@ export const exportFirmDataBackup = async (firm, rawBackupData) => {
   }
 };
 
+// Export alias matching SecurityBackupSettings.jsx expectation
+export const exportUniversalBackup = exportFirmDataBackup;
+
 /**
- * 2. IMPORT / RESTORE FIRM BACKUP
- * Parses and validates a JSON backup file, restoring local storage states.
+ * 2. IMPORT / RESTORE FIRM BACKUP (Primary & Alias)
  */
 export const restoreFirmDataBackup = async (jsonFileText) => {
   try {
     const parsedData = JSON.parse(jsonFileText);
 
-    // Validate backup structure
     if (!parsedData.backup_metadata || !parsedData.backup_metadata.schema_version) {
       throw new Error('Invalid backup file format: Missing metadata headers.');
     }
 
-    // Restore tables into localStorage keys safely
     if (Array.isArray(parsedData.accounts)) {
       localStorage.setItem('ledger_accounts', JSON.stringify(parsedData.accounts));
     }
@@ -103,3 +102,6 @@ export const restoreFirmDataBackup = async (jsonFileText) => {
     throw new Error('Restore failed: ' + (err.message || 'Malformed JSON content'));
   }
 };
+
+// Export alias matching SecurityBackupSettings.jsx expectation
+export const restoreUniversalBackup = restoreFirmDataBackup;
