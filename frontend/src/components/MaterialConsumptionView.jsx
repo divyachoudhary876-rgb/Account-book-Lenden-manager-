@@ -1,7 +1,8 @@
 // frontend/src/components/MaterialConsumptionView.jsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { StorageService } from '../utils/storageSync';
 
-export default function MaterialConsumptionView({ firm, inventoryItems = [], expenseAccounts = [], onSave, onClose }) {
+export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const [itemsList, setItemsList] = useState([]);
   const [accountsList, setAccountsList] = useState([]);
   const [consumptionList, setConsumptionList] = useState([]);
@@ -17,48 +18,40 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Synchronize Live Inventory & Chart of Accounts strictly with localStorage
+  // Load and subscribe to live inventory and accounts
   useEffect(() => {
-    const loadMasterData = () => {
-      try {
-        // 1. Load Live Inventory (No dummy data fallbacks)
-        const storedInventory = JSON.parse(localStorage.getItem('inventory_items') || '[]');
-        if (storedInventory.length > 0) {
-          setItemsList(storedInventory);
-        } else if (Array.isArray(inventoryItems) && inventoryItems.length > 0) {
-          setItemsList(inventoryItems);
-        } else {
-          setItemsList([]);
-        }
+    const syncData = () => {
+      const inventory = StorageService.getInventoryItems();
+      setItemsList(inventory);
 
-        // 2. Load Chart of Accounts for Debit Dropdown
-        const storedAccounts = JSON.parse(localStorage.getItem('ledger_accounts') || '[]');
-        const defaultAccs = [
-          { name: 'Diesel Expenses', category: 'EXPENSES' },
-          { name: 'Fuel & Coal Consumption', category: 'EXPENSES' },
-          { name: 'Machinery Maintenance', category: 'EXPENSES' },
-          { name: 'Factory Manufacturing Expense', category: 'EXPENSES' }
-        ];
+      const accounts = StorageService.getLedgerAccounts();
+      const defaultAccounts = [
+        { name: 'Diesel Expenses', category: 'EXPENSES' },
+        { name: 'Fuel & Coal Consumption', category: 'EXPENSES' },
+        { name: 'Machinery Maintenance', category: 'EXPENSES' }
+      ];
+      
+      const accMap = new Map();
+      [...defaultAccounts, ...accounts].forEach(acc => {
+        const name = acc.name || acc.account_name;
+        if (name) accMap.set(name.trim(), { name: name.trim(), category: acc.category || acc.account_group || 'EXPENSES' });
+      });
+      setAccountsList(Array.from(accMap.values()));
 
-        const accMap = new Map();
-        [...defaultAccs, ...expenseAccounts, ...storedAccounts].forEach(acc => {
-          const name = acc.name || acc.account_name;
-          if (name) accMap.set(name.trim(), { name: name.trim(), category: acc.category || acc.account_group || 'EXPENSES' });
-        });
-        setAccountsList(Array.from(accMap.values()));
-
-        // 3. Load Consumption Logs
-        const savedConsumptions = JSON.parse(localStorage.getItem('material_consumptions') || '[]');
-        setConsumptionList(savedConsumptions);
-      } catch (e) {
-        console.error('Master data sync error:', e);
-      }
+      setConsumptionList(StorageService.getMaterialConsumptions());
     };
 
-    loadMasterData();
-    window.addEventListener('storage', loadMasterData);
-    return () => window.removeEventListener('storage', loadMasterData);
-  }, [inventoryItems, expenseAccounts]);
+    syncData();
+
+    // Listen to custom storage sync events and window storage events
+    window.addEventListener('app_storage_updated', syncData);
+    window.addEventListener('storage', syncData);
+
+    return () => {
+      window.removeEventListener('app_storage_updated', syncData);
+      window.removeEventListener('storage', syncData);
+    };
+  }, []);
 
   // Selected item lookup matching exact ID or name
   const selectedItem = useMemo(() => {
@@ -71,7 +64,6 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
   const parsedQty = Number(quantity || 0);
   const estimatedCost = parsedQty * unitRate;
 
-  // Handle Form Submission (Atomic Stock Deduction & Ledger Posting)
   const handleSubmit = (e) => {
     e.preventDefault();
     setFeedback(null);
@@ -110,29 +102,31 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
         created_at: new Date().toISOString()
       };
 
-      // 1. Deduct Stock from Live Inventory Storage Key ('inventory_items')
-      const updatedInventory = itemsList.map(item => {
+      // 1. Deduct stock from centralized inventory storage
+      const currentInventory = StorageService.getInventoryItems();
+      const updatedInventory = currentInventory.map(item => {
         if (String(item.id || item.item_name) === String(selectedItemId)) {
           const oldStock = Number(item.current_stock || item.stock || 0);
           return { ...item, current_stock: Math.max(0, oldStock - parsedQty) };
         }
         return item;
       });
+      StorageService.saveInventoryItems(updatedInventory);
       setItemsList(updatedInventory);
-      localStorage.setItem('inventory_items', JSON.stringify(updatedInventory));
 
-      // 2. Save Consumption Entry Log
+      // 2. Save consumption log
+      const currentConsumptions = StorageService.getMaterialConsumptions();
       let updatedConsumptions = [];
       if (editingId) {
-        updatedConsumptions = consumptionList.map(c => c.id === editingId ? payload : c);
+        updatedConsumptions = currentConsumptions.map(c => c.id === editingId ? payload : c);
         setFeedback({ type: 'success', message: '✓ खपत प्रविष्टि सफलतापूर्वक अपडेट कर दी गई!' });
       } else {
-        updatedConsumptions = [payload, ...consumptionList];
+        updatedConsumptions = [payload, ...currentConsumptions];
         setFeedback({ type: 'success', message: '✓ स्टॉक सफलतापूर्वक घटा दिया गया और खर्चे का वाउचर दर्ज हो गया!' });
       }
 
+      StorageService.saveMaterialConsumptions(updatedConsumptions);
       setConsumptionList(updatedConsumptions);
-      localStorage.setItem('material_consumptions', JSON.stringify(updatedConsumptions));
 
       if (typeof onSave === 'function') onSave(payload);
 
@@ -162,9 +156,10 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
 
   const handleDelete = (id) => {
     if (!window.confirm('क्या आप वाकई इस खपत प्रविष्टि को हटाना चाहते हैं?')) return;
-    const filtered = consumptionList.filter(item => item.id !== id);
+    const currentConsumptions = StorageService.getMaterialConsumptions();
+    const filtered = currentConsumptions.filter(item => item.id !== id);
+    StorageService.saveMaterialConsumptions(filtered);
     setConsumptionList(filtered);
-    localStorage.setItem('material_consumptions', JSON.stringify(filtered));
     setFeedback({ type: 'success', message: 'प्रविष्टि हटा दी गई।' });
   };
 
