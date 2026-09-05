@@ -2,38 +2,50 @@
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
+/**
+ * 1. EXPORT FIRM BACKUP
+ * Saves backup JSON to device storage and triggers native share sheet or browser download.
+ */
 export const exportFirmDataBackup = async (firm, rawBackupData) => {
-  const firmName = firm?.legal_name || firm?.trade_name || 'Neelkanth_Int_Udyog';
+  const firmName = firm?.legal_name || firm?.trade_name || (typeof firm === 'string' ? firm : 'Neelkanth_Int_Udyog');
   const cleanName = String(firmName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fileName = `Accounting_Backup_${cleanName}_${Date.now()}.json`;
-  const jsonString = JSON.stringify(rawBackupData, null, 2);
+  
+  const payload = {
+    backup_metadata: {
+      firm_id: firm?.id || 'FIRM_DEFAULT',
+      firm_name: firmName,
+      export_timestamp: new Date().toISOString(),
+      schema_version: '2.0'
+    },
+    ...rawBackupData
+  };
 
-  let savedPath = 'Downloads / Internal Storage';
+  const jsonString = JSON.stringify(payload, null, 2);
 
-  // 1. Try Capacitor Native Filesystem (Saves to Documents/Cache and opens Share Sheet)
+  // Strategy 1: Capacitor Native Filesystem & Share Sheet (Android / iOS App)
   try {
     const writeResult = await Filesystem.writeFile({
       path: fileName,
       data: jsonString,
-      directory: Directory.Documents, // Saves to public Documents directory on Android/iOS
+      directory: Directory.Documents, // Saves to public Documents directory
       encoding: Encoding.UTF8
     });
 
     if (writeResult && writeResult.uri) {
-      // Immediately open Share Sheet so user can save to "Downloads", send via WhatsApp, or Drive
       await Share.share({
         title: 'Firm Accounting Backup',
-        text: `Backup file for ${firmName}`,
+        text: `Secure backup file for ${firmName}. Save it to your Downloads or Google Drive.`,
         url: writeResult.uri,
         dialogTitle: 'Save or Share Backup File'
       });
-      return { success: true, method: 'native', path: 'Documents folder / Share Sheet' };
+      return { success: true, destination: 'Device Documents / Downloads via Share Sheet' };
     }
   } catch (nativeErr) {
-    console.warn('Native filesystem backup fallback to web blob:', nativeErr);
+    console.warn('Native filesystem share skipped, falling back to web download:', nativeErr);
   }
 
-  // 2. Standard Web Browser Blob Download Fallback
+  // Strategy 2: Standard Web Browser Blob Download Fallback
   try {
     const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -49,8 +61,45 @@ export const exportFirmDataBackup = async (firm, rawBackupData) => {
       URL.revokeObjectURL(url);
     }, 1500);
 
-    return { success: true, method: 'blob', path: 'Browser Downloads folder' };
+    return { success: true, destination: 'Browser Downloads Folder' };
   } catch (blobErr) {
-    throw new Error('Backup export failed entirely: ' + blobErr.message);
+    throw new Error('Backup export failed: ' + blobErr.message);
+  }
+};
+
+/**
+ * 2. IMPORT / RESTORE FIRM BACKUP
+ * Parses and validates a JSON backup file, restoring local storage states.
+ */
+export const restoreFirmDataBackup = async (jsonFileText) => {
+  try {
+    const parsedData = JSON.parse(jsonFileText);
+
+    // Validate backup structure
+    if (!parsedData.backup_metadata || !parsedData.backup_metadata.schema_version) {
+      throw new Error('Invalid backup file format: Missing metadata headers.');
+    }
+
+    // Restore tables into localStorage keys safely
+    if (Array.isArray(parsedData.accounts)) {
+      localStorage.setItem('ledger_accounts', JSON.stringify(parsedData.accounts));
+    }
+    if (Array.isArray(parsedData.vouchers)) {
+      localStorage.setItem('account_book_vouchers', JSON.stringify(parsedData.vouchers));
+    }
+    if (Array.isArray(parsedData.inventory)) {
+      localStorage.setItem('inventory_items', JSON.stringify(parsedData.inventory));
+    }
+    if (Array.isArray(parsedData.consumptions)) {
+      localStorage.setItem('material_consumptions', JSON.stringify(parsedData.consumptions));
+    }
+
+    return {
+      success: true,
+      firmName: parsedData.backup_metadata.firm_name,
+      timestamp: parsedData.backup_metadata.export_timestamp
+    };
+  } catch (err) {
+    throw new Error('Restore failed: ' + (err.message || 'Malformed JSON content'));
   }
 };
