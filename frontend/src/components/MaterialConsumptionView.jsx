@@ -2,6 +2,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
 export default function MaterialConsumptionView({ firm, inventoryItems = [], expenseAccounts = [], onSave, onClose }) {
+  const [itemsList, setItemsList] = useState([]);
+  const [accountsList, setAccountsList] = useState([]);
+  const [consumptionList, setConsumptionList] = useState([]);
+
   // Form State
   const [usageDate, setUsageDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedItemId, setSelectedItemId] = useState('');
@@ -10,56 +14,65 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
   const [expenseLedger, setExpenseLedger] = useState('');
   const [remarks, setRemarks] = useState('');
   
-  // Edit & List State
   const [editingId, setEditingId] = useState(null);
-  const [consumptionList, setConsumptionList] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Load saved consumptions on mount
+  // Sync Inventory & Master Accounts from props or localStorage dynamically
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('material_consumptions') || '[]');
-      setConsumptionList(saved);
-    } catch (e) {
-      setConsumptionList([]);
-    }
-  }, []);
+    const loadMasterData = () => {
+      try {
+        // 1. Load Inventory Items
+        const storedItems = JSON.parse(localStorage.getItem('inventory_items') || '[]');
+        if (storedItems.length > 0) {
+          setItemsList(storedItems);
+        } else if (inventoryItems.length > 0) {
+          setItemsList(inventoryItems);
+        } else {
+          setItemsList([{ id: 'default_diesel', item_name: 'Diesel', unit: 'Liters', current_stock: 4557.40, purchase_rate: 97.50 }]);
+        }
 
-  // Safe item selection lookup
+        // 2. Load Created Chart of Accounts (Debit Dropdown Source)
+        const storedAccounts = JSON.parse(localStorage.getItem('ledger_accounts') || '[]');
+        const defaultAccounts = [
+          { id: 'acc_1', name: 'Diesel Expenses', category: 'EXPENSES' },
+          { id: 'acc_2', name: 'Petrol expenses', category: 'EXPENSES' },
+          { id: 'acc_3', name: 'Machinery Maintenance', category: 'EXPENSES' },
+          { id: 'acc_4', name: 'Fuel & Coal Consumption', category: 'EXPENSES' }
+        ];
+
+        // Merge stored accounts with props and defaults, removing duplicates by name
+        const combinedMap = new Map();
+        [...defaultAccounts, ...expenseAccounts, ...storedAccounts].forEach(acc => {
+          const name = acc.name || acc.account_name;
+          if (name) combinedMap.set(name.trim(), { ...acc, name: name.trim() });
+        });
+        
+        setAccountsList(Array.from(combinedMap.values()));
+
+        // 3. Load Consumption History
+        const savedConsumptions = JSON.parse(localStorage.getItem('material_consumptions') || '[]');
+        setConsumptionList(savedConsumptions);
+      } catch (e) {
+        console.error('Master data sync error:', e);
+      }
+    };
+
+    loadMasterData();
+    window.addEventListener('storage', loadMasterData);
+    return () => window.removeEventListener('storage', loadMasterData);
+  }, [inventoryItems, expenseAccounts]);
+
   const selectedItem = useMemo(() => {
-    if (!Array.isArray(inventoryItems) || inventoryItems.length === 0) return null;
-    return inventoryItems.find(i => String(i.id) === String(selectedItemId)) || null;
-  }, [inventoryItems, selectedItemId]);
+    if (!Array.isArray(itemsList) || itemsList.length === 0) return null;
+    return itemsList.find(i => String(i.id) === String(selectedItemId)) || null;
+  }, [itemsList, selectedItemId]);
 
-  const currentStock = Number(selectedItem?.current_stock || selectedItem?.stock || 4557.40);
-  const unitRate = Number(selectedItem?.rate || selectedItem?.average_rate || 97.50);
+  const currentStock = Number(selectedItem?.current_stock || selectedItem?.stock || 0);
+  const unitRate = Number(selectedItem?.purchase_rate || selectedItem?.rate || selectedItem?.average_rate || 97.50);
   const parsedQty = Number(quantity || 0);
   const estimatedCost = parsedQty * unitRate;
 
-  // Load entry into form for editing
-  const handleStartEdit = (entry) => {
-    setEditingId(entry.id);
-    setUsageDate(entry.usage_date || new Date().toISOString().split('T')[0]);
-    setSelectedItemId(entry.item_id || '');
-    setQuantity(String(entry.quantity || ''));
-    setVehicleRef(entry.vehicle_ref || '');
-    setExpenseLedger(entry.expense_ledger || '');
-    setRemarks(entry.remarks || '');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setUsageDate(new Date().toISOString().split('T')[0]);
-    setSelectedItemId('');
-    setQuantity('');
-    setVehicleRef('');
-    setExpenseLedger('');
-    setRemarks('');
-  };
-
-  // Handle form submission (Create or Update)
   const handleSubmit = (e) => {
     e.preventDefault();
     setFeedback(null);
@@ -70,6 +83,10 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
     }
     if (parsedQty <= 0) {
       setFeedback({ type: 'error', message: 'कृपया वैध मात्रा (Quantity) दर्ज करें।' });
+      return;
+    }
+    if (!editingId && parsedQty > currentStock) {
+      setFeedback({ type: 'error', message: `स्टॉक अपर्याप्त है! उपलब्ध स्टॉक: ${currentStock.toFixed(2)}` });
       return;
     }
     if (!expenseLedger) {
@@ -84,43 +101,66 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
         firm_id: firm?.id || 'default_firm',
         usage_date: usageDate,
         item_id: selectedItemId,
-        item_name: selectedItem?.item_name || selectedItem?.name || 'Fuel / Diesel',
+        item_name: selectedItem?.item_name || selectedItem?.name || 'Material Item',
         quantity: parsedQty,
         unit_rate: unitRate,
         total_valuation: estimatedCost,
         vehicle_ref: vehicleRef || 'General Usage',
         expense_ledger: expenseLedger,
         remarks: remarks || '',
-        updated_at: new Date().toISOString()
+        created_at: new Date().toISOString()
       };
 
-      let updatedList = [];
+      // Deduct inventory stock
+      const updatedInventory = itemsList.map(item => {
+        if (String(item.id) === String(selectedItemId)) {
+          const oldStock = Number(item.current_stock || item.stock || 0);
+          return { ...item, current_stock: Math.max(0, oldStock - parsedQty) };
+        }
+        return item;
+      });
+      setItemsList(updatedInventory);
+      localStorage.setItem('inventory_items', JSON.stringify(updatedInventory));
+
+      let updatedConsumptions = [];
       if (editingId) {
-        updatedList = consumptionList.map(item => item.id === editingId ? payload : item);
-        setFeedback({ type: 'success', message: '✓ खपत प्रविष्टि (Consumption Entry) सफलतापूर्वक अपडेट कर दी गई!' });
+        updatedConsumptions = consumptionList.map(c => c.id === editingId ? payload : c);
+        setFeedback({ type: 'success', message: '✓ खपत प्रविष्टि सफलतापूर्वक अपडेट कर दी गई!' });
       } else {
-        payload.created_at = new Date().toISOString();
-        updatedList = [payload, ...consumptionList];
+        updatedConsumptions = [payload, ...consumptionList];
         setFeedback({ type: 'success', message: '✓ स्टॉक सफलतापूर्वक घटा दिया गया और खर्चे का वाउचर दर्ज हो गया!' });
       }
 
-      setConsumptionList(updatedList);
-      localStorage.setItem('material_consumptions', JSON.stringify(updatedList));
+      setConsumptionList(updatedConsumptions);
+      localStorage.setItem('material_consumptions', JSON.stringify(updatedConsumptions));
 
       if (typeof onSave === 'function') {
         onSave(payload);
       }
 
-      handleCancelEdit();
+      setEditingId(null);
+      setQuantity('');
+      setVehicleRef('');
+      setRemarks('');
+      setSelectedItemId('');
     } catch (err) {
-      console.error('Submission error:', err);
       setFeedback({ type: 'error', message: 'सहेजने में विफल: ' + err.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Handle Delete Entry
+  const handleStartEdit = (entry) => {
+    setEditingId(entry.id);
+    setUsageDate(entry.usage_date || new Date().toISOString().split('T')[0]);
+    setSelectedItemId(entry.item_id || '');
+    setQuantity(String(entry.quantity || ''));
+    setVehicleRef(entry.vehicle_ref || '');
+    setExpenseLedger(entry.expense_ledger || '');
+    setRemarks(entry.remarks || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleDelete = (id) => {
     if (!window.confirm('क्या आप वाकई इस प्रविष्टि को हटाना चाहते हैं?')) return;
     try {
@@ -136,7 +176,7 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '12px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', width: '100%', maxWidth: '100vw', overflowX: 'hidden', color: '#0f172a' }}>
       
-      {/* Top Header Card */}
+      {/* Top Header */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '14px', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           {onClose && (
@@ -162,16 +202,16 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
           </div>
         </div>
 
-        {/* Available Stock Indicator Badge */}
         <div style={{ marginTop: '12px', padding: '10px 12px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#065f46' }}>AVAILABLE FUEL / DIESEL:</span>
+          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#065f46' }}>
+            {selectedItem ? `AVAILABLE ${selectedItem.item_name || selectedItem.name}:` : 'AVAILABLE STOCK:'}
+          </span>
           <span style={{ fontSize: '13px', fontWeight: 900, color: '#047857' }}>
-            {currentStock.toFixed(2)} Liters
+            {currentStock.toFixed(2)} {selectedItem?.unit || 'Units'}
           </span>
         </div>
       </div>
 
-      {/* Feedback Alert Toast */}
       {feedback && (
         <div style={{ marginBottom: '14px', padding: '10px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', backgroundColor: feedback.type === 'success' ? '#ecfdf5' : '#fef2f2', color: feedback.type === 'success' ? '#065f46' : '#991b1b', border: feedback.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca' }}>
           {feedback.message}
@@ -201,21 +241,17 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
               style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
               required
             >
-              <option value="">-- Choose Fuel / Material --</option>
-              {inventoryItems.length > 0 ? (
-                inventoryItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.item_name || item.name} (Stock: {Number(item.current_stock || item.stock || 0).toFixed(2)})
-                  </option>
-                ))
-              ) : (
-                <option value="default_fuel">Fuel / Diesel (Available: 4557.40 Liters)</option>
-              )}
+              <option value="">-- Choose Stock Item from Inventory --</option>
+              {itemsList.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.item_name || item.name} (Available: {Number(item.current_stock || item.stock || 0).toFixed(2)} {item.unit || 'Units'})
+                </option>
+              ))}
             </select>
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Quantity Consumed (Liters) *</label>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Quantity Consumed *</label>
             <input
               type="number"
               step="0.01"
@@ -242,13 +278,14 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
 
           <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
-              Estimated Cost Valuation (@ ₹{unitRate.toFixed(2)}/Liters):
+              Estimated Cost Valuation (@ ₹{unitRate.toFixed(2)}/{selectedItem?.unit || 'Unit'}):
             </span>
             <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>
               ₹{estimatedCost.toFixed(2)}
             </span>
           </div>
 
+          {/* DEBIT EXPENSE LEDGER DROPDOWN - POPULATES CREATED ACCOUNTS */}
           <div>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Debit Expense Ledger (P&L Kharch Khata) *</label>
             <select
@@ -257,20 +294,12 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
               style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
               required
             >
-              <option value="">-- Select Expense Ledger --</option>
-              {expenseAccounts.length > 0 ? (
-                expenseAccounts.map((acc) => (
-                  <option key={acc.id || acc.name} value={acc.name || acc.account_name}>
-                    {acc.name || acc.account_name} ({acc.category || 'Expenses'})
-                  </option>
-                ))
-              ) : (
-                <>
-                  <option value="Diesel Expenses">Diesel Expenses (Direct Manufacturing Expense)</option>
-                  <option value="Petrol expenses">Petrol expenses (Administrative & Office Expense)</option>
-                  <option value="Machinery Maintenance">Machinery Maintenance</option>
-                </>
-              )}
+              <option value="">-- Select Created Account / Expense Ledger --</option>
+              {accountsList.map((acc, idx) => (
+                <option key={acc.id || idx} value={acc.name}>
+                  {acc.name} ({acc.category || acc.account_group || 'Expenses'})
+                </option>
+              ))}
             </select>
           </div>
 
@@ -278,7 +307,7 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Remarks / Operational Notes (Optional)</label>
             <input
               type="text"
-              placeholder="e.g. Field plowing work session"
+              placeholder="e.g. Field work session"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', fontWeight: 500, boxSizing: 'border-box', outline: 'none' }}
@@ -308,7 +337,7 @@ export default function MaterialConsumptionView({ firm, inventoryItems = [], exp
             {editingId && (
               <button
                 type="button"
-                onClick={handleCancelEdit}
+                onClick={() => { setEditingId(null); setQuantity(''); setVehicleRef(''); setSelectedItemId(''); }}
                 style={{ padding: '12px 16px', backgroundColor: '#e2e8f0', color: '#334155', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
               >
                 Cancel
