@@ -6,7 +6,15 @@ import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function CreateInvoice({ firm, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
-  const allItems = useItemMaster(); 
+  
+  // Safe hooks handling
+  let allItems = [];
+  try {
+    allItems = useItemMaster() || [];
+  } catch (e) {
+    allItems = [];
+  }
+
   const [accountsList, setAccountsList] = useState([]);
   const [invoiceList, setInvoiceList] = useState([]);
 
@@ -26,12 +34,16 @@ export default function CreateInvoice({ firm, onClose }) {
   const [feedback, setFeedback] = useState(null);
 
   const loadData = () => {
-    const accList = getFirmMasterAccounts(activeFirmId) || [];
-    setAccountsList(accList);
+    try {
+      const accList = getFirmMasterAccounts(activeFirmId) || [];
+      setAccountsList(accList);
 
-    const allVouchers = StorageService.getVouchers() || [];
-    const salesInvoices = allVouchers.filter(v => v.firm_id === activeFirmId && (v.voucher_type === 'SALES' || v.type === 'SALES'));
-    setInvoiceList(salesInvoices);
+      const allVouchers = StorageService.getVouchers() || [];
+      const salesInvoices = allVouchers.filter(v => v && v.firm_id === activeFirmId && (v.voucher_type === 'SALES' || v.type === 'SALES'));
+      setInvoiceList(salesInvoices);
+    } catch (err) {
+      console.error("Error loading invoice data:", err);
+    }
   };
 
   useEffect(() => {
@@ -47,24 +59,24 @@ export default function CreateInvoice({ firm, onClose }) {
   const handleAddToCart = () => {
     if (!selectedItemId || !quantity || !rate) return alert('कृपया आइटम, मात्रा और रेट दर्ज करें।');
     const itemObj = allItems.find(i => String(i.id) === String(selectedItemId));
-    if (!itemObj) return;
+    if (!itemObj) return alert('चयनित आइटम नहीं मिला।');
 
     setCart([...cart, {
       id: Date.now(),
       itemId: selectedItemId,
-      itemName: itemObj.item_name,
+      itemName: itemObj.item_name || itemObj.name || 'Item',
       unit: itemObj.unit || 'Pcs',
       qty: Number(quantity),
       rate: Number(rate),
       total: Number(quantity) * Number(rate),
-      isService: itemObj.item_type === 'SERVICE' || String(itemObj.item_name).toLowerCase().includes('freight')
+      isService: itemObj.item_type === 'SERVICE' || String(itemObj.item_name || '').toLowerCase().includes('freight')
     }]);
     setSelectedItemId(''); setQuantity(''); setRate('');
   };
 
   const removeCartItem = (id) => setCart(cart.filter(c => c.id !== id));
 
-  const taxableAmount = cart.reduce((sum, i) => sum + i.total, 0);
+  const taxableAmount = cart.reduce((sum, i) => sum + (i.total || 0), 0);
   const cgst = taxableAmount * 0.025; 
   const sgst = taxableAmount * 0.025; 
   const grandTotal = taxableAmount + cgst + sgst;
@@ -79,32 +91,29 @@ export default function CreateInvoice({ firm, onClose }) {
       const currentInventory = StorageService.getInventoryItems() || [];
       const vouchers = StorageService.getVouchers() || [];
 
-      // If editing, first restore old stock of the editing invoice
       let workingInventory = [...currentInventory];
       if (editingId) {
-        const oldInv = vouchers.find(v => v.id === editingId);
+        const oldInv = vouchers.find(v => v && v.id === editingId);
         if (oldInv && oldInv.items) {
           workingInventory = workingInventory.map(invItem => {
-            const matched = oldInv.items.find(c => String(c.itemId) === String(invItem.id));
+            const matched = oldInv.items.find(c => c && String(c.itemId) === String(invItem.id));
             if (matched && !matched.isService) {
-              return { ...invItem, current_stock: Number(invItem.current_stock || 0) + Number(matched.qty) };
+              return { ...invItem, current_stock: Number(invItem.current_stock || 0) + Number(matched.qty || 0) };
             }
             return invItem;
           });
         }
       }
 
-      // Deduct new cart stock
       const updatedInventory = workingInventory.map(invItem => {
-        const cartItem = cart.find(c => String(c.itemId) === String(invItem.id));
+        const cartItem = cart.find(c => c && String(c.itemId) === String(invItem.id));
         if (cartItem && !cartItem.isService) {
-          return { ...invItem, current_stock: Number(invItem.current_stock || 0) - cartItem.qty };
+          return { ...invItem, current_stock: Number(invItem.current_stock || 0) - Number(cartItem.qty || 0) };
         }
         return invItem;
       });
       StorageService.setItem('inventory_items', updatedInventory);
 
-      // Save or Update Voucher
       const newVoucher = {
         id: editingId || `INV-${Date.now()}`,
         firm_id: activeFirmId,
@@ -122,7 +131,7 @@ export default function CreateInvoice({ firm, onClose }) {
 
       let updatedVouchers;
       if (editingId) {
-        updatedVouchers = vouchers.map(v => v.id === editingId ? newVoucher : v);
+        updatedVouchers = vouchers.map(v => v && v.id === editingId ? newVoucher : v);
         setFeedback({ type: 'success', message: '✓ Invoice Updated Successfully!' });
       } else {
         updatedVouchers = [newVoucher, ...vouchers];
@@ -132,7 +141,6 @@ export default function CreateInvoice({ firm, onClose }) {
       StorageService.setItem('account_book_vouchers', updatedVouchers);
       loadData();
 
-      // Reset Form
       setEditingId(null);
       setCart([]);
       setCustomerParty('');
@@ -144,8 +152,8 @@ export default function CreateInvoice({ firm, onClose }) {
     }
   };
 
-  // Handle Edit Init
   const handleEdit = (inv) => {
+    if (!inv) return;
     setEditingId(inv.id);
     setInvoiceDate(inv.voucher_date || new Date().toISOString().split('T')[0]);
     setInvoiceNo(inv.reference_no || '');
@@ -155,27 +163,26 @@ export default function CreateInvoice({ firm, onClose }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Handle Delete / Reverse
   const handleDelete = (invId, invNo) => {
     if (!window.confirm(`Invoice #${invNo} को डिलीट करने से इसका स्टॉक वापस जुड़ जाएगा। जारी रखें?`)) return;
 
     try {
       const vouchers = StorageService.getVouchers() || [];
-      const targetInv = vouchers.find(v => v.id === invId);
+      const targetInv = vouchers.find(v => v && v.id === invId);
 
       if (targetInv && targetInv.items) {
         const currentInventory = StorageService.getInventoryItems() || [];
         const restoredInventory = currentInventory.map(invItem => {
-          const matchedCartItem = targetInv.items.find(c => String(c.itemId) === String(invItem.id));
+          const matchedCartItem = targetInv.items.find(c => c && String(c.itemId) === String(invItem.id));
           if (matchedCartItem && !matchedCartItem.isService) {
-            return { ...invItem, current_stock: Number(invItem.current_stock || 0) + Number(matchedCartItem.qty) };
+            return { ...invItem, current_stock: Number(invItem.current_stock || 0) + Number(matchedCartItem.qty || 0) };
           }
           return invItem;
         });
         StorageService.setItem('inventory_items', restoredInventory);
       }
 
-      const filteredVouchers = vouchers.filter(v => v.id !== invId);
+      const filteredVouchers = vouchers.filter(v => v && v.id !== invId);
       StorageService.setItem('account_book_vouchers', filteredVouchers);
       loadData();
       if (editingId === invId) {
@@ -187,24 +194,23 @@ export default function CreateInvoice({ firm, onClose }) {
     }
   };
 
-  // Print single invoice view
   const handlePrint = (inv) => {
+    if (!inv) return;
     const printWindow = window.open('', '_blank');
-    const taxable = Number(inv.amount || 0) / 1.05;
-    const tax = taxable * 0.025;
+    if (!printWindow) return alert('Popup blocked! Please allow popups for printing.');
 
     printWindow.document.write(`
       <html>
-        <head><title>Invoice #${inv.reference_no}</title></head>
+        <head><title>Invoice #${inv.reference_no || ''}</title></head>
         <body style="font-family:sans-serif; padding:20px;">
           <h2 style="text-align:center;">${firm?.name || 'Neelkanth Udyog'}</h2>
           <p style="text-align:center; font-size:12px; color:#666;">TAX INVOICE</p>
           <hr/>
-          <p><strong>Invoice No:</strong> ${inv.reference_no} | <strong>Date:</strong> ${inv.voucher_date}</p>
-          <p><strong>Customer:</strong> ${inv.dr_account}</p>
+          <p><strong>Invoice No:</strong> ${inv.reference_no || ''} | <strong>Date:</strong> ${inv.voucher_date || ''}</p>
+          <p><strong>Customer:</strong> ${inv.dr_account || ''}</p>
           <table border="1" cellspacing="0" cellpadding="8" style="width:100%; margin-top:15px; border-collapse:collapse;">
             <tr style="background:#f1f5f9;"><th>Item</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
-            ${(inv.items || []).map(i => `<tr><td>${i.itemName}</td><td>${i.qty} ${i.unit}</td><td>${i.rate}</td><td>${i.total}</td></tr>`).join('')}
+            ${(inv.items || []).map(i => `<tr><td>${i.itemName || ''}</td><td>${i.qty || 0} ${i.unit || ''}</td><td>${i.rate || 0}</td><td>${i.total || 0}</td></tr>`).join('')}
           </table>
           <p style="text-align:right; margin-top:15px;"><strong>Grand Total: ₹${Number(inv.amount || 0).toFixed(2)}</strong></p>
         </body>
@@ -215,7 +221,8 @@ export default function CreateInvoice({ firm, onClose }) {
   };
 
   const filteredInvoices = invoiceList.filter(v => {
-    const q = searchFilter.toLowerCase();
+    if (!v) return false;
+    const q = (searchFilter || '').toLowerCase();
     return (
       (v.reference_no && v.reference_no.toLowerCase().includes(q)) ||
       (v.dr_account && v.dr_account.toLowerCase().includes(q)) ||
@@ -271,7 +278,7 @@ export default function CreateInvoice({ firm, onClose }) {
                 <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #eab308', boxSizing: 'border-box', backgroundColor: '#fff', outline: 'none' }}>
                   <option value="">-- Choose Stock Item --</option>
                   {allItems.map(item => (
-                    <option key={item.id} value={item.id}>{item.item_name} [Stock: {item.current_stock || 0} {item.unit}]</option>
+                    <option key={item.id} value={item.id}>{item.item_name || item.name} [Stock: {item.current_stock || item.stock || 0} {item.unit}]</option>
                   ))}
                 </select>
               </div>
@@ -300,7 +307,7 @@ export default function CreateInvoice({ firm, onClose }) {
                       <span style={{ fontSize: '11px', color: '#64748b' }}>Qty: {c.qty} {c.unit} @ ₹{c.rate}</span>
                     </div>
                     <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
-                      ₹{c.total.toFixed(2)} 
+                      ₹{(c.total || 0).toFixed(2)} 
                       <button type="button" onClick={() => removeCartItem(c.id)} style={{ color: '#ef4444', border: 'none', background: 'none', marginLeft: '12px', cursor: 'pointer', fontWeight: 'bold', padding: '4px' }}>X</button>
                     </div>
                   </div>
@@ -329,7 +336,6 @@ export default function CreateInvoice({ firm, onClose }) {
         </form>
       </div>
 
-      {/* RECENT INVOICES REGISTER WITH PRINT / EDIT / DELETE */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <strong style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -358,10 +364,10 @@ export default function CreateInvoice({ firm, onClose }) {
                 <div key={inv.id} style={{ backgroundColor: isSelected ? '#f0f9ff' : '#f8fafc', border: `1px solid ${isSelected ? '#0284c7' : '#e2e8f0'}`, borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '10px', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>{inv.voucher_date}</span>
-                      <strong style={{ fontSize: '12px', color: '#0f172a' }}>{inv.reference_no}</strong>
+                      <span style={{ fontSize: '10px', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>{inv.voucher_date || ''}</span>
+                      <strong style={{ fontSize: '12px', color: '#0f172a' }}>{inv.reference_no || ''}</strong>
                     </div>
-                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0284c7' }}>{inv.dr_account}</div>
+                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0284c7' }}>{inv.dr_account || ''}</div>
                     <div style={{ fontSize: '10px', color: '#64748b' }}>Items: {(inv.items || []).length} lines</div>
                   </div>
                   
