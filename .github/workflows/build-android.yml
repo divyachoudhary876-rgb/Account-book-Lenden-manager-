@@ -1,4 +1,4 @@
-name: Build Android Release APK
+name: Build Mobile Android APK
 
 on:
   push:
@@ -50,13 +50,13 @@ jobs:
         run: |
           cd frontend
           if [ ! -f "android/gradlew" ]; then
-            echo "Incomplete Android project detected. Re-scaffolding cleanly..."
+            echo "Re-scaffolding Android project..."
             rm -rf android
             npx cap add android
           fi
           npx cap sync android
 
-      - name: Build Signed Installable APK via Gradle
+      - name: Build Debug APK via Gradle
         run: |
           cd frontend/android
           chmod +x gradlew
@@ -65,12 +65,12 @@ jobs:
       - name: Prepare Final APK Artifact
         run: |
           mkdir -p final_apk
-          APK_FOUND=$(find frontend/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          APK_FOUND=$(find frontend/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
           if [ -n "$APK_FOUND" ]; then
             echo "Found APK at: $APK_FOUND"
             cp "$APK_FOUND" final_apk/AccountBook-Installable.apk
           else
-            echo "CRITICAL: No APK produced by Gradle."
+            echo "CRITICAL: No APK produced."
             exit 1
           fi
 
