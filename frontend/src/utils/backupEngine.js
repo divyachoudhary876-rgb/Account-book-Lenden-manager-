@@ -2,7 +2,7 @@
 import { StorageService } from './storageSync';
 
 /**
- * 1. Comprehensive System Backup Generator (Saves in standard root structure)
+ * 1. Comprehensive System Backup Generator
  */
 export const downloadFullSystemBackup = (firmId = 'FIRM-001') => {
   try {
@@ -26,7 +26,6 @@ export const downloadFullSystemBackup = (firmId = 'FIRM-001') => {
       consumptions: Array.isArray(consumptions) ? consumptions : []
     };
 
-    // Trigger Blob Download
     const jsonString = JSON.stringify(backupPayload, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -50,7 +49,7 @@ export const downloadFullSystemBackup = (firmId = 'FIRM-001') => {
 };
 
 /**
- * 2. Universal Schema-Agnostic Restore Engine (Handles both Root & Nested Formats)
+ * 2. Universal Schema-Agnostic Restore Engine
  */
 export const restoreSystemFromBackup = (fileContent) => {
   try {
@@ -60,13 +59,11 @@ export const restoreSystemFromBackup = (fileContent) => {
       throw new Error("Invalid backup file format.");
     }
 
-    // Extract data supporting both root-level format & nested storage_payload format
     const vouchers = parsed.vouchers || parsed.storage_data?.account_book_vouchers || parsed.storage_payload?.vouchers || [];
     const accounts = parsed.accounts || parsed.storage_data?.account_masters || parsed.storage_payload?.accounts || [];
     const inventory = parsed.inventory || parsed.storage_data?.inventory_items || parsed.storage_payload?.inventory || [];
     const consumptions = parsed.consumptions || parsed.storage_data?.material_consumptions || parsed.storage_payload?.consumptions || [];
 
-    // Save to respective storage keys ensuring full synchronization
     if (Array.isArray(vouchers) && vouchers.length > 0) {
       StorageService.setItem('account_book_vouchers', vouchers);
       localStorage.setItem('account_book_vouchers', JSON.stringify(vouchers));
@@ -89,7 +86,6 @@ export const restoreSystemFromBackup = (fileContent) => {
       localStorage.setItem('material_consumptions', JSON.stringify(consumptions));
     }
 
-    // Fallback: If generic storage_payload exists, restore it too
     if (parsed.storage_payload && typeof parsed.storage_payload === 'object') {
       Object.keys(parsed.storage_payload).forEach(key => {
         const val = parsed.storage_payload[key];
@@ -98,7 +94,6 @@ export const restoreSystemFromBackup = (fileContent) => {
       });
     }
 
-    // Broadcast global events to instantly update Ledger, Journal, Trial Balance, and Reports
     window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('app_state_updated'));
 
@@ -108,3 +103,9 @@ export const restoreSystemFromBackup = (fileContent) => {
     throw new Error(err.message || "Failed to restore backup file.");
   }
 };
+
+/**
+ * 3. EXPLICIT ALIASES TO MATCH SecurityBackupSettings.jsx IMPORTS (Fixes GitHub Action Build Error)
+ */
+export const exportUniversalBackup = downloadFullSystemBackup;
+export const restoreUniversalBackup = restoreSystemFromBackup;
