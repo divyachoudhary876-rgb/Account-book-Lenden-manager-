@@ -1,64 +1,109 @@
+// frontend/src/components/AccountStatementView.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
+import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
-export default function AccountStatementView({ firm, onClose }) {
+export default function AccountStatementView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
-  const firmName = firm?.legal_name || firm?.name || 'Enterprise Profile';
+  const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
 
-  const [accountsList, setAccountsList] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState('');
-  const [ledgerEntries, setLedgerEntries] = useState([]);
-  const [openingBalance, setOpeningBalance] = useState({ amount: 0, type: 'Dr' });
-  const [closingBalance, setClosingBalance] = useState({ amount: 0, type: 'Cr' });
-  const [searchQuery, setSearchQuery] = useState('');
+  const [accounts, setAccounts] = useState([]);
+  const [selectedParty, setSelectedParty] = useState('');
+  const [statementData, setStatementData] = useState(null);
 
   const loadData = () => {
     try {
-      // 1. Load Master Accounts
-      const accs = getFirmMasterAccounts(activeFirmId) || [];
-      setAccountsList(accs);
-      if (accs.length > 0 && !selectedAccount) {
-        setSelectedAccount(accs[0].name || accs[0].account_name);
+      const accList = getFirmMasterAccounts(activeFirmId) || [];
+      setAccounts(accList);
+      if (accList.length > 0 && !selectedParty) {
+        setSelectedParty(accList[0].name || accList[0].account_name || '');
       }
-    } catch (err) {
-      console.error("Error loading master accounts:", err);
+    } catch (e) {
+      console.error("Error loading accounts:", e);
     }
   };
 
   useEffect(() => {
     loadData();
+    window.addEventListener('app_state_updated', loadData);
     window.addEventListener('app_storage_updated', loadData);
-    return () => window.removeEventListener('app_storage_updated', loadData);
+    return () => {
+      window.removeEventListener('app_state_updated', loadData);
+      window.removeEventListener('app_storage_updated', loadData);
+    };
   }, [activeFirmId]);
 
-  // 2. Compute Ledger Entries for Selected Account
+  // Unified & Robust Account Statement Computation Engine
   useEffect(() => {
-    if (!selectedAccount) return;
+    if (!selectedParty) {
+      setStatementData(null);
+      return;
+    }
 
     try {
-      const vouchers = StorageService.getItem('account_book_vouchers') || [];
-      const firmVouchers = vouchers.filter(v => v && v.firm_id === activeFirmId);
+      // 1. Gather all raw transactions/vouchers from all potential storage keys safely
+      let rawTx = [];
+      const primaryKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'daybook'];
+      
+      primaryKeys.forEach(k => {
+        const val = StorageService.getItem(k);
+        if (Array.isArray(val)) rawTx.push(...val);
+      });
 
-      const matchedEntries = [];
+      // Fallback: Scan localStorage directly to catch any missed keys
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('entry'))) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) rawTx.push(...parsed);
+              else if (parsed && typeof parsed === 'object') {
+                if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
+                if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
+              }
+            } catch (err) {}
+          }
+        }
+      }
 
-      firmVouchers.forEach(v => {
-        if (!v) return;
-        const amt = Number(v.amount || 0);
-        const dr = v.dr_account || '';
-        const cr = v.cr_account || '';
+      // 2. Deduplicate transactions by unique ID or composite key
+      const uniqueMap = new Map();
+      rawTx.forEach(tx => {
+        if (!tx) return;
+        // Firm filter if firm_id exists
+        if (tx.firm_id && tx.firm_id !== activeFirmId) return;
 
-        // Check if selected account is involved as Debit or Credit
-        const isDr = dr.trim().toLowerCase() === selectedAccount.trim().toLowerCase();
-        const isCr = cr.trim().toLowerCase() === selectedAccount.trim().toLowerCase();
+        const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount}-${tx.dr_account}-${tx.cr_account}`;
+        if (!uniqueMap.has(uId)) {
+          uniqueMap.set(uId, tx);
+        }
+      });
+
+      const allVouchers = Array.from(uniqueMap.values());
+      const targetClean = String(selectedParty).trim().toLowerCase();
+
+      const matchedTransactions = [];
+
+      allVouchers.forEach(v => {
+        const amt = parseFloat(v.amount || v.total_amount || 0);
+        if (amt <= 0 || isNaN(amt)) return;
+
+        // Handle various key names for Debit and Credit accounts
+        const dr = String(v.dr_account || v.dr_party || v.debit_account || '').trim().toLowerCase();
+        const cr = String(v.cr_account || v.cr_party || v.credit_account || '').trim().toLowerCase();
+
+        const isDr = dr === targetClean || dr.includes(targetClean) || targetClean.includes(dr);
+        const isCr = cr === targetClean || cr.includes(targetClean) || targetClean.includes(cr);
 
         if (isDr || isCr) {
-          matchedEntries.push({
-            id: v.id || Math.random(),
+          matchedTransactions.push({
             date: v.voucher_date || v.date || '2026-04-01',
-            type: v.voucher_type || v.type || 'TX',
-            refNo: v.reference_no || v.voucher_number || '',
-            particulars: isDr ? `To ${cr || 'Account'}` : `By ${dr || 'Account'}`,
+            voucher_type: String(v.voucher_type || v.type || 'TX').toUpperCase(),
+            voucher_number: v.reference_no || v.voucher_number || 'N/A',
+            particulars: isDr ? `To ${v.cr_account || v.cr_party || 'Account'}` : `By ${v.dr_account || v.dr_party || 'Account'}`,
             narration: v.narration || '',
             debit: isDr ? amt : 0,
             credit: isCr ? amt : 0
@@ -66,115 +111,190 @@ export default function AccountStatementView({ firm, onClose }) {
         }
       });
 
-      // Sort chronologically by date
-      matchedEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+      // Sort chronologically
+      matchedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      // Calculate Running Balances
+      // Calculate running balances
       let runningBal = 0;
-      let type = 'Dr';
-
-      const processed = matchedEntries.map(entry => {
-        runningBal += (entry.debit - entry.credit);
+      const processedTransactions = matchedTransactions.map(t => {
+        runningBal += (t.debit - t.credit);
         return {
-          ...entry,
-          balance: Math.abs(runningBal),
+          ...t,
+          runningBalance: Math.abs(runningBal),
           balanceType: runningBal >= 0 ? 'Dr' : 'Cr'
         };
       });
 
-      setLedgerEntries(processed);
+      const lastClosing = processedTransactions.length > 0 ? processedTransactions[processedTransactions.length - 1] : { runningBalance: 0, balanceType: 'Dr' };
 
-      if (processed.length > 0) {
-        const last = processed[processed.length - 1];
-        setClosingBalance({ amount: last.balance, type: last.balanceType });
-      } else {
-        setClosingBalance({ amount: 0, type: 'Dr' });
-      }
+      setStatementData({
+        openingBalance: 0,
+        openingType: 'Dr',
+        closingBalance: lastClosing.runningBalance,
+        closingType: lastClosing.balanceType,
+        transactions: processedTransactions
+      });
 
-    } catch (err) {
-      console.error("Error computing ledger:", err);
+    } catch (e) {
+      console.error("Error generating account statement:", e);
     }
-  }, [selectedAccount, activeFirmId]);
+  }, [selectedParty, activeFirmId]);
+
+  // Direct WhatsApp Khata Statement Sender
+  const handleShareWhatsApp = () => {
+    if (!statementData) return;
+
+    const accountMaster = accounts.find(a => (a.name || a.account_name) === selectedParty);
+    const phone = (accountMaster?.contact_phone || '').replace(/\D/g, '');
+
+    const balText = statementData.closingType === 'Dr'
+      ? `₹${statementData.closingBalance.toLocaleString('en-IN')} (बाकी / लेना है)`
+      : `₹${statementData.closingBalance.toLocaleString('en-IN')} (जमा / देना है)`;
+
+    const message = 
+      `*खाता विवरण (Account Statement)*\n` +
+      `*फर्म:* ${firmName}\n` +
+      `--------------------------------\n` +
+      `*खातेदार:* ${selectedParty}\n` +
+      `*तारीख:* ${new Date().toLocaleDateString('en-IN')}\n` +
+      `*प्रारंभिक शेष (Opening):* ₹${statementData.openingBalance.toLocaleString('en-IN')} ${statementData.openingType}\n` +
+      `*कुल लेन-देन संख्या:* ${statementData.transactions.length}\n` +
+      `--------------------------------\n` +
+      `*अंतिम शेष (Net Balance):* *${balText}*\n` +
+      `--------------------------------\n` +
+      `_कृपया अपने खाते का मिलान करें। धन्यवाद!_`;
+
+    const targetUrl = phone.length >= 10
+      ? `https://wa.me/91${phone.slice(-10)}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+    window.open(targetUrl, '_blank');
+  };
 
   return (
-    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
+    <div style={{ width: '100%', maxWidth: '750px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
       
-      {/* Header Card */}
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      {/* Header Banner */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>Double-Entry General Ledger</div>
-            <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📖 खाता मिलान (Account Statement)</h2>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
+              📖 खाता मिलान (Account Statement)
+            </h3>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry General Ledger & Real-Time Balance</span>
           </div>
-          {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
-        </div>
-
-        {/* Account Selection Dropdown */}
-        <div style={{ marginBottom: '12px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>खाता चुनें (Select Party / Account) **</label>
-          <select 
-            value={selectedAccount} 
-            onChange={e => setSelectedAccount(e.target.value)}
-            style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '2px solid #0284c7', backgroundColor: '#fff', fontSize: '13px', fontWeight: '700', outline: 'none' }}
-          >
-            <option value="">-- Choose Ledger Account --</option>
-            {accountsList.map((acc, idx) => {
-              const accName = acc.name || acc.account_name;
-              return <option key={idx} value={accName}>{accName} ({acc.category || acc.type || 'General'})</option>;
-            })}
-          </select>
-        </div>
-
-        {/* Summary Balances */}
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ flex: 1, backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '10px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Opening Balance</div>
-            <div style={{ fontSize: '14px', fontWeight: '900', color: '#0f172a', marginTop: '2px' }}>₹0.00 Dr</div>
-          </div>
-          <div style={{ flex: 1, backgroundColor: '#f0fdf4', padding: '12px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
-            <div style={{ fontSize: '10px', fontWeight: '700', color: '#166534', textTransform: 'uppercase' }}>Net Closing Balance</div>
-            <div style={{ fontSize: '14px', fontWeight: '900', color: '#15803d', marginTop: '2px' }}>₹{closingBalance.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {closingBalance.type}</div>
-          </div>
+          {statementData && statementData.transactions.length > 0 && (
+            <button
+              type="button"
+              onClick={handleShareWhatsApp}
+              style={{
+                backgroundColor: '#25D366',
+                color: '#ffffff',
+                border: 'none',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 6px rgba(37,211,102,0.3)'
+              }}
+            >
+              <span>💬</span> WhatsApp पर भेजें
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Ledger Register Table */}
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
-        <div style={{ marginBottom: '14px' }}>
-          <strong style={{ fontSize: '14px', color: '#0f172a', fontWeight: '800' }}>
-            📋 Ledger Transactions for "{selectedAccount || 'Select Account'}" ({ledgerEntries.length})
-          </strong>
-        </div>
+      {/* Account Selector */}
+      <div style={cardStyle}>
+        <SearchableAccountDropdown
+          label="खाता चुनें (Select Party/Account) *"
+          accounts={accounts}
+          value={selectedParty}
+          onChange={val => setSelectedParty(val)}
+          placeholder="पार्टी का नाम खोजें..."
+          colorAccent="#0284c7"
+          required
+        />
+      </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {ledgerEntries.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '13px' }}>
-              No transactions found for this account.
-            </div>
-          ) : (
-            ledgerEntries.map((entry, idx) => (
-              <div key={entry.id || idx} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
-                <div>
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '10px', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>{entry.date}</span>
-                    <span style={{ fontSize: '10px', backgroundColor: '#0284c7', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>{entry.type}</span>
-                    <strong style={{ fontSize: '12px', color: '#0f172a' }}>{entry.refNo}</strong>
-                  </div>
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a' }}>{entry.particulars}</div>
-                  {entry.narration && <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{entry.narration}</div>}
-                </div>
-                
-                <div style={{ textAlign: 'right' }}>
-                  {entry.debit > 0 && <div style={{ fontSize: '13px', fontWeight: '800', color: '#059669' }}>Dr: ₹{entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>}
-                  {entry.credit > 0 && <div style={{ fontSize: '13px', fontWeight: '800', color: '#dc2626' }}>Cr: ₹{entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>}
-                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#475569', marginTop: '4px' }}>Bal: ₹{entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {entry.balanceType}</div>
-                </div>
-              </div>
-            ))
-          )}
+      {/* Summary KPI Bar */}
+      {statementData && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div style={{ ...cardStyle, backgroundColor: '#f8fafc' }}>
+            <div style={labelStyle}>Opening Balance</div>
+            <strong style={{ fontSize: '16px', color: '#0f172a' }}>
+              ₹{statementData.openingBalance.toLocaleString('en-IN')} {statementData.openingType}
+            </strong>
+          </div>
+          <div style={{ ...cardStyle, backgroundColor: statementData.closingType === 'Dr' ? '#eff6ff' : '#fef2f2' }}>
+            <div style={labelStyle}>Net Closing Balance</div>
+            <strong style={{ fontSize: '16px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
+              ₹{statementData.closingBalance.toLocaleString('en-IN')} {statementData.closingType}
+            </strong>
+          </div>
         </div>
+      )}
+
+      {/* Ledger Table */}
+      <div style={{ ...cardStyle, padding: '12px', overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+              <th style={thStyle}>तारीख</th>
+              <th style={thStyle}>विवरण (Particulars)</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>नामे (Dr ₹)</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>जमा (Cr ₹)</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>बाकी (Balance ₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!statementData || statementData.transactions.length === 0 ? (
+              <tr>
+                <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+                  इस खाते में कोई लेन-देन दर्ज नहीं है।
+                </td>
+              </tr>
+            ) : (
+              statementData.transactions.map((t, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                  <td style={tdStyle}>{t.date}</td>
+                  <td style={tdStyle}>
+                    <strong>{t.voucher_type}</strong> #{t.voucher_number}
+                    {t.narration && <div style={{ color: '#64748b', fontSize: '10px' }}>{t.narration}</div>}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'right', color: t.debit > 0 ? '#059669' : '#94a3b8', fontWeight: t.debit > 0 ? 'bold' : 'normal' }}>
+                    {t.debit > 0 ? t.debit.toFixed(2) : '-'}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'right', color: t.credit > 0 ? '#dc2626' : '#94a3b8', fontWeight: t.credit > 0 ? 'bold' : 'normal' }}>
+                    {t.credit > 0 ? t.credit.toFixed(2) : '-'}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: t.balanceType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
+                    {t.runningBalance.toFixed(2)} {t.balanceType}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
     </div>
   );
 }
+
+const cardStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '14px',
+  padding: '16px',
+  border: '1px solid #cbd5e1',
+  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+  boxSizing: 'border-box'
+};
+
+const labelStyle = { fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' };
+const thStyle = { padding: '10px 8px', fontWeight: 'bold' };
+const tdStyle = { padding: '10px 8px', verticalAlign: 'top' };
