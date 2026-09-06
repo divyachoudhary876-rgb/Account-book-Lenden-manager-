@@ -8,6 +8,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
   const allItems = useItemMaster(); 
   const [accountsList, setAccountsList] = useState([]);
+  const [purchaseList, setPurchaseList] = useState([]);
 
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
   const [billNo, setBillNo] = useState(`PUR-${Math.floor(Date.now() / 1000)}`);
@@ -18,15 +19,25 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [searchFilter, setSearchFilter] = useState('');
+
+  const loadData = () => {
+    const accList = getFirmMasterAccounts(activeFirmId) || [];
+    setAccountsList(accList);
+
+    const allVouchers = StorageService.getItem('account_book_vouchers') || [];
+    const purchases = allVouchers.filter(v => v && v.firm_id === activeFirmId && (v.voucher_type === 'PURCHASE' || v.type === 'PURCHASE'));
+    setPurchaseList(purchases);
+  };
 
   useEffect(() => {
-    const loadAccs = () => {
-      const accList = getFirmMasterAccounts(activeFirmId) || [];
-      setAccountsList(accList);
+    loadData();
+    window.addEventListener('app_state_updated', loadData);
+    window.addEventListener('app_storage_updated', loadData);
+    return () => {
+      window.removeEventListener('app_state_updated', loadData);
+      window.removeEventListener('app_storage_updated', loadData);
     };
-    loadAccs();
-    window.addEventListener('app_state_updated', loadAccs);
-    return () => window.removeEventListener('app_state_updated', loadAccs);
   }, [activeFirmId]);
 
   const handleSubmit = (e) => {
@@ -59,7 +70,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       });
       StorageService.setItem('inventory_items', updatedInventory);
 
-      // 2. Safe Voucher Storage Fetch & Save
+      // 2. Save Voucher
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
       const newVoucher = {
         id: `PUR-${Date.now()}`,
@@ -70,13 +81,16 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         cr_account: supplierParty,
         amount: totalAmount,
         reference_no: billNo,
+        itemId: selectedItemId,
+        qty: parsedQty,
+        rate: parsedRate,
         narration: `Purchased ${parsedQty} ${selectedItemObj?.unit || 'Units'} of ${selectedItemObj?.item_name || 'Item'} @ ₹${parsedRate}`,
         created_at: new Date().toISOString()
       };
       StorageService.setItem('account_book_vouchers', [newVoucher, ...vouchers]);
 
-      // Trigger global sync event
       window.dispatchEvent(new Event('app_storage_updated'));
+      loadData();
 
       setFeedback({ type: 'success', message: '✓ Purchase Bill Saved & Stock Updated!' });
       setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty('');
@@ -88,9 +102,48 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     }
   };
 
+  const handleDeletePurchase = (voucherId, refNo) => {
+    if (!window.confirm(`Bill #${refNo} को हटाने से इसका स्टॉक वापस माइनस हो जाएगा। जारी रखें?`)) return;
+
+    try {
+      const vouchers = StorageService.getItem('account_book_vouchers'] || StorageService.getItem('account_book_vouchers') || [];
+      const targetVoucher = vouchers.find(v => v && v.id === voucherId);
+
+      if (targetVoucher && targetVoucher.itemId && targetVoucher.qty) {
+        const currentInventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+        const restoredInventory = currentInventory.map(item => {
+          if (String(item.id) === String(targetVoucher.itemId)) {
+            return { ...item, current_stock: Math.max(0, Number(item.current_stock || 0) - Number(targetVoucher.qty)) };
+          }
+          return item;
+        });
+        StorageService.setItem('inventory_items', restoredInventory);
+      }
+
+      const filtered = vouchers.filter(v => v && v.id !== voucherId);
+      StorageService.setItem('account_book_vouchers', filtered);
+      loadData();
+      alert('✓ Purchase entry deleted & stock adjusted.');
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  };
+
+  const filteredPurchases = purchaseList.filter(v => {
+    if (!v) return false;
+    const q = (searchFilter || '').toLowerCase();
+    return (
+      (v.reference_no && v.reference_no.toLowerCase().includes(q)) ||
+      (v.cr_account && v.cr_account.toLowerCase().includes(q)) ||
+      (v.narration && v.narration.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', boxSizing: 'border-box', border: '1px solid #e2e8f0' }}>
+      
+      {/* Form Card */}
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', boxSizing: 'border-box', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📦 Purchase Inward & Stock Entry</h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
@@ -152,6 +205,58 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           </button>
         </form>
       </div>
+
+      {/* PURCHASE REGISTER LIST */}
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <strong style={{ fontSize: '14px', color: '#0f172a', fontWeight: '800' }}>
+            📋 Purchase Bills Register ({filteredPurchases.length})
+          </strong>
+        </div>
+
+        <input
+          type="text"
+          placeholder="🔍 Search bills by reference no, vendor..."
+          value={searchFilter}
+          onChange={e => setSearchFilter(e.target.value)}
+          style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', marginBottom: '12px', outline: 'none' }}
+        />
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {filteredPurchases.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '13px' }}>
+              No purchase bills recorded yet.
+            </div>
+          ) : (
+            filteredPurchases.map(inv => {
+              const amt = Number(inv.amount || 0);
+              return (
+                <div key={inv.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
+                  <div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '10px', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>{inv.voucher_date || ''}</span>
+                      <strong style={{ fontSize: '13px', color: '#0f172a' }}>{inv.reference_no || ''}</strong>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#dc2626' }}>{inv.cr_account || ''}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{inv.narration || ''}</div>
+                  </div>
+                  
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '15px', fontWeight: '900', color: '#059669', marginBottom: '8px' }}>₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                    <button 
+                      onClick={() => handleDeletePurchase(inv.id, inv.reference_no)}
+                      style={{ padding: '6px 12px', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: '700' }}
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }
