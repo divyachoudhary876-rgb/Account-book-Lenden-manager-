@@ -4,6 +4,7 @@ import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
+import { getAccountLedgerStatement } from '../utils/ledgerEngine.js';
 
 export default function AccountStatementView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
@@ -37,7 +38,7 @@ export default function AccountStatementView({ firm }) {
     };
   }, [activeFirmId]);
 
-  // Unified & Robust Account Statement Computation Engine
+  // Unified & Robust Account Statement Computation via centralized ledgerEngine
   useEffect(() => {
     if (!selectedParty) {
       setStatementData(null);
@@ -45,90 +46,15 @@ export default function AccountStatementView({ firm }) {
     }
 
     try {
-      let rawTx = [];
-      const primaryKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'daybook'];
+      // centralized engine call to prevent any missing transaction discrepancies
+      const statement = getAccountLedgerStatement(selectedParty, activeFirmId);
       
-      primaryKeys.forEach(k => {
-        const val = StorageService.getItem(k);
-        if (Array.isArray(val)) rawTx.push(...val);
-      });
-
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('entry'))) {
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) rawTx.push(...parsed);
-              else if (parsed && typeof parsed === 'object') {
-                if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
-                if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
-              }
-            } catch (err) {}
-          }
-        }
-      }
-
-      const uniqueMap = new Map();
-      rawTx.forEach(tx => {
-        if (!tx) return;
-        if (tx.firm_id && tx.firm_id !== activeFirmId) return;
-
-        const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount}-${tx.dr_account}-${tx.cr_account}`;
-        if (!uniqueMap.has(uId)) {
-          uniqueMap.set(uId, tx);
-        }
-      });
-
-      const allVouchers = Array.from(uniqueMap.values());
-      const targetClean = String(selectedParty).trim().toLowerCase();
-
-      const matchedTransactions = [];
-
-      allVouchers.forEach(v => {
-        const amt = parseFloat(v.amount || v.total_amount || 0);
-        if (amt <= 0 || isNaN(amt)) return;
-
-        const dr = String(v.dr_account || v.dr_party || v.debit_account || '').trim().toLowerCase();
-        const cr = String(v.cr_account || v.cr_party || v.credit_account || '').trim().toLowerCase();
-
-        const isDr = dr === targetClean || dr.includes(targetClean) || targetClean.includes(dr);
-        const isCr = cr === targetClean || cr.includes(targetClean) || targetClean.includes(cr);
-
-        if (isDr || isCr) {
-          matchedTransactions.push({
-            date: v.voucher_date || v.date || '2026-04-01',
-            voucher_type: String(v.voucher_type || v.type || 'TX').toUpperCase(),
-            voucher_number: v.reference_no || v.voucher_number || 'N/A',
-            particulars: isDr ? `To ${v.cr_account || v.cr_party || 'Account'}` : `By ${v.dr_account || v.dr_party || 'Account'}`,
-            narration: v.narration || '',
-            debit: isDr ? amt : 0,
-            credit: isCr ? amt : 0
-          });
-        }
-      });
-
-      matchedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-      let runningBal = 0;
-      const processedTransactions = matchedTransactions.map(t => {
-        runningBal += (t.debit - t.credit);
-        return {
-          ...t,
-          runningBalance: Math.abs(runningBal),
-          balanceType: runningBal >= 0 ? 'Dr' : 'Cr'
-        };
-      });
-
-      const lastClosing = processedTransactions.length > 0 ? processedTransactions[processedTransactions.length - 1] : { runningBalance: 0, balanceType: 'Dr' };
-
       setStatementData({
-        openingBalance: 0,
+        openingBalance: statement.openingBalance || 0,
         openingType: 'Dr',
-        closingBalance: lastClosing.runningBalance,
-        closingType: lastClosing.balanceType,
-        transactions: processedTransactions
+        closingBalance: statement.closingBalance || 0,
+        closingType: statement.balanceType || 'Dr',
+        transactions: statement.transactions || []
       });
 
     } catch (e) {
