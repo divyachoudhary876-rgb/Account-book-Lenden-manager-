@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
-// 🔥 Importing your exact Voucher Entry Dropdown
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
+// 🔥 FIX: Correct Account Engine Import
+import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
+  const activeFirmId = firm?.id || 'FIRM-001';
   const allItems = useItemMaster(); 
   const [accountsList, setAccountsList] = useState([]);
 
@@ -18,16 +20,16 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
+  // 🔥 FIX: Loading Accounts from Master Engine
   useEffect(() => {
     const loadAccs = () => {
-      let stored = StorageService.getLedgerAccounts() || [];
-      stored.sort((a, b) => String(a.account_name || a.name || '').localeCompare(String(b.account_name || b.name || '')));
-      setAccountsList(stored);
+      const accList = getFirmMasterAccounts(activeFirmId) || [];
+      setAccountsList(accList);
     };
     loadAccs();
-    window.addEventListener('app_storage_updated', loadAccs);
-    return () => window.removeEventListener('app_storage_updated', loadAccs);
-  }, []);
+    window.addEventListener('app_state_updated', loadAccs);
+    return () => window.removeEventListener('app_state_updated', loadAccs);
+  }, [activeFirmId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -61,7 +63,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       const vouchers = StorageService.getVouchers() || [];
       const newVoucher = {
         id: `PUR-${Date.now()}`,
-        firm_id: firm?.id || 'firm_default',
+        firm_id: activeFirmId,
         voucher_date: purchaseDate,
         voucher_type: 'PURCHASE',
         dr_account: 'Purchase A/c',
@@ -105,7 +107,6 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
             </div>
           </div>
 
-          {/* 🔥 Your EXACT Voucher Entry Dropdown */}
           <div style={{ marginBottom: '16px' }}>
             <SearchableAccountDropdown
               label="Supplier / Vendor Party **"
