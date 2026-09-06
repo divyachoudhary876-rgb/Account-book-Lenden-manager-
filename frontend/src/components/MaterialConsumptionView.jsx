@@ -6,8 +6,13 @@ const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const filtered = accounts.filter(a => String(a.account_name || a.name || '').toLowerCase().includes(search.toLowerCase()));
-  const selectedAcc = accounts.find(a => (a.account_name || a.name) === value);
+  const getName = (a) => a.account_name || a.name || a.displayName || '';
+  const getGroup = (a) => a.sub_group || a.category || a.primary_type || 'Ledger Account';
+  const getBal = (a) => Number(a.opening_balance || 0);
+  const getBalType = (a) => a.balance_type || 'Dr';
+
+  const filtered = accounts.filter(a => getName(a).toLowerCase().includes(search.toLowerCase()));
+  const selectedAcc = accounts.find(a => getName(a) === value);
 
   return (
     <div style={{ position: 'relative', marginBottom: '16px' }}>
@@ -18,11 +23,11 @@ const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }
       >
         {selectedAcc ? (
           <div>
-            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{selectedAcc.account_name || selectedAcc.name}</div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{selectedAcc.sub_group || selectedAcc.category}</div>
+            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{getName(selectedAcc)}</div>
+            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{getGroup(selectedAcc)}</div>
           </div>
         ) : (
-          <span style={{ color: '#64748b' }}>{placeholder || '-- Select Account --'}</span>
+          <span style={{ color: '#64748b' }}>{placeholder || '-- Select Expense Account --'}</span>
         )}
         <span style={{ fontSize: '10px', color: '#64748b' }}>{isOpen ? '▲' : '▼'}</span>
       </div>
@@ -33,7 +38,7 @@ const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }
             <span style={{ marginRight: '8px' }}>🔍</span>
             <input
               type="text"
-              placeholder="Type name to search (A to Z sorted)..."
+              placeholder="Search Expense Ledger..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               autoFocus
@@ -42,23 +47,23 @@ const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }
           </div>
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No accounts found.</div>
+              <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No expense accounts found. Create one first!</div>
             ) : (
-              filtered.map(acc => (
-                <div
-                  key={acc.id}
-                  onClick={() => { onChange(acc.account_name || acc.name); setIsOpen(false); setSearch(''); }}
-                  style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: value === (acc.account_name || acc.name) ? '#f0fdf4' : '#fff' }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 'bold', fontSize: '14px', color: value === (acc.account_name || acc.name) ? '#059669' : '#0f172a' }}>{acc.account_name || acc.name}</div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{acc.sub_group || acc.category || acc.primary_type}</div>
+              filtered.map(acc => {
+                const accName = getName(acc);
+                return (
+                  <div
+                    key={acc.id || Math.random()}
+                    onClick={() => { onChange(accName); setIsOpen(false); setSearch(''); }}
+                    style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: value === accName ? '#f0fdf4' : '#fff' }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '14px', color: value === accName ? '#059669' : '#0f172a' }}>{accName}</div>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{getGroup(acc)}</div>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: acc.balance_type === 'Cr' ? '#dc2626' : '#059669' }}>
-                    ₹{Math.abs(acc.opening_balance || 0)} {acc.balance_type || 'Dr'}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -86,8 +91,23 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   useEffect(() => {
     const syncData = () => {
       let stored = StorageService.getLedgerAccounts() || [];
-      stored.sort((a, b) => String(a.account_name || a.name || '').localeCompare(String(b.account_name || b.name || '')));
-      setAccountsList(stored);
+      
+      // 🔥 ACCOUNTING RULE APPLIED: Filter ONLY Expenses
+      const expenseAccounts = stored.filter(acc => {
+        const group = String(acc.sub_group || acc.category || acc.primary_type || '').toUpperCase();
+        const name = String(acc.account_name || acc.name || '').toUpperCase();
+
+        // Must be an expense
+        const isExpense = group.includes('EXPENSE') || group.includes('DIRECT') || group.includes('INDIRECT') || group.includes('FREIGHT');
+        
+        // Strict Blacklist to prevent Parties/Cash/Bank/Capital from showing here
+        const isRestricted = group.includes('LIABILIT') || group.includes('ASSET') || group.includes('EQUITY') || group.includes('INCOME') || group.includes('CREDITOR') || group.includes('DEBTOR') || name.includes('CASH') || name.includes('BANK');
+
+        return isExpense && !isRestricted;
+      });
+
+      expenseAccounts.sort((a, b) => String(a.account_name || a.name || '').localeCompare(String(b.account_name || b.name || '')));
+      setAccountsList(expenseAccounts);
       setConsumptionList(StorageService.getMaterialConsumptions() || []);
     };
 
@@ -160,7 +180,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         setFeedback({ type: 'success', message: '✓ खपत प्रविष्टि अपडेट हो गई!' });
       } else {
         updatedConsumptions = [payload, ...currentConsumptions];
-        setFeedback({ type: 'success', message: '✓ स्टॉक घटा दिया गया!' });
+        setFeedback({ type: 'success', message: '✓ स्टॉक घटा दिया गया और P&L में खर्चे की प्रविष्टि हो गई!' });
       }
       StorageService.setItem('material_consumptions', updatedConsumptions);
 
@@ -227,10 +247,10 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
 
           <div>
             <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Select Stock Item *</label>
-            <select value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #eab308', boxSizing: 'border-box' }} required>
+            <select value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #eab308', boxSizing: 'border-box', backgroundColor: '#fff' }} required>
               <option value="">-- Choose Stock Item --</option>
               {allItems.map(item => (
-                <option key={item.id} value={item.id}>{item.item_name} (Available: {item.current_stock || 0})</option>
+                <option key={item.id} value={item.id}>{item.item_name} [Stock: {item.current_stock || 0} {item.unit}]</option>
               ))}
             </select>
           </div>
@@ -241,13 +261,13 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
               <input type="number" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Vehicle Ref *</label>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Used In / Vehicle Ref *</label>
               <input type="text" value={vehicleRef} onChange={(e) => setVehicleRef(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
             </div>
           </div>
 
           <CustomAccountDropdown
-            label="Debit Expense Ledger *"
+            label="Debit Expense Ledger (P&L Kharch Khata) *"
             value={expenseLedger}
             onChange={setExpenseLedger}
             accounts={accountsList}
@@ -255,12 +275,11 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
           />
 
           <button type="submit" disabled={isSubmitting} style={{ padding: '14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
-            {editingId ? 'Update Entry' : 'Deduct Stock'}
+            {editingId ? 'Update Entry' : 'Deduct Stock & Post Expense'}
           </button>
         </form>
       </div>
       
-      {/* Logs Table */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
         <h2 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>📋 Consumption Logs ({consumptionList.length})</h2>
         {consumptionList.map(entry => (
@@ -268,6 +287,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             <div>
               <div style={{ fontWeight: 'bold' }}>{entry.item_name}</div>
               <div style={{ fontSize: '12px', color: '#64748b' }}>{entry.usage_date} | {entry.vehicle_ref}</div>
+              <div style={{ fontSize: '11px', color: '#0284c7', marginTop: '2px' }}>A/c: {entry.expense_ledger}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontWeight: 'bold', color: '#059669' }}>Qty: {entry.quantity}</div>
