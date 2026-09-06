@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
-// 🔥 Importing your exact Voucher Entry Dropdown
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
+// 🔥 FIX: Correct Account Engine Import
+import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function MaterialConsumptionView({ firm, onSave, onClose }) {
+  const activeFirmId = firm?.id || 'FIRM-001';
   const allItems = useItemMaster();
   const [accountsList, setAccountsList] = useState([]);
   const [consumptionList, setConsumptionList] = useState([]);
@@ -20,32 +22,34 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
+  // 🔥 FIX: Loading Accounts from Master Engine with STRICT EXPENSE FILTER
   useEffect(() => {
     const syncData = () => {
-      let stored = StorageService.getLedgerAccounts() || [];
+      const allAccs = getFirmMasterAccounts(activeFirmId) || [];
       
-      // 🔥 Accounting Rule: Only Expense accounts are allowed here
-      const expenseAccounts = stored.filter(acc => {
-        const group = String(acc.sub_group || acc.category || acc.primary_type || '').toUpperCase();
+      const expenseAccounts = allAccs.filter(acc => {
+        const group = String(acc.sub_group || acc.group_name || acc.category || acc.primary_type || '').toUpperCase();
         const name = String(acc.account_name || acc.name || '').toUpperCase();
+        
+        // Strict Logic to identify Expenses
         const isExpense = group.includes('EXPENSE') || group.includes('DIRECT') || group.includes('INDIRECT') || group.includes('FREIGHT');
         const isRestricted = group.includes('LIABILIT') || group.includes('ASSET') || group.includes('EQUITY') || group.includes('INCOME') || group.includes('CREDITOR') || group.includes('DEBTOR') || name.includes('CASH') || name.includes('BANK');
+        
         return isExpense && !isRestricted;
       });
 
-      expenseAccounts.sort((a, b) => String(a.account_name || a.name || '').localeCompare(String(b.account_name || b.name || '')));
       setAccountsList(expenseAccounts);
       setConsumptionList(StorageService.getMaterialConsumptions() || []);
     };
 
     syncData();
+    window.addEventListener('app_state_updated', syncData);
     window.addEventListener('app_storage_updated', syncData);
-    window.addEventListener('storage', syncData);
     return () => {
+      window.removeEventListener('app_state_updated', syncData);
       window.removeEventListener('app_storage_updated', syncData);
-      window.removeEventListener('storage', syncData);
     };
-  }, []);
+  }, [activeFirmId]);
 
   const selectedItem = useMemo(() => {
     return allItems.find(i => String(i.id) === String(selectedItemId)) || null;
@@ -80,7 +84,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
 
       const payload = {
         id: editingId || `CONSUME-${Date.now()}`,
-        firm_id: firm?.id || 'firm_default',
+        firm_id: activeFirmId,
         usage_date: usageDate,
         item_id: selectedItemId,
         item_name: selectedItem?.item_name || 'Material Item',
@@ -193,7 +197,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             </div>
           </div>
 
-          {/* 🔥 Your EXACT Voucher Entry Dropdown */}
           <div style={{ marginBottom: '16px' }}>
             <SearchableAccountDropdown
               label="Debit Expense Ledger (P&L Kharch Khata) *"
