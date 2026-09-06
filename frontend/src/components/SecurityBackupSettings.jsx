@@ -1,173 +1,152 @@
 // frontend/src/components/SecurityBackupSettings.jsx
-
 import React, { useState } from 'react';
-import { exportUniversalBackup, restoreUniversalBackup } from '../utils/backupEngine.js';
+import { exportUniversalBackup, restoreUniversalBackup } from '../utils/backupEngine';
 
-export default function SecurityBackupSettings({ firm }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
-  const activeFirmName = firm?.legal_name || firm?.trade_name || 'Neelkanth Int Udyog';
-
-  const [restoreMetrics, setRestoreMetrics] = useState(null);
-  const [errorMessage, setErrorMessage] = useState(null);
-  const [showJsonPaste, setShowJsonPaste] = useState(false);
+export default function SecurityBackupSettings({ firm, onClose }) {
   const [pastedJson, setPastedJson] = useState('');
+  const [successMsg, setSuccessMsg] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showPasteSection, setShowPasteSection] = useState(false);
 
-  // 1. Trigger Export Backup (.JSON)
-  const handleExport = () => {
-    try {
-      setErrorMessage(null);
-      const result = exportUniversalBackup(activeFirmId, activeFirmName);
-      if (result.success) {
-        alert(`✓ Full Backup Downloaded Successfully!\nTimestamp: ${new Date(result.timestamp).toLocaleString('en-IN')}`);
-      }
-    } catch (err) {
-      setErrorMessage(`Export failed: ${err.message}`);
-    }
-  };
-
-  // Process & Normalize Restore Result
-  const applyRestoreResult = (result) => {
-    if (!result || !result.success) {
-      throw new Error(result?.message || 'Restore failed to complete.');
-    }
-
-    // Defensive fallback: inspect all possible key aliases, fallback to 0
-    const accounts = result.accountsCount ?? result.accounts ?? 0;
-    const vouchers = result.vouchersCount ?? result.vouchers ?? 0;
-    const stockSKUs = result.stockCount ?? result.stockSKUs ?? result.stock ?? 0;
-
-    setRestoreMetrics({
-      accounts: Number.isFinite(accounts) ? accounts : 0,
-      vouchers: Number.isFinite(vouchers) ? vouchers : 0,
-      stockSKUs: Number.isFinite(stockSKUs) ? stockSKUs : 0
-    });
-    setErrorMessage(null);
-  };
-
-  // 2. Restore via File Picker (.JSON)
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Handle Export Backup
+  const handleExport = async () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
     setIsProcessing(true);
-    setErrorMessage(null);
-    setRestoreMetrics(null);
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const fileContent = event.target?.result;
-        const result = restoreUniversalBackup(fileContent);
-        applyRestoreResult(result);
-      } catch (err) {
-        setErrorMessage(err.message || 'Corrupted or invalid backup file.');
-      } finally {
-        setIsProcessing(false);
-        // Reset file input value so the same file can be re-selected if needed
-        e.target.value = '';
-      }
-    };
-    reader.onerror = () => {
-      setErrorMessage('Could not read the selected backup file from device storage.');
-      setIsProcessing(false);
-    };
-    reader.readAsText(file);
-  };
-
-  // 3. Restore via Direct JSON Paste
-  const handlePasteRestore = () => {
-    if (!pastedJson.trim()) {
-      setErrorMessage('Please paste valid JSON backup content.');
-      return;
-    }
-
-    setIsProcessing(true);
-    setErrorMessage(null);
-    setRestoreMetrics(null);
-
     try {
-      const result = restoreUniversalBackup(pastedJson);
-      applyRestoreResult(result);
-      setPastedJson('');
-      setShowJsonPaste(false);
+      await exportUniversalBackup(firm, {});
+      setSuccessMsg('✓ Full Backup Downloaded Successfully!');
     } catch (err) {
-      setErrorMessage(err.message || 'Invalid JSON syntax.');
+      setErrorMsg(err.message);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  return (
-    <div style={{ maxWidth: '640px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px', padding: '12px', paddingBottom: '50px' }}>
+  // MODERN FILE READER FIX (Mobile / Android Compatible)
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setIsProcessing(true);
+
+    try {
+      // Modern Promise-based file reading
+      const fileText = await file.text();
       
-      {/* Active Firm Header Card */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '24px' }}>🛡️</span>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
-              Data Backup & Migration Center
-            </h3>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-              Active Firm: <strong>{activeFirmName}</strong> ({activeFirmId})
-            </div>
+      const result = await restoreUniversalBackup(fileText);
+      
+      setSuccessMsg(`✓ Successfully restored ${result.stats.vouchersCount} vouchers and ${result.stats.accountsCount} accounts! Reloading...`);
+      
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+
+    } catch (err) {
+      console.error("Restore Catch Error: ", err);
+      setErrorMsg(err.message || 'Failed to process the backup file.');
+    } finally {
+      setIsProcessing(false);
+      // Reset input value so user can select the same file again if needed
+      e.target.value = null; 
+    }
+  };
+
+  // Handle Pasted JSON Restore
+  const handlePasteRestore = async (e) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (!pastedJson.trim()) {
+      setErrorMsg('Please paste valid JSON code into the box.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const result = await restoreUniversalBackup(pastedJson);
+      setSuccessMsg(`✓ Successfully restored ${result.stats.vouchersCount} vouchers! Reloading...`);
+      
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err) {
+      setErrorMsg(err.message || 'Restore failed.');
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '12px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', width: '100%', maxWidth: '100vw', overflowX: 'hidden', color: '#0f172a' }}>
+      
+      {/* Header */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '14px', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          {onClose && (
+            <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
+              ← Dashboard
+            </button>
+          )}
+          <div style={{ fontSize: '11px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
+            Active Firm: {firm?.legal_name || firm?.trade_name || 'Neelkanth Int Udyog'}
           </div>
+        </div>
+
+        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>🛡️</span>
+          <span>Data Backup & Migration Center</span>
+        </h1>
+        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
+          Secure local storage export & disaster recovery portal
         </div>
       </div>
 
-      {/* Success Feedback Banner (Zero 'undefined' guaranteed) */}
-      {restoreMetrics && (
-        <div style={successBannerStyle}>
-          <div style={{ fontWeight: '800', fontSize: '14px', marginBottom: '4px' }}>
-            ✓ Backup Restored Successfully!
-          </div>
-          <div style={{ fontSize: '13px', lineHeight: '1.6' }}>
-            • Accounts: <strong>{restoreMetrics.accounts}</strong><br />
-            • Vouchers: <strong>{restoreMetrics.vouchers}</strong><br />
-            • Stock SKUs: <strong>{restoreMetrics.stockSKUs}</strong>
-          </div>
+      {/* Error / Success Toast Banners */}
+      {errorMsg && (
+        <div style={{ marginBottom: '14px', padding: '12px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
+          ⚠️ Restore Error: {errorMsg}
         </div>
       )}
 
-      {/* Error Feedback Banner */}
-      {errorMessage && (
-        <div style={errorBannerStyle}>
-          <strong>⚠️ Restore Error:</strong> {errorMessage}
+      {successMsg && (
+        <div style={{ marginBottom: '14px', padding: '12px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }}>
+          {successMsg}
         </div>
       )}
 
-      {/* Section 1: Download Full Backup */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-          <span style={{ fontSize: '18px' }}>📥</span>
-          <strong style={{ fontSize: '15px', color: '#0f172a' }}>Download Full Data Backup</strong>
-        </div>
-        <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#64748b', lineHeight: '1.4' }}>
-          Saves all ledger accounts, voucher entries, stock counts, and firm profiles to your phone's storage / Documents folder.
+      {/* Export Card */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '16px', boxSizing: 'border-box' }}>
+        <h2 style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
+          📥 Download Full Data Backup
+        </h2>
+        <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
+          Saves all ledger accounts, voucher entries, stock counts, and internal consumption logs to your phone's storage or Documents folder.
         </p>
         <button
-          type="button"
           onClick={handleExport}
-          style={primaryButtonStyle}
+          disabled={isProcessing}
+          style={{ width: '100%', padding: '12px', backgroundColor: '#0284c7', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(2,132,199,0.2)' }}
         >
-          <span>💾</span> Export Backup (.JSON)
+          💾 {isProcessing ? 'Generating Backup...' : 'Export Backup (.JSON)'}
         </button>
       </div>
 
-      {/* Section 2: Restore Backup */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-          <span style={{ fontSize: '18px' }}>📤</span>
-          <strong style={{ fontSize: '15px', color: '#0f172a' }}>Restore Old / Previous App Backup</strong>
-        </div>
-        <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#64748b', lineHeight: '1.4' }}>
+      {/* Restore Card */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+        <h2 style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
+          📤 Restore Old / Previous App Backup
+        </h2>
+        <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
           Upload your previously downloaded backup JSON file to restore all your financial transactions instantly.
         </p>
 
-        {/* Option 1: File Picker */}
+        {/* Option 1: File Input */}
         <div style={{ marginBottom: '14px' }}>
-          <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
             Option 1: Choose File from Phone Storage (.JSON)
           </label>
           <input
@@ -175,76 +154,41 @@ export default function SecurityBackupSettings({ firm }) {
             accept=".json,application/json"
             onChange={handleFileChange}
             disabled={isProcessing}
-            style={{
-              fontSize: '12px',
-              padding: '6px',
-              border: '1px solid #cbd5e1',
-              borderRadius: '8px',
-              width: '100%',
-              boxSizing: 'border-box'
-            }}
+            style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '11px', boxSizing: 'border-box' }}
           />
         </div>
 
-        {/* Option Divider */}
-        <div style={{ display: 'flex', alignItems: 'center', margin: '14px 0', color: '#94a3b8', fontSize: '11px', fontWeight: 'bold' }}>
-          <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
-          <span style={{ padding: '0 10px' }}>— OR —</span>
-          <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
+        <div style={{ textAlign: 'center', margin: '10px 0', fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>
+          — OR —
         </div>
 
-        {/* Option 2: Direct Paste Accordion */}
+        {/* Option 2: Paste JSON Code */}
         <div>
           <button
             type="button"
-            onClick={() => setShowJsonPaste(!showJsonPaste)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#0284c7',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              padding: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
+            onClick={() => setShowPasteSection(!showPasteSection)}
+            style={{ background: 'none', border: 'none', color: '#0284c7', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', padding: 0 }}
           >
-            <span>{showJsonPaste ? '▲' : '▼'}</span> Option 2: Paste Backup JSON Code directly
+            {showPasteSection ? '▼ Hide Option 2: Paste JSON Code' : '▶ Option 2: Paste Backup JSON Code directly'}
           </button>
 
-          {showJsonPaste && (
-            <div style={{ marginTop: '10px' }}>
+          {showPasteSection && (
+            <form onSubmit={handlePasteRestore} style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <textarea
                 rows={5}
-                placeholder="Paste the raw JSON content here..."
+                placeholder="Paste raw backup JSON text here..."
                 value={pastedJson}
                 onChange={(e) => setPastedJson(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1',
-                  fontSize: '11px',
-                  fontFamily: 'monospace',
-                  boxSizing: 'border-box'
-                }}
+                style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '11px', boxSizing: 'border-box', fontFamily: 'monospace' }}
               />
               <button
-                type="button"
-                onClick={handlePasteRestore}
-                disabled={isProcessing || !pastedJson.trim()}
-                style={{
-                  ...primaryButtonStyle,
-                  backgroundColor: '#059669',
-                  marginTop: '8px',
-                  opacity: isProcessing || !pastedJson.trim() ? 0.6 : 1
-                }}
+                type="submit"
+                disabled={isProcessing}
+                style={{ padding: '10px', backgroundColor: '#059669', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
               >
-                {isProcessing ? 'Restoring Data...' : 'Apply JSON Code'}
+                {isProcessing ? 'Restoring...' : 'Restore from Pasted JSON'}
               </button>
-            </div>
+            </form>
           )}
         </div>
       </div>
@@ -252,44 +196,3 @@ export default function SecurityBackupSettings({ firm }) {
     </div>
   );
 }
-
-const cardStyle = {
-  backgroundColor: '#ffffff',
-  borderRadius: '16px',
-  padding: '18px 20px',
-  border: '1px solid #e2e8f0',
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
-};
-
-const successBannerStyle = {
-  backgroundColor: '#ecfdf5',
-  border: '1px solid #a7f3d0',
-  color: '#065f46',
-  padding: '14px 18px',
-  borderRadius: '14px',
-  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.1)'
-};
-
-const errorBannerStyle = {
-  backgroundColor: '#fef2f2',
-  border: '1px solid #fecaca',
-  color: '#991b1b',
-  padding: '12px 16px',
-  borderRadius: '12px',
-  fontSize: '12px'
-};
-
-const primaryButtonStyle = {
-  backgroundColor: '#0284c7',
-  color: '#ffffff',
-  border: 'none',
-  padding: '10px 18px',
-  borderRadius: '8px',
-  fontSize: '13px',
-  fontWeight: 'bold',
-  cursor: 'pointer',
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '6px',
-  boxShadow: '0 2px 6px rgba(2, 132, 199, 0.3)'
-};
