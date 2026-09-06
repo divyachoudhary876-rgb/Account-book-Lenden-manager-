@@ -6,8 +6,13 @@ const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const filtered = accounts.filter(a => String(a.account_name || a.name || '').toLowerCase().includes(search.toLowerCase()));
-  const selectedAcc = accounts.find(a => (a.account_name || a.name) === value);
+  const getName = (a) => a.account_name || a.name || a.displayName || '';
+  const getGroup = (a) => a.sub_group || a.category || a.primary_type || 'Ledger Account';
+  const getBal = (a) => Number(a.opening_balance || 0);
+  const getBalType = (a) => a.balance_type || 'Cr';
+
+  const filtered = accounts.filter(a => getName(a).toLowerCase().includes(search.toLowerCase()));
+  const selectedAcc = accounts.find(a => getName(a) === value);
 
   return (
     <div style={{ position: 'relative', marginBottom: '16px' }}>
@@ -18,8 +23,8 @@ const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }
       >
         {selectedAcc ? (
           <div>
-            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{selectedAcc.account_name || selectedAcc.name}</div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{selectedAcc.sub_group || selectedAcc.category}</div>
+            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{getName(selectedAcc)}</div>
+            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{getGroup(selectedAcc)}</div>
           </div>
         ) : (
           <span style={{ color: '#64748b' }}>{placeholder || '-- Select Account --'}</span>
@@ -44,21 +49,24 @@ const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }
             {filtered.length === 0 ? (
               <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No accounts found.</div>
             ) : (
-              filtered.map(acc => (
-                <div
-                  key={acc.id}
-                  onClick={() => { onChange(acc.account_name || acc.name); setIsOpen(false); setSearch(''); }}
-                  style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: value === (acc.account_name || acc.name) ? '#f0fdf4' : '#fff' }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 'bold', fontSize: '14px', color: value === (acc.account_name || acc.name) ? '#059669' : '#0f172a' }}>{acc.account_name || acc.name}</div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{acc.sub_group || acc.category || acc.primary_type}</div>
+              filtered.map(acc => {
+                const accName = getName(acc);
+                return (
+                  <div
+                    key={acc.id || Math.random()}
+                    onClick={() => { onChange(accName); setIsOpen(false); setSearch(''); }}
+                    style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: value === accName ? '#f0fdf4' : '#fff' }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '14px', color: value === accName ? '#059669' : '#0f172a' }}>{accName}</div>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{getGroup(acc)}</div>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: getBalType(acc) === 'Cr' ? '#dc2626' : '#059669' }}>
+                      ₹{Math.abs(getBal(acc))} {getBalType(acc)}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: acc.balance_type === 'Cr' ? '#dc2626' : '#059669' }}>
-                    ₹{Math.abs(acc.opening_balance || 0)} {acc.balance_type || 'Cr'}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
