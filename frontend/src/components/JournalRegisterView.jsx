@@ -1,256 +1,149 @@
-// frontend/src/components/JournalRegisterView.jsx
-
 import React, { useState, useEffect } from 'react';
-import { getSortedJournalRegister } from '../utils/journalEngine.js';
-import { downloadJournalRegisterPDF } from '../utils/pdfDownloadEngine.js';
+import { StorageService } from '../utils/storageSync';
 
-export default function JournalRegisterView({ firm }) {
+export default function GeneralJournalView({ firm, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
-  const firmName = firm?.legal_name || firm?.name || 'Enterprise Profile';
+  const [journalEntries, setJournalEntries] = useState([]);
+  const [filterType, setFilterType] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const [vouchers, setVouchers] = useState([]);
-  const [sortOrder, setSortOrder] = useState('ASC');
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('ALL');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [isExporting, setIsExporting] = useState(false);
-  const [statusNotification, setStatusNotification] = useState(null);
+  const loadJournal = () => {
+    try {
+      const vouchers = StorageService.getItem('account_book_vouchers') || [];
+      const firmVouchers = vouchers.filter(v => v && v.firm_id === activeFirmId);
 
-  const loadJournalData = () => {
-    const sorted = getSortedJournalRegister(activeFirmId, sortOrder);
-    setVouchers(sorted);
+      // Also fetch material consumptions to display in Daybook
+      const consumptions = StorageService.getItem('material_consumptions') || [];
+      const firmConsumptions = consumptions
+        .filter(c => c && c.firm_id === activeFirmId)
+        .map(c => ({
+          id: c.id || `CONS-${Date.now()}`,
+          voucher_date: c.date || c.created_at?.split('T')[0],
+          voucher_type: 'CONSUMPTION',
+          reference_no: c.vehicle_ref || 'BATCH',
+          dr_account: c.expense_account || 'Factory Production Expense',
+          cr_account: 'Inventory Stock',
+          amount: c.total_value || 0,
+          narration: `Material Consumption: ${(c.items || []).map(i => `${i.qty} ${i.unit} ${i.itemName}`).join(', ')}`,
+          created_at: c.created_at || new Date().toISOString()
+        }));
+
+      const combined = [...firmVouchers, ...firmConsumptions].sort((a, b) => {
+        const dateA = new Date(a.voucher_date || a.created_at || 0);
+        const dateB = new Date(b.voucher_date || b.created_at || 0);
+        return dateB - dateA; // Newest first
+      });
+
+      setJournalEntries(combined);
+    } catch (err) {
+      console.error("Error loading journal:", err);
+    }
   };
 
   useEffect(() => {
-    loadJournalData();
-    window.addEventListener('app_state_updated', loadJournalData);
-    return () => window.removeEventListener('app_state_updated', loadJournalData);
-  }, [activeFirmId, sortOrder]);
+    loadJournal();
+    window.addEventListener('app_storage_updated', loadJournal);
+    return () => window.removeEventListener('app_storage_updated', loadJournal);
+  }, [activeFirmId]);
 
-  const filteredVouchers = vouchers.filter(v => {
-    const vDate = v.voucher_date || v.date;
-    if (fromDate && vDate < fromDate) return false;
-    if (toDate && vDate > toDate) return false;
+  const filteredEntries = journalEntries.filter(entry => {
+    if (!entry) return false;
+    const typeMatch = filterType === 'ALL' || String(entry.voucher_type || '').toUpperCase() === filterType;
+    const q = searchQuery.toLowerCase();
+    const searchMatch = 
+      (entry.reference_no && entry.reference_no.toLowerCase().includes(q)) ||
+      (entry.dr_account && entry.dr_account.toLowerCase().includes(q)) ||
+      (entry.cr_account && entry.cr_account.toLowerCase().includes(q)) ||
+      (entry.narration && entry.narration.toLowerCase().includes(q));
 
-    const matchesType = typeFilter === 'ALL' || (v.voucher_type || v.type) === typeFilter;
-    const q = search.toLowerCase();
-    const matchesSearch = 
-      (v.dr_account || v.dr_party || '').toLowerCase().includes(q) ||
-      (v.cr_account || v.cr_party || '').toLowerCase().includes(q) ||
-      (v.voucher_number || v.reference_no || '').toLowerCase().includes(q) ||
-      (v.narration || '').toLowerCase().includes(q);
-
-    return matchesType && matchesSearch;
+    return typeMatch && searchMatch;
   });
 
-  const totalDebitAmount = filteredVouchers.reduce((sum, v) => sum + parseFloat(v.amount || 0), 0);
-
-  const handleExportPDF = async () => {
-    if (filteredVouchers.length === 0) {
-      alert("⚠️ No journal records found to export.");
-      return;
-    }
-
-    setIsExporting(true);
-    setStatusNotification({ type: 'info', message: '⏳ Generating document and initiating phone storage save...' });
-
-    try {
-      const res = await downloadJournalRegisterPDF(filteredVouchers, firm);
-      if (res?.success) {
-        setStatusNotification({ type: 'success', message: '✓ Document processed! Check Documents or Share Sheet on your phone.' });
-      } else {
-        setStatusNotification(null);
-      }
-    } catch (e) {
-      setStatusNotification({ type: 'error', message: `❌ Export Failed: ${e.message}` });
-    } finally {
-      setIsExporting(false);
-      setTimeout(() => setStatusNotification(null), 6000);
-    }
-  };
+  const totalTurnover = filteredEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   return (
-    <div style={{ maxWidth: '950px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '30px' }}>
+    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
       
-      {/* Header Banner */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px 20px', border: '1px solid #cbd5e1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📝</span> General Journal Register (रोज़नामचा / Daybook)
-          </h3>
-          <span style={{ fontSize: '11px', color: '#64748b' }}>
-            Chronological Double-Entry Audit Book for <strong>{firmName}</strong>
-          </span>
+      {/* Header Card */}
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div>
+            <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>Chronological Audit Book</div>
+            <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📖 General Journal / Daybook</h2>
+          </div>
+          {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            onClick={() => setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC')}
-            style={{
-              backgroundColor: '#0f172a',
-              color: '#ffffff',
-              border: 'none',
-              padding: '9px 12px',
-              borderRadius: '8px',
-              fontSize: '11px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
+        {/* Filters & Search */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <select 
+            value={filterType} 
+            onChange={e => setFilterType(e.target.value)} 
+            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '12px', fontWeight: '700', outline: 'none' }}
           >
-            {sortOrder === 'ASC' ? '📅 Date: Oldest ➔ Newest (1 to 31)' : '📅 Date: Newest ➔ Oldest'}
-          </button>
-
-          <button
-            onClick={handleExportPDF}
-            disabled={isExporting || filteredVouchers.length === 0}
-            style={{
-              backgroundColor: '#059669',
-              color: '#ffffff',
-              border: 'none',
-              padding: '9px 16px',
-              borderRadius: '8px',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              cursor: filteredVouchers.length ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              boxShadow: '0 2px 6px rgba(5, 150, 105, 0.3)',
-              opacity: isExporting ? 0.7 : 1
-            }}
-          >
-            {isExporting ? '⏳ Saving...' : '📄 Save PDF to Phone'}
-          </button>
-        </div>
-      </div>
-
-      {/* Real-time Status Alert */}
-      {statusNotification && (
-        <div style={{
-          backgroundColor: statusNotification.type === 'error' ? '#fef2f2' : statusNotification.type === 'info' ? '#eff6ff' : '#ecfdf5',
-          border: `1px solid ${statusNotification.type === 'error' ? '#fecaca' : statusNotification.type === 'info' ? '#bfdbfe' : '#a7f3d0'}`,
-          color: statusNotification.type === 'error' ? '#991b1b' : statusNotification.type === 'info' ? '#1e40af' : '#065f46',
-          padding: '12px 16px',
-          borderRadius: '10px',
-          fontSize: '12px',
-          fontWeight: 'bold'
-        }}>
-          {statusNotification.message}
-        </div>
-      )}
-
-      {/* Date Range & Search Filters */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px 18px', border: '1px solid #cbd5e1', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
-        <div>
-          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (से)</label>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={e => setFromDate(e.target.value)}
-            style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (तक)</label>
-          <input
-            type="date"
-            value={toDate}
-            onChange={e => setToDate(e.target.value)}
-            style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Voucher Type</label>
-          <select
-            value={typeFilter}
-            onChange={e => setTypeFilter(e.target.value)}
-            style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}
-          >
-            <option value="ALL">All Vouchers</option>
-            <option value="PAYMENT">Payment (PV)</option>
-            <option value="RECEIPT">Receipt (RV)</option>
-            <option value="CONTRA">Contra</option>
-            <option value="JOURNAL">Journal (JV)</option>
-            <option value="SALES">Sales</option>
-            <option value="PURCHASE">Purchase</option>
+            <option value="ALL">All Voucher Types</option>
+            <option value="SALES">Sales Invoices</option>
+            <option value="PURCHASE">Purchase Bills</option>
+            <option value="PAYMENT">Payments</option>
+            <option value="RECEIPT">Receipts</option>
+            <option value="CONSUMPTION">Material Consumption</option>
           </select>
+
+          <input 
+            type="text" 
+            placeholder="🔍 Search account, ref no..." 
+            value={searchQuery} 
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ flex: 2, padding: '10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+          />
         </div>
 
-        <div>
-          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Search Particulars</label>
-          <input
-            type="text"
-            placeholder="Search Account / Ref..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }}
-          />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px 16px', borderRadius: '10px', fontSize: '13px' }}>
+          <span style={{ fontWeight: '700', color: '#166534' }}>Total Filtered Turnover:</span>
+          <span style={{ fontWeight: '900', color: '#15803d' }}>₹{totalTurnover.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
         </div>
       </div>
 
-      {/* Date-Sorted Journal Table */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '18px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.04)', overflowX: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
-            📋 Total Entries: {filteredVouchers.length} | Sequence: {sortOrder === 'ASC' ? 'Chronological (01 ➔ 31)' : 'Reverse Chronological'}
-          </span>
-          <span style={{ fontSize: '13px', fontWeight: '800', color: '#059669' }}>
-            Turnover: ₹{totalDebitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </span>
-        </div>
+      {/* Journal List Register */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {filteredEntries.length === 0 ? (
+          <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
+            No journal entries found matching criteria.
+          </div>
+        ) : (
+          filteredEntries.map((entry, idx) => {
+            const amt = Number(entry.amount || 0);
+            const vType = String(entry.voucher_type || 'TX').toUpperCase();
+            const badgeColor = vType === 'SALES' ? '#0284c7' : vType === 'PURCHASE' ? '#dc2626' : vType === 'CONSUMPTION' ? '#d97706' : '#059669';
 
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-              <th style={{ padding: '8px', textAlign: 'center' }}>#</th>
-              <th style={{ padding: '8px', textAlign: 'left' }}>Date (तारीख)</th>
-              <th style={{ padding: '8px', textAlign: 'left' }}>Voucher No</th>
-              <th style={{ padding: '8px', textAlign: 'left' }}>Type</th>
-              <th style={{ padding: '8px', textAlign: 'left' }}>Particulars (नाम व विवरण)</th>
-              <th style={{ padding: '8px', textAlign: 'right' }}>Amount (रुपये)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredVouchers.length === 0 ? (
-              <tr>
-                <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
-                  No journal vouchers found for the selected date range.
-                </td>
-              </tr>
-            ) : (
-              filteredVouchers.map((v, idx) => (
-                <tr key={v.id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '8px', textAlign: 'center', color: '#64748b' }}>{idx + 1}</td>
-                  <td style={{ padding: '8px', whiteSpace: 'nowrap', fontWeight: 'bold', color: '#0284c7' }}>
-                    {v.voucher_date || v.date}
-                  </td>
-                  <td style={{ padding: '8px', fontWeight: '600' }}>
-                    {v.voucher_number || v.reference_no}
-                  </td>
-                  <td style={{ padding: '8px' }}>
-                    <span style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>
-                      {v.voucher_type || v.type}
-                    </span>
-                  </td>
-                  <td style={{ padding: '8px' }}>
-                    <div style={{ fontWeight: 'bold', color: '#059669' }}>Dr: {v.dr_account || v.dr_party}</div>
-                    <div style={{ fontWeight: 'bold', color: '#dc2626', fontSize: '11px' }}>Cr: {v.cr_account || v.cr_party}</div>
-                    {v.narration && <div style={{ fontSize: '10px', color: '#64748b' }}>({v.narration})</div>}
-                  </td>
-                  <td style={{ padding: '8px', textAlign: 'right', fontWeight: '800', color: '#0f172a' }}>
-                    ₹{parseFloat(v.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+            return (
+              <div key={entry.id || idx} style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', boxSizing: 'border-box' }}>
+                <div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '10px', backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', color: '#475569' }}>{entry.voucher_date || ''}</span>
+                    <span style={{ fontSize: '10px', backgroundColor: badgeColor, color: '#fff', padding: '2px 8px', borderRadius: '4px', fontWeight: '800' }}>{vType}</span>
+                    <strong style={{ fontSize: '12px', color: '#0f172a' }}>{entry.reference_no || ''}</strong>
+                  </div>
+
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '2px' }}>
+                    Dr: <span style={{ color: '#059669' }}>{entry.dr_account || 'Account'}</span>
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
+                    Cr: <span style={{ color: '#dc2626' }}>{entry.cr_account || 'Account'}</span>
+                  </div>
+
+                  {entry.narration && (
+                    <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>{entry.narration}</div>
+                  )}
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '15px', fontWeight: '900', color: '#0f172a' }}>₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
     </div>
