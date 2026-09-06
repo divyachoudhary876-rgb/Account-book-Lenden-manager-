@@ -18,22 +18,23 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * Universal True PDF Exporter (Works natively on Mobile Apps & Web Browsers)
+ * Robust True PDF Exporter preventing corruption on Mobile & Web
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fullFileName = `${cleanName}_${Date.now()}.pdf`;
 
   try {
-    const pdfOutput = doc.output('datauristring');
-
     // 1. Mobile Capacitor Native Environment (Android/iOS)
     if (Capacitor.isNativePlatform()) {
-      const base64Data = pdfOutput.split(',')[1];
+      // Get output as array buffer or base64 safely
+      const pdfOutput = doc.output('datauristring');
+      const base64Data = pdfOutput.includes(',') ? pdfOutput.split(',')[1] : pdfOutput;
+
       const writeResult = await Filesystem.writeFile({
         path: fullFileName,
         data: base64Data,
-        directory: Directory.Cache,
+        directory: Directory.Documents, // Save directly to visible Documents/Download area if permitted, else Cache
         encoding: Encoding.UTF8
       });
 
@@ -42,7 +43,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
           title: cleanName,
           text: `Account Book PDF Report: ${cleanName}`,
           url: writeResult.uri,
-          dialogTitle: 'Save or Share PDF Report'
+          dialogTitle: 'Open or Save PDF Report'
         });
         return { success: true };
       }
@@ -54,7 +55,30 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 
   } catch (err) {
     console.error('True PDF Export Error:', err);
-    throw new Error('Failed to generate professional PDF file.');
+    // Fallback for mobile if Documents directory restricts writing directly
+    try {
+      const pdfOutput = doc.output('datauristring');
+      const base64Data = pdfOutput.includes(',') ? pdfOutput.split(',')[1] : pdfOutput;
+      
+      const cacheWrite = await Filesystem.writeFile({
+        path: fullFileName,
+        data: base64Data,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8
+      });
+
+      if (cacheWrite && cacheWrite.uri) {
+        await Share.share({
+          title: cleanName,
+          url: cacheWrite.uri
+        });
+        return { success: true };
+      }
+    } catch (fallbackErr) {
+      console.error('Fallback Export Failed:', fallbackErr);
+    }
+
+    throw new Error('Failed to generate uncorrupted PDF file.');
   }
 };
 
