@@ -1,79 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
-
-const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState('');
-
-  const getName = (a) => a.account_name || a.name || a.displayName || '';
-  const getGroup = (a) => a.sub_group || a.category || a.primary_type || 'Ledger Account';
-  const getBal = (a) => Number(a.opening_balance || 0);
-  const getBalType = (a) => a.balance_type || 'Cr';
-
-  const filtered = accounts.filter(a => getName(a).toLowerCase().includes(search.toLowerCase()));
-  const selectedAcc = accounts.find(a => getName(a) === value);
-
-  return (
-    <div style={{ position: 'relative', marginBottom: '16px' }}>
-      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px', color: '#0f172a' }}>{label}</label>
-      <div
-        onClick={() => setIsOpen(!isOpen)}
-        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: isOpen ? '2px solid #059669' : '1px solid #cbd5e1', backgroundColor: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}
-      >
-        {selectedAcc ? (
-          <div>
-            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{getName(selectedAcc)}</div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{getGroup(selectedAcc)}</div>
-          </div>
-        ) : (
-          <span style={{ color: '#64748b' }}>{placeholder || '-- Select Account --'}</span>
-        )}
-        <span style={{ fontSize: '10px', color: '#64748b' }}>{isOpen ? '▲' : '▼'}</span>
-      </div>
-
-      {isOpen && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', zIndex: 100, marginTop: '4px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', maxHeight: '350px' }}>
-          <div style={{ padding: '10px', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', borderTopLeftRadius: '8px', borderTopRightRadius: '8px', display: 'flex', alignItems: 'center' }}>
-            <span style={{ marginRight: '8px' }}>🔍</span>
-            <input
-              type="text"
-              placeholder="Type name to search (A to Z sorted)..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              autoFocus
-              style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontSize: '13px' }}
-            />
-          </div>
-          <div style={{ overflowY: 'auto', flex: 1 }}>
-            {filtered.length === 0 ? (
-              <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No accounts found.</div>
-            ) : (
-              filtered.map(acc => {
-                const accName = getName(acc);
-                return (
-                  <div
-                    key={acc.id || Math.random()}
-                    onClick={() => { onChange(accName); setIsOpen(false); setSearch(''); }}
-                    style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: value === accName ? '#f0fdf4' : '#fff' }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 'bold', fontSize: '14px', color: value === accName ? '#059669' : '#0f172a' }}>{accName}</div>
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{getGroup(acc)}</div>
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: getBalType(acc) === 'Cr' ? '#dc2626' : '#059669' }}>
-                      ₹{Math.abs(getBal(acc))} {getBalType(acc)}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+// 🔥 Importing your exact Voucher Entry Dropdown
+import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   const allItems = useItemMaster(); 
@@ -155,8 +84,8 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   };
 
   return (
-    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>📦 Purchase Inward & Stock Entry</h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>}
@@ -164,28 +93,33 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         
         {feedback && <div style={{ padding: '10px', marginBottom: '16px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#ecfdf5', color: feedback.type === 'error' ? '#991b1b' : '#065f46' }}>{feedback.message}</div>}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', gap: '16px' }}>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Purchase Date *</label>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Purchase Date *</label>
               <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Bill / Ref No *</label>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Bill / Ref No *</label>
               <input type="text" value={billNo} onChange={e => setBillNo(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
             </div>
           </div>
 
-          <CustomAccountDropdown
-            label="Supplier / Vendor Party **"
-            value={supplierParty}
-            onChange={setSupplierParty}
-            accounts={accountsList}
-            placeholder="-- Select Vendor / Party --"
-          />
+          {/* 🔥 Your EXACT Voucher Entry Dropdown */}
+          <div style={{ marginBottom: '16px' }}>
+            <SearchableAccountDropdown
+              label="Supplier / Vendor Party **"
+              accounts={accountsList}
+              value={supplierParty}
+              onChange={val => setSupplierParty(val)}
+              placeholder="Search vendor account..."
+              colorAccent="#dc2626"
+              required
+            />
+          </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Stock Item (+IN) *</label>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Stock Item (+IN) *</label>
             <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', borderColor: '#eab308', borderWidth: '2px', boxSizing: 'border-box' }} required>
               <option value="">-- Choose Stock Item --</option>
               {allItems
@@ -198,18 +132,18 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
             </select>
           </div>
 
-          <div style={{ display: 'flex', gap: '16px' }}>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Quantity *</label>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Quantity *</label>
               <input type="number" step="0.01" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 1000" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Purchase Rate (₹) *</label>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Purchase Rate (₹) *</label>
               <input type="number" step="0.01" value={purchaseRate} onChange={e => setPurchaseRate(e.target.value)} placeholder="e.g. 4.5" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
             </div>
           </div>
 
-          <button type="submit" disabled={isSubmitting} style={{ padding: '14px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+          <button type="submit" disabled={isSubmitting} style={{ width: '100%', padding: '14px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
             📥 Post Purchase & Generate Inward Slip
           </button>
         </form>
