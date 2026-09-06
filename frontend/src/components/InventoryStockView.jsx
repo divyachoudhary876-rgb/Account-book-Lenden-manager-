@@ -1,27 +1,26 @@
-// frontend/src/components/InventoryStockView.jsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 
 export default function InventoryStockView({ firm, onClose }) {
-  const [inventoryList, setInventoryList] = useState([]);
+  const [itemsList, setItemsList] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  
-  // Form state
-  const [itemName, setItemName] = useState('');
-  const [unit, setUnit] = useState('Pcs');
-  const [currentStock, setCurrentStock] = useState('');
-  const [purchaseRate, setPurchaseRate] = useState('');
-  const [sellingPrice, setSellingPrice] = useState('');
   const [feedback, setFeedback] = useState(null);
 
-  // Sync state with storage
-  useEffect(() => {
-    const loadInventory = () => {
-      const items = StorageService.getInventoryItems();
-      setInventoryList(items);
-    };
+  // New Item Form State
+  const [itemName, setItemName] = useState('');
+  const [itemType, setItemType] = useState('GOODS'); // 'GOODS' or 'SERVICE'
+  const [unit, setUnit] = useState('');
+  const [openingStock, setOpeningStock] = useState('');
+  const [purchaseRate, setPurchaseRate] = useState('');
+  const [salesRate, setSalesRate] = useState('');
 
+  // Load Inventory Data
+  const loadInventory = () => {
+    const storedItems = StorageService.getInventoryItems() || [];
+    setItemsList(storedItems);
+  };
+
+  useEffect(() => {
     loadInventory();
     window.addEventListener('app_storage_updated', loadInventory);
     window.addEventListener('storage', loadInventory);
@@ -31,178 +30,134 @@ export default function InventoryStockView({ firm, onClose }) {
     };
   }, []);
 
-  // Calculate total perpetual valuation safely
-  const totalValuation = useMemo(() => {
-    return inventoryList.reduce((acc, item) => {
-      const stock = Number(item.current_stock || item.stock || 0);
-      const rate = Number(item.purchase_rate || item.rate || 0);
-      return acc + (stock * rate);
-    }, 0);
-  }, [inventoryList]);
+  // 1. BUSINESS LOGIC: Fixed Total Valuation Calculation
+  const totalValuation = itemsList.reduce((sum, item) => {
+    if (item.item_type === 'SERVICE') return sum; // Services do not have inventory valuation
+    const stock = Number(item.current_stock) || 0;
+    const rate = Number(item.unit_purchase_price) || 0;
+    return sum + (stock * rate);
+  }, 0);
 
-  const handleOpenAddModal = () => {
-    setEditingId(null);
-    setItemName('');
-    setUnit('Pcs');
-    setCurrentStock('');
-    setPurchaseRate('');
-    setSellingPrice('');
-    setIsModalOpen(true);
-  };
-
-  const handleStartEdit = (item) => {
-    setEditingId(item.id);
-    setItemName(item.item_name || item.name || '');
-    setUnit(item.unit || 'Pcs');
-    setCurrentStock(String(item.current_stock || item.stock || ''));
-    setPurchaseRate(String(item.purchase_rate || item.rate || ''));
-    setSellingPrice(String(item.selling_price || item.price || ''));
-    setIsModalOpen(true);
-  };
-
+  // Handle Save New Item
   const handleSaveItem = (e) => {
     e.preventDefault();
-    if (!itemName.trim()) {
-      setFeedback({ type: 'error', message: 'कृपया आइटम का नाम दर्ज करें।' });
-      return;
+    setFeedback(null);
+
+    const cleanName = itemName.trim();
+    if (!cleanName) return setFeedback({ type: 'error', message: 'Item name is required.' });
+
+    // Edge Case: Prevent Duplicate Names
+    const existing = itemsList.find(i => String(i.item_name).toLowerCase() === cleanName.toLowerCase());
+    if (existing) return setFeedback({ type: 'error', message: 'यह आइटम पहले से मौजूद है!' });
+
+    try {
+      const newItem = {
+        id: `ITEM-${Date.now()}`,
+        firm_id: firm?.id || 'firm_default',
+        item_name: cleanName,
+        item_type: itemType, // 'GOODS' or 'SERVICE'
+        unit: itemType === 'SERVICE' ? 'Service' : unit,
+        current_stock: itemType === 'SERVICE' ? 0 : Number(openingStock || 0),
+        unit_purchase_price: Number(purchaseRate || 0),
+        selling_price: Number(salesRate || 0),
+        created_at: new Date().toISOString()
+      };
+
+      const updatedInventory = [newItem, ...itemsList];
+      StorageService.setItem('inventory_items', updatedInventory); // Automatically triggers cross-app sync
+
+      setFeedback({ type: 'success', message: '✓ Item Added Successfully!' });
+      
+      // Reset Form & Close Modal
+      setItemName(''); setItemType('GOODS'); setUnit(''); setOpeningStock(''); setPurchaseRate(''); setSalesRate('');
+      setTimeout(() => {
+        setIsModalOpen(false);
+        setFeedback(null);
+      }, 1500);
+
+    } catch (err) {
+      setFeedback({ type: 'error', message: err.message });
     }
-
-    const newItem = {
-      id: editingId || `INV-${Date.now()}`,
-      firm_id: firm?.id || 'firm_default',
-      item_name: itemName.trim(),
-      unit: unit,
-      current_stock: Number(currentStock || 0),
-      purchase_rate: Number(purchaseRate || 0),
-      selling_price: Number(sellingPrice || 0),
-      updated_at: new Date().toISOString()
-    };
-
-    let updatedList = [];
-    if (editingId) {
-      updatedList = inventoryList.map(i => i.id === editingId ? newItem : i);
-    } else {
-      updatedList = [newItem, ...inventoryList];
-    }
-
-    StorageService.saveInventoryItems(updatedList);
-    setInventoryList(updatedList);
-    setIsModalOpen(false);
-    setFeedback({ type: 'success', message: '✓ स्टॉक आइटम सफलतापूर्वक सहेजा गया।' });
-    setTimeout(() => setFeedback(null), 3000);
   };
 
-  const handleDeleteItem = (id) => {
+  const handleDelete = (id) => {
     if (!window.confirm('क्या आप वाकई इस आइटम को हटाना चाहते हैं?')) return;
-    const filtered = inventoryList.filter(i => i.id !== id);
-    StorageService.saveInventoryItems(filtered);
-    setInventoryList(filtered);
-    setFeedback({ type: 'success', message: 'आइटम हटा दिया गया।' });
-    setTimeout(() => setFeedback(null), 3000);
+    const updatedInventory = itemsList.filter(item => item.id !== id);
+    StorageService.setItem('inventory_items', updatedInventory);
+    setFeedback({ type: 'success', message: '✓ Item Deleted.' });
+    setTimeout(() => setFeedback(null), 2000);
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '12px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', width: '100%', maxWidth: '100vw', overflowX: 'hidden', color: '#0f172a' }}>
-      
-      {/* Top Header */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '14px', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          {onClose && (
-            <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
-              ← Dashboard
-            </button>
-          )}
-          <div style={{ fontSize: '11px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
-            Perpetual Valuation
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif' }}>
+      {/* Header & Dashboard Summary */}
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>📦</span>
-              <span>Live Stock & Inventory</span>
-            </h1>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
-              Weighted Average Valuation Method
-            </div>
+            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>Perpetual Valuation</div>
+            <h2 style={{ margin: '4px 0 0 0', fontSize: '20px', color: '#0f172a' }}>📦 Live Stock & Inventory</h2>
           </div>
-
-          <button
-            onClick={handleOpenAddModal}
-            style={{ backgroundColor: '#0284c7', color: '#ffffff', padding: '8px 14px', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(2,132,199,0.2)' }}
-          >
-            + Add New Item
-          </button>
+          {onClose && <button onClick={onClose} style={{ padding: '8px 16px', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Dashboard</button>}
         </div>
 
-        {/* Total Valuation Badge */}
-        <div style={{ marginTop: '14px', padding: '12px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#065f46' }}>Total Valuation:</span>
-          <span style={{ fontSize: '14px', fontWeight: 900, color: '#047857' }}>
-            ₹{totalValuation.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </span>
+        <button 
+          onClick={() => setIsModalOpen(true)} 
+          style={{ padding: '12px 20px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '16px' }}
+        >
+          + Add New Item
+        </button>
+
+        <div style={{ padding: '16px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#065f46' }}>Total Valuation:</span>
+          <span style={{ fontSize: '20px', fontWeight: '900', color: '#047857' }}>₹{totalValuation.toFixed(2)}</span>
         </div>
       </div>
 
-      {feedback && (
-        <div style={{ marginBottom: '14px', padding: '10px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', backgroundColor: feedback.type === 'success' ? '#ecfdf5' : '#fef2f2', color: feedback.type === 'success' ? '#065f46' : '#991b1b', border: feedback.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca' }}>
+      {feedback && !isModalOpen && (
+        <div style={{ padding: '12px', marginBottom: '16px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#ecfdf5', color: feedback.type === 'error' ? '#991b1b' : '#065f46', fontWeight: 'bold' }}>
           {feedback.message}
         </div>
       )}
 
-      {/* Inventory Table Card with Horizontal Scroll Fix */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
-        <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ width: '100%', minWidth: '420px', borderCollapse: 'collapse', fontSize: '11px' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-                <th style={{ padding: '9px 6px', textAlign: 'left', width: '30%' }}>Item / Material</th>
-                <th style={{ padding: '9px 6px', textAlign: 'center', width: '15%' }}>Unit</th>
-                <th style={{ padding: '9px 6px', textAlign: 'right', width: '18%' }}>Stock</th>
-                <th style={{ padding: '9px 6px', textAlign: 'right', width: '22%' }}>Total Value (₹)</th>
-                <th style={{ padding: '9px 6px', textAlign: 'center', width: '15%' }}>Actions</th>
+      {/* Inventory Table */}
+      <div style={{ backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead style={{ backgroundColor: '#0f172a', color: '#fff' }}>
+              <tr>
+                <th style={{ padding: '12px 16px', fontSize: '12px' }}>Item / Material</th>
+                <th style={{ padding: '12px 16px', fontSize: '12px' }}>Unit</th>
+                <th style={{ padding: '12px 16px', fontSize: '12px', textAlign: 'right' }}>Stock</th>
+                <th style={{ padding: '12px 16px', fontSize: '12px', textAlign: 'right' }}>Avg. Rate</th>
+                <th style={{ padding: '12px 16px', fontSize: '12px', textAlign: 'right' }}>Total Value</th>
+                <th style={{ padding: '12px 16px', fontSize: '12px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {inventoryList.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '12px' }}>
-                    कोई इन्वेंट्री आइटम उपलब्ध नहीं है। ऊपर दिए गए बटन से नया आइटम जोड़ें।
-                  </td>
-                </tr>
+              {itemsList.length === 0 ? (
+                <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No items found. Click '+ Add New Item' to create one.</td></tr>
               ) : (
-                inventoryList.map((item, idx) => {
-                  const stock = Number(item.current_stock || item.stock || 0);
-                  const rate = Number(item.purchase_rate || item.rate || 0);
-                  const val = stock * rate;
+                itemsList.map(item => {
+                  const stock = Number(item.current_stock) || 0;
+                  const rate = Number(item.unit_purchase_price) || 0;
+                  const val = item.item_type === 'SERVICE' ? 0 : (stock * rate);
+                  
                   return (
-                    <tr key={item.id || idx} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                      <td style={{ padding: '9px 6px', fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
-                        {item.item_name || item.name}
+                    <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px 16px', fontWeight: 'bold', color: '#1e293b' }}>
+                        {item.item_name}
+                        {item.item_type === 'SERVICE' && <span style={{ marginLeft: '8px', fontSize: '10px', backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>Service</span>}
                       </td>
-                      <td style={{ padding: '9px 6px', textAlign: 'center', color: '#64748b', fontWeight: 600 }}>
-                        {item.unit || 'Pcs'}
+                      <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b' }}>{item.unit}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 'bold', color: item.item_type === 'SERVICE' ? '#94a3b8' : '#059669' }}>
+                        {item.item_type === 'SERVICE' ? '-' : stock.toFixed(2)}
                       </td>
-                      <td style={{ padding: '9px 6px', textAlign: 'right', fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}>
-                        {stock.toFixed(2)}
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: '13px' }}>₹{rate.toFixed(2)}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 'bold' }}>
+                        {item.item_type === 'SERVICE' ? '-' : `₹${val.toFixed(2)}`}
                       </td>
-                      <td style={{ padding: '9px 6px', textAlign: 'right', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>
-                        ₹{val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ padding: '9px 6px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <button
-                          onClick={() => handleStartEdit(item)}
-                          style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', marginRight: '4px' }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          style={{ backgroundColor: '#ffe4e6', color: '#9f1239', border: 'none', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer' }}
-                        >
-                          Del
-                        </button>
+                      <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                        <button onClick={() => handleDelete(item.id)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Del</button>
                       </td>
                     </tr>
                   );
@@ -213,90 +168,83 @@ export default function InventoryStockView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Add / Edit Modal Popup */}
+      {/* Add Item Modal */}
       {isModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px', boxSizing: 'border-box' }}>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', width: '100%', maxWidth: '400px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', boxSizing: 'border-box' }}>
-            <h2 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-              {editingId ? 'Edit Stock Item' : 'Add New Stock Item'}
-            </h2>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px' }}>
+          <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px' }}>📦 Create New Item</h2>
+              <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }}>✖</button>
+            </div>
 
-            <form onSubmit={handleSaveItem} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '3px' }}>Item / Material Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Pakki Eent / Diesel"
-                  value={itemName}
-                  onChange={(e) => setItemName(e.target.value)}
-                  style={{ width: '100%', padding: '9px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }}
-                  required
-                />
-              </div>
+            {feedback && <div style={{ padding: '10px', marginBottom: '16px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#ecfdf5', color: feedback.type === 'error' ? '#991b1b' : '#065f46' }}>{feedback.message}</div>}
 
+            <form onSubmit={handleSaveItem} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '3px' }}>Measurement Unit *</label>
-                <select
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  style={{ width: '100%', padding: '9px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }}
-                >
-                  <option value="Pcs">Pcs (Pieces / नग)</option>
-                  <option value="Liters">Liters (लीटर)</option>
-                  <option value="MT">MT (Metric Ton)</option>
-                  <option value="Kg">Kg (किलोग्राम)</option>
-                  <option value="Trip">Trip (फेरा)</option>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Item Type *</label>
+                <select value={itemType} onChange={(e) => setItemType(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <option value="GOODS">Physical Goods / Material (भौतिक माल)</option>
+                  <option value="SERVICE">Service / Transport / Labor (सेवा / भाड़ा)</option>
                 </select>
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>Services do not track stock quantity.</div>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '3px' }}>Current Stock Quantity *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0"
-                  value={currentStock}
-                  onChange={(e) => setCurrentStock(e.target.value)}
-                  style={{ width: '100%', padding: '9px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }}
-                  required
-                />
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Item Name *</label>
+                <input type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="e.g. Pakki Eent (1st Class) / Biomass / Tractor Freight" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '3px' }}>Purchase Cost Rate (₹) *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  value={purchaseRate}
-                  onChange={(e) => setPurchaseRate(e.target.value)}
-                  style={{ width: '100%', padding: '9px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }}
-                  required
-                />
+              {itemType === 'GOODS' && (
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Measurement Unit *</label>
+                    <select value={unit} onChange={(e) => setUnit(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required>
+                      <option value="">-- Select Unit --</option>
+                      <optgroup label="Brick Kiln Units (ईंट भट्ठा)">
+                        <option value="Thousands">Thousands (हज़ार ईंटें)</option>
+                        <option value="Pcs">Pcs (Pieces / नग)</option>
+                        <option value="Sq.Ft">Sq.Ft (स्क्वायर फीट)</option>
+                      </optgroup>
+                      <optgroup label="Biomass & Material (कच्चा माल / कोयला)">
+                        <option value="MT">MT (Metric Ton)</option>
+                        <option value="Quintal">Quintal (क्विंटल)</option>
+                        <option value="Kg">Kg (किलोग्राम)</option>
+                        <option value="Tonne">Tonne (टन)</option>
+                      </optgroup>
+                      <optgroup label="Transport & Fuel (भाड़ा / ईंधन)">
+                        <option value="Trolley">Trolley (ट्रॉली)</option>
+                        <option value="Truck">Truck (ट्रक)</option>
+                        <option value="Trip">Trip (फेरा)</option>
+                        <option value="Liters">Liters (लीटर)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Opening Stock</label>
+                    <input type="number" step="0.01" value={openingStock} onChange={(e) => setOpeningStock(e.target.value)} placeholder="0.00" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Default Purchase Rate (₹)</label>
+                  <input type="number" step="0.01" value={purchaseRate} onChange={(e) => setPurchaseRate(e.target.value)} placeholder="0.00" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Default Sales Rate (₹)</label>
+                  <input type="number" step="0.01" value={salesRate} onChange={(e) => setSalesRate(e.target.value)} placeholder="0.00" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                <button
-                  type="submit"
-                  style={{ flex: 1, padding: '10px', backgroundColor: '#059669', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-                >
-                  Save Item
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  style={{ padding: '10px 14px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-              </div>
+              <button type="submit" style={{ width: '100%', padding: '14px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}>
+                + Save Item to Master
+              </button>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
