@@ -1,81 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
-
-// 🔥 ULTRA-FLEXIBLE DROPDOWN: Fixes the "No Accounts Found" Bug
-const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState('');
-
-  // Helpers to safely extract data no matter how it was saved in localStorage
-  const getName = (a) => a.account_name || a.name || a.displayName || '';
-  const getGroup = (a) => a.sub_group || a.category || a.primary_type || 'Ledger Account';
-  const getBal = (a) => Number(a.opening_balance || 0);
-  const getBalType = (a) => a.balance_type || 'Dr';
-
-  const filtered = accounts.filter(a => getName(a).toLowerCase().includes(search.toLowerCase()));
-  const selectedAcc = accounts.find(a => getName(a) === value);
-
-  return (
-    <div style={{ position: 'relative', marginBottom: '16px' }}>
-      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px', color: '#0f172a' }}>{label}</label>
-      <div
-        onClick={() => setIsOpen(!isOpen)}
-        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: isOpen ? '2px solid #059669' : '1px solid #cbd5e1', backgroundColor: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}
-      >
-        {selectedAcc ? (
-          <div>
-            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{getName(selectedAcc)}</div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{getGroup(selectedAcc)}</div>
-          </div>
-        ) : (
-          <span style={{ color: '#64748b' }}>{placeholder || '-- Select Account --'}</span>
-        )}
-        <span style={{ fontSize: '10px', color: '#64748b' }}>{isOpen ? '▲' : '▼'}</span>
-      </div>
-
-      {isOpen && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', zIndex: 100, marginTop: '4px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', maxHeight: '350px' }}>
-          <div style={{ padding: '10px', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', borderTopLeftRadius: '8px', borderTopRightRadius: '8px', display: 'flex', alignItems: 'center' }}>
-            <span style={{ marginRight: '8px' }}>🔍</span>
-            <input
-              type="text"
-              placeholder="Type name to search (A to Z sorted)..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              autoFocus
-              style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontSize: '13px' }}
-            />
-          </div>
-          <div style={{ overflowY: 'auto', flex: 1 }}>
-            {filtered.length === 0 ? (
-              <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No accounts found.</div>
-            ) : (
-              filtered.map(acc => {
-                const accName = getName(acc);
-                return (
-                  <div
-                    key={acc.id || Math.random()}
-                    onClick={() => { onChange(accName); setIsOpen(false); setSearch(''); }}
-                    style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: value === accName ? '#f0fdf4' : '#fff' }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 'bold', fontSize: '14px', color: value === accName ? '#059669' : '#0f172a' }}>{accName}</div>
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{getGroup(acc)}</div>
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: getBalType(acc) === 'Cr' ? '#dc2626' : '#059669' }}>
-                      ₹{Math.abs(getBal(acc))} {getBalType(acc)}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+// 🔥 Importing your exact Voucher Entry Dropdown
+import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 export default function CreateInvoice({ firm, onClose }) {
   const allItems = useItemMaster(); 
@@ -185,18 +112,23 @@ export default function CreateInvoice({ firm, onClose }) {
             </div>
           </div>
 
-          <CustomAccountDropdown
-            label="Customer / Debtor Party **"
-            value={customerParty}
-            onChange={setCustomerParty}
-            accounts={accountsList}
-            placeholder="-- Select Customer / Party --"
-          />
+          {/* 🔥 Your EXACT Voucher Entry Dropdown */}
+          <div style={{ marginBottom: '16px' }}>
+            <SearchableAccountDropdown
+              label="Customer / Debtor Party **"
+              accounts={accountsList}
+              value={customerParty}
+              onChange={val => setCustomerParty(val)}
+              placeholder="Search customer account..."
+              colorAccent="#0284c7"
+              required
+            />
+          </div>
 
           <div style={{ backgroundColor: '#f1f5f9', padding: '16px', borderRadius: '8px', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
-                <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Select Item</label>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Select Stock Item</label>
                 <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #eab308', boxSizing: 'border-box', backgroundColor: '#fff', outline: 'none' }}>
                   <option value="">-- Choose Stock Item --</option>
                   {allItems.map(item => (
