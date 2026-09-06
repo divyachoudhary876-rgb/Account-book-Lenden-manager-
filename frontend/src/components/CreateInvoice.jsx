@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
-// 🔥 Importing your exact Voucher Entry Dropdown
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
+// 🔥 FIX: Importing the correct Account Engine
+import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function CreateInvoice({ firm, onClose }) {
+  const activeFirmId = firm?.id || 'FIRM-001';
   const allItems = useItemMaster(); 
   const [accountsList, setAccountsList] = useState([]);
 
@@ -18,16 +20,16 @@ export default function CreateInvoice({ firm, onClose }) {
   const [quantity, setQuantity] = useState('');
   const [rate, setRate] = useState('');
 
+  // 🔥 FIX: Using getFirmMasterAccounts just like VoucherEntryForm
   useEffect(() => {
     const loadAccs = () => {
-      let stored = StorageService.getLedgerAccounts() || [];
-      stored.sort((a, b) => String(a.account_name || a.name || '').localeCompare(String(b.account_name || b.name || '')));
-      setAccountsList(stored);
+      const accList = getFirmMasterAccounts(activeFirmId) || [];
+      setAccountsList(accList);
     };
     loadAccs();
-    window.addEventListener('app_storage_updated', loadAccs);
-    return () => window.removeEventListener('app_storage_updated', loadAccs);
-  }, []);
+    window.addEventListener('app_state_updated', loadAccs);
+    return () => window.removeEventListener('app_state_updated', loadAccs);
+  }, [activeFirmId]);
 
   const handleAddToCart = () => {
     if (!selectedItemId || !quantity || !rate) return;
@@ -72,7 +74,7 @@ export default function CreateInvoice({ firm, onClose }) {
       const vouchers = StorageService.getVouchers() || [];
       const newVoucher = {
         id: `INV-${Date.now()}`,
-        firm_id: firm?.id || 'firm_default',
+        firm_id: activeFirmId,
         voucher_date: invoiceDate,
         voucher_type: 'SALES',
         dr_account: customerParty,
@@ -112,7 +114,6 @@ export default function CreateInvoice({ firm, onClose }) {
             </div>
           </div>
 
-          {/* 🔥 Your EXACT Voucher Entry Dropdown */}
           <div style={{ marginBottom: '16px' }}>
             <SearchableAccountDropdown
               label="Customer / Debtor Party **"
