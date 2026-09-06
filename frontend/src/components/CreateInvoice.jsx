@@ -2,6 +2,72 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
 
+// 🔥 VOUCHER-STYLE CUSTOM ACCOUNT DROPDOWN
+const CustomAccountDropdown = ({ label, value, onChange, accounts, placeholder }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filtered = accounts.filter(a => String(a.account_name || a.name || '').toLowerCase().includes(search.toLowerCase()));
+  const selectedAcc = accounts.find(a => (a.account_name || a.name) === value);
+
+  return (
+    <div style={{ position: 'relative', marginBottom: '16px' }}>
+      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px', color: '#0f172a' }}>{label}</label>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: isOpen ? '2px solid #059669' : '1px solid #cbd5e1', backgroundColor: '#fff', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}
+      >
+        {selectedAcc ? (
+          <div>
+            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{selectedAcc.account_name || selectedAcc.name}</div>
+            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{selectedAcc.sub_group || selectedAcc.category}</div>
+          </div>
+        ) : (
+          <span style={{ color: '#64748b' }}>{placeholder || '-- Select Account --'}</span>
+        )}
+        <span style={{ fontSize: '10px', color: '#64748b' }}>{isOpen ? '▲' : '▼'}</span>
+      </div>
+
+      {isOpen && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', zIndex: 100, marginTop: '4px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', maxHeight: '350px' }}>
+          <div style={{ padding: '10px', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', borderTopLeftRadius: '8px', borderTopRightRadius: '8px', display: 'flex', alignItems: 'center' }}>
+            <span style={{ marginRight: '8px' }}>🔍</span>
+            <input
+              type="text"
+              placeholder="Type name to search (A to Z sorted)..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              autoFocus
+              style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontSize: '13px' }}
+            />
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>No accounts found.</div>
+            ) : (
+              filtered.map(acc => (
+                <div
+                  key={acc.id}
+                  onClick={() => { onChange(acc.account_name || acc.name); setIsOpen(false); setSearch(''); }}
+                  style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: value === (acc.account_name || acc.name) ? '#f0fdf4' : '#fff' }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 'bold', fontSize: '14px', color: value === (acc.account_name || acc.name) ? '#059669' : '#0f172a' }}>{acc.account_name || acc.name}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{acc.sub_group || acc.category || acc.primary_type}</div>
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: acc.balance_type === 'Cr' ? '#dc2626' : '#059669' }}>
+                    ₹{Math.abs(acc.opening_balance || 0)} {acc.balance_type || 'Dr'}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function CreateInvoice({ firm, onClose }) {
   const allItems = useItemMaster(); 
   const [accountsList, setAccountsList] = useState([]);
@@ -16,15 +82,16 @@ export default function CreateInvoice({ firm, onClose }) {
   const [quantity, setQuantity] = useState('');
   const [rate, setRate] = useState('');
 
+  // ⚡ Loads ALL Accounts instantly
   useEffect(() => {
-    const storedAccounts = StorageService.getLedgerAccounts() || [];
-    const formattedAccounts = storedAccounts.map(acc => ({
-      id: acc.id || Math.random().toString(),
-      displayName: acc.account_name || acc.name || 'Unnamed Account'
-    }));
-    
-    formattedAccounts.sort((a, b) => a.displayName.localeCompare(b.displayName));
-    setAccountsList(formattedAccounts);
+    const loadAccs = () => {
+      let stored = StorageService.getLedgerAccounts() || [];
+      stored.sort((a, b) => String(a.account_name || a.name || '').localeCompare(String(b.account_name || b.name || '')));
+      setAccountsList(stored);
+    };
+    loadAccs();
+    window.addEventListener('app_storage_updated', loadAccs);
+    return () => window.removeEventListener('app_storage_updated', loadAccs);
   }, []);
 
   const handleAddToCart = () => {
@@ -91,8 +158,8 @@ export default function CreateInvoice({ firm, onClose }) {
   };
 
   return (
-    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>📄 Multi-Item Sales Invoicing</h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>}
@@ -101,65 +168,78 @@ export default function CreateInvoice({ firm, onClose }) {
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Invoice Date *</label>
-              <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Invoice Date *</label>
+              <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Invoice No *</label>
-              <input type="text" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Invoice No *</label>
+              <input type="text" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
             </div>
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Customer / Debtor Party **</label>
-            <select value={customerParty} onChange={e => setCustomerParty(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required>
-              <option value="">-- Select Customer / Party --</option>
-              {accountsList.map(acc => (
-                <option key={acc.id} value={acc.displayName}>{acc.displayName}</option>
-              ))}
-            </select>
-          </div>
+          <CustomAccountDropdown
+            label="Customer / Debtor Party **"
+            value={customerParty}
+            onChange={setCustomerParty}
+            accounts={accountsList}
+            placeholder="-- Select Customer / Party --"
+          />
 
-          <div style={{ backgroundColor: '#f1f5f9', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'end' }}>
-              <div style={{ flex: 2 }}>
-                <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Item</label>
-                <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eab308' }}>
-                  <option value="">-- Choose --</option>
+          {/* 🔥 FIXED MOBILE LAYOUT FOR CART ENTRY (Item squishing issue solved) */}
+          <div style={{ backgroundColor: '#f1f5f9', padding: '16px', borderRadius: '8px', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Select Stock Item</label>
+                <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #eab308', boxSizing: 'border-box', backgroundColor: '#fff', outline: 'none' }}>
+                  <option value="">-- Choose Stock Item --</option>
                   {allItems.map(item => (
-                    <option key={item.id} value={item.id}>{item.item_name} [Stock: {item.current_stock || 0}]</option>
+                    <option key={item.id} value={item.id}>{item.item_name} [Stock: {item.current_stock || 0} {item.unit}]</option>
                   ))}
                 </select>
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Qty</label>
-                <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Qty</label>
+                  <input type="number" step="0.01" value={quantity} onChange={e => setQuantity(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} placeholder="0" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Rate</label>
+                  <input type="number" step="0.01" value={rate} onChange={e => setRate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} placeholder="0.00" />
+                </div>
+                <button type="button" onClick={handleAddToCart} style={{ padding: '0 20px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', height: '42px', whiteSpace: 'nowrap' }}>
+                  + Add
+                </button>
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Rate</label>
-                <input type="number" value={rate} onChange={e => setRate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-              </div>
-              <button type="button" onClick={handleAddToCart} style={{ padding: '10px 16px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>+ Add</button>
             </div>
 
             {cart.length > 0 && (
               <div style={{ marginTop: '16px' }}>
                 {cart.map(c => (
-                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #cbd5e1' }}>
-                    <span style={{ fontSize: '13px' }}>{c.itemName} x {c.qty} @ ₹{c.rate}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 'bold' }}>₹{c.total} <button type="button" onClick={() => removeCartItem(c.id)} style={{ color: 'red', border: 'none', background: 'none', marginLeft: '10px', cursor: 'pointer' }}>X</button></span>
+                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px dashed #cbd5e1' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>{c.itemName}</span>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Qty: {c.qty} @ ₹{c.rate}</span>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+                      ₹{c.total.toFixed(2)} 
+                      <button type="button" onClick={() => removeCartItem(c.id)} style={{ color: '#ef4444', border: 'none', background: 'none', marginLeft: '12px', cursor: 'pointer', fontWeight: 'bold', padding: '4px' }}>X</button>
+                    </div>
                   </div>
                 ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '14px' }}>
-                  <span>Taxable: ₹{taxableAmount} | CGST: ₹{cgst} | SGST: ₹{sgst}</span>
-                  <span style={{ fontWeight: 'bold', fontSize: '16px' }}>Total: ₹{grandTotal}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', fontSize: '13px', backgroundColor: '#e2e8f0', padding: '10px', borderRadius: '6px' }}>
+                  <div>
+                    <div>Taxable: ₹{taxableAmount.toFixed(2)}</div>
+                    <div style={{ fontSize: '11px', color: '#475569' }}>CGST: ₹{cgst.toFixed(2)} | SGST: ₹{sgst.toFixed(2)}</div>
+                  </div>
+                  <div style={{ fontWeight: '900', fontSize: '16px', color: '#047857' }}>₹{grandTotal.toFixed(2)}</div>
                 </div>
               </div>
             )}
           </div>
 
-          <button type="submit" style={{ width: '100%', padding: '14px', backgroundColor: '#1d4ed8', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-            📄 Post Multi-Item Sale & Print PDF
+          <button type="submit" style={{ width: '100%', padding: '14px', backgroundColor: '#1d4ed8', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px', boxShadow: '0 4px 6px rgba(29, 78, 216, 0.2)' }}>
+            📄 Post Multi-Item Sale
           </button>
         </form>
       </div>
