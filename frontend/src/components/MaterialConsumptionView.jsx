@@ -14,11 +14,15 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const [expenseLedger, setExpenseLedger] = useState('');
   const [remarks, setRemarks] = useState('');
   
+  // Search state for searchable dropdown
+  const [accountSearchQuery, setAccountSearchQuery] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
   const [editingId, setEditingId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Load and strictly filter accounts to show ONLY valid P&L Expense heads
+  // Load and strictly filter true Expense accounts from localStorage
   useEffect(() => {
     const syncData = () => {
       const inventory = StorageService.getInventoryItems();
@@ -29,7 +33,9 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         { name: 'Diesel Expenses', category: 'Direct Expenses', group: 'Expenses' },
         { name: 'Fuel & Coal Consumption', category: 'Direct Expenses', group: 'Expenses' },
         { name: 'Machinery Maintenance', category: 'Indirect Expenses', group: 'Expenses' },
-        { name: 'Tractor Kiraya', category: 'Direct Expenses', group: 'Expenses' }
+        { name: 'Tractor Kiraya', category: 'Direct Expenses', group: 'Expenses' },
+        { name: 'Jamin level expenses', category: 'Direct Expenses', group: 'Expenses' },
+        { name: 'Pathai labour', category: 'Direct Expenses', group: 'Expenses' }
       ];
       
       const accMap = new Map();
@@ -42,6 +48,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
           const lowerCat = String(rawCategory).toLowerCase();
           const lowerName = String(name).toLowerCase();
           
+          // Must be an operational expense head
           const isExpense = 
             lowerCat.includes('expense') || 
             lowerCat.includes('direct') || 
@@ -51,8 +58,10 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             lowerName.includes('fuel') ||
             lowerName.includes('consumption') ||
             lowerName.includes('kiraya') ||
-            lowerName.includes('labour');
+            lowerName.includes('labour') ||
+            lowerName.includes('conversion');
 
+          // Strict blacklist to eliminate personal names, drivers, capital, assets, and banks
           const isRestricted = 
             lowerCat.includes('capital') || 
             lowerCat.includes('asset') || 
@@ -60,6 +69,15 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             lowerCat.includes('income') ||
             lowerName.includes('capital') ||
             lowerName.includes('driver') ||
+            lowerName.includes('vinod') ||
+            lowerName.includes('ramkumar') ||
+            lowerName.includes('sohan') ||
+            lowerName.includes('bhim') ||
+            lowerName.includes('kishor') ||
+            lowerName.includes('sanjay') ||
+            lowerName.includes('pawan') ||
+            lowerName.includes('ravindra') ||
+            lowerName.includes('krishan') ||
             lowerName.includes('cash') ||
             lowerName.includes('bank') ||
             lowerName.includes('sales') ||
@@ -93,6 +111,15 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
       window.removeEventListener('storage', syncData);
     };
   }, []);
+
+  // Filter accounts based on search query in dropdown
+  const filteredAccounts = useMemo(() => {
+    if (!accountSearchQuery.trim()) return accountsList;
+    return accountsList.filter(acc => 
+      acc.name.toLowerCase().includes(accountSearchQuery.toLowerCase()) ||
+      acc.category.toLowerCase().includes(accountSearchQuery.toLowerCase())
+    );
+  }, [accountsList, accountSearchQuery]);
 
   const selectedItem = useMemo(() => {
     if (!Array.isArray(itemsList) || itemsList.length === 0) return null;
@@ -184,6 +211,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
       setVehicleRef('');
       setRemarks('');
       setSelectedItemId('');
+      setExpenseLedger('');
     } catch (err) {
       setFeedback({ type: 'error', message: 'त्रुटि: ' + err.message });
     } finally {
@@ -319,17 +347,56 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             </span>
           </div>
 
-          {/* Strictly Filtered Expense Ledger Dropdown */}
-          <div>
+          {/* SEARCHABLE EXPENSE LEDGER DROPDOWN */}
+          <div style={{ position: 'relative' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Debit Expense Ledger (P&L Kharch Khata) *</label>
-            <select value={expenseLedger} onChange={(e) => setExpenseLedger(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} required>
-              <option value="">-- Select Expense Ledger Account --</option>
-              {accountsList.map((acc, idx) => (
-                <option key={idx} value={acc.name}>
-                  {acc.name} ({acc.category})
-                </option>
-              ))}
-            </select>
+            
+            <div 
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <span style={{ color: expenseLedger ? '#0f172a' : '#94a3b8', fontWeight: expenseLedger ? 600 : 400 }}>
+                {expenseLedger ? expenseLedger : '-- Select Expense Ledger Account --'}
+              </span>
+              <span>▼</span>
+            </div>
+
+            {isDropdownOpen && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 100, marginTop: '4px', padding: '8px', boxSizing: 'border-box' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search expense account..."
+                  value={accountSearchQuery}
+                  onChange={(e) => setAccountSearchQuery(e.target.value)}
+                  autoFocus
+                  style={{ width: '100%', padding: '8px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '11px', outline: 'none', boxSizing: 'border-box', marginBottom: '6px' }}
+                />
+                
+                <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                  <div
+                    onClick={() => { setExpenseLedger(''); setIsDropdownOpen(false); setAccountSearchQuery(''); }}
+                    style={{ padding: '8px', fontSize: '11px', color: '#94a3b8', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                  >
+                    -- Clear Selection --
+                  </div>
+                  {filteredAccounts.length === 0 ? (
+                    <div style={{ padding: '10px', textAlign: 'center', fontSize: '11px', color: '#94a3b8' }}>
+                      कोई खर्चे का खाता नहीं मिला।
+                    </div>
+                  ) : (
+                    filteredAccounts.map((acc, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => { setExpenseLedger(acc.name); setIsDropdownOpen(false); setAccountSearchQuery(''); }}
+                        style={{ padding: '9px 8px', fontSize: '11px', fontWeight: 600, color: expenseLedger === acc.name ? '#0284c7' : '#0f172a', backgroundColor: expenseLedger === acc.name ? '#e0f2fe' : 'transparent', borderRadius: '6px', cursor: 'pointer', borderBottom: '1px solid #f8fafc' }}
+                      >
+                        {acc.name} <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 400 }}>({acc.category})</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
@@ -342,7 +409,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
               ⚡ {isSubmitting ? 'Processing...' : editingId ? 'Update Entry' : 'Deduct Stock & Post Expense'}
             </button>
             {editingId && (
-              <button type="button" onClick={() => { setEditingId(null); setQuantity(''); setVehicleRef(''); setSelectedItemId(''); }} style={{ padding: '12px 16px', backgroundColor: '#e2e8f0', color: '#334155', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+              <button type="button" onClick={() => { setEditingId(null); setQuantity(''); setVehicleRef(''); setSelectedItemId(''); setExpenseLedger(''); }} style={{ padding: '12px 16px', backgroundColor: '#e2e8f0', color: '#334155', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
                 Cancel
               </button>
             )}
