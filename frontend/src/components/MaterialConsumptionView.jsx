@@ -1,9 +1,9 @@
-// frontend/src/components/MaterialConsumptionView.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { StorageService } from '../utils/storageSync';
+import { useItemMaster } from '../hooks/useItemMaster';
 
 export default function MaterialConsumptionView({ firm, onSave, onClose }) {
-  const [itemsList, setItemsList] = useState([]);
+  const allItems = useItemMaster();
   const [accountsList, setAccountsList] = useState([]);
   const [consumptionList, setConsumptionList] = useState([]);
 
@@ -21,86 +21,23 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Load and Smart-Filter Expense Accounts
   useEffect(() => {
     const syncData = () => {
-      const inventory = StorageService.getInventoryItems();
-      setItemsList(inventory);
-
-      const storedAccounts = StorageService.getLedgerAccounts();
-      const defaultAccounts = [
-        { name: 'Diesel Expenses', category: 'Direct Expenses', group: 'Expenses' },
-        { name: 'Fuel & Coal Consumption', category: 'Direct Expenses', group: 'Expenses' },
-        { name: 'Machinery Maintenance', category: 'Indirect Expenses', group: 'Expenses' },
-        { name: 'Tractor Kiraya', category: 'Direct Expenses', group: 'Expenses' }
-      ];
+      const storedAccounts = StorageService.getLedgerAccounts() || [];
+      // Robust extraction to handle legacy data formats
+      const formattedAccounts = storedAccounts.map(acc => ({
+        id: acc.id || Math.random().toString(),
+        displayName: acc.account_name || acc.name || 'Unnamed Account'
+      }));
       
-      const accMap = new Map();
-      
-      [...defaultAccounts, ...storedAccounts].forEach(acc => {
-        const name = acc.name || acc.account_name;
-        const rawCategory = acc.category || acc.account_group || acc.group || '';
-        
-        if (name) {
-          const lowerCat = String(rawCategory).toLowerCase();
-          const lowerName = String(name).toLowerCase();
-          
-          // BROAD WHITELIST: Catches almost any variation of expense accounts
-          const isExpense = 
-            lowerCat.includes('exp') || 
-            lowerCat.includes('direct') || 
-            lowerCat.includes('indirect') ||
-            lowerCat.includes('manufacturing') ||
-            lowerName.includes('exp') ||
-            lowerName.includes('maintenance') ||
-            lowerName.includes('fuel') ||
-            lowerName.includes('consumption') ||
-            lowerName.includes('kiraya') ||
-            lowerName.includes('labour') ||
-            lowerName.includes('bill') ||
-            lowerName.includes('rent') ||
-            lowerName.includes('fee') ||
-            lowerName.includes('freight') ||
-            lowerName.includes('charge');
-
-          // STRICT BLACKLIST: Prevents Equity, Assets, Liabilities, and Core Incomes
-          const isRestricted = 
-            lowerCat.includes('cap') || 
-            lowerCat.includes('asset') || 
-            lowerCat.includes('liab') ||
-            lowerCat.includes('inc') ||
-            lowerCat.includes('rev') ||
-            lowerName.includes('capital') ||
-            lowerName.includes('driver') ||
-            lowerName.includes('cash') ||
-            lowerName.includes('bank') ||
-            lowerName.includes('sales') ||
-            lowerName.includes('revenue');
-
-          // If a user explicitly created it with 'EXPENSES' category, or it passes the smart filter
-          if ((isExpense || lowerCat === 'expenses') && !isRestricted) {
-            accMap.set(name.trim(), { 
-              name: name.trim(), 
-              category: rawCategory || 'Expenses' 
-            });
-          }
-        }
-      });
-      
-      // Failsafe
-      if (accMap.size === 0) {
-        accMap.set('Diesel Expenses', { name: 'Diesel Expenses', category: 'Direct Expenses' });
-      }
-
-      setAccountsList(Array.from(accMap.values()));
-      setConsumptionList(StorageService.getMaterialConsumptions());
+      formattedAccounts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+      setAccountsList(formattedAccounts);
+      setConsumptionList(StorageService.getMaterialConsumptions() || []);
     };
 
     syncData();
-
     window.addEventListener('app_storage_updated', syncData);
     window.addEventListener('storage', syncData);
-
     return () => {
       window.removeEventListener('app_storage_updated', syncData);
       window.removeEventListener('storage', syncData);
@@ -110,18 +47,16 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const filteredAccounts = useMemo(() => {
     if (!accountSearchQuery.trim()) return accountsList;
     return accountsList.filter(acc => 
-      acc.name.toLowerCase().includes(accountSearchQuery.toLowerCase()) ||
-      acc.category.toLowerCase().includes(accountSearchQuery.toLowerCase())
+      acc.displayName.toLowerCase().includes(accountSearchQuery.toLowerCase())
     );
   }, [accountsList, accountSearchQuery]);
 
   const selectedItem = useMemo(() => {
-    if (!Array.isArray(itemsList) || itemsList.length === 0) return null;
-    return itemsList.find(i => String(i.id || i.item_name) === String(selectedItemId)) || null;
-  }, [itemsList, selectedItemId]);
+    return allItems.find(i => String(i.id) === String(selectedItemId)) || null;
+  }, [allItems, selectedItemId]);
 
-  const currentStock = Number(selectedItem?.current_stock || selectedItem?.stock || 0);
-  const unitRate = Number(selectedItem?.purchase_rate || selectedItem?.rate || selectedItem?.average_rate || 0);
+  const currentStock = Number(selectedItem?.current_stock || 0);
+  const unitRate = Number(selectedItem?.unit_purchase_price || 0);
   const parsedQty = Number(quantity || 0);
   const estimatedCost = parsedQty * unitRate;
 
@@ -129,34 +64,21 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     e.preventDefault();
     setFeedback(null);
 
-    if (!selectedItemId) {
-      setFeedback({ type: 'error', message: 'कृपया सूची से स्टॉक आइटम चुनें।' });
-      return;
-    }
-    if (parsedQty <= 0) {
-      setFeedback({ type: 'error', message: 'कृपया वैध खपत मात्रा (Quantity) दर्ज करें।' });
-      return;
-    }
-    if (!editingId && parsedQty > currentStock) {
-      setFeedback({ type: 'error', message: `स्टॉक अपर्याप्त है! उपलब्ध स्टॉक: ${currentStock.toFixed(2)} ${selectedItem?.unit || ''}` });
-      return;
-    }
-    if (!expenseLedger) {
-      setFeedback({ type: 'error', message: 'कृपया डेबिट खर्चे का खाता (Debit Expense Ledger) चुनें।' });
-      return;
-    }
+    if (!selectedItemId) return setFeedback({ type: 'error', message: 'कृपया Stock Item चुनें।' });
+    if (parsedQty <= 0) return setFeedback({ type: 'error', message: 'कृपया वैध खपत मात्रा दर्ज करें।' });
+    if (!editingId && parsedQty > currentStock) return setFeedback({ type: 'error', message: `स्टॉक अपर्याप्त है! उपलब्ध: ${currentStock.toFixed(2)}` });
+    if (!expenseLedger) return setFeedback({ type: 'error', message: 'कृपया Debit Expense Ledger चुनें।' });
 
     setIsSubmitting(true);
     try {
-      const currentInventory = StorageService.getInventoryItems();
-      const currentConsumptions = StorageService.getMaterialConsumptions();
+      const currentInventory = StorageService.getInventoryItems() || [];
+      const currentConsumptions = StorageService.getMaterialConsumptions() || [];
 
       let finalQtyDelta = parsedQty;
       if (editingId) {
         const existingEntry = currentConsumptions.find(c => c.id === editingId);
         if (existingEntry && String(existingEntry.item_id) === String(selectedItemId)) {
-          const oldQty = Number(existingEntry.quantity || 0);
-          finalQtyDelta = parsedQty - oldQty;
+          finalQtyDelta = parsedQty - Number(existingEntry.quantity || 0);
         }
       }
 
@@ -165,7 +87,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         firm_id: firm?.id || 'firm_default',
         usage_date: usageDate,
         item_id: selectedItemId,
-        item_name: selectedItem?.item_name || selectedItem?.name || 'Material Item',
+        item_name: selectedItem?.item_name || 'Material Item',
         quantity: parsedQty,
         unit_rate: unitRate,
         total_valuation: estimatedCost,
@@ -176,36 +98,25 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
       };
 
       const updatedInventory = currentInventory.map(item => {
-        if (String(item.id || item.item_name) === String(selectedItemId)) {
-          const oldStock = Number(item.current_stock || item.stock || 0);
-          const newStock = Math.max(0, oldStock - finalQtyDelta);
-          return { ...item, current_stock: newStock };
+        if (String(item.id) === String(selectedItemId)) {
+          return { ...item, current_stock: Math.max(0, Number(item.current_stock || 0) - finalQtyDelta) };
         }
         return item;
       });
-      StorageService.saveInventoryItems(updatedInventory);
-      setItemsList(updatedInventory);
+      StorageService.setItem('inventory_items', updatedInventory);
 
-      let updatedConsumptions = [];
+      let updatedConsumptions;
       if (editingId) {
         updatedConsumptions = currentConsumptions.map(c => c.id === editingId ? payload : c);
-        setFeedback({ type: 'success', message: '✓ खपत प्रविष्टि सफलतापूर्वक अपडेट कर दी गई!' });
+        setFeedback({ type: 'success', message: '✓ खपत प्रविष्टि अपडेट हो गई!' });
       } else {
         updatedConsumptions = [payload, ...currentConsumptions];
-        setFeedback({ type: 'success', message: '✓ स्टॉक सफलतापूर्वक घटा दिया गया और खर्चे का वाउचर दर्ज हो गया!' });
+        setFeedback({ type: 'success', message: '✓ स्टॉक घटा दिया गया!' });
       }
-
-      StorageService.saveMaterialConsumptions(updatedConsumptions);
-      setConsumptionList(updatedConsumptions);
+      StorageService.setItem('material_consumptions', updatedConsumptions);
 
       if (typeof onSave === 'function') onSave(payload);
-
-      setEditingId(null);
-      setQuantity('');
-      setVehicleRef('');
-      setRemarks('');
-      setSelectedItemId('');
-      setExpenseLedger('');
+      setEditingId(null); setQuantity(''); setVehicleRef(''); setRemarks(''); setSelectedItemId(''); setExpenseLedger('');
     } catch (err) {
       setFeedback({ type: 'error', message: 'त्रुटि: ' + err.message });
     } finally {
@@ -215,248 +126,118 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
 
   const handleStartEdit = (entry) => {
     setEditingId(entry.id);
-    setUsageDate(entry.usage_date || new Date().toISOString().split('T')[0]);
-    setSelectedItemId(entry.item_id || '');
-    setQuantity(String(entry.quantity || ''));
-    setVehicleRef(entry.vehicle_ref || '');
-    setExpenseLedger(entry.expense_ledger || '');
-    setRemarks(entry.remarks || '');
+    setUsageDate(entry.usage_date);
+    setSelectedItemId(entry.item_id);
+    setQuantity(String(entry.quantity));
+    setVehicleRef(entry.vehicle_ref);
+    setExpenseLedger(entry.expense_ledger);
+    setRemarks(entry.remarks);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = (id) => {
-    if (!window.confirm('क्या आप वाकई इस खपत प्रविष्टि को हटाना चाहते हैं? हटाने पर खपत की गई मात्रा वापस स्टॉक में जुड़ जाएगी।')) return;
-    
+    if (!window.confirm('हटाने पर खपत की गई मात्रा वापस स्टॉक में जुड़ जाएगी। जारी रखें?')) return;
     try {
-      const currentConsumptions = StorageService.getMaterialConsumptions();
+      const currentConsumptions = StorageService.getMaterialConsumptions() || [];
       const entryToDelete = currentConsumptions.find(c => c.id === id);
 
       if (entryToDelete) {
-        const targetItemId = entryToDelete.item_id;
-        const returnQty = Number(entryToDelete.quantity || 0);
-
-        const currentInventory = StorageService.getInventoryItems();
+        const currentInventory = StorageService.getInventoryItems() || [];
         const restoredInventory = currentInventory.map(item => {
-          if (String(item.id || item.item_name) === String(targetItemId)) {
-            const currentStk = Number(item.current_stock || item.stock || 0);
-            return { ...item, current_stock: currentStk + returnQty };
+          if (String(item.id) === String(entryToDelete.item_id)) {
+            return { ...item, current_stock: Number(item.current_stock || 0) + Number(entryToDelete.quantity || 0) };
           }
           return item;
         });
-
-        StorageService.saveInventoryItems(restoredInventory);
-        setItemsList(restoredInventory);
+        StorageService.setItem('inventory_items', restoredInventory);
       }
 
       const filtered = currentConsumptions.filter(item => item.id !== id);
-      StorageService.saveMaterialConsumptions(filtered);
-      setConsumptionList(filtered);
-      setFeedback({ type: 'success', message: '✓ प्रविष्टि हटा दी गई और स्टॉक सफलतापूर्वक वापस जोड़ दिया गया।' });
-      setTimeout(() => setFeedback(null), 4000);
+      StorageService.setItem('material_consumptions', filtered);
+      setFeedback({ type: 'success', message: '✓ प्रविष्टि हटा दी गई।' });
     } catch (err) {
-      setFeedback({ type: 'error', message: 'हटाने में विफल: ' + err.message });
+      setFeedback({ type: 'error', message: 'विफल: ' + err.message });
     }
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '12px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', width: '100%', maxWidth: '100vw', overflowX: 'hidden', color: '#0f172a' }}>
-      
-      {/* Header */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '14px', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          {onClose && (
-            <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
-              ← Dashboard
-            </button>
-          )}
-          <div style={{ fontSize: '11px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: editingId ? '#fef3c7' : '#f1f5f9', color: editingId ? '#92400e' : '#475569', border: editingId ? '1px solid #fde68a' : '1px solid #cbd5e1' }}>
-            {editingId ? '⚠️ Editing Mode' : 'Internal Ledger Mode'}
-          </div>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '16px', fontFamily: 'sans-serif' }}>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h1 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>🚜 Fuel & Material Consumption</h1>
+          {onClose && <button onClick={onClose} style={{ padding: '6px 12px', borderRadius: '6px', cursor: 'pointer' }}>Close</button>}
         </div>
 
-        <div>
-          <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>🚜</span>
-            <span>Fuel & Material Internal Consumption</span>
-          </h1>
-          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
-            Automatic Stock Deduction & Expense Voucher Generator
-          </div>
-        </div>
+        {feedback && <div style={{ padding: '10px', marginBottom: '16px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#ecfdf5', color: feedback.type === 'error' ? '#991b1b' : '#065f46' }}>{feedback.message}</div>}
 
-        {/* Dynamic Stock Badge */}
-        <div style={{ marginTop: '12px', padding: '10px 12px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#065f46' }}>
-            {selectedItem ? `AVAILABLE ${selectedItem.item_name || selectedItem.name}:` : 'AVAILABLE STOCK:'}
-          </span>
-          <span style={{ fontSize: '13px', fontWeight: 900, color: '#047857' }}>
-            {currentStock.toFixed(2)} {selectedItem?.unit || 'Units'}
-          </span>
-        </div>
-      </div>
-
-      {feedback && (
-        <div style={{ marginBottom: '14px', padding: '10px 12px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', backgroundColor: feedback.type === 'success' ? '#ecfdf5' : '#fef2f2', color: feedback.type === 'success' ? '#065f46' : '#991b1b', border: feedback.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca' }}>
-          {feedback.message}
-        </div>
-      )}
-
-      {/* Form */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '16px', boxSizing: 'border-box' }}>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Date of Usage *</label>
-            <input type="date" value={usageDate} onChange={(e) => setUsageDate(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} required />
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Date of Usage *</label>
+            <input type="date" value={usageDate} onChange={(e) => setUsageDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Select Stock Item to Consume *</label>
-            <select value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} required>
-              <option value="">-- Choose Stock Item from Live Inventory --</option>
-              {itemsList.map((item, idx) => (
-                <option key={item.id || idx} value={item.id || item.item_name}>
-                  {item.item_name || item.name} (Available: {Number(item.current_stock || item.stock || 0).toFixed(2)} {item.unit || 'Units'})
-                </option>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Select Stock Item *</label>
+            <select value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required>
+              <option value="">-- Choose Stock Item --</option>
+              {allItems.map(item => (
+                <option key={item.id} value={item.id}>{item.item_name} (Available: {item.current_stock || 0})</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Quantity Consumed *</label>
-            <input type="number" step="0.01" min="0.01" placeholder="e.g. 20" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} required />
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Quantity *</label>
+            <input type="number" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Used In / Vehicle Ref *</label>
-            <input type="text" placeholder="e.g. Mahindra 585 / Generator" value={vehicleRef} onChange={(e) => setVehicleRef(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} required />
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Vehicle Ref *</label>
+            <input type="text" value={vehicleRef} onChange={(e) => setVehicleRef(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
           </div>
 
-          <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
-              Estimated Cost Valuation (@ ₹{unitRate.toFixed(2)}/{selectedItem?.unit || 'Unit'}):
-            </span>
-            <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>
-              ₹{estimatedCost.toFixed(2)}
-            </span>
-          </div>
-
-          {/* SEARCHABLE EXPENSE LEDGER DROPDOWN */}
           <div style={{ position: 'relative' }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Debit Expense Ledger (P&L Kharch Khata) *</label>
-            
-            <div 
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-            >
-              <span style={{ color: expenseLedger ? '#0f172a' : '#94a3b8', fontWeight: expenseLedger ? 600 : 400 }}>
-                {expenseLedger ? expenseLedger : '-- Select Expense Ledger Account --'}
-              </span>
-              <span>▼</span>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Debit Expense Ledger *</label>
+            <div onClick={() => setIsDropdownOpen(!isDropdownOpen)} style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', backgroundColor: '#fff' }}>
+              {expenseLedger || '-- Select Expense Ledger --'}
             </div>
-
             {isDropdownOpen && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 100, marginTop: '4px', padding: '8px', boxSizing: 'border-box' }}>
-                <input
-                  type="text"
-                  placeholder="🔍 Search expense account..."
-                  value={accountSearchQuery}
-                  onChange={(e) => setAccountSearchQuery(e.target.value)}
-                  autoFocus
-                  style={{ width: '100%', padding: '8px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '11px', outline: 'none', boxSizing: 'border-box', marginBottom: '6px' }}
-                />
-                
-                <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
-                  <div
-                    onClick={() => { setExpenseLedger(''); setIsDropdownOpen(false); setAccountSearchQuery(''); }}
-                    style={{ padding: '8px', fontSize: '11px', color: '#94a3b8', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
-                  >
-                    -- Clear Selection --
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', zIndex: 10, marginTop: '4px', padding: '8px', maxHeight: '200px', overflowY: 'auto', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                <input type="text" placeholder="Search..." value={accountSearchQuery} onChange={(e) => setAccountSearchQuery(e.target.value)} style={{ width: '100%', padding: '8px', marginBottom: '8px', border: '1px solid #e2e8f0', borderRadius: '4px' }} />
+                <div onClick={() => { setExpenseLedger(''); setIsDropdownOpen(false); }} style={{ padding: '8px', cursor: 'pointer', color: '#64748b' }}>-- Clear --</div>
+                {filteredAccounts.map((acc, idx) => (
+                  <div key={idx} onClick={() => { setExpenseLedger(acc.displayName); setIsDropdownOpen(false); }} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>
+                    {acc.displayName}
                   </div>
-                  {filteredAccounts.length === 0 ? (
-                    <div style={{ padding: '10px', textAlign: 'center', fontSize: '11px', color: '#94a3b8' }}>
-                      कोई खर्चे का खाता नहीं मिला।
-                    </div>
-                  ) : (
-                    filteredAccounts.map((acc, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => { setExpenseLedger(acc.name); setIsDropdownOpen(false); setAccountSearchQuery(''); }}
-                        style={{ padding: '9px 8px', fontSize: '11px', fontWeight: 600, color: expenseLedger === acc.name ? '#0284c7' : '#0f172a', backgroundColor: expenseLedger === acc.name ? '#e0f2fe' : 'transparent', borderRadius: '6px', cursor: 'pointer', borderBottom: '1px solid #f8fafc' }}
-                      >
-                        {acc.name} <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 400 }}>({acc.category})</span>
-                      </div>
-                    ))
-                  )}
-                </div>
+                ))}
               </div>
             )}
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Remarks (Optional)</label>
-            <input type="text" placeholder="e.g. Field work session" value={remarks} onChange={(e) => setRemarks(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} />
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-            <button type="submit" disabled={isSubmitting} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '12px', backgroundColor: isSubmitting ? '#94a3b8' : '#0284c7', color: '#ffffff', cursor: 'pointer' }}>
-              ⚡ {isSubmitting ? 'Processing...' : editingId ? 'Update Entry' : 'Deduct Stock & Post Expense'}
-            </button>
-            {editingId && (
-              <button type="button" onClick={() => { setEditingId(null); setQuantity(''); setVehicleRef(''); setSelectedItemId(''); setExpenseLedger(''); }} style={{ padding: '12px 16px', backgroundColor: '#e2e8f0', color: '#334155', borderRadius: '10px', border: 'none', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
-                Cancel
-              </button>
-            )}
-          </div>
-
+          <button type="submit" disabled={isSubmitting} style={{ padding: '14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+            {editingId ? 'Update Entry' : 'Deduct Stock'}
+          </button>
         </form>
       </div>
 
-      {/* Logs Table */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>📋 Recorded Consumption Logs</h2>
-          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Total: {consumptionList.length}</span>
-        </div>
-
-        <div style={{ width: '100%', overflowX: 'auto' }}>
-          <table style={{ width: '100%', minWidth: '320px', borderCollapse: 'collapse', fontSize: '11px' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-                <th style={{ padding: '8px 6px', textAlign: 'left' }}>Date</th>
-                <th style={{ padding: '8px 6px', textAlign: 'left' }}>Item & Ref</th>
-                <th style={{ padding: '8px 6px', textAlign: 'right' }}>Qty</th>
-                <th style={{ padding: '8px 6px', textAlign: 'right' }}>Valuation</th>
-                <th style={{ padding: '8px 6px', textAlign: 'center' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {consumptionList.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>कोई खपत प्रविष्टि दर्ज नहीं है।</td>
-                </tr>
-              ) : (
-                consumptionList.map((entry) => (
-                  <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 6px', fontWeight: 600, color: '#334155' }}>{entry.usage_date}</td>
-                    <td style={{ padding: '8px 6px' }}>
-                      <div style={{ fontWeight: 700, color: '#0f172a' }}>{entry.item_name}</div>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>{entry.vehicle_ref}</div>
-                    </td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#059669' }}>{Number(entry.quantity).toFixed(2)}</td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>₹{Number(entry.total_valuation).toFixed(2)}</td>
-                    <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                      <button onClick={() => handleStartEdit(entry)} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', marginRight: '4px' }}>Edit</button>
-                      <button onClick={() => handleDelete(entry.id)} style={{ backgroundColor: '#ffe4e6', color: '#9f1239', border: 'none', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer' }}>Del</button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+        <h2 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>📋 Consumption Logs ({consumptionList.length})</h2>
+        {consumptionList.map(entry => (
+          <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
+            <div>
+              <div style={{ fontWeight: 'bold' }}>{entry.item_name}</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>{entry.usage_date} | {entry.vehicle_ref}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontWeight: 'bold', color: '#059669' }}>Qty: {entry.quantity}</div>
+              <div style={{ marginTop: '4px' }}>
+                <button onClick={() => handleStartEdit(entry)} style={{ marginRight: '8px', padding: '4px 8px', cursor: 'pointer' }}>Edit</button>
+                <button onClick={() => handleDelete(entry.id)} style={{ padding: '4px 8px', color: 'red', cursor: 'pointer' }}>Del</button>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
-
     </div>
   );
 }
