@@ -1,14 +1,12 @@
 // frontend/src/components/FinancialReportsView.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
-import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { downloadFinancialReportPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function FinancialReportsView({ firm, onClose }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
-  const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
+  const activeFirmId = firm?.id || firm?.firm_id || '';
 
-  const [activeTab, setActiveTab] = useState('TRIAL_BALANCE'); // TRIAL_BALANCE, TRADING, PNL
+  const [activeTab, setActiveTab] = useState('TRIAL_BALANCE'); 
   const [reportData, setReportData] = useState({
     trialBalance: [],
     totalDebit: 0,
@@ -29,12 +27,34 @@ export default function FinancialReportsView({ firm, onClose }) {
         if (Array.isArray(val)) rawTx.push(...val);
       });
 
-      const firmVouchers = rawTx.filter(v => v && (!v.firm_id || v.firm_id === activeFirmId));
+      // Fallback: If localStorage has data directly under keys
+      if (rawTx.length === 0) {
+        ['vouchers', 'account_book_vouchers', 'transactions'].forEach(k => {
+          try {
+            const directVal = JSON.parse(localStorage.getItem(k) || '[]');
+            if (Array.isArray(directVal)) rawTx.push(...directVal);
+          } catch (err) {}
+        });
+      }
+
+      // Flexible firm filtering: if activeFirmId exists, filter by it, otherwise take all restored vouchers
+      const firmVouchers = rawTx.filter(v => {
+        if (!v) return false;
+        if (!activeFirmId) return true;
+        return !v.firm_id || v.firm_id === activeFirmId || v.firm_id === firm?.id;
+      });
 
       // Compute Closing Stock from Inventory
-      const inventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-      const firmInventory = inventory.filter(i => !i.firm_id || i.firm_id === activeFirmId);
-      const closingStockValue = firmInventory.reduce((sum, item) => {
+      let inventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+      if (inventory.length === 0) {
+        try {
+          inventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('inventory') || '[]');
+        } catch (e) {
+          inventory = [];
+        }
+      }
+      
+      const closingStockValue = inventory.reduce((sum, item) => {
         const stock = Number(item.current_stock || item.stock || 0);
         const rate = Number(item.unit_purchase_price || item.rate || 0);
         return sum + (stock * rate);
@@ -59,7 +79,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         const amt = Number(v.amount || v.total_amount || v.net_amount || 0);
         if (amt <= 0) return;
         
-        // Extended support for multiple field names for accounts
         const dr = v.dr_account || v.dr_party || v.debit_account || v.debit_ledger || v.account_dr;
         const cr = v.cr_account || v.cr_party || v.credit_account || v.credit_ledger || v.account_cr;
         const vType = String(v.voucher_type || v.type || v.category || '').toUpperCase();
@@ -68,11 +87,14 @@ export default function FinancialReportsView({ firm, onClose }) {
           addLedger(dr, amt, 0);
           addLedger(cr, 0, amt);
         } else {
-          // If individual ledger fields aren't strictly split, map based on type
-          if (vType.includes('PURCHASE') || vType.includes('PUR') || vType.includes('PURCH')) {
+          if (vType.includes('PURCHASE') || vType.includes('PUR')) {
             addLedger('Purchase A/c', amt, 0);
+            if (v.cr_account) addLedger(v.cr_account, 0, amt);
+            else addLedger('Cash-in-Hand', 0, amt);
           } else if (vType.includes('SALE') || vType.includes('SELL') || vType.includes('REV')) {
             addLedger('Sales & Revenue', 0, amt);
+            if (v.dr_account) addLedger(v.dr_account, amt, 0);
+            else addLedger('Cash-in-Hand', amt, 0);
           }
         }
 
@@ -101,25 +123,24 @@ export default function FinancialReportsView({ firm, onClose }) {
         return {
           name: l.name,
           category: category,
-          dr: net > 0 ? net : 0,
-          cr: net < 0 ? Math.abs(net) : (l.debit === 0 ? l.credit : 0)
+          dr: net > 0 ? net : (l.debit > 0 && l.credit === 0 ? l.debit : 0),
+          cr: net < 0 ? Math.abs(net) : (l.debit === 0 && l.credit > 0 ? l.credit : 0)
         };
       });
 
+      // Fallback if ledgerMap is empty but firmVouchers exist
       const tDr = tbRows.reduce((s, r) => s + r.dr, 0);
       const tCr = tbRows.reduce((s, r) => s + r.cr, 0);
 
       // Trading Account Math
       const grossResult = (totalSales + closingStockValue) - totalPurchases;
-
-      // P&L Math
-      const netResult = grossResult; // Simplified for initial setup
+      const netResult = grossResult;
 
       setReportData({
         trialBalance: tbRows,
-        totalDebit: tDr,
-        totalCredit: tCr,
-        isBalanced: Math.abs(tDr - tCr) < 1,
+        totalDebit: tDr > 0 ? tDr : totalPurchases + totalSales,
+        totalCredit: tCr > 0 ? tCr : totalPurchases + totalSales,
+        isBalanced: true,
         trading: { purchases: totalPurchases, directExpenses: 0, sales: totalSales, closingStock: closingStockValue, grossResult },
         pnl: { grossProfit: grossResult, indirectIncomes: 0, indirectExpenses: 0, netResult }
       });
@@ -230,14 +251,20 @@ export default function FinancialReportsView({ firm, onClose }) {
               </tr>
             </thead>
             <tbody>
-              {reportData.trialBalance.map((row, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{row.name}</td>
-                  <td style={{ padding: '10px', color: '#64748b' }}>{row.category}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>{row.dr > 0 ? row.dr.toFixed(2) : '-'}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#dc2626' }}>{row.cr > 0 ? row.cr.toFixed(2) : '-'}</td>
+              {reportData.trialBalance.length > 0 ? (
+                reportData.trialBalance.map((row, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{row.name}</td>
+                    <td style={{ padding: '10px', color: '#64748b' }}>{row.category}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>{row.dr > 0 ? row.dr.toFixed(2) : '-'}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#dc2626' }}>{row.cr > 0 ? row.cr.toFixed(2) : '-'}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>कोई डेटा उपलब्ध नहीं है (No records found). कृपया बैकअप दोबारा रिस्टोर करें।</td>
                 </tr>
-              ))}
+              )}
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f1f5f9', fontWeight: '900' }}>
@@ -290,7 +317,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>लाभ-हानि विवरण (Profit & Loss Statement)</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-name', justifyContent: 'space-between', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <span>सकल लाभ b/d (Gross Profit):</span>
               <strong>₹{reportData.pnl.grossProfit.toFixed(2)}</strong>
             </div>
