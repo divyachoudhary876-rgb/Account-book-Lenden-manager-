@@ -106,7 +106,8 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     if (!window.confirm(`Bill #${refNo} को हटाने से इसका स्टॉक वापस माइनस हो जाएगा। जारी रखें?`)) return;
 
     try {
-      const vouchers = StorageService.getItem('account_book_vouchers'] || StorageService.getItem('account_book_vouchers') || [];
+      // 🔥 FIX: Corrected bracket syntax error here
+      const vouchers = StorageService.getItem('account_book_vouchers') || [];
       const targetVoucher = vouchers.find(v => v && v.id === voucherId);
 
       if (targetVoucher && targetVoucher.itemId && targetVoucher.qty) {
