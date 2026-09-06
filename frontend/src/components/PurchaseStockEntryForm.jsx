@@ -18,10 +18,14 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
   useEffect(() => {
     const storedAccounts = StorageService.getLedgerAccounts() || [];
-    const validSuppliers = storedAccounts.filter(acc => 
-      !String(acc.primary_type || acc.category).toUpperCase().includes('EXPENSE')
-    );
-    setAccountsList(validSuppliers);
+    // Robust extraction to handle legacy data formats
+    const formattedAccounts = storedAccounts.map(acc => ({
+      id: acc.id || Math.random().toString(),
+      displayName: acc.account_name || acc.name || 'Unnamed Account'
+    }));
+    
+    formattedAccounts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    setAccountsList(formattedAccounts);
   }, []);
 
   const handleSubmit = (e) => {
@@ -47,11 +51,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           const newStock = oldStock + parsedQty;
           const newAvgRate = newStock > 0 ? (newTotalValue / newStock).toFixed(2) : parsedRate;
           
-          return { 
-            ...item, 
-            current_stock: newStock,
-            unit_purchase_price: newAvgRate 
-          };
+          return { ...item, current_stock: newStock, unit_purchase_price: newAvgRate };
         }
         return item;
       });
@@ -109,7 +109,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
             <select value={supplierParty} onChange={e => setSupplierParty(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required>
               <option value="">-- Select Vendor / Party --</option>
               {accountsList.map(acc => (
-                <option key={acc.id} value={acc.account_name}>{acc.account_name}</option>
+                <option key={acc.id} value={acc.displayName}>{acc.displayName}</option>
               ))}
             </select>
           </div>
