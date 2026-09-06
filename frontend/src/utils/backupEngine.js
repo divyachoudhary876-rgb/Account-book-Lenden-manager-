@@ -2,9 +2,6 @@
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
-/**
- * 1. EXPORT FIRM BACKUP (Primary & Aliased)
- */
 export const exportFirmDataBackup = async (firm, rawBackupData = {}) => {
   const firmName = firm?.legal_name || firm?.trade_name || (typeof firm === 'string' ? firm : 'Neelkanth Int Udyog');
   const cleanName = String(firmName).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -25,7 +22,6 @@ export const exportFirmDataBackup = async (firm, rawBackupData = {}) => {
 
   const jsonString = JSON.stringify(payload, null, 2);
 
-  // Strategy 1: Capacitor Native Filesystem & Share Sheet
   try {
     const writeResult = await Filesystem.writeFile({
       path: fileName,
@@ -35,19 +31,13 @@ export const exportFirmDataBackup = async (firm, rawBackupData = {}) => {
     });
 
     if (writeResult && writeResult.uri) {
-      await Share.share({
-        title: 'Firm Accounting Backup',
-        text: `Secure backup file for ${firmName}.`,
-        url: writeResult.uri,
-        dialogTitle: 'Save or Share Backup File'
-      });
-      return { success: true, destination: 'Documents folder / Share Sheet' };
+      await Share.share({ title: 'Backup File', url: writeResult.uri });
+      return { success: true };
     }
-  } catch (nativeErr) {
-    console.warn('Native backup export fallback to web blob:', nativeErr);
+  } catch (err) {
+    console.warn('Native export failed, falling back to Web Blob:', err);
   }
 
-  // Strategy 2: Web Browser Blob Download Fallback
   try {
     const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -57,62 +47,52 @@ export const exportFirmDataBackup = async (firm, rawBackupData = {}) => {
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
-
-    setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 1500);
-
-    return { success: true, destination: 'Browser Downloads Folder' };
-  } catch (blobErr) {
-    throw new Error('Backup export failed: ' + blobErr.message);
+    setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(url); }, 1500);
+    return { success: true };
+  } catch (err) {
+    throw new Error('Backup export failed: ' + err.message);
   }
 };
 
-// Explicit alias matching securityBackupSettings.jsx and other components
 export const exportUniversalBackup = exportFirmDataBackup;
 
-/**
- * 2. ULTRA-RESILIENT RESTORE ENGINE (Primary & Aliased)
- */
 export const restoreFirmDataBackup = async (jsonFileText) => {
   try {
     if (!jsonFileText || typeof jsonFileText !== 'string' || jsonFileText.trim() === '') {
-      throw new Error('Backup file text is empty or unreadable.');
+      throw new Error('File is completely empty or unreadable.');
     }
 
     let parsed;
     try {
       parsed = JSON.parse(jsonFileText);
     } catch (parseErr) {
-      throw new Error('Invalid JSON syntax: Please select a valid .json backup file.');
+      throw new Error('File format error. Ensure you selected a valid .JSON backup file.');
     }
 
     if (!parsed || typeof parsed !== 'object') {
-      throw new Error('Invalid backup structure: Root must be a JSON object.');
+      throw new Error('Invalid backup structure.');
     }
 
-    const accounts = parsed.accounts || parsed.ledger_accounts || parsed.chart_of_accounts || [];
-    const vouchers = parsed.vouchers || parsed.account_book_vouchers || parsed.transactions || parsed.daybook || [];
-    const inventory = parsed.inventory || parsed.inventory_items || parsed.stock || [];
+    // Polyglot extraction
+    const accounts = parsed.accounts || parsed.ledger_accounts || [];
+    const vouchers = parsed.vouchers || parsed.account_book_vouchers || parsed.transactions || [];
+    const inventory = parsed.inventory || parsed.inventory_items || [];
     const consumptions = parsed.consumptions || parsed.material_consumptions || [];
 
-    if (!Array.isArray(accounts) && !Array.isArray(vouchers) && !Array.isArray(inventory)) {
-      throw new Error('Backup validation failed: No valid financial records found in file.');
+    // Force arrays
+    const validAccounts = Array.isArray(accounts) ? accounts : [];
+    const validVouchers = Array.isArray(vouchers) ? vouchers : [];
+    const validInventory = Array.isArray(inventory) ? inventory : [];
+    const validConsumptions = Array.isArray(consumptions) ? consumptions : [];
+
+    if (validAccounts.length === 0 && validVouchers.length === 0 && validInventory.length === 0) {
+      throw new Error('No financial records found in this backup file.');
     }
 
-    if (Array.isArray(accounts) && accounts.length > 0) {
-      localStorage.setItem('ledger_accounts', JSON.stringify(accounts));
-    }
-    if (Array.isArray(vouchers) && vouchers.length > 0) {
-      localStorage.setItem('account_book_vouchers', JSON.stringify(vouchers));
-    }
-    if (Array.isArray(inventory) && inventory.length > 0) {
-      localStorage.setItem('inventory_items', JSON.stringify(inventory));
-    }
-    if (Array.isArray(consumptions) && consumptions.length > 0) {
-      localStorage.setItem('material_consumptions', JSON.stringify(consumptions));
-    }
+    if (validAccounts.length > 0) localStorage.setItem('ledger_accounts', JSON.stringify(validAccounts));
+    if (validVouchers.length > 0) localStorage.setItem('account_book_vouchers', JSON.stringify(validVouchers));
+    if (validInventory.length > 0) localStorage.setItem('inventory_items', JSON.stringify(validInventory));
+    if (validConsumptions.length > 0) localStorage.setItem('material_consumptions', JSON.stringify(validConsumptions));
 
     window.dispatchEvent(new CustomEvent('app_storage_updated'));
 
@@ -120,17 +100,13 @@ export const restoreFirmDataBackup = async (jsonFileText) => {
       success: true,
       firmName: parsed.backup_metadata?.firm_name || parsed.firm?.legal_name || 'Restored Firm',
       stats: {
-        accountsCount: accounts.length,
-        vouchersCount: vouchers.length,
-        inventoryCount: inventory.length,
-        consumptionsCount: consumptions.length
+        accountsCount: validAccounts.length,
+        vouchersCount: validVouchers.length
       }
     };
   } catch (err) {
-    console.error('Restore execution error:', err);
-    throw new Error(err.message || 'Restore failed to complete.');
+    throw new Error(err.message || 'Unknown restore error occurred.');
   }
 };
 
-// Explicit alias matching securityBackupSettings.jsx and other components
 export const restoreUniversalBackup = restoreFirmDataBackup;
