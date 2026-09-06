@@ -14,7 +14,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const [expenseLedger, setExpenseLedger] = useState('');
   const [remarks, setRemarks] = useState('');
   
-  // Search state for searchable dropdown
   const [accountSearchQuery, setAccountSearchQuery] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -22,7 +21,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Load and strictly filter true Expense accounts from localStorage
+  // Load and Smart-Filter Expense Accounts
   useEffect(() => {
     const syncData = () => {
       const inventory = StorageService.getInventoryItems();
@@ -33,68 +32,64 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         { name: 'Diesel Expenses', category: 'Direct Expenses', group: 'Expenses' },
         { name: 'Fuel & Coal Consumption', category: 'Direct Expenses', group: 'Expenses' },
         { name: 'Machinery Maintenance', category: 'Indirect Expenses', group: 'Expenses' },
-        { name: 'Tractor Kiraya', category: 'Direct Expenses', group: 'Expenses' },
-        { name: 'Jamin level expenses', category: 'Direct Expenses', group: 'Expenses' },
-        { name: 'Pathai labour', category: 'Direct Expenses', group: 'Expenses' }
+        { name: 'Tractor Kiraya', category: 'Direct Expenses', group: 'Expenses' }
       ];
       
       const accMap = new Map();
       
       [...defaultAccounts, ...storedAccounts].forEach(acc => {
         const name = acc.name || acc.account_name;
-        const rawCategory = acc.category || acc.account_group || acc.group || 'Expenses';
+        const rawCategory = acc.category || acc.account_group || acc.group || '';
         
         if (name) {
           const lowerCat = String(rawCategory).toLowerCase();
           const lowerName = String(name).toLowerCase();
           
-          // Must be an operational expense head
+          // BROAD WHITELIST: Catches almost any variation of expense accounts
           const isExpense = 
-            lowerCat.includes('expense') || 
+            lowerCat.includes('exp') || 
             lowerCat.includes('direct') || 
             lowerCat.includes('indirect') ||
-            lowerName.includes('expense') ||
+            lowerCat.includes('manufacturing') ||
+            lowerName.includes('exp') ||
             lowerName.includes('maintenance') ||
             lowerName.includes('fuel') ||
             lowerName.includes('consumption') ||
             lowerName.includes('kiraya') ||
             lowerName.includes('labour') ||
-            lowerName.includes('conversion');
+            lowerName.includes('bill') ||
+            lowerName.includes('rent') ||
+            lowerName.includes('fee') ||
+            lowerName.includes('freight') ||
+            lowerName.includes('charge');
 
-          // Strict blacklist to eliminate personal names, drivers, capital, assets, and banks
+          // STRICT BLACKLIST: Prevents Equity, Assets, Liabilities, and Core Incomes
           const isRestricted = 
-            lowerCat.includes('capital') || 
+            lowerCat.includes('cap') || 
             lowerCat.includes('asset') || 
-            lowerCat.includes('liability') ||
-            lowerCat.includes('income') ||
+            lowerCat.includes('liab') ||
+            lowerCat.includes('inc') ||
+            lowerCat.includes('rev') ||
             lowerName.includes('capital') ||
             lowerName.includes('driver') ||
-            lowerName.includes('vinod') ||
-            lowerName.includes('ramkumar') ||
-            lowerName.includes('sohan') ||
-            lowerName.includes('bhim') ||
-            lowerName.includes('kishor') ||
-            lowerName.includes('sanjay') ||
-            lowerName.includes('pawan') ||
-            lowerName.includes('ravindra') ||
-            lowerName.includes('krishan') ||
             lowerName.includes('cash') ||
             lowerName.includes('bank') ||
             lowerName.includes('sales') ||
             lowerName.includes('revenue');
 
-          if (isExpense && !isRestricted) {
+          // If a user explicitly created it with 'EXPENSES' category, or it passes the smart filter
+          if ((isExpense || lowerCat === 'expenses') && !isRestricted) {
             accMap.set(name.trim(), { 
               name: name.trim(), 
-              category: rawCategory 
+              category: rawCategory || 'Expenses' 
             });
           }
         }
       });
       
+      // Failsafe
       if (accMap.size === 0) {
         accMap.set('Diesel Expenses', { name: 'Diesel Expenses', category: 'Direct Expenses' });
-        accMap.set('Machinery Maintenance', { name: 'Machinery Maintenance', category: 'Indirect Expenses' });
       }
 
       setAccountsList(Array.from(accMap.values()));
@@ -112,7 +107,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     };
   }, []);
 
-  // Filter accounts based on search query in dropdown
   const filteredAccounts = useMemo(() => {
     if (!accountSearchQuery.trim()) return accountsList;
     return accountsList.filter(acc => 
