@@ -18,7 +18,13 @@ export default function CreateInvoice({ firm, onClose }) {
 
   useEffect(() => {
     const storedAccounts = StorageService.getLedgerAccounts() || [];
-    setAccountsList(storedAccounts);
+    const formattedAccounts = storedAccounts.map(acc => ({
+      id: acc.id || Math.random().toString(),
+      displayName: acc.account_name || acc.name || 'Unnamed Account'
+    }));
+    
+    formattedAccounts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    setAccountsList(formattedAccounts);
   }, []);
 
   const handleAddToCart = () => {
@@ -108,7 +114,9 @@ export default function CreateInvoice({ firm, onClose }) {
             <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Customer / Debtor Party **</label>
             <select value={customerParty} onChange={e => setCustomerParty(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required>
               <option value="">-- Select Customer / Party --</option>
-              {accountsList.map(acc => <option key={acc.id} value={acc.account_name}>{acc.account_name}</option>)}
+              {accountsList.map(acc => (
+                <option key={acc.id} value={acc.displayName}>{acc.displayName}</option>
+              ))}
             </select>
           </div>
 
