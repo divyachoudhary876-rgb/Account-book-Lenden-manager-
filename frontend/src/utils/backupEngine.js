@@ -89,12 +89,30 @@ export const restoreFirmDataBackup = async (jsonFileText) => {
       throw new Error('No financial records found in this backup file.');
     }
 
-    if (validAccounts.length > 0) localStorage.setItem('ledger_accounts', JSON.stringify(validAccounts));
-    if (validVouchers.length > 0) localStorage.setItem('account_book_vouchers', JSON.stringify(validVouchers));
-    if (validInventory.length > 0) localStorage.setItem('inventory_items', JSON.stringify(validInventory));
-    if (validConsumptions.length > 0) localStorage.setItem('material_consumptions', JSON.stringify(validConsumptions));
+    // Save to ALL possible storage keys simultaneously to prevent mismatch
+    if (validAccounts.length > 0) {
+      localStorage.setItem('ledger_accounts', JSON.stringify(validAccounts));
+      localStorage.setItem('accounts', JSON.stringify(validAccounts));
+    }
+    
+    if (validVouchers.length > 0) {
+      localStorage.setItem('account_book_vouchers', JSON.stringify(validVouchers));
+      localStorage.setItem('vouchers', JSON.stringify(validVouchers));
+      localStorage.setItem('transactions', JSON.stringify(validVouchers));
+    }
+
+    if (validInventory.length > 0) {
+      localStorage.setItem('inventory_items', JSON.stringify(validInventory));
+      localStorage.setItem('inventory', JSON.stringify(validInventory));
+    }
+
+    if (validConsumptions.length > 0) {
+      localStorage.setItem('material_consumptions', JSON.stringify(validConsumptions));
+      localStorage.setItem('consumptions', JSON.stringify(validConsumptions));
+    }
 
     window.dispatchEvent(new CustomEvent('app_storage_updated'));
+    window.dispatchEvent(new CustomEvent('app_state_updated'));
 
     return {
       success: true,
