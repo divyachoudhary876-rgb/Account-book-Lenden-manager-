@@ -1,12 +1,14 @@
 // frontend/src/components/FinancialReportsView.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
+import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { downloadFinancialReportPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function FinancialReportsView({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || '';
+  const activeFirmId = firm?.id || 'FIRM-001';
+  const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
 
-  const [activeTab, setActiveTab] = useState('TRIAL_BALANCE'); 
+  const [activeTab, setActiveTab] = useState('TRIAL_BALANCE'); // TRIAL_BALANCE, TRADING, PNL
   const [reportData, setReportData] = useState({
     trialBalance: [],
     totalDebit: 0,
@@ -20,41 +22,19 @@ export default function FinancialReportsView({ firm, onClose }) {
 
   const computeFinancials = () => {
     try {
-      // 1. Fetch Vouchers & Transactions from all possible storage keys
+      // 1. Fetch Vouchers & Inventory
       let rawTx = [];
-      ['account_book_vouchers', 'vouchers', 'transactions', 'journal_entries', 'voucher_list'].forEach(k => {
+      ['account_book_vouchers', 'vouchers', 'transactions'].forEach(k => {
         const val = StorageService.getItem(k);
         if (Array.isArray(val)) rawTx.push(...val);
       });
 
-      // Fallback: If localStorage has data directly under keys
-      if (rawTx.length === 0) {
-        ['vouchers', 'account_book_vouchers', 'transactions'].forEach(k => {
-          try {
-            const directVal = JSON.parse(localStorage.getItem(k) || '[]');
-            if (Array.isArray(directVal)) rawTx.push(...directVal);
-          } catch (err) {}
-        });
-      }
-
-      // Flexible firm filtering: if activeFirmId exists, filter by it, otherwise take all restored vouchers
-      const firmVouchers = rawTx.filter(v => {
-        if (!v) return false;
-        if (!activeFirmId) return true;
-        return !v.firm_id || v.firm_id === activeFirmId || v.firm_id === firm?.id;
-      });
+      const firmVouchers = rawTx.filter(v => v && (!v.firm_id || v.firm_id === activeFirmId));
 
       // Compute Closing Stock from Inventory
-      let inventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-      if (inventory.length === 0) {
-        try {
-          inventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('inventory') || '[]');
-        } catch (e) {
-          inventory = [];
-        }
-      }
-      
-      const closingStockValue = inventory.reduce((sum, item) => {
+      const inventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+      const firmInventory = inventory.filter(i => !i.firm_id || i.firm_id === activeFirmId);
+      const closingStockValue = firmInventory.reduce((sum, item) => {
         const stock = Number(item.current_stock || item.stock || 0);
         const rate = Number(item.unit_purchase_price || item.rate || 0);
         return sum + (stock * rate);
@@ -76,71 +56,46 @@ export default function FinancialReportsView({ firm, onClose }) {
       let totalSales = 0;
 
       firmVouchers.forEach(v => {
-        const amt = Number(v.amount || v.total_amount || v.net_amount || 0);
+        const amt = Number(v.amount || v.total_amount || 0);
         if (amt <= 0) return;
-        
-        const dr = v.dr_account || v.dr_party || v.debit_account || v.debit_ledger || v.account_dr;
-        const cr = v.cr_account || v.cr_party || v.credit_account || v.credit_ledger || v.account_cr;
-        const vType = String(v.voucher_type || v.type || v.category || '').toUpperCase();
+        const dr = v.dr_account || v.dr_party || v.debit_account;
+        const cr = v.cr_account || v.cr_party || v.credit_account;
+        const vType = String(v.voucher_type || v.type || '').toUpperCase();
 
         if (dr && cr) {
           addLedger(dr, amt, 0);
           addLedger(cr, 0, amt);
-        } else {
-          if (vType.includes('PURCHASE') || vType.includes('PUR')) {
-            addLedger('Purchase A/c', amt, 0);
-            if (v.cr_account) addLedger(v.cr_account, 0, amt);
-            else addLedger('Cash-in-Hand', 0, amt);
-          } else if (vType.includes('SALE') || vType.includes('SELL') || vType.includes('REV')) {
-            addLedger('Sales & Revenue', 0, amt);
-            if (v.dr_account) addLedger(v.dr_account, amt, 0);
-            else addLedger('Cash-in-Hand', amt, 0);
-          }
         }
 
-        if (vType.includes('PURCHASE') || vType.includes('PUR')) {
-          totalPurchases += amt;
-        }
-        if (vType.includes('SALE') || vType.includes('SELL')) {
-          totalSales += amt;
-        }
+        if (vType === 'PURCHASE') totalPurchases += amt;
+        if (vType === 'SALES') totalSales += amt;
       });
 
-      // Format Trial Balance Rows with intelligent classification
+      // Format Trial Balance Rows
       const tbRows = Object.values(ledgerMap).map(l => {
         const net = l.debit - l.credit;
-        const lowerName = l.name.toLowerCase();
-        let category = 'EXPENSES';
-
-        if (lowerName.includes('cash') || lowerName.includes('bank') || lowerName.includes('asset') || lowerName.includes('stock')) {
-          category = 'ASSETS';
-        } else if (lowerName.includes('capital') || lowerName.includes('liability') || lowerName.includes('creditor') || lowerName.includes('loan')) {
-          category = 'LIABILITIES';
-        } else if (lowerName.includes('sale') || lowerName.includes('revenue') || lowerName.includes('income')) {
-          category = 'INCOME';
-        }
-
         return {
           name: l.name,
-          category: category,
-          dr: net > 0 ? net : (l.debit > 0 && l.credit === 0 ? l.debit : 0),
-          cr: net < 0 ? Math.abs(net) : (l.debit === 0 && l.credit > 0 ? l.credit : 0)
+          category: l.name.toLowerCase().includes('cash') || l.name.toLowerCase().includes('bank') ? 'ASSETS' : l.name.toLowerCase().includes('capital') ? 'LIABILITIES' : 'EXPENSES',
+          dr: net > 0 ? net : 0,
+          cr: net < 0 ? Math.abs(net) : 0
         };
       });
 
-      // Fallback if ledgerMap is empty but firmVouchers exist
       const tDr = tbRows.reduce((s, r) => s + r.dr, 0);
       const tCr = tbRows.reduce((s, r) => s + r.cr, 0);
 
       // Trading Account Math
       const grossResult = (totalSales + closingStockValue) - totalPurchases;
-      const netResult = grossResult;
+
+      // P&L Math
+      const netResult = grossResult; // Simplified for initial setup
 
       setReportData({
         trialBalance: tbRows,
-        totalDebit: tDr > 0 ? tDr : totalPurchases + totalSales,
-        totalCredit: tCr > 0 ? tCr : totalPurchases + totalSales,
-        isBalanced: true,
+        totalDebit: tDr,
+        totalCredit: tCr,
+        isBalanced: Math.abs(tDr - tCr) < 1,
         trading: { purchases: totalPurchases, directExpenses: 0, sales: totalSales, closingStock: closingStockValue, grossResult },
         pnl: { grossProfit: grossResult, indirectIncomes: 0, indirectExpenses: 0, netResult }
       });
@@ -251,20 +206,14 @@ export default function FinancialReportsView({ firm, onClose }) {
               </tr>
             </thead>
             <tbody>
-              {reportData.trialBalance.length > 0 ? (
-                reportData.trialBalance.map((row, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{row.name}</td>
-                    <td style={{ padding: '10px', color: '#64748b' }}>{row.category}</td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>{row.dr > 0 ? row.dr.toFixed(2) : '-'}</td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#dc2626' }}>{row.cr > 0 ? row.cr.toFixed(2) : '-'}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4} style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>कोई डेटा उपलब्ध नहीं है (No records found). कृपया बैकअप दोबारा रिस्टोर करें।</td>
+              {reportData.trialBalance.map((row, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{row.name}</td>
+                  <td style={{ padding: '10px', color: '#64748b' }}>{row.category}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>{row.dr > 0 ? row.dr.toFixed(2) : '-'}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#dc2626' }}>{row.cr > 0 ? row.cr.toFixed(2) : '-'}</td>
                 </tr>
-              )}
+              ))}
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f1f5f9', fontWeight: '900' }}>
