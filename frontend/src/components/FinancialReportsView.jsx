@@ -1,5 +1,6 @@
 // frontend/src/components/FinancialReportsView.jsx
 import React, { useState, useMemo } from 'react';
+import { StorageService } from '../utils/storageSync';
 
 export default function FinancialReportsView({ firm, transactions = [], accounts = [], onClose }) {
   const [activeTab, setActiveTab] = useState('TB'); // 'TB' | 'TRADING' | 'PL'
@@ -7,19 +8,22 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
   const [exportFeedback, setExportFeedback] = useState(null);
 
   const firmName = firm?.legal_name || firm?.trade_name || (typeof firm === 'string' ? firm : 'Neelkanth Int Udyog');
+  const activeFirmId = firm?.id || 'FIRM-001';
   const financialYear = 'FY 2026-27';
 
-  // 1. DEDUPLICATED LEDGER CALCULATION ENGINE
+  // 1. DEDUPLICATED LEDGER & LIVE INVENTORY CALCULATION ENGINE
   const { trialBalance, tradingAccount, profitAndLoss } = useMemo(() => {
     let rawTx = Array.isArray(transactions) && transactions.length > 0 ? [...transactions] : [];
 
     // Fallback: Scan storage safely with strict deduplication
     if (rawTx.length === 0) {
       try {
+        const storedVouchers = StorageService.getItem('account_book_vouchers') || [];
+        if (Array.isArray(storedVouchers)) rawTx.push(...storedVouchers);
+
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          // Sirf primary authoritative key target karein ya specific keys
-          if (key.includes('voucher') || key.includes('transaction') || key.includes('daybook')) {
+          if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook'))) {
             const raw = localStorage.getItem(key);
             if (raw) {
               const parsed = JSON.parse(raw);
@@ -34,10 +38,11 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
       } catch (e) {}
     }
 
-    // 🛑 CRITICAL FIX: Deduplicate transactions by ID or unique composite key to prevent double counting
+    // 🛑 CRITICAL FIX: Deduplicate transactions by ID or unique composite key
     const uniqueTxMap = new Map();
     rawTx.forEach(tx => {
-      const uniqueId = tx.id || tx.voucher_number || tx.reference_no || `${tx.date}-${tx.amount}-${tx.dr_account}-${tx.cr_account}`;
+      if (!tx) return;
+      const uniqueId = tx.id || tx.voucher_number || tx.reference_no || `${tx.date || tx.voucher_date}-${tx.amount}-${tx.dr_account}-${tx.cr_account}`;
       if (!uniqueTxMap.has(uniqueId)) {
         uniqueTxMap.set(uniqueId, tx);
       }
@@ -54,13 +59,13 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
 
     const deduceCategory = (accName) => {
       const n = String(accName).toLowerCase();
-      if (n.includes('diesel') || n.includes('petrol') || n.includes('wages') || n.includes('freight') || n.includes('expense') || n.includes('loan')) {
+      if (n.includes('diesel') || n.includes('petrol') || n.includes('wages') || n.includes('freight') || n.includes('expense') || n.includes('purchase')) {
         return 'EXPENSES';
       }
-      if (n.includes('driver') || n.includes('payable') || n.includes('supplier')) {
+      if (n.includes('driver') || n.includes('payable') || n.includes('supplier') || n.includes('creditor')) {
         return 'LIABILITIES';
       }
-      if (n.includes('cash') || n.includes('bank') || n.includes('debtor')) {
+      if (n.includes('cash') || n.includes('bank') || n.includes('debtor') || n.includes('customer')) {
         return 'ASSETS';
       }
       return 'LIABILITIES';
@@ -92,7 +97,6 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
     let purchases = 0;
     let directExpenses = 0;
     let sales = 0;
-    let closingStock = parseFloat(firm?.closing_stock || 0);
     let indirectExpenses = 0;
     let indirectIncomes = 0;
 
@@ -128,6 +132,23 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
       }
     });
 
+    // 🔥 AUTOMATIC LIVE CLOSING STOCK CALCULATION FROM INVENTORY MASTER
+    let closingStock = parseFloat(firm?.closing_stock || 0);
+    try {
+      const inventoryItems = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+      const liveStockVal = inventoryItems
+        .filter(item => !item.firm_id || item.firm_id === activeFirmId)
+        .reduce((sum, item) => {
+          const stock = Number(item.current_stock || item.stock || 0);
+          const rate = Number(item.unit_purchase_price || item.rate || 0);
+          return sum + (stock * rate);
+        }, 0);
+      
+      if (liveStockVal > 0) {
+        closingStock = liveStockVal;
+      }
+    } catch (e) {}
+
     const grossProfit = sales + closingStock - (purchases + directExpenses);
     const netProfit = grossProfit + indirectIncomes - indirectExpenses;
 
@@ -141,7 +162,7 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
       tradingAccount: { purchases, directExpenses, sales, closingStock, grossProfit },
       profitAndLoss: { grossProfit, indirectIncomes, indirectExpenses, netProfit }
     };
-  }, [transactions, accounts, firm]);
+  }, [transactions, accounts, firm, activeFirmId]);
 
   // 2. Export Handler
   const handlePrintReport = async () => {
@@ -477,14 +498,14 @@ export default function FinancialReportsView({ firm, transactions = [], accounts
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
                   <span>अंतिम स्टॉक (Closing Stock):</span>
-                  <strong>₹{tradingAccount.closingStock.toFixed(2)}</strong>
+                  <strong style={{ color: '#059669' }}>+ ₹{tradingAccount.closingStock.toFixed(2)}</strong>
                 </div>
               </div>
             </div>
 
-            <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#ecfdf5', borderRadius: '8px', border: '1px solid #a7f3d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 'bold', fontSize: '11px', color: '#065f46' }}>सकल लाभ (Gross Profit):</span>
-              <span style={{ fontWeight: 800, fontSize: '13px', color: '#059669' }}>₹{tradingAccount.grossProfit.toFixed(2)}</span>
+            <div style={{ marginTop: '12px', padding: '12px', backgroundColor: tradingAccount.grossProfit >= 0 ? '#ecfdf5' : '#fef2f2', borderRadius: '8px', border: tradingAccount.grossProfit >= 0 ? '1px solid #a7f3d0' : '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 'bold', fontSize: '11px', color: tradingAccount.grossProfit >= 0 ? '#065f46' : '#991b1b' }}>सकल लाभ / हानि (Gross Profit / Loss):</span>
+              <span style={{ fontWeight: 800, fontSize: '14px', color: tradingAccount.grossProfit >= 0 ? '#059669' : '#dc2626' }}>₹{tradingAccount.grossProfit.toFixed(2)}</span>
             </div>
           </div>
         )}
