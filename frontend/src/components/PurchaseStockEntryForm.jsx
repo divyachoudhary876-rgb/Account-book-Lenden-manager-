@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
-// 🔥 FIX: Correct Account Engine Import
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
@@ -20,7 +19,6 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // 🔥 FIX: Loading Accounts from Master Engine
   useEffect(() => {
     const loadAccs = () => {
       const accList = getFirmMasterAccounts(activeFirmId) || [];
@@ -40,12 +38,13 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
     setIsSubmitting(true);
     try {
-      const currentInventory = StorageService.getInventoryItems() || [];
+      const currentInventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
       const parsedQty = Number(quantity);
       const parsedRate = Number(purchaseRate);
       const totalAmount = parsedQty * parsedRate;
       const selectedItemObj = allItems.find(i => String(i.id) === String(selectedItemId));
 
+      // 1. Update Inventory Stock & Weighted Average Price
       const updatedInventory = currentInventory.map(item => {
         if (String(item.id) === String(selectedItemId)) {
           const oldStock = Number(item.current_stock || item.stock || 0);
@@ -60,7 +59,8 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       });
       StorageService.setItem('inventory_items', updatedInventory);
 
-      const vouchers = StorageService.getVouchers() || [];
+      // 2. Safe Voucher Storage Fetch & Save
+      const vouchers = StorageService.getItem('account_book_vouchers') || [];
       const newVoucher = {
         id: `PUR-${Date.now()}`,
         firm_id: activeFirmId,
@@ -75,6 +75,9 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       };
       StorageService.setItem('account_book_vouchers', [newVoucher, ...vouchers]);
 
+      // Trigger global sync event
+      window.dispatchEvent(new Event('app_storage_updated'));
+
       setFeedback({ type: 'success', message: '✓ Purchase Bill Saved & Stock Updated!' });
       setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty('');
       setBillNo(`PUR-${Math.floor(Date.now() / 1000)}`);
@@ -87,23 +90,23 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', boxSizing: 'border-box', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>📦 Purchase Inward & Stock Entry</h2>
-          {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>}
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📦 Purchase Inward & Stock Entry</h2>
+          {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
         </div>
         
-        {feedback && <div style={{ padding: '10px', marginBottom: '16px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#ecfdf5', color: feedback.type === 'error' ? '#991b1b' : '#065f46' }}>{feedback.message}</div>}
+        {feedback && <div style={{ padding: '12px', marginBottom: '16px', borderRadius: '10px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#f0fdf4', color: feedback.type === 'error' ? '#991b1b' : '#166534', fontWeight: '700', fontSize: '13px', border: `1px solid ${feedback.type === 'error' ? '#fecaca' : '#bbf7d0'}` }}>{feedback.message}</div>}
 
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Purchase Date *</label>
-              <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+              <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Purchase Date *</label>
+              <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }} required />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Bill / Ref No *</label>
-              <input type="text" value={billNo} onChange={e => setBillNo(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+              <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Bill / Ref No *</label>
+              <input type="text" value={billNo} onChange={e => setBillNo(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }} required />
             </div>
           </div>
 
@@ -120,8 +123,8 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           </div>
 
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Stock Item (+IN) *</label>
-            <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', borderColor: '#eab308', borderWidth: '2px', boxSizing: 'border-box' }} required>
+            <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Stock Item (+IN) *</label>
+            <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '2px solid #eab308', boxSizing: 'border-box', backgroundColor: '#fff', fontSize: '13px', outline: 'none' }} required>
               <option value="">-- Choose Stock Item --</option>
               {allItems
                 .filter(item => item.item_type !== 'SERVICE' && !String(item.item_name).toLowerCase().includes('freight'))
@@ -133,18 +136,18 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
             </select>
           </div>
 
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Quantity *</label>
-              <input type="number" step="0.01" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 1000" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+              <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Quantity *</label>
+              <input type="number" step="0.01" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 1000" style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }} required />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Purchase Rate (₹) *</label>
-              <input type="number" step="0.01" value={purchaseRate} onChange={e => setPurchaseRate(e.target.value)} placeholder="e.g. 4.5" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+              <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Purchase Rate (₹) *</label>
+              <input type="number" step="0.01" value={purchaseRate} onChange={e => setPurchaseRate(e.target.value)} placeholder="e.g. 4.5" style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }} required />
             </div>
           </div>
 
-          <button type="submit" disabled={isSubmitting} style={{ width: '100%', padding: '14px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
+          <button type="submit" disabled={isSubmitting} style={{ width: '100%', padding: '14px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '14px', boxShadow: '0 4px 10px rgba(5, 150, 105, 0.25)' }}>
             📥 Post Purchase & Generate Inward Slip
           </button>
         </form>
