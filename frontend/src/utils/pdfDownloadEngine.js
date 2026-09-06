@@ -1,6 +1,6 @@
 // frontend/src/utils/pdfDownloadEngine.js
 import { jsPDF } from 'jspdf';
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 
@@ -18,40 +18,37 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * Helper to convert Blob to Base64 safely for Android/iOS Capacitor
+ * Convert ArrayBuffer to Base64 safely without text encoding corruption
  */
-const blobToBase64 = (blob) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result.split(',')[1];
-      resolve(base64String);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+const arrayBufferToBase64 = (buffer) => {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
 };
 
 /**
- * Robust True PDF Exporter using Pure Binary Blobs (Prevents Corruption Error)
+ * 100% Corruption-Free True PDF Exporter using ArrayBuffer Binary Stream
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fullFileName = `${cleanName}_${Date.now()}.pdf`;
 
   try {
-    // Generate pure PDF Blob
-    const pdfBlob = doc.output('blob');
+    // Generate pure binary ArrayBuffer directly from jsPDF
+    const pdfArrayBuffer = doc.output('arraybuffer');
 
     // 1. Mobile Capacitor Native Environment (Android/iOS)
     if (Capacitor.isNativePlatform()) {
-      const base64Data = await blobToBase64(pdfBlob);
+      const base64Data = arrayBufferToBase64(pdfArrayBuffer);
 
       const writeResult = await Filesystem.writeFile({
         path: fullFileName,
         data: base64Data,
-        directory: Directory.Cache,
-        encoding: Encoding.UTF8
+        directory: Directory.Cache
       });
 
       if (writeResult && writeResult.uri) {
@@ -65,8 +62,9 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
-    // 2. Standard Web Browser Download via Blob URL
-    const blobUrl = URL.createObjectURL(pdfBlob);
+    // 2. Standard Web Browser Download via Blob
+    const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
+    const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
     downloadAnchor.href = blobUrl;
     downloadAnchor.setAttribute('download', fullFileName);
@@ -82,7 +80,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
     return { success: true };
 
   } catch (err) {
-    console.error('True PDF Export Error:', err);
+    console.error('True PDF Binary Export Error:', err);
     throw new Error('Failed to generate uncorrupted PDF file.');
   }
 };
