@@ -1,3 +1,4 @@
+// frontend/src/components/GeneralJournalView.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 
@@ -9,21 +10,66 @@ export default function GeneralJournalView({ firm, onClose }) {
 
   const loadJournal = () => {
     try {
-      const vouchers = StorageService.getItem('account_book_vouchers') || [];
-      const firmVouchers = vouchers.filter(v => v && v.firm_id === activeFirmId);
+      let rawTx = [];
+      const primaryKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'daybook'];
+      
+      primaryKeys.forEach(k => {
+        const val = StorageService.getItem(k);
+        if (Array.isArray(val)) rawTx.push(...val);
+      });
 
-      // Also fetch material consumptions to display in Daybook
+      // Fallback: Scan localStorage directly to catch any missed entries
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('entry'))) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) rawTx.push(...parsed);
+              else if (parsed && typeof parsed === 'object') {
+                if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
+                if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
+              }
+            } catch (err) {}
+          }
+        }
+      }
+
+      // Filter by active firm and deduplicate
+      const uniqueMap = new Map();
+      rawTx.forEach(tx => {
+        if (!tx) return;
+        if (tx.firm_id && tx.firm_id !== activeFirmId) return;
+
+        const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount}-${tx.dr_account || tx.dr_party}-${tx.cr_account || tx.cr_party}`;
+        if (!uniqueMap.has(uId)) {
+          uniqueMap.set(uId, {
+            ...tx,
+            voucher_date: tx.voucher_date || tx.date || new Date().toISOString().split('T')[0],
+            voucher_type: String(tx.voucher_type || tx.type || 'TX').toUpperCase(),
+            reference_no: tx.reference_no || tx.voucher_number || 'N/A',
+            dr_account: tx.dr_account || tx.dr_party || tx.debit_account || 'Account',
+            cr_account: tx.cr_account || tx.cr_party || tx.credit_account || 'Account',
+            amount: parseFloat(tx.amount || tx.total_amount || 0)
+          });
+        }
+      });
+
+      const firmVouchers = Array.from(uniqueMap.values());
+
+      // Fetch material consumptions to display in Daybook
       const consumptions = StorageService.getItem('material_consumptions') || [];
       const firmConsumptions = consumptions
         .filter(c => c && c.firm_id === activeFirmId)
         .map(c => ({
           id: c.id || `CONS-${Date.now()}`,
-          voucher_date: c.date || c.created_at?.split('T')[0],
+          voucher_date: c.date || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
           voucher_type: 'CONSUMPTION',
           reference_no: c.vehicle_ref || 'BATCH',
           dr_account: c.expense_account || 'Factory Production Expense',
           cr_account: 'Inventory Stock',
-          amount: c.total_value || 0,
+          amount: Number(c.total_value || 0),
           narration: `Material Consumption: ${(c.items || []).map(i => `${i.qty} ${i.unit} ${i.itemName}`).join(', ')}`,
           created_at: c.created_at || new Date().toISOString()
         }));
@@ -43,7 +89,11 @@ export default function GeneralJournalView({ firm, onClose }) {
   useEffect(() => {
     loadJournal();
     window.addEventListener('app_storage_updated', loadJournal);
-    return () => window.removeEventListener('app_storage_updated', loadJournal);
+    window.addEventListener('app_state_updated', loadJournal);
+    return () => {
+      window.removeEventListener('app_storage_updated', loadJournal);
+      window.removeEventListener('app_state_updated', loadJournal);
+    };
   }, [activeFirmId]);
 
   const filteredEntries = journalEntries.filter(entry => {
@@ -86,6 +136,7 @@ export default function GeneralJournalView({ firm, onClose }) {
             <option value="PURCHASE">Purchase Bills</option>
             <option value="PAYMENT">Payments</option>
             <option value="RECEIPT">Receipts</option>
+            <option value="JOURNAL">Journal</option>
             <option value="CONSUMPTION">Material Consumption</option>
           </select>
 
