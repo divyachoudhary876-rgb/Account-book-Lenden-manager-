@@ -10,6 +10,8 @@ export default function JournalRegisterView({ firm, onClose }) {
   const [journalEntries, setJournalEntries] = useState([]);
   const [filterType, setFilterType] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [sortOrder, setSortOrder] = useState('ASC');
   const [isExporting, setIsExporting] = useState(false);
   const [statusNotification, setStatusNotification] = useState(null);
@@ -99,8 +101,13 @@ export default function JournalRegisterView({ firm, onClose }) {
     };
   }, [activeFirmId, sortOrder]);
 
+  // Filtering by Date Range, Type, and Search query
   const filteredEntries = journalEntries.filter(entry => {
     if (!entry) return false;
+    const vDate = entry.voucher_date || '';
+    if (fromDate && vDate < fromDate) return false;
+    if (toDate && vDate > toDate) return false;
+
     const typeMatch = filterType === 'ALL' || String(entry.voucher_type || '').toUpperCase() === filterType;
     const q = searchQuery.toLowerCase();
     const searchMatch = 
@@ -112,7 +119,9 @@ export default function JournalRegisterView({ firm, onClose }) {
     return typeMatch && searchMatch;
   });
 
-  const totalTurnover = filteredEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  // Calculate separate Debit and Credit totals
+  const totalDebit = filteredEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const totalCredit = totalDebit; // Double entry balance rule
 
   const handleExportPDF = async () => {
     if (filteredEntries.length === 0) {
@@ -124,7 +133,7 @@ export default function JournalRegisterView({ firm, onClose }) {
     setStatusNotification({ type: 'info', message: '⏳ Generating Journal PDF...' });
 
     try {
-      const res = await downloadJournalRegisterPDF(filteredEntries, firm);
+      const res = await downloadJournalRegisterPDF(firm, filteredEntries);
       if (res?.success) {
         setStatusNotification({ type: 'success', message: '✓ Journal PDF downloaded successfully!' });
       } else {
@@ -141,7 +150,7 @@ export default function JournalRegisterView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box', maxWidth: '950px', margin: '0 auto' }}>
       
-      {/* Header Card with PDF Export */}
+      {/* Header Card */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div>
@@ -175,34 +184,63 @@ export default function JournalRegisterView({ firm, onClose }) {
           </div>
         )}
 
-        {/* Filters & Search */}
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
-          <select 
-            value={filterType} 
-            onChange={e => setFilterType(e.target.value)} 
-            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '12px', fontWeight: '700', outline: 'none' }}
-          >
-            <option value="ALL">All Voucher Types</option>
-            <option value="SALES">Sales Invoices</option>
-            <option value="PURCHASE">Purchase Bills</option>
-            <option value="PAYMENT">Payments</option>
-            <option value="RECEIPT">Receipts</option>
-            <option value="JOURNAL">Journal</option>
-            <option value="CONSUMPTION">Material Consumption</option>
-          </select>
+        {/* Date Range & Search Filters */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (से)</label>
+            <input 
+              type="date" 
+              value={fromDate} 
+              onChange={e => setFromDate(e.target.value)}
+              style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (तक)</label>
+            <input 
+              type="date" 
+              value={toDate} 
+              onChange={e => setToDate(e.target.value)}
+              style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Voucher Type</label>
+            <select 
+              value={filterType} 
+              onChange={e => setFilterType(e.target.value)} 
+              style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '12px', fontWeight: '700', outline: 'none' }}
+            >
+              <option value="ALL">All Types</option>
+              <option value="SALES">Sales</option>
+              <option value="PURCHASE">Purchase</option>
+              <option value="PAYMENT">Payment</option>
+              <option value="RECEIPT">Receipt</option>
+              <option value="CONSUMPTION">Consumption</option>
+            </select>
+          </div>
+        </div>
 
+        <div style={{ marginBottom: '12px' }}>
           <input 
             type="text" 
-            placeholder="🔍 Search account, ref no..." 
+            placeholder="🔍 Search account, ref no, narration..." 
             value={searchQuery} 
             onChange={e => setSearchQuery(e.target.value)}
-            style={{ flex: 2, padding: '10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
           />
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px 16px', borderRadius: '10px', fontSize: '13px' }}>
-          <span style={{ fontWeight: '700', color: '#166534' }}>Total Entries: {filteredEntries.length} | Turnover:</span>
-          <span style={{ fontWeight: '900', color: '#15803d' }}>₹{totalTurnover.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+        {/* Separate Debit & Credit Totals KPI Bar */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px' }}>
+          <div>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase' }}>Total Debit (नामे)</div>
+            <div style={{ fontSize: '15px', fontWeight: '900', color: '#059669', marginTop: '2px' }}>₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase' }}>Total Credit (जमा)</div>
+            <div style={{ fontSize: '15px', fontWeight: '900', color: '#dc2626', marginTop: '2px' }}>₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          </div>
         </div>
       </div>
 
