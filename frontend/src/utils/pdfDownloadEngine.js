@@ -205,69 +205,85 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L)
+ * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L) - FLEXIBLE PARAMETER RESOLVER
  */
-export const downloadFinancialStatementsReport = async (firmInput, reportData = {}, activeTab = 'TB') => {
+export const downloadFinancialStatementsReport = async (param1, param2, param3) => {
+  // Auto-detect parameters regardless of order passed from different views
+  let firmInput = 'Neelkanth Groups';
+  let reportData = {};
+  let activeTab = 'TB';
+
+  const args = [param1, param2, param3];
+  args.forEach(arg => {
+    if (!arg) return;
+    if (typeof arg === 'object' && (arg.legal_name || arg.trade_name || arg.name || arg.id)) {
+      firmInput = arg;
+    } else if (typeof arg === 'object' && (arg.trialBalance || arg.totalDebit !== undefined || arg.trading)) {
+      reportData = arg;
+    } else if (typeof arg === 'string') {
+      const upper = arg.toUpperCase();
+      if (['TB', 'TRADING', 'PNL', 'TRIAL_BALANCE', '1', '2', '3'].includes(upper)) {
+        activeTab = upper;
+      } else {
+        firmInput = arg;
+      }
+    }
+  });
+
   const firmName = getCleanFirmName(firmInput);
-  const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const { trialBalance, tradingAccount, profitAndLoss } = reportData || {};
+  const rows = (reportData.trialBalance && Array.isArray(reportData.trialBalance)) ? reportData.trialBalance : [];
+  
+  let reportTitle = 'तलपट विवरण (Trial Balance Report)';
+  if (activeTab === 'TRADING' || activeTab === '2') reportTitle = 'व्यापार खाता (Trading Account)';
+  if (activeTab === 'PNL' || activeTab === '3') reportTitle = 'लाभ-हानि खाता (Profit & Loss Statement)';
 
-  let reportTitle = 'वित्तीय विवरण (Financial Statements)';
-  let tableContentHtml = '';
+  const rowsHtml = rows.map((row, idx) => {
+    const bgCol = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+    const deb = row.dr || row.debit || 0;
+    const cr = row.cr || row.credit || 0;
 
-  if (activeTab === 'TB' || activeTab === '1' || activeTab === 'TRIAL_BALANCE') {
-    reportTitle = 'तलपट विवरण (Trial Balance Report)';
-    const rows = (trialBalance && Array.isArray(trialBalance.rows)) ? trialBalance.rows : (Array.isArray(reportData?.trialBalance) ? reportData.trialBalance : []);
-    
-    const rowsHtml = rows.map((row, idx) => {
-      const bgCol = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-      const deb = row.debit || row.dr || 0;
-      const cr = row.credit || row.cr || 0;
+    return '<tr style="background-color: ' + bgCol + ';">' +
+      '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; font-weight: 600;">' + (row.name || row.account_name || 'Account') + '</td>' +
+      '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; color: #64748b;">' + (row.category || row.primary_type || 'General') + '</td>' +
+      '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #059669; font-weight: bold;">' +
+        (deb > 0 ? parseFloat(deb).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-') +
+      '</td>' +
+      '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #dc2626; font-weight: bold;">' +
+        (cr > 0 ? parseFloat(cr).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-') +
+      '</td>' +
+    '</tr>';
+  }).join('');
 
-      return '<tr style="background-color: ' + bgCol + ';">' +
-        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; font-weight: 600;">' + (row.account_name || row.name || 'Account') + '</td>' +
-        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; color: #64748b;">' + (row.primary_type || row.category || 'General') + '</td>' +
-        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #059669; font-weight: bold;">' +
-          (deb > 0 ? parseFloat(deb).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-') +
-        '</td>' +
-        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #dc2626; font-weight: bold;">' +
-          (cr > 0 ? parseFloat(cr).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-') +
-        '</td>' +
-      '</tr>';
-    }).join('');
+  const totalDeb = parseFloat(reportData?.totalDebit || 0);
+  const totalCr = parseFloat(reportData?.totalCredit || 0);
 
-    const totalDeb = parseFloat(trialBalance?.totalDebit || reportData?.totalDebit || 0);
-    const totalCr = parseFloat(trialBalance?.totalCredit || reportData?.totalCredit || 0);
-
-    tableContentHtml = '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 15px;">' +
-      '<thead>' +
-        '<tr style="background-color: #0f172a; color: #ffffff;">' +
-          '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: left;">खाते का नाम (Ledger Account)</th>' +
-          '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: left;">प्रकार (Category)</th>' +
-          '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: right;">नामे (Debit ₹)</th>' +
-          '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: right;">जमा (Credit ₹)</th>' +
-        '</tr>' +
-      '</thead>' +
-      '<tbody>' + (rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="4" style="text-align:center; padding:15px;">No accounts recorded.</td></tr>') + '</tbody>' +
-      '<tfoot>' +
-        '<tr style="background-color: #f1f5f9; font-weight: bold; font-size: 13px;">' +
-          '<td colspan="2" style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right;">Grand Total:</td>' +
-          '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #059669;">₹' + totalDeb.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + '</td>' +
-          '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #dc2626;">₹' + totalCr.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + '</td>' +
-        '</tr>' +
-      '</tfoot>' +
-    '</table>';
-  } else {
-    tableContentHtml = '<div>Report view exported successfully.</div>';
-  }
+  const tableContentHtml = '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 15px;">' +
+    '<thead>' +
+      '<tr style="background-color: #0f172a; color: #ffffff;">' +
+        '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: left;">खाते का नाम (Ledger Account)</th>' +
+        '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: left;">प्रकार (Category)</th>' +
+        '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: right;">नामे (Debit ₹)</th>' +
+        '<th style="padding: 10px 8px; border: 1px solid #0f172a; text-align: right;">जमा (Credit ₹)</th>' +
+      '</tr>' +
+    '</thead>' +
+    '<tbody>' + (rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="4" style="text-align:center; padding:15px;">No accounts recorded.</td></tr>') + '</tbody>' +
+    '<tfoot>' +
+      '<tr style="background-color: #f1f5f9; font-weight: bold; font-size: 13px;">' +
+        '<td colspan="2" style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right;">Grand Total:</td>' +
+        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #059669;">₹' + totalDeb.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + '</td>' +
+        '<td style="padding: 10px 8px; border: 1px solid #cbd5e1; text-align: right; color: #dc2626;">₹' + totalCr.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + '</td>' +
+      '</tr>' +
+    '</tfoot>' +
+  '</table>';
 
   const printableHtml = '<!DOCTYPE html><html lang="hi"><head><meta charset="UTF-8" /><title>' + reportTitle + '</title></head><body>' +
-    '<h2>' + firmName + '</h2><h3>' + reportTitle + '</h3>' + tableContentHtml + '</body></html>';
+    '<h2 style="text-transform: uppercase; margin-bottom: 2px;">' + firmName + '</h2>' +
+    '<h3 style="color: #475569; margin-top: 0;">' + reportTitle + '</h3>' + tableContentHtml + '</body></html>';
 
   return await exportHtmlDocument(printableHtml, reportTitle);
 };
 
-// Alias for Financial Reports compatibility
+// Universal Alias for Financial Reports compatibility
 export const downloadFinancialReportPDF = downloadFinancialStatementsReport;
 
 /**
@@ -275,13 +291,10 @@ export const downloadFinancialReportPDF = downloadFinancialStatementsReport;
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
-  const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const rows = Array.isArray(vouchers) ? vouchers : [];
 
-  let totalAmount = 0;
   const rowsHtml = rows.map((vch, idx) => {
     const amt = parseFloat(vch.amount || 0);
-    totalAmount += amt;
     return '<tr style="background-color: ' + (idx % 2 === 0 ? '#ffffff' : '#f8fafc') + ';">' +
       '<td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">' + (idx + 1) + '</td>' +
       '<td style="padding: 8px; border: 1px solid #cbd5e1;">' + (vch.voucher_date || vch.date || '-') + '</td>' +
@@ -300,22 +313,8 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
 };
 
 /**
- * 4. PROFESSIONAL TAX INVOICE GENERATOR
- */
-export const generateProfessionalInvoicePDF = async (firmInput, invoice = {}) => {
-  const firmName = getCleanFirmName(firmInput);
-  const invNumber = invoice?.invoice_number || ('INV-' + Date.now());
-  const grandTotal = parseFloat(invoice?.grand_total || invoice?.total_amount || 0);
-
-  const printableHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Invoice</title></head><body>' +
-    '<h2>' + firmName + '</h2><h3>Tax Invoice: ' + invNumber + '</h3><div>Grand Total: ₹' + grandTotal.toFixed(2) + '</div></body></html>';
-
-  return await exportHtmlDocument(printableHtml, 'Invoice_' + invNumber);
-};
-
-/**
- * 5. BACKWARD COMPATIBILITY ALIAS
+ * 4. BACKWARD COMPATIBILITY ALIAS
  */
 export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
-  return downloadFinancialStatementsReport(firmInput, reportData, 'PL');
+  return downloadFinancialStatementsReport(firmInput, reportData, 'PNL');
 };
