@@ -1,29 +1,24 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
-export default function MaterialConsumptionView({ firm, onSave, onClose }) {
+export default function MaterialConsumptionView({ firm, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
   const allItems = useItemMaster();
   const [accountsList, setAccountsList] = useState([]);
   const [consumptionList, setConsumptionList] = useState([]);
 
-  // Form Header State
   const [usageDate, setUsageDate] = useState(new Date().toISOString().split('T')[0]);
   const [vehicleRef, setVehicleRef] = useState('');
   
-  // Row Input State for Cart
   const [selectedItemId, setSelectedItemId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [expenseLedger, setExpenseLedger] = useState('');
   const [remarks, setRemarks] = useState('');
 
-  // Multi-Item Cart
   const [cart, setCart] = useState([]);
-
-  const [editingId, setEditingId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
@@ -31,7 +26,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     const syncData = () => {
       const allAccs = getFirmMasterAccounts(activeFirmId) || [];
       
-      // Strict Rule: Only Expense accounts are allowed here
       const expenseAccounts = allAccs.filter(acc => {
         const group = String(acc.sub_group || acc.group_name || acc.category || acc.primary_type || '').toUpperCase();
         const name = String(acc.account_name || acc.name || '').toUpperCase();
@@ -53,7 +47,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     };
   }, [activeFirmId]);
 
-  // Add Item to Cart
   const handleAddToCart = () => {
     if (!selectedItemId) return alert('कृपया स्टॉक आइटम चुनें।');
     if (!quantity || Number(quantity) <= 0) return alert('कृपया वैध मात्रा (Qty) दर्ज करें।');
@@ -65,7 +58,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     const parsedQty = Number(quantity);
     const unitRate = Number(itemObj.unit_purchase_price || 0);
 
-    // Check stock availability
     const availableStock = Number(itemObj.current_stock || 0);
     if (parsedQty > availableStock) {
       return alert(`स्टॉक अपर्याप्त है! उपलब्ध: ${availableStock}`);
@@ -84,7 +76,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     };
 
     setCart([...cart, newItem]);
-    // Reset row inputs
     setSelectedItemId('');
     setQuantity('');
     setRemarks('');
@@ -94,20 +85,18 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
     setCart(cart.filter(c => c.id !== id));
   };
 
-  // Submit Multi-Item Consumption Batch
   const handleSubmitBatch = (e) => {
     e.preventDefault();
     setFeedback(null);
 
     if (cart.length === 0) return alert('कम से कम एक आइटम खपत सूची (Cart) में जोड़ें।');
-    if (!vehicleRef) return alert('कृपया 'Used In / Vehicle Ref' दर्ज करें।');
+    if (!vehicleRef) return alert('कृपया वाहन या चैंबर संदर्भ दर्ज करें।');
 
     setIsSubmitting(true);
     try {
       const currentInventory = StorageService.getInventoryItems() || [];
       const currentConsumptions = StorageService.getItem('material_consumptions_v2') || [];
 
-      // 1. Deduct Stock for all items in cart
       let workingInventory = [...currentInventory];
       cart.forEach(cartItem => {
         workingInventory = workingInventory.map(inv => {
@@ -119,9 +108,8 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
       });
       StorageService.setItem('inventory_items', workingInventory);
 
-      // 2. Save Batch Payload
       const batchPayload = {
-        id: editingId || `CONSUME-BATCH-${Date.now()}`,
+        id: `CONSUME-BATCH-${Date.now()}`,
         firm_id: activeFirmId,
         usageDate,
         vehicleRef,
@@ -130,16 +118,14 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         created_at: new Date().toISOString()
       };
 
-      let updatedConsumptions = [batchPayload, ...currentConsumptions];
+      const updatedConsumptions = [batchPayload, ...currentConsumptions];
       StorageService.setItem('material_consumptions_v2', updatedConsumptions);
 
       setFeedback({ type: 'success', message: '✓ Multi-Item Consumption Posted & Stock Deducted Successfully!' });
       
-      // Reset form
       setCart([]);
       setVehicleRef('');
-      setEditingId(null);
-      loadData?.();
+      setConsumptionList(updatedConsumptions);
 
     } catch (err) {
       setFeedback({ type: 'error', message: 'त्रुटि: ' + err.message });
@@ -194,12 +180,11 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             <input type="date" value={usageDate} onChange={(e) => setUsageDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Used In / Vehicle Ref *</label>
-            <input type="text" value={vehicleRef} onChange={(e) => setVehicleRef(e.target.value)} placeholder="e.g. Tractor-1 / Chamber-4" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Vehicle / Chamber Ref *</label>
+            <input type="text" value={vehicleRef} onChange={(e) => setVehicleRef(e.target.value)} placeholder="e.g. Tractor-1" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
           </div>
         </div>
 
-        {/* ROW BUILDER CONTAINER */}
         <div style={{ backgroundColor: '#f1f5f9', padding: '16px', borderRadius: '10px', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1e293b' }}>➕ Add Items to Consumption Cart</h3>
           
@@ -236,7 +221,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             </button>
           </div>
 
-          {/* CART ITEMS LIST */}
           {cart.length > 0 && (
             <div style={{ marginTop: '16px', borderTop: '1px dashed #cbd5e1', paddingTop: '12px' }}>
               <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', color: '#334155' }}>Items in Current Batch ({cart.length}):</div>
@@ -258,7 +242,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         </button>
       </div>
       
-      {/* CONSUMPTION BATCHES REGISTER */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
         <h2 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>📋 Consumption Batches Register ({consumptionList.length})</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
