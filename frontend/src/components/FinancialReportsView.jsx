@@ -22,9 +22,9 @@ export default function FinancialReportsView({ firm, onClose }) {
 
   const computeFinancials = () => {
     try {
-      // 1. Fetch Vouchers & Inventory
+      // 1. Fetch Vouchers & Transactions from all possible storage keys
       let rawTx = [];
-      ['account_book_vouchers', 'vouchers', 'transactions'].forEach(k => {
+      ['account_book_vouchers', 'vouchers', 'transactions', 'journal_entries', 'voucher_list'].forEach(k => {
         const val = StorageService.getItem(k);
         if (Array.isArray(val)) rawTx.push(...val);
       });
@@ -56,29 +56,53 @@ export default function FinancialReportsView({ firm, onClose }) {
       let totalSales = 0;
 
       firmVouchers.forEach(v => {
-        const amt = Number(v.amount || v.total_amount || 0);
+        const amt = Number(v.amount || v.total_amount || v.net_amount || 0);
         if (amt <= 0) return;
-        const dr = v.dr_account || v.dr_party || v.debit_account;
-        const cr = v.cr_account || v.cr_party || v.credit_account;
-        const vType = String(v.voucher_type || v.type || '').toUpperCase();
+        
+        // Extended support for multiple field names for accounts
+        const dr = v.dr_account || v.dr_party || v.debit_account || v.debit_ledger || v.account_dr;
+        const cr = v.cr_account || v.cr_party || v.credit_account || v.credit_ledger || v.account_cr;
+        const vType = String(v.voucher_type || v.type || v.category || '').toUpperCase();
 
         if (dr && cr) {
           addLedger(dr, amt, 0);
           addLedger(cr, 0, amt);
+        } else {
+          // If individual ledger fields aren't strictly split, map based on type
+          if (vType.includes('PURCHASE') || vType.includes('PUR') || vType.includes('PURCH')) {
+            addLedger('Purchase A/c', amt, 0);
+          } else if (vType.includes('SALE') || vType.includes('SELL') || vType.includes('REV')) {
+            addLedger('Sales & Revenue', 0, amt);
+          }
         }
 
-        if (vType === 'PURCHASE') totalPurchases += amt;
-        if (vType === 'SALES') totalSales += amt;
+        if (vType.includes('PURCHASE') || vType.includes('PUR')) {
+          totalPurchases += amt;
+        }
+        if (vType.includes('SALE') || vType.includes('SELL')) {
+          totalSales += amt;
+        }
       });
 
-      // Format Trial Balance Rows
+      // Format Trial Balance Rows with intelligent classification
       const tbRows = Object.values(ledgerMap).map(l => {
         const net = l.debit - l.credit;
+        const lowerName = l.name.toLowerCase();
+        let category = 'EXPENSES';
+
+        if (lowerName.includes('cash') || lowerName.includes('bank') || lowerName.includes('asset') || lowerName.includes('stock')) {
+          category = 'ASSETS';
+        } else if (lowerName.includes('capital') || lowerName.includes('liability') || lowerName.includes('creditor') || lowerName.includes('loan')) {
+          category = 'LIABILITIES';
+        } else if (lowerName.includes('sale') || lowerName.includes('revenue') || lowerName.includes('income')) {
+          category = 'INCOME';
+        }
+
         return {
           name: l.name,
-          category: l.name.toLowerCase().includes('cash') || l.name.toLowerCase().includes('bank') ? 'ASSETS' : l.name.toLowerCase().includes('capital') ? 'LIABILITIES' : 'EXPENSES',
+          category: category,
           dr: net > 0 ? net : 0,
-          cr: net < 0 ? Math.abs(net) : 0
+          cr: net < 0 ? Math.abs(net) : (l.debit === 0 ? l.credit : 0)
         };
       });
 
@@ -266,7 +290,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>लाभ-हानि विवरण (Profit & Loss Statement)</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-name', justifyContent: 'space-between', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <span>सकल लाभ b/d (Gross Profit):</span>
               <strong>₹{reportData.pnl.grossProfit.toFixed(2)}</strong>
             </div>
