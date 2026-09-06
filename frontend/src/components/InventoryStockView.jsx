@@ -8,7 +8,7 @@ export default function InventoryStockView({ firm, onClose }) {
   // Modal State for Adding Item
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [itemName, setItemName] = useState('');
-  const [unit, setUnit] = useState('Pcs');
+  const [unit, setUnit] = useState('Quintal'); // Default to Quintal for industrial/bhatta use
   const [openingStock, setOpeningStock] = useState('0');
   const [purchaseRate, setPurchaseRate] = useState('0');
 
@@ -83,7 +83,7 @@ export default function InventoryStockView({ firm, onClose }) {
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
       
       {/* Top Premium Header & Summary Card */}
-      <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+      <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
@@ -97,7 +97,7 @@ export default function InventoryStockView({ firm, onClose }) {
         <div style={{ marginBottom: '16px' }}>
           <button 
             onClick={() => setIsModalOpen(true)} 
-            style={{ width: '100%', padding: '14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '14px', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)', transition: 'all 0.2s' }}
+            style={{ width: '100%', padding: '14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '14px', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)' }}
           >
             + Add New Item to Master
           </button>
@@ -118,7 +118,7 @@ export default function InventoryStockView({ firm, onClose }) {
       {/* REFINED MOBILE-FRIENDLY CARD LIST */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {inventoryList.length === 0 ? (
-          <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px 20px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+          <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px 20px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
             No items found. Click '+ Add New Item to Master' above to create one.
           </div>
         ) : (
@@ -129,7 +129,6 @@ export default function InventoryStockView({ firm, onClose }) {
             return (
               <div key={item.id || idx} style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '12px', boxSizing: 'border-box' }}>
                 
-                {/* Top Row: Item Name & Delete Button */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontWeight: '800', fontSize: '15px', color: '#0f172a' }}>{item.item_name || item.name}</div>
@@ -147,7 +146,6 @@ export default function InventoryStockView({ firm, onClose }) {
                   </button>
                 </div>
 
-                {/* Bottom Row: Total Valuation */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
                   <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Total Valuation</span>
                   <span style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a' }}>₹{val.toFixed(2)}</span>
@@ -159,14 +157,14 @@ export default function InventoryStockView({ firm, onClose }) {
         )}
       </div>
 
-      {/* ADD ITEM POPUP MODAL */}
+      {/* ADD ITEM POPUP MODAL WITH QUINTAL & OTHER UNITS */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px' }}>
-          <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '20px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)', boxSizing: 'border-box' }}>
+          <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '20px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', boxSizing: 'border-box' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📦 Create New Item</h3>
-              <button onClick={() => setIsModalOpen(false)} style={{ background: '#f1f5f9', border: 'none', width: '32px', height: '32px', borderRadius: '50%', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold', color: '#64748b', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>✕</button>
+              <button onClick={() => setIsModalOpen(false)} style={{ background: '#f1f5f9', border: 'none', width: '32px', height: '32px', borderRadius: '50%', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold', color: '#64748b' }}>✕</button>
             </div>
 
             <form onSubmit={handleSaveItem} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -174,7 +172,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>Item Name *</label>
                 <input 
                   type="text" 
-                  placeholder="e.g. Diesel, Coal, Pakki Eent" 
+                  placeholder="e.g. Coal, Husk, Diesel, Bricks" 
                   value={itemName} 
                   onChange={e => setItemName(e.target.value)} 
                   style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }}
@@ -190,10 +188,11 @@ export default function InventoryStockView({ firm, onClose }) {
                   onChange={e => setUnit(e.target.value)} 
                   style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', backgroundColor: '#fff', fontSize: '13px', outline: 'none' }}
                 >
-                  <option value="Pcs">Pcs (पीस)</option>
-                  <option value="Liters">Liters (लीटर)</option>
+                  <option value="Quintal">Quintal (क्विंटल)</option>
                   <option value="Tonnes">Tonnes (टन)</option>
                   <option value="Kg">Kg (किलो)</option>
+                  <option value="Pcs">Pcs (पीस)</option>
+                  <option value="Liters">Liters (लीटर)</option>
                   <option value="Truck">Truck (ट्रक)</option>
                   <option value="Trolley">Trolley (ट्रॉली)</option>
                   <option value="Thousands">Thousands (हजार)</option>
@@ -224,7 +223,7 @@ export default function InventoryStockView({ firm, onClose }) {
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="submit" style={{ flex: 1, padding: '14px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px', boxShadow: '0 4px 10px rgba(5, 150, 105, 0.2)' }}>
+                <button type="submit" style={{ flex: 1, padding: '14px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>
                   + Save Item
                 </button>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '14px 16px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>
