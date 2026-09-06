@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
+import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function AccountStatementView({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
@@ -11,6 +12,8 @@ export default function AccountStatementView({ firm }) {
   const [accounts, setAccounts] = useState([]);
   const [selectedParty, setSelectedParty] = useState('');
   const [statementData, setStatementData] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [statusNotification, setStatusNotification] = useState(null);
 
   const loadData = () => {
     try {
@@ -42,7 +45,6 @@ export default function AccountStatementView({ firm }) {
     }
 
     try {
-      // 1. Gather all raw transactions/vouchers from all potential storage keys safely
       let rawTx = [];
       const primaryKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'daybook'];
       
@@ -51,7 +53,6 @@ export default function AccountStatementView({ firm }) {
         if (Array.isArray(val)) rawTx.push(...val);
       });
 
-      // Fallback: Scan localStorage directly to catch any missed keys
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('entry'))) {
@@ -69,11 +70,9 @@ export default function AccountStatementView({ firm }) {
         }
       }
 
-      // 2. Deduplicate transactions by unique ID or composite key
       const uniqueMap = new Map();
       rawTx.forEach(tx => {
         if (!tx) return;
-        // Firm filter if firm_id exists
         if (tx.firm_id && tx.firm_id !== activeFirmId) return;
 
         const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount}-${tx.dr_account}-${tx.cr_account}`;
@@ -91,7 +90,6 @@ export default function AccountStatementView({ firm }) {
         const amt = parseFloat(v.amount || v.total_amount || 0);
         if (amt <= 0 || isNaN(amt)) return;
 
-        // Handle various key names for Debit and Credit accounts
         const dr = String(v.dr_account || v.dr_party || v.debit_account || '').trim().toLowerCase();
         const cr = String(v.cr_account || v.cr_party || v.credit_account || '').trim().toLowerCase();
 
@@ -111,10 +109,8 @@ export default function AccountStatementView({ firm }) {
         }
       });
 
-      // Sort chronologically
       matchedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      // Calculate running balances
       let runningBal = 0;
       const processedTransactions = matchedTransactions.map(t => {
         runningBal += (t.debit - t.credit);
@@ -139,6 +135,31 @@ export default function AccountStatementView({ firm }) {
       console.error("Error generating account statement:", e);
     }
   }, [selectedParty, activeFirmId]);
+
+  // PDF Export Handler
+  const handleExportPDF = async () => {
+    if (!statementData || statementData.transactions.length === 0) {
+      alert("⚠️ No transactions found to export.");
+      return;
+    }
+
+    setIsExporting(true);
+    setStatusNotification({ type: 'info', message: '⏳ Generating PDF document...' });
+
+    try {
+      const res = await downloadAccountStatementPDF(statementData, selectedParty, firm);
+      if (res?.success) {
+        setStatusNotification({ type: 'success', message: '✓ PDF downloaded successfully!' });
+      } else {
+        setStatusNotification(null);
+      }
+    } catch (e) {
+      setStatusNotification({ type: 'error', message: `❌ Export Failed: ${e.message}` });
+    } finally {
+      setIsExporting(false);
+      setTimeout(() => setStatusNotification(null), 5000);
+    }
+  };
 
   // Direct WhatsApp Khata Statement Sender
   const handleShareWhatsApp = () => {
@@ -174,39 +195,79 @@ export default function AccountStatementView({ firm }) {
   return (
     <div style={{ width: '100%', maxWidth: '750px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
       
-      {/* Header Banner */}
+      {/* Header Banner with PDF & WhatsApp Export */}
       <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
               📖 खाता मिलान (Account Statement)
             </h3>
             <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry General Ledger & Real-Time Balance</span>
           </div>
-          {statementData && statementData.transactions.length > 0 && (
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button
               type="button"
-              onClick={handleShareWhatsApp}
+              onClick={handleExportPDF}
+              disabled={isExporting || !statementData || statementData.transactions.length === 0}
               style={{
-                backgroundColor: '#25D366',
+                backgroundColor: '#0f172a',
                 color: '#ffffff',
                 border: 'none',
-                padding: '8px 14px',
+                padding: '8px 12px',
                 borderRadius: '8px',
-                fontSize: '12px',
+                fontSize: '11px',
                 fontWeight: 'bold',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 6px rgba(37,211,102,0.3)'
+                gap: '4px',
+                opacity: isExporting ? 0.7 : 1
               }}
             >
-              <span>💬</span> WhatsApp पर भेजें
+              <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
             </button>
-          )}
+
+            {statementData && statementData.transactions.length > 0 && (
+              <button
+                type="button"
+                onClick={handleShareWhatsApp}
+                style={{
+                  backgroundColor: '#25D366',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  boxShadow: '0 2px 6px rgba(37,211,102,0.3)'
+                }}
+              >
+                <span>💬</span> WhatsApp
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Status Notification */}
+      {statusNotification && (
+        <div style={{
+          backgroundColor: statusNotification.type === 'error' ? '#fef2f2' : statusNotification.type === 'info' ? '#eff6ff' : '#ecfdf5',
+          border: `1px solid ${statusNotification.type === 'error' ? '#fecaca' : statusNotification.type === 'info' ? '#bfdbfe' : '#a7f3d0'}`,
+          color: statusNotification.type === 'error' ? '#991b1b' : statusNotification.type === 'info' ? '#1e40af' : '#065f46',
+          padding: '10px 14px',
+          borderRadius: '10px',
+          fontSize: '12px',
+          fontWeight: 'bold'
+        }}>
+          {statusNotification.message}
+        </div>
+      )}
 
       {/* Account Selector */}
       <div style={cardStyle}>
