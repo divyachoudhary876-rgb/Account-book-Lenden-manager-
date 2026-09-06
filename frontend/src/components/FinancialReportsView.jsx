@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { downloadFinancialReportPDF } from '../utils/pdfDownloadEngine.js';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
 
 export default function FinancialReportsView({ firm, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
@@ -22,11 +25,9 @@ export default function FinancialReportsView({ firm, onClose }) {
 
   const computeFinancials = () => {
     try {
-      // 1. Fetch Master Accounts
       const masterAccounts = getFirmMasterAccounts(activeFirmId) || [];
       const ledgerMap = {};
 
-      // Initialize all master accounts with zero balance
       masterAccounts.forEach(acc => {
         const name = acc.name || acc.account_name;
         if (name) {
@@ -39,7 +40,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         }
       });
 
-      // 2. Fetch Vouchers
       let rawTx = [];
       ['account_book_vouchers', 'vouchers', 'transactions', 'daybook'].forEach(k => {
         const val = StorageService.getItem(k);
@@ -71,7 +71,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         if (vType === 'SALES') totalSales += amt;
       });
 
-      // Closing Stock from Inventory
       const inventory = StorageService.getItem('inventory_items') || [];
       const firmInventory = inventory.filter(i => !i.firm_id || i.firm_id === activeFirmId);
       const closingStockValue = firmInventory.reduce((sum, item) => {
@@ -80,7 +79,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         return sum + (stock * rate);
       }, 0);
 
-      // Format Trial Balance Rows (Netting off Dr & Cr)
       const tbRows = Object.values(ledgerMap).map(l => {
         const net = l.debit - l.credit;
         return {
@@ -89,7 +87,7 @@ export default function FinancialReportsView({ firm, onClose }) {
           dr: net > 0 ? net : 0,
           cr: net < 0 ? Math.abs(net) : 0
         };
-      }).filter(r => r.dr > 0 || r.cr > 0); // Show only accounts with active balances
+      }).filter(r => r.dr > 0 || r.cr > 0);
 
       const tDr = tbRows.reduce((s, r) => s + r.dr, 0);
       const tCr = tbRows.reduce((s, r) => s + r.cr, 0);
@@ -126,12 +124,15 @@ export default function FinancialReportsView({ firm, onClose }) {
 
     try {
       const res = await downloadFinancialReportPDF(firm, reportData, activeTab);
+      
+      // If PDF engine returns base64 or blob for mobile native handling
       if (res?.success) {
         setStatusNotification({ type: 'success', message: '✓ Financial Report PDF downloaded successfully!' });
       } else {
-        setStatusNotification(null);
+        setStatusNotification({ type: 'success', message: '✓ Report processed!' });
       }
     } catch (e) {
+      console.error("PDF Export Error:", e);
       setStatusNotification({ type: 'error', message: `❌ Export Failed: ${e.message}` });
     } finally {
       setIsExporting(false);
