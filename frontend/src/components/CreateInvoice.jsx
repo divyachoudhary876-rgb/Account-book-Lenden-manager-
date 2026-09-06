@@ -8,7 +8,10 @@ export default function CreateInvoice({ firm, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
   const allItems = useItemMaster(); 
   const [accountsList, setAccountsList] = useState([]);
+  const [invoiceList, setInvoiceList] = useState([]);
 
+  // Form State
+  const [editingId, setEditingId] = useState(null);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [invoiceNo, setInvoiceNo] = useState(`INV-${Math.floor(Date.now() / 1000)}`);
   const [customerParty, setCustomerParty] = useState(''); 
@@ -19,17 +22,26 @@ export default function CreateInvoice({ firm, onClose }) {
   const [quantity, setQuantity] = useState('');
   const [rate, setRate] = useState('');
 
-  // Invoice Print Preview Modal State
-  const [completedInvoice, setCompletedInvoice] = useState(null);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [feedback, setFeedback] = useState(null);
+
+  const loadData = () => {
+    const accList = getFirmMasterAccounts(activeFirmId) || [];
+    setAccountsList(accList);
+
+    const allVouchers = StorageService.getVouchers() || [];
+    const salesInvoices = allVouchers.filter(v => v.firm_id === activeFirmId && (v.voucher_type === 'SALES' || v.type === 'SALES'));
+    setInvoiceList(salesInvoices);
+  };
 
   useEffect(() => {
-    const loadAccs = () => {
-      const accList = getFirmMasterAccounts(activeFirmId) || [];
-      setAccountsList(accList);
+    loadData();
+    window.addEventListener('app_state_updated', loadData);
+    window.addEventListener('app_storage_updated', loadData);
+    return () => {
+      window.removeEventListener('app_state_updated', loadData);
+      window.removeEventListener('app_storage_updated', loadData);
     };
-    loadAccs();
-    window.addEventListener('app_state_updated', loadAccs);
-    return () => window.removeEventListener('app_state_updated', loadAccs);
   }, [activeFirmId]);
 
   const handleAddToCart = () => {
@@ -59,13 +71,31 @@ export default function CreateInvoice({ firm, onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setFeedback(null);
     if (!customerParty) return alert('कृपया कस्टमर पार्टी चुनें!');
     if (cart.length === 0) return alert('कम से कम एक आइटम बिल में जोड़ें।');
 
     try {
-      // 1. Update Inventory Stock Atomically
       const currentInventory = StorageService.getInventoryItems() || [];
-      const updatedInventory = currentInventory.map(invItem => {
+      const vouchers = StorageService.getVouchers() || [];
+
+      // If editing, first restore old stock of the editing invoice
+      let workingInventory = [...currentInventory];
+      if (editingId) {
+        const oldInv = vouchers.find(v => v.id === editingId);
+        if (oldInv && oldInv.items) {
+          workingInventory = workingInventory.map(invItem => {
+            const matched = oldInv.items.find(c => String(c.itemId) === String(invItem.id));
+            if (matched && !matched.isService) {
+              return { ...invItem, current_stock: Number(invItem.current_stock || 0) + Number(matched.qty) };
+            }
+            return invItem;
+          });
+        }
+      }
+
+      // Deduct new cart stock
+      const updatedInventory = workingInventory.map(invItem => {
         const cartItem = cart.find(c => String(c.itemId) === String(invItem.id));
         if (cartItem && !cartItem.isService) {
           return { ...invItem, current_stock: Number(invItem.current_stock || 0) - cartItem.qty };
@@ -74,10 +104,9 @@ export default function CreateInvoice({ firm, onClose }) {
       });
       StorageService.setItem('inventory_items', updatedInventory);
 
-      // 2. Save Voucher in Ledger
-      const vouchers = StorageService.getVouchers() || [];
+      // Save or Update Voucher
       const newVoucher = {
-        id: `INV-${Date.now()}`,
+        id: editingId || `INV-${Date.now()}`,
         firm_id: activeFirmId,
         voucher_date: invoiceDate,
         voucher_type: 'SALES',
@@ -86,141 +115,126 @@ export default function CreateInvoice({ firm, onClose }) {
         amount: grandTotal,
         reference_no: invoiceNo,
         narration: `Sales Invoice ${invoiceNo} to ${customerParty} - Vehicle: ${vehicleNo}`,
+        vehicle_no: vehicleNo,
         items: cart,
         created_at: new Date().toISOString()
       };
-      StorageService.setItem('account_book_vouchers', [newVoucher, ...vouchers]);
 
-      // 3. Trigger Professional Invoice Preview
-      setCompletedInvoice({
-        firmName: firm?.name || 'Neelkanth Udyog',
-        invoiceNo,
-        invoiceDate,
-        customerParty,
-        vehicleNo,
-        cart,
-        taxableAmount,
-        cgst,
-        sgst,
-        grandTotal
-      });
+      let updatedVouchers;
+      if (editingId) {
+        updatedVouchers = vouchers.map(v => v.id === editingId ? newVoucher : v);
+        setFeedback({ type: 'success', message: '✓ Invoice Updated Successfully!' });
+      } else {
+        updatedVouchers = [newVoucher, ...vouchers];
+        setFeedback({ type: 'success', message: '✓ Invoice Generated & Saved to Register!' });
+      }
+
+      StorageService.setItem('account_book_vouchers', updatedVouchers);
+      loadData();
+
+      // Reset Form
+      setEditingId(null);
+      setCart([]);
+      setCustomerParty('');
+      setVehicleNo('');
+      setInvoiceNo(`INV-${Math.floor(Date.now() / 1000)}`);
 
     } catch (err) {
       alert('Error: ' + err.message);
     }
   };
 
-  // Print/Download Handler
-  const handlePrintInvoice = () => {
-    window.print();
+  // Handle Edit Init
+  const handleEdit = (inv) => {
+    setEditingId(inv.id);
+    setInvoiceDate(inv.voucher_date || new Date().toISOString().split('T')[0]);
+    setInvoiceNo(inv.reference_no || '');
+    setCustomerParty(inv.dr_account || '');
+    setVehicleNo(inv.vehicle_no || '');
+    setCart(inv.items || []);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Reset for next invoice
-  const handleNewInvoice = () => {
-    setCompletedInvoice(null);
-    setCart([]);
-    setCustomerParty('');
-    setVehicleNo('');
-    setInvoiceNo(`INV-${Math.floor(Date.now() / 1000)}`);
+  // Handle Delete / Reverse
+  const handleDelete = (invId, invNo) => {
+    if (!window.confirm(`Invoice #${invNo} को डिलीट करने से इसका स्टॉक वापस जुड़ जाएगा। जारी रखें?`)) return;
+
+    try {
+      const vouchers = StorageService.getVouchers() || [];
+      const targetInv = vouchers.find(v => v.id === invId);
+
+      if (targetInv && targetInv.items) {
+        const currentInventory = StorageService.getInventoryItems() || [];
+        const restoredInventory = currentInventory.map(invItem => {
+          const matchedCartItem = targetInv.items.find(c => String(c.itemId) === String(invItem.id));
+          if (matchedCartItem && !matchedCartItem.isService) {
+            return { ...invItem, current_stock: Number(invItem.current_stock || 0) + Number(matchedCartItem.qty) };
+          }
+          return invItem;
+        });
+        StorageService.setItem('inventory_items', restoredInventory);
+      }
+
+      const filteredVouchers = vouchers.filter(v => v.id !== invId);
+      StorageService.setItem('account_book_vouchers', filteredVouchers);
+      loadData();
+      if (editingId === invId) {
+        setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo('');
+      }
+      alert('✓ Invoice deleted & stock restored.');
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
   };
 
-  // IF INVOICE GENERATED: SHOW PROFESSIONAL PRINT PREVIEW MODAL
-  if (completedInvoice) {
+  // Print single invoice view
+  const handlePrint = (inv) => {
+    const printWindow = window.open('', '_blank');
+    const taxable = Number(inv.amount || 0) / 1.05;
+    const tax = taxable * 0.025;
+
+    printWindow.document.write(`
+      <html>
+        <head><title>Invoice #${inv.reference_no}</title></head>
+        <body style="font-family:sans-serif; padding:20px;">
+          <h2 style="text-align:center;">${firm?.name || 'Neelkanth Udyog'}</h2>
+          <p style="text-align:center; font-size:12px; color:#666;">TAX INVOICE</p>
+          <hr/>
+          <p><strong>Invoice No:</strong> ${inv.reference_no} | <strong>Date:</strong> ${inv.voucher_date}</p>
+          <p><strong>Customer:</strong> ${inv.dr_account}</p>
+          <table border="1" cellspacing="0" cellpadding="8" style="width:100%; margin-top:15px; border-collapse:collapse;">
+            <tr style="background:#f1f5f9;"><th>Item</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
+            ${(inv.items || []).map(i => `<tr><td>${i.itemName}</td><td>${i.qty} ${i.unit}</td><td>${i.rate}</td><td>${i.total}</td></tr>`).join('')}
+          </table>
+          <p style="text-align:right; margin-top:15px;"><strong>Grand Total: ₹${Number(inv.amount || 0).toFixed(2)}</strong></p>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  const filteredInvoices = invoiceList.filter(v => {
+    const q = searchFilter.toLowerCase();
     return (
-      <div style={{ padding: '20px', backgroundColor: '#f1f5f9', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-        <div style={{ maxWidth: '700px', margin: '0 auto', backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-          
-          {/* Action Header (Hidden during print) */}
-          <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-            <button onClick={handleNewInvoice} style={{ padding: '8px 16px', backgroundColor: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>← Back / New Bill</button>
-            <button onClick={handlePrintInvoice} style={{ padding: '8px 20px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🖨️ Print / Save PDF</button>
-          </div>
-
-          {/* Tax Invoice Document Body */}
-          <div id="printable-invoice">
-            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-              <h1 style={{ margin: 0, fontSize: '22px', color: '#0f172a' }}>{completedInvoice.firmName}</h1>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>ORIGINAL FOR RECIPIENT | TAX INVOICE</div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', fontSize: '13px', borderBottom: '2px solid #0f172a', paddingBottom: '12px' }}>
-              <div>
-                <strong>Billed To:</strong>
-                <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e293b', marginTop: '2px' }}>{completedInvoice.customerParty}</div>
-                {completedInvoice.vehicleNo && <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>Vehicle No: {completedInvoice.vehicleNo}</div>}
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div><strong>Invoice No:</strong> {completedInvoice.invoiceNo}</div>
-                <div style={{ marginTop: '2px' }}><strong>Date:</strong> {completedInvoice.invoiceDate}</div>
-              </div>
-            </div>
-
-            {/* Items Table */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #cbd5e1' }}>
-                  <th style={{ padding: '10px', textAlign: 'left' }}>#</th>
-                  <th style={{ padding: '10px', textAlign: 'left' }}>Item Description</th>
-                  <th style={{ padding: '10px', textAlign: 'right' }}>Qty</th>
-                  <th style={{ padding: '10px', textAlign: 'right' }}>Rate (₹)</th>
-                  <th style={{ padding: '10px', textAlign: 'right' }}>Amount (₹)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {completedInvoice.cart.map((c, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '10px' }}>{idx + 1}</td>
-                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{c.itemName}</td>
-                    <td style={{ padding: '10px', textAlign: 'right' }}>{c.qty} {c.unit}</td>
-                    <td style={{ padding: '10px', textAlign: 'right' }}>{c.rate.toFixed(2)}</td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold' }}>{c.total.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Totals Section */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '30px' }}>
-              <div style={{ width: '260px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Taxable Amount:</span>
-                  <span>₹{completedInvoice.taxableAmount.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>CGST (2.5%):</span>
-                  <span>₹{completedInvoice.cgst.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #cbd5e1', paddingBottom: '6px' }}>
-                  <span>SGST (2.5%):</span>
-                  <span>₹{completedInvoice.sgst.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '900', color: '#047857', marginTop: '4px' }}>
-                  <span>Grand Total:</span>
-                  <span>₹{completedInvoice.grandTotal.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '50px', fontSize: '12px', borderTop: '1px solid #cbd5e1', paddingTop: '15px' }}>
-              <div>Receiver's Signature</div>
-              <div style={{ textAlign: 'right' }}>For {completedInvoice.firmName}<br/><br/>Authorised Signatory</div>
-            </div>
-          </div>
-
-        </div>
-      </div>
+      (v.reference_no && v.reference_no.toLowerCase().includes(q)) ||
+      (v.dr_account && v.dr_account.toLowerCase().includes(q)) ||
+      (v.narration && v.narration.toLowerCase().includes(q))
     );
-  }
+  });
 
-  // REGULAR INVOICE CREATION FORM
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', boxSizing: 'border-box', marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>📄 Multi-Item Sales Invoicing</h2>
+          <h2 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
+            {editingId ? '✏️ Edit Sales Invoice' : '📄 Multi-Item Sales Invoicing'}
+          </h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>}
         </div>
         
+        {feedback && <div style={{ padding: '10px', marginBottom: '16px', borderRadius: '8px', backgroundColor: '#ecfdf5', color: '#065f46', fontWeight: 'bold' }}>{feedback.message}</div>}
+
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
             <div style={{ flex: 1 }}>
@@ -269,7 +283,7 @@ export default function CreateInvoice({ firm, onClose }) {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Rate</label>
-                  <input type="number" step="0.01" value={rate} onChange={e => setRate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} placeholder="0.00" />
+                  <input type="number" step="0.01" value={rate} onChange={e => setRate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} placeholder="0.00" />
                 </div>
                 <button type="button" onClick={handleAddToCart} style={{ padding: '0 16px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', height: '42px', whiteSpace: 'nowrap' }}>
                   + Add
@@ -302,10 +316,68 @@ export default function CreateInvoice({ firm, onClose }) {
             )}
           </div>
 
-          <button type="submit" style={{ width: '100%', padding: '14px', backgroundColor: '#1d4ed8', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px', boxShadow: '0 4px 6px rgba(29, 78, 216, 0.2)' }}>
-            📄 Post Multi-Item Sale & View Invoice
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button type="submit" style={{ flex: 1, padding: '14px', backgroundColor: editingId ? '#0284c7' : '#1d4ed8', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
+              {editingId ? '✓ Update Invoice' : '📄 Post Multi-Item Sale'}
+            </button>
+            {editingId && (
+              <button type="button" onClick={() => { setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo(''); }} style={{ padding: '14px 20px', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
+      </div>
+
+      {/* RECENT INVOICES REGISTER WITH PRINT / EDIT / DELETE */}
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <strong style={{ fontSize: '14px', color: '#0f172a' }}>
+            📋 Sales Invoices Register ({filteredInvoices.length})
+          </strong>
+        </div>
+
+        <input
+          type="text"
+          placeholder="🔍 Search invoices by invoice no, customer..."
+          value={searchFilter}
+          onChange={e => setSearchFilter(e.target.value)}
+          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', marginBottom: '12px' }}
+        />
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {filteredInvoices.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '12px' }}>
+              No sales invoices recorded yet.
+            </div>
+          ) : (
+            filteredInvoices.map(inv => {
+              const amt = Number(inv.amount || 0);
+              const isSelected = editingId === inv.id;
+              return (
+                <div key={inv.id} style={{ backgroundColor: isSelected ? '#f0f9ff' : '#f8fafc', border: `1px solid ${isSelected ? '#0284c7' : '#e2e8f0'}`, borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '10px', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>{inv.voucher_date}</span>
+                      <strong style={{ fontSize: '12px', color: '#0f172a' }}>{inv.reference_no}</strong>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0284c7' }}>{inv.dr_account}</div>
+                    <div style={{ fontSize: '10px', color: '#64748b' }}>Items: {(inv.items || []).length} lines</div>
+                  </div>
+                  
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '900', color: '#059669', marginBottom: '6px' }}>₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <button onClick={() => handlePrint(inv)} style={{ padding: '4px 8px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}>🖨️ Print</button>
+                      <button onClick={() => handleEdit(inv)} style={{ padding: '4px 8px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}>✏️ Edit</button>
+                      <button onClick={() => handleDelete(inv.id, inv.reference_no)} style={{ padding: '4px 8px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}>🗑️ Del</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
