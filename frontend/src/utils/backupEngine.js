@@ -111,12 +111,30 @@ export const restoreFirmDataBackup = async (jsonFileText) => {
       localStorage.setItem('consumptions', JSON.stringify(validConsumptions));
     }
 
+    // FIX: Automatically restore and set active firm ID from backup metadata
+    const metadata = parsed.backup_metadata || parsed.firm || {};
+    const restoredFirmId = metadata.firm_id || 'FIRM-1788690112286';
+    const restoredFirmName = metadata.firm_name || metadata.legal_name || 'Neelkanth Int Udyog';
+
+    localStorage.setItem('active_firm_id', restoredFirmId);
+
+    const existingFirms = JSON.parse(localStorage.getItem('firms_registry') || '[]');
+    if (!existingFirms.some(f => f.id === restoredFirmId)) {
+      existingFirms.push({ 
+        id: restoredFirmId, 
+        legal_name: restoredFirmName, 
+        trade_name: restoredFirmName, 
+        category: 'TRADING' 
+      });
+      localStorage.setItem('firms_registry', JSON.stringify(existingFirms));
+    }
+
     window.dispatchEvent(new CustomEvent('app_storage_updated'));
     window.dispatchEvent(new CustomEvent('app_state_updated'));
 
     return {
       success: true,
-      firmName: parsed.backup_metadata?.firm_name || parsed.firm?.legal_name || 'Restored Firm',
+      firmName: restoredFirmName,
       stats: {
         accountsCount: validAccounts.length,
         vouchersCount: validVouchers.length
