@@ -42,7 +42,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
           const lowerCat = String(rawCategory).toLowerCase();
           const lowerName = String(name).toLowerCase();
           
-          // Strict whitelist keywords for expenses
           const isExpense = 
             lowerCat.includes('expense') || 
             lowerCat.includes('direct') || 
@@ -54,7 +53,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
             lowerName.includes('kiraya') ||
             lowerName.includes('labour');
 
-          // Strict blacklist keywords to eliminate Capital, Assets, Bank, and Drivers
           const isRestricted = 
             lowerCat.includes('capital') || 
             lowerCat.includes('asset') || 
@@ -156,7 +154,6 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
         created_at: new Date().toISOString()
       };
 
-      // Deduct stock atomically
       const updatedInventory = currentInventory.map(item => {
         if (String(item.id || item.item_name) === String(selectedItemId)) {
           const oldStock = Number(item.current_stock || item.stock || 0);
@@ -382,7 +379,7 @@ export default function MaterialConsumptionView({ firm, onSave, onClose }) {
                   <tr key={entry.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px 6px', fontWeight: 600, color: '#334155' }}>{entry.usage_date}</td>
                     <td style={{ padding: '8px 6px' }}>
-                      <div style={{ fontWeight: 700, color: '#0f172a'}>{entry.item_name}</div>
+                      <div style={{ fontWeight: 700, color: '#0f172a' }}>{entry.item_name}</div>
                       <div style={{ fontSize: '10px', color: '#64748b' }}>{entry.vehicle_ref}</div>
                     </td>
                     <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#059669' }}>{Number(entry.quantity).toFixed(2)}</td>
