@@ -18,23 +18,39 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * Robust True PDF Exporter preventing corruption on Mobile & Web
+ * Helper to convert Blob to Base64 safely for Android/iOS Capacitor
+ */
+const blobToBase64 = (blob) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result.split(',')[1];
+      resolve(base64String);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
+/**
+ * Robust True PDF Exporter using Pure Binary Blobs (Prevents Corruption Error)
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fullFileName = `${cleanName}_${Date.now()}.pdf`;
 
   try {
+    // Generate pure PDF Blob
+    const pdfBlob = doc.output('blob');
+
     // 1. Mobile Capacitor Native Environment (Android/iOS)
     if (Capacitor.isNativePlatform()) {
-      // Get output as array buffer or base64 safely
-      const pdfOutput = doc.output('datauristring');
-      const base64Data = pdfOutput.includes(',') ? pdfOutput.split(',')[1] : pdfOutput;
+      const base64Data = await blobToBase64(pdfBlob);
 
       const writeResult = await Filesystem.writeFile({
         path: fullFileName,
         data: base64Data,
-        directory: Directory.Documents, // Save directly to visible Documents/Download area if permitted, else Cache
+        directory: Directory.Cache,
         encoding: Encoding.UTF8
       });
 
@@ -49,35 +65,24 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
-    // 2. Standard Web Browser Download
-    doc.save(fullFileName);
+    // 2. Standard Web Browser Download via Blob URL
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.href = blobUrl;
+    downloadAnchor.setAttribute('download', fullFileName);
+    downloadAnchor.style.display = 'none';
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+
+    setTimeout(() => {
+      document.body.removeChild(downloadAnchor);
+      URL.revokeObjectURL(blobUrl);
+    }, 1500);
+
     return { success: true };
 
   } catch (err) {
     console.error('True PDF Export Error:', err);
-    // Fallback for mobile if Documents directory restricts writing directly
-    try {
-      const pdfOutput = doc.output('datauristring');
-      const base64Data = pdfOutput.includes(',') ? pdfOutput.split(',')[1] : pdfOutput;
-      
-      const cacheWrite = await Filesystem.writeFile({
-        path: fullFileName,
-        data: base64Data,
-        directory: Directory.Cache,
-        encoding: Encoding.UTF8
-      });
-
-      if (cacheWrite && cacheWrite.uri) {
-        await Share.share({
-          title: cleanName,
-          url: cacheWrite.uri
-        });
-        return { success: true };
-      }
-    } catch (fallbackErr) {
-      console.error('Fallback Export Failed:', fallbackErr);
-    }
-
     throw new Error('Failed to generate uncorrupted PDF file.');
   }
 };
@@ -92,7 +97,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   const doc = new jsPDF();
   let y = 15;
 
-  // Header
   doc.setFontSize(16);
   doc.setFont(undefined, 'bold');
   doc.text(firmName.toUpperCase(), 14, y);
@@ -108,7 +112,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   y += 10;
 
   // Table Headers
-  doc.setFillColor(15, 23, 42); // #0f172a
+  doc.setFillColor(15, 23, 42);
   doc.rect(14, y, 182, 8, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont(undefined, 'bold');
@@ -119,7 +123,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   doc.text('Balance', 185, y + 6, { align: 'right' });
   y += 10;
 
-  // Table Rows
   doc.setTextColor(0, 0, 0);
   doc.setFont(undefined, 'normal');
 
@@ -141,7 +144,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L) - Flexible Resolver
+ * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L)
  */
 export const downloadFinancialStatementsReport = async (param1, param2, param3) => {
   let firmInput = 'Neelkanth Groups';
@@ -184,7 +187,6 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   doc.text(reportTitle, 14, y);
   y += 10;
 
-  // Table Header
   doc.setFillColor(15, 23, 42);
   doc.rect(14, y, 182, 8, 'F');
   doc.setTextColor(255, 255, 255);
@@ -213,7 +215,6 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     y += 7;
   });
 
-  // Totals Footer
   y += 4;
   doc.setFont(undefined, 'bold');
   doc.text('Grand Total:', 95, y);
@@ -223,7 +224,6 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   return await exportTruePDF(doc, reportTitle);
 };
 
-// Universal Aliases for Financial Reports compatibility
 export const downloadFinancialReportPDF = downloadFinancialStatementsReport;
 export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
   return downloadFinancialStatementsReport(firmInput, reportData, 'PNL');
@@ -249,7 +249,6 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   doc.text('Journal Daybook Register', 14, y);
   y += 10;
 
-  // Table Header
   doc.setFillColor(15, 23, 42);
   doc.rect(14, y, 182, 8, 'F');
   doc.setTextColor(255, 255, 255);
