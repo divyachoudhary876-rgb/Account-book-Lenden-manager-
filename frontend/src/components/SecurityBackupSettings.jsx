@@ -18,7 +18,7 @@ export default function SecurityBackupSettings({ firm, onClose }) {
       await exportUniversalBackup(firm, {});
       setSuccessMsg('✓ Full Backup Downloaded Successfully!');
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Export failed.');
     } finally {
       setIsProcessing(false);
     }
@@ -34,12 +34,13 @@ export default function SecurityBackupSettings({ firm, onClose }) {
     setIsProcessing(true);
 
     try {
-      // Modern Promise-based file reading
       const fileText = await file.text();
-      
       const result = await restoreUniversalBackup(fileText);
       
-      setSuccessMsg(`✓ Successfully restored ${result.stats.vouchersCount} vouchers and ${result.stats.accountsCount} accounts! Reloading...`);
+      const vCount = result?.stats?.vouchersCount || 0;
+      const aCount = result?.stats?.accountsCount || 0;
+
+      setSuccessMsg(`✓ Successfully restored ${vCount} vouchers and ${aCount} accounts! Reloading...`);
       
       setTimeout(() => {
         window.location.reload();
@@ -50,7 +51,6 @@ export default function SecurityBackupSettings({ firm, onClose }) {
       setErrorMsg(err.message || 'Failed to process the backup file.');
     } finally {
       setIsProcessing(false);
-      // Reset input value so user can select the same file again if needed
       e.target.value = null; 
     }
   };
@@ -69,13 +69,16 @@ export default function SecurityBackupSettings({ firm, onClose }) {
     setIsProcessing(true);
     try {
       const result = await restoreUniversalBackup(pastedJson);
-      setSuccessMsg(`✓ Successfully restored ${result.stats.vouchersCount} vouchers! Reloading...`);
+      const vCount = result?.stats?.vouchersCount || 0;
+
+      setSuccessMsg(`✓ Successfully restored ${vCount} vouchers! Reloading...`);
       
       setTimeout(() => {
         window.location.reload();
       }, 1500);
     } catch (err) {
       setErrorMsg(err.message || 'Restore failed.');
+    } finally {
       setIsProcessing(false);
     }
   };
