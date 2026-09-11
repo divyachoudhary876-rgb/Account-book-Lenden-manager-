@@ -12,7 +12,7 @@ export const getActiveFirmStockItems = (activeFirmInput) => {
     activeFirmId = activeFirmInput.trim();
   } else if (activeFirmInput && typeof activeFirmInput === 'object') {
     activeFirmId = activeFirmInput.id || activeFirmInput.firm_id || 'FIRM-001';
-    activeFirmName = (activeFirmInput.legal_name || activeFirmInput.trade_name || activeFirmInput.name || '').trim().toLowerCase();
+    activeFirmName = (activeFirmInput.legal_name || activeFirmInput.trade_name || activeFirmInput.name || activeFirmInput.firm_name || '').trim().toLowerCase();
   }
 
   let rawItems = [];
@@ -57,6 +57,7 @@ export const getActiveFirmStockItems = (activeFirmInput) => {
     const itemFirmId = String(item.firm_id || item.company_id || '').trim();
     const itemFirmName = String(item.firm_name || item.company_name || '').trim().toLowerCase();
 
+    // If item has a firm tag, it must match active firm ID or name
     if (itemFirmId && activeFirmId && itemFirmId !== 'FIRM-001' && activeFirmId !== 'FIRM-001') {
       return itemFirmId === activeFirmId || itemFirmName === activeFirmName;
     }
@@ -65,13 +66,14 @@ export const getActiveFirmStockItems = (activeFirmInput) => {
       return itemFirmName === activeFirmName;
     }
 
-    return true; 
+    // Fallback: If item has no firm metadata, exclude it in multi-firm mode to prevent leaks
+    return !itemFirmId && !itemFirmName; 
   });
 
   return filteredItems;
 };
 
-// --- UNIVERSAL EXPORT ALIASES TO RESOLVE BUILD IMPORT ERRORS ---
+// --- UNIVERSAL EXPORT ALIASES ---
 export const getStockItemsByFirm = getActiveFirmStockItems;
 export const getStockItems = getActiveFirmStockItems;
 export const fetchInventoryItems = getActiveFirmStockItems;
