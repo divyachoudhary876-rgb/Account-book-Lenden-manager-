@@ -1,7 +1,7 @@
 // frontend/src/utils/backupEngine.js
 
 /**
- * Export all application storage data as a structured JSON backup file
+ * 1. Export all application storage data as a structured JSON backup file
  */
 export const downloadAppBackup = () => {
   try {
@@ -43,7 +43,7 @@ export const downloadAppBackup = () => {
 };
 
 /**
- * Read uploaded backup file and restore into localStorage with validation
+ * 2. Read uploaded backup file and restore into localStorage with validation
  */
 export const restoreAppBackupFromFile = (file, callback) => {
   if (!file) {
@@ -56,7 +56,6 @@ export const restoreAppBackupFromFile = (file, callback) => {
     try {
       const fileContent = JSON.parse(event.target.result);
       
-      // Support both wrapped backup payloads and raw key-value objects
       const targetData = fileContent.data && typeof fileContent.data === 'object' 
         ? fileContent.data 
         : fileContent;
@@ -65,14 +64,12 @@ export const restoreAppBackupFromFile = (file, callback) => {
         throw new Error("Invalid backup schema structure.");
       }
 
-      // Persist restored records into localStorage
       Object.keys(targetData).forEach(key => {
         const val = targetData[key];
         const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
         localStorage.setItem(key, stringifiedVal);
       });
 
-      // Dispatch global sync events so all active views update instantly
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
 
@@ -89,3 +86,7 @@ export const restoreAppBackupFromFile = (file, callback) => {
 
   reader.readAsText(file);
 };
+
+// --- UNIVERSAL ALIASES TO RESOLVE BUILD IMPORT MISMATCHES ---
+export const exportUniversalBackup = downloadAppBackup;
+export const restoreUniversalBackup = restoreAppBackupFromFile;
