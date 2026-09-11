@@ -21,28 +21,21 @@ export default function ProductionConversionView({ firm, onClose }) {
   const [batchesList, setBatchesList] = useState([]);
 
   useEffect(() => {
-    const firmId = firm?.firm_id || 'default_firm';
+    const firmId = firm?.firm_id || firm?.id || 'default_firm';
     try {
+      // Strictly load data scoped to the active firm ID only
       const savedStock = JSON.parse(localStorage.getItem(`app_inventory_${firmId}`) || '[]');
       const savedBatches = JSON.parse(localStorage.getItem(`app_production_batches_${firmId}`) || '[]');
       
-      if (savedStock.length === 0) {
-        setRawMaterials([
-          { id: 'mat_1', name: 'Mitti (मिट्टी)', stock_qty: 0 },
-          { id: 'mat_2', name: 'Coal (कोयला)', stock_qty: 4500 },
-          { id: 'mat_3', name: 'Biomass Briquette (ब्रिकेट)', stock_qty: 12000 }
-        ]);
-        setFinishedItems([
-          { id: 'fin_1', name: 'Phedi / Raw Bricks (कच्ची ईंट)', price: 1.5 },
-          { id: 'fin_2', name: 'A-Class Pakka Bricks (पक्की ईंट)', price: 6.0 }
-        ]);
-      } else {
-        setRawMaterials(savedStock.filter(i => i.type === 'raw' || !i.is_finished));
-        setFinishedItems(savedStock.filter(i => i.type === 'finished' || i.is_finished));
-      }
+      // Clean separation: Zero hardcoded mock fallback items to prevent cross-firm leakage
+      setRawMaterials(savedStock.filter(i => i.type === 'raw' || !i.is_finished));
+      setFinishedItems(savedStock.filter(i => i.type === 'finished' || i.is_finished));
       setBatchesList(savedBatches);
     } catch (e) {
-      console.error(e);
+      console.error("Error loading firm inventory:", e);
+      setRawMaterials([]);
+      setFinishedItems([]);
+      setBatchesList([]);
     }
   }, [firm]);
 
@@ -107,7 +100,7 @@ export default function ProductionConversionView({ firm, onClose }) {
       return;
     }
 
-    const firmId = firm?.firm_id || 'default_firm';
+    const firmId = firm?.firm_id || firm?.id || 'default_firm';
     const newBatch = {
       id: 'BATCH-' + Date.now(),
       date: productionDate,
@@ -136,7 +129,6 @@ export default function ProductionConversionView({ firm, onClose }) {
   return (
     <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '10px', fontFamily: 'sans-serif', boxSizing: 'border-box', overflowX: 'hidden', color: '#0f172a' }}>
       
-      {/* हेडर */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', boxSizing: 'border-box', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
           {onClose && (
@@ -145,7 +137,7 @@ export default function ProductionConversionView({ firm, onClose }) {
             </button>
           )}
           <div style={{ fontSize: '10px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
-            Firm: {firm?.legal_name || 'Neelkanth Int Udyog'}
+            Firm: {firm?.legal_name || firm?.name || 'Default Firm'}
           </div>
         </div>
         <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>⚙️ Production & Raw Material Conversion</h1>
@@ -154,7 +146,6 @@ export default function ProductionConversionView({ firm, onClose }) {
       {errorMsg && <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
       {successMsg && <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
 
-      {/* मुख्य फॉर्म */}
       <form onSubmit={handleProcessProduction} style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
@@ -168,7 +159,6 @@ export default function ProductionConversionView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* आउटपुट फिनिश्ड प्रोडक्ट */}
         <div style={{ backgroundColor: '#f0fdf4', padding: '10px', borderRadius: '10px', border: '1px solid #bbf7d0', boxSizing: 'border-box', width: '100%' }}>
           <h3 style={{ margin: '0 0 6px 0', fontSize: '12px', fontWeight: 800, color: '#166534' }}>📦 Output Finished Product (तैयार माल)</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
@@ -188,7 +178,6 @@ export default function ProductionConversionView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* खर्चे */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
           <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '3px' }}>Direct Labor / Pathai Cost (₹)</label>
@@ -200,7 +189,6 @@ export default function ProductionConversionView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* कच्चा माल खपत अनुभाग (Fixed Overflow Layout) */}
         <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '10px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
           <h3 style={{ margin: '0 0 6px 0', fontSize: '12px', fontWeight: 800 }}>🔥 Consumed Raw Materials & Fuels</h3>
           
@@ -240,18 +228,16 @@ export default function ProductionConversionView({ firm, onClose }) {
           )}
         </div>
 
-        {/* फाइनल सबमिट बटन */}
         <button type="submit" style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', marginTop: '4px', boxSizing: 'border-box' }}>
           ⚡ Deduct Raw Materials & Add Finished Stock
         </button>
 
       </form>
 
-      {/* बैच रजिस्टर */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>📋 Production Batches Register ({batchesList.length})</h3>
         {batchesList.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '8px' }}>No production batches recorded yet.</div>
+          <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '8px' }}>No production batches recorded yet for this firm.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
             {batchesList.map((batch, idx) => (
