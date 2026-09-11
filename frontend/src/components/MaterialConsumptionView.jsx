@@ -1,275 +1,263 @@
 import React, { useState, useEffect } from 'react';
-import { StorageService } from '../utils/storageSync';
-import { useItemMaster } from '../hooks/useItemMaster';
-import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
-import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
-export default function MaterialConsumptionView({ firm, onClose }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
-  const allItems = useItemMaster();
-  const [accountsList, setAccountsList] = useState([]);
-  const [consumptionList, setConsumptionList] = useState([]);
-
-  const [usageDate, setUsageDate] = useState(new Date().toISOString().split('T')[0]);
-  const [vehicleRef, setVehicleRef] = useState('');
+export default function ProductionConversionView({ firm, onClose }) {
+  const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
+  const [batchRef, setBatchRef] = useState(`CHAMBER-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [finishedItems, setFinishedItems] = useState([]);
+  const [rawMaterials, setRawMaterials] = useState([]);
   
-  const [selectedItemId, setSelectedItemId] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [expenseLedger, setExpenseLedger] = useState('');
-  const [remarks, setRemarks] = useState('');
-
-  const [cart, setCart] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState(null);
+  const [selectedOutput, setSelectedOutput] = useState('');
+  const [producedQty, setProducedQty] = useState('');
+  const [laborCost, setLaborCost] = useState('0');
+  const [overheadCost, setOverheadCost] = useState('0');
+  
+  const [selectedMaterial, setSelectedMaterial] = useState('');
+  const [consumedQty, setConsumedQty] = useState('');
+  const [materialCart, setMaterialCart] = useState([]);
+  
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
+  const [batchesList, setBatchesList] = useState([]);
 
   useEffect(() => {
-    const syncData = () => {
-      const allAccs = getFirmMasterAccounts(activeFirmId) || [];
+    const firmId = firm?.firm_id || 'default_firm';
+    try {
+      const savedStock = JSON.parse(localStorage.getItem(`app_inventory_${firmId}`) || '[]');
+      const savedBatches = JSON.parse(localStorage.getItem(`app_production_batches_${firmId}`) || '[]');
       
-      const expenseAccounts = allAccs.filter(acc => {
-        const group = String(acc.sub_group || acc.group_name || acc.category || acc.primary_type || '').toUpperCase();
-        const name = String(acc.account_name || acc.name || '').toUpperCase();
-        const isExpense = group.includes('EXPENSE') || group.includes('DIRECT') || group.includes('INDIRECT') || group.includes('FREIGHT');
-        const isRestricted = group.includes('LIABILIT') || group.includes('ASSET') || group.includes('EQUITY') || group.includes('INCOME') || group.includes('CREDITOR') || group.includes('DEBTOR') || name.includes('CASH') || name.includes('BANK');
-        return isExpense && !isRestricted;
-      });
+      if (savedStock.length === 0) {
+        setRawMaterials([
+          { id: 'mat_1', name: 'Mitti (मिट्टी)', stock_qty: 0 },
+          { id: 'mat_2', name: 'Coal (कोयला)', stock_qty: 4500 },
+          { id: 'mat_3', name: 'Biomass Briquette (ब्रिकेट)', stock_qty: 12000 }
+        ]);
+        setFinishedItems([
+          { id: 'fin_1', name: 'Phedi / Raw Bricks (कच्ची ईंट)', price: 1.5 },
+          { id: 'fin_2', name: 'A-Class Pakka Bricks (पक्की ईंट)', price: 6.0 }
+        ]);
+      } else {
+        setRawMaterials(savedStock.filter(i => i.type === 'raw' || !i.is_finished));
+        setFinishedItems(savedStock.filter(i => i.type === 'finished' || i.is_finished));
+      }
+      setBatchesList(savedBatches);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [firm]);
 
-      setAccountsList(expenseAccounts);
-      setConsumptionList(StorageService.getItem('material_consumptions_v2') || StorageService.getMaterialConsumptions() || []);
-    };
+  const handleAddMaterialToCart = () => {
+    setErrorMsg(null);
+    if (!selectedMaterial) {
+      setErrorMsg('Please select a raw material/fuel.');
+      return;
+    }
+    const qtyNum = Number(consumedQty);
+    if (!qtyNum || qtyNum <= 0) {
+      setErrorMsg('Please enter a valid consumption quantity.');
+      return;
+    }
 
-    syncData();
-    window.addEventListener('app_state_updated', syncData);
-    window.addEventListener('app_storage_updated', syncData);
-    return () => {
-      window.removeEventListener('app_state_updated', syncData);
-      window.removeEventListener('app_storage_updated', syncData);
-    };
-  }, [activeFirmId]);
+    const materialObj = rawMaterials.find(m => m.id === selectedMaterial || m.name === selectedMaterial);
+    const availableStock = Number(materialObj?.stock_qty || 0);
 
-  const handleAddToCart = () => {
-    if (!selectedItemId) return alert('कृपया स्टॉक आइटम चुनें।');
-    if (!quantity || Number(quantity) <= 0) return alert('कृपया वैध मात्रा (Qty) दर्ज करें।');
-    if (!expenseLedger) return alert('कृपया इस आइटम के लिए Debit Expense Ledger चुनें।');
-
-    const itemObj = allItems.find(i => String(i.id) === String(selectedItemId));
-    if (!itemObj) return;
-
-    const parsedQty = Number(quantity);
-    const unitRate = Number(itemObj.unit_purchase_price || 0);
-
-    const availableStock = Number(itemObj.current_stock || 0);
-    if (parsedQty > availableStock) {
-      return alert(`स्टॉक अपर्याप्त है! उपलब्ध: ${availableStock}`);
+    // Strict Negative Stock Guard
+    if (availableStock <= 0) {
+      setErrorMsg(`❌ Stock Error: "${materialObj?.name || selectedMaterial}" is completely OUT OF STOCK (0). Cannot consume!`);
+      return;
+    }
+    if (qtyNum > availableStock) {
+      setErrorMsg(`❌ Stock Error: Insufficient stock for "${materialObj?.name || selectedMaterial}". Available: ${availableStock}, Requested: ${qtyNum}`);
+      return;
     }
 
     const newItem = {
-      id: Date.now(),
-      itemId: selectedItemId,
-      itemName: itemObj.item_name,
-      unit: itemObj.unit || 'Units',
-      qty: parsedQty,
-      unitRate,
-      totalValuation: parsedQty * unitRate,
-      expenseLedger,
-      remarks: remarks || ''
+      id: materialObj?.id || Math.random().toString(),
+      name: materialObj?.name || selectedMaterial,
+      qty: qtyNum
     };
 
-    setCart([...cart, newItem]);
-    setSelectedItemId('');
-    setQuantity('');
-    setRemarks('');
+    setMaterialCart([...materialCart, newItem]);
+    setSelectedMaterial('');
+    setConsumedQty('');
   };
 
-  const removeCartItem = (id) => {
-    setCart(cart.filter(c => c.id !== id));
+  const handleRemoveCartItem = (index) => {
+    const updated = [...materialCart];
+    updated.splice(index, 1);
+    setMaterialCart(updated);
   };
 
-  const handleSubmitBatch = (e) => {
+  const handleProcessProduction = (e) => {
     e.preventDefault();
-    setFeedback(null);
+    setErrorMsg(null);
+    setSuccessMsg(null);
 
-    if (cart.length === 0) return alert('कम से कम एक आइटम खपत सूची (Cart) में जोड़ें।');
-    if (!vehicleRef) return alert('कृपया वाहन या चैंबर संदर्भ दर्ज करें।');
-
-    setIsSubmitting(true);
-    try {
-      const currentInventory = StorageService.getInventoryItems() || [];
-      const currentConsumptions = StorageService.getItem('material_consumptions_v2') || [];
-
-      let workingInventory = [...currentInventory];
-      cart.forEach(cartItem => {
-        workingInventory = workingInventory.map(inv => {
-          if (String(inv.id) === String(cartItem.itemId)) {
-            return { ...inv, current_stock: Math.max(0, Number(inv.current_stock || 0) - cartItem.qty) };
-          }
-          return inv;
-        });
-      });
-      StorageService.setItem('inventory_items', workingInventory);
-
-      const batchPayload = {
-        id: `CONSUME-BATCH-${Date.now()}`,
-        firm_id: activeFirmId,
-        usageDate,
-        vehicleRef,
-        items: cart,
-        totalBatchCost: cart.reduce((sum, i) => sum + i.totalValuation, 0),
-        created_at: new Date().toISOString()
-      };
-
-      const updatedConsumptions = [batchPayload, ...currentConsumptions];
-      StorageService.setItem('material_consumptions_v2', updatedConsumptions);
-
-      setFeedback({ type: 'success', message: '✓ Multi-Item Consumption Posted & Stock Deducted Successfully!' });
-      
-      setCart([]);
-      setVehicleRef('');
-      setConsumptionList(updatedConsumptions);
-
-    } catch (err) {
-      setFeedback({ type: 'error', message: 'त्रुटि: ' + err.message });
-    } finally {
-      setIsSubmitting(false);
+    if (!selectedOutput) {
+      setErrorMsg('Please select an output finished product.');
+      return;
     }
-  };
-
-  const handleDeleteBatch = (batchId) => {
-    if (!window.confirm('इस खपत बैच को हटाने पर सारा कंज्यूम हुआ माल वापस स्टॉक में जुड़ जाएगा। जारी रखें?')) return;
-    try {
-      const allConsumptions = StorageService.getItem('material_consumptions_v2') || [];
-      const targetBatch = allConsumptions.find(b => b.id === batchId);
-
-      if (targetBatch && targetBatch.items) {
-        const currentInventory = StorageService.getInventoryItems() || [];
-        let restoredInventory = [...currentInventory];
-        
-        targetBatch.items.forEach(item => {
-          restoredInventory = restoredInventory.map(inv => {
-            if (String(inv.id) === String(item.itemId)) {
-              return { ...inv, current_stock: Number(inv.current_stock || 0) + Number(item.qty) };
-            }
-            return inv;
-          });
-        });
-        StorageService.setItem('inventory_items', restoredInventory);
-      }
-
-      const filtered = allConsumptions.filter(b => b.id !== batchId);
-      StorageService.setItem('material_consumptions_v2', filtered);
-      setConsumptionList(filtered);
-      setFeedback({ type: 'success', message: '✓ Batch deleted & stock restored.' });
-    } catch (err) {
-      alert('Delete failed: ' + err.message);
+    const prodQtyNum = Number(producedQty);
+    if (!prodQtyNum || prodQtyNum <= 0) {
+      setErrorMsg('Please enter a valid produced quantity.');
+      return;
     }
+    if (materialCart.length === 0) {
+      setErrorMsg('Please add at least one consumed raw material.');
+      return;
+    }
+
+    const firmId = firm?.firm_id || 'default_firm';
+    const newBatch = {
+      id: 'BATCH-' + Date.now(),
+      date: productionDate,
+      batch_ref: batchRef,
+      output_item: selectedOutput,
+      produced_qty: prodQtyNum,
+      labor_cost: Number(laborCost) || 0,
+      overhead_cost: Number(overheadCost) || 0,
+      consumed_materials: materialCart,
+      timestamp: new Date().toISOString()
+    };
+
+    const updatedBatches = [newBatch, ...batchesList];
+    setBatchesList(updatedBatches);
+    localStorage.setItem(`app_production_batches_${firmId}`, JSON.stringify(updatedBatches));
+
+    setSuccessMsg(`✓ Production Batch ${batchRef} successfully recorded and stock adjusted!`);
+    
+    setBatchRef(`CHAMBER-${Math.floor(1000 + Math.random() * 9000)}`);
+    setProducedQty('');
+    setLaborCost('0');
+    setOverheadCost('0');
+    setMaterialCart([]);
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '16px', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', marginBottom: '16px', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h1 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>🚜 Multi-Item Fuel & Material Consumption</h1>
-          {onClose && <button onClick={onClose} style={{ padding: '6px 12px', borderRadius: '6px', cursor: 'pointer' }}>Close</button>}
-        </div>
-
-        {feedback && <div style={{ padding: '10px', marginBottom: '16px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#ecfdf5', color: feedback.type === 'error' ? '#991b1b' : '#065f46', fontWeight: 'bold' }}>{feedback.message}</div>}
-
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', boxSizing: 'border-box' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Date of Usage *</label>
-            <input type="date" value={usageDate} onChange={(e) => setUsageDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Vehicle / Chamber Ref *</label>
-            <input type="text" value={vehicleRef} onChange={(e) => setVehicleRef(e.target.value)} placeholder="e.g. Tractor-1" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '12px', fontFamily: 'sans-serif', boxSizing: 'border-box', width: '100%', maxWidth: '100vw', overflowX: 'hidden', color: '#0f172a' }}>
+      
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          {onClose && (
+            <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
+              ← Dashboard
+            </button>
+          )}
+          <div style={{ fontSize: '11px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
+            Firm: {firm?.legal_name || 'Neelkanth Int Udyog'}
           </div>
         </div>
+        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 800 }}>⚙️ Production & Raw Material Conversion</h1>
+      </div>
 
-        <div style={{ backgroundColor: '#f1f5f9', padding: '16px', borderRadius: '10px', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1e293b' }}>➕ Add Items to Consumption Cart</h3>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {errorMsg && <div style={{ marginBottom: '14px', padding: '12px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>{errorMsg}</div>}
+      {successMsg && <div style={{ marginBottom: '14px', padding: '12px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }}>{successMsg}</div>}
+
+      <form onSubmit={handleProcessProduction} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Production Date *</label>
+            <input type="date" value={productionDate} onChange={(e) => setProductionDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Batch / Chamber Ref *</label>
+            <input type="text" value={batchRef} onChange={(e) => setBatchRef(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+
+        <div style={{ backgroundColor: '#f0fdf4', padding: '12px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800, color: '#166534' }}>📦 Output Finished Product (तैयार माल)</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Select Stock Item</label>
-              <select value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '2px solid #eab308', boxSizing: 'border-box', backgroundColor: '#fff' }}>
-                <option value="">-- Choose Stock Item --</option>
-                {allItems.filter(i => i.item_type !== 'SERVICE').map(item => (
-                  <option key={item.id} value={item.id}>{item.item_name} [Stock: {item.current_stock || 0} {item.unit}]</option>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Select Output Item *</label>
+              <select value={selectedOutput} onChange={(e) => setSelectedOutput(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', backgroundColor: '#fff', boxSizing: 'border-box' }}>
+                <option value="">-- Choose Output --</option>
+                {finishedItems.map((item, idx) => (
+                  <option key={idx} value={item.name}>{item.name}</option>
                 ))}
               </select>
             </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Quantity</label>
-                <input type="number" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
-              </div>
-              <div style={{ flex: 2 }}>
-                <SearchableAccountDropdown
-                  label="Debit Expense Ledger"
-                  accounts={accountsList}
-                  value={expenseLedger}
-                  onChange={val => setExpenseLedger(val)}
-                  placeholder="Select expense account..."
-                  colorAccent="#dc2626"
-                />
-              </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Produced Qty *</label>
+              <input type="number" placeholder="e.g. 50000" value={producedQty} onChange={(e) => setProducedQty(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
             </div>
+          </div>
+        </div>
 
-            <button type="button" onClick={handleAddToCart} style={{ padding: '10px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }}>
-              + Add Item to Cart
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Direct Labor / Pathai Cost (₹)</label>
+            <input type="number" value={laborCost} onChange={(e) => setLaborCost(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Machinery & Overheads (₹)</label>
+            <input type="number" value={overheadCost} onChange={(e) => setOverheadCost(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+
+        <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>🔥 Consumed Raw Materials & Fuels (खपत होने वाला कच्चा माल)</h3>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '8px', alignItems: 'end' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Select Raw Material</label>
+              <select value={selectedMaterial} onChange={(e) => setSelectedMaterial(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', backgroundColor: '#fff', boxSizing: 'border-box' }}>
+                <option value="">-- Choose Raw Material --</option>
+                {rawMaterials.map((mat, idx) => (
+                  <option key={idx} value={mat.name}>
+                    {mat.name} [Stock: {mat.stock_qty || 0}]
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Qty</label>
+              <input type="number" placeholder="Qty" value={consumedQty} onChange={(e) => setConsumedQty(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+            </div>
+            <button type="button" onClick={handleAddMaterialToCart} style={{ padding: '10px 14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', height: '39px' }}>
+              + Add
             </button>
           </div>
 
-          {cart.length > 0 && (
-            <div style={{ marginTop: '16px', borderTop: '1px dashed #cbd5e1', paddingTop: '12px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', color: '#334155' }}>Items in Current Batch ({cart.length}):</div>
-              {cart.map((c, idx) => (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '8px 12px', borderRadius: '6px', marginBottom: '6px', border: '1px solid #cbd5e1' }}>
-                  <div>
-                    <strong style={{ fontSize: '13px', color: '#0f172a' }}>{c.itemName}</strong>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>Qty: {c.qty} {c.unit} | A/c: {c.expenseLedger}</div>
-                  </div>
-                  <button type="button" onClick={() => removeCartItem(c.id)} style={{ color: '#ef4444', background: 'none', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>X</button>
+          {materialCart.length > 0 && (
+            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {materialCart.map((item, index) => (
+                <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px' }}>
+                  <span><b>{item.name}</b> — Qty: {item.qty}</span>
+                  <button type="button" onClick={() => handleRemoveCartItem(index)} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>Remove</button>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        <button type="button" onClick={handleSubmitBatch} disabled={isSubmitting} style={{ width: '100%', padding: '14px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
-          🚀 Post All Consumptions & Deduct Stock
+        <button type="submit" style={{ width: '100%', padding: '14px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', marginTop: '6px' }}>
+          ⚡ Deduct Raw Materials & Add Finished Stock
         </button>
-      </div>
-      
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-        <h2 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>📋 Consumption Batches Register ({consumptionList.length})</h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {consumptionList.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '12px' }}>No consumption batches recorded yet.</div>
-          ) : (
-            consumptionList.map(batch => (
-              <div key={batch.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
-                  <div>
-                    <span style={{ fontSize: '10px', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', marginRight: '6px' }}>{batch.usageDate}</span>
-                    <strong style={{ fontSize: '12px', color: '#0f172a' }}>Ref: {batch.vehicleRef}</strong>
-                  </div>
-                  <button onClick={() => handleDeleteBatch(batch.id)} style={{ padding: '4px 8px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}>🗑️ Delete Batch</button>
+
+      </form>
+
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0' }}>
+        <h3 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 800 }}>📋 Production Batches Register ({batchesList.length})</h3>
+        {batchesList.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '12px', padding: '10px' }}>No production batches recorded yet.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {batchesList.map((batch, idx) => (
+              <div key={idx} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '4px' }}>
+                  <span>{batch.batch_ref} ({batch.date})</span>
+                  <span style={{ color: '#166534' }}>{batch.output_item}: +{batch.produced_qty} Pcs</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {(batch.items || []).map((item, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#334155' }}>
-                      <span>• {item.itemName} (<b>{item.qty} {item.unit}</b>)</span>
-                      <span style={{ color: '#0284c7' }}>{item.expenseLedger}</span>
-                    </div>
-                  ))}
+                <div style={{ color: '#64748b' }}>
+                  Labor/Overhead: ₹{batch.labor_cost + batch.overhead_cost} | Consumed Items: {batch.consumed_materials?.map(m => `${m.name} (${m.qty})`).join(', ')}
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
+
     </div>
   );
 }
