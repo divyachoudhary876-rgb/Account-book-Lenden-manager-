@@ -1,432 +1,77 @@
-// frontend/src/utils/stockInventoryEngine.js
-
-import { saveUniversalVoucher } from './voucherPostingEngine.js';
+// frontend/src/utils/stockinventoryEngine.js
 
 /**
- * Standard Units of Measurement for Brick Kiln, Biomass, and Transport
+ * Get stock items strictly filtered by the currently active Firm ID or Firm Name
  */
-export const STANDARD_MEASUREMENT_UNITS = [
-  { code: 'Pcs', label: 'Pieces (नग / ईंटें)', allowDecimal: false },
-  { code: 'MT', label: 'Metric Ton (टन - बायोमास / कोयला)', allowDecimal: true },
-  { code: 'Ltr', label: 'Liters (लीटर - डीजल)', allowDecimal: true },
-  { code: 'Trip', label: 'Trip (फेरा - ट्रैक्टर / ढुलाई)', allowDecimal: false },
-  { code: 'Kg', label: 'Kilograms (किलोग्राम)', allowDecimal: true },
-  { code: 'Brass', label: 'Brass (ब्रास - मिट्टी / रेत)', allowDecimal: true }
-];
+export const getActiveFirmStockItems = (activeFirmInput) => {
+  let activeFirmId = 'FIRM-001';
+  let activeFirmName = '';
 
-/**
- * Retrieves firm stock inventory items with initial fallback catalog
- */
-export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
-  const stockKey = `app_stock_${firmId}`;
-  try {
-    const raw = localStorage.getItem(stockKey);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch (e) {
-    console.error('Error reading stock items from local storage:', e);
+  if (typeof activeFirmInput === 'string') {
+    activeFirmName = activeFirmInput.trim().toLowerCase();
+    activeFirmId = activeFirmInput.trim();
+  } else if (activeFirmInput && typeof activeFirmInput === 'object') {
+    activeFirmId = activeFirmInput.id || activeFirmInput.firm_id || 'FIRM-001';
+    activeFirmName = (activeFirmInput.legal_name || activeFirmInput.trade_name || activeFirmInput.name || '').trim().toLowerCase();
   }
 
-  const defaultStock = [
-    { id: 'STK-001', item_name: 'Pakki Eent (1st Class Bricks)', current_stock: 50000, unit: 'Pcs', selling_price: 6.50, unit_purchase_price: 4.50, hsn: '69010010', is_service: false },
-    { id: 'STK-002', item_name: 'Kachhi Eent (Raw Bricks)', current_stock: 45000, unit: 'Pcs', selling_price: 3.20, unit_purchase_price: 2.10, hsn: '69010010', is_service: false },
-    { id: 'STK-003', item_name: 'Biomass Briquettes (White Coal)', current_stock: 120, unit: 'MT', selling_price: 5200, unit_purchase_price: 4100, hsn: '44013900', is_service: false },
-    { id: 'STK-004', item_name: 'Diesel (Fuel Stock)', current_stock: 500, unit: 'Ltr', selling_price: 92, unit_purchase_price: 88, hsn: '27101944', is_service: false },
-    { id: 'STK-005', item_name: 'Tractor / Transport Freight Charge', current_stock: 999999, unit: 'Trip', selling_price: 1500, unit_purchase_price: 1500, hsn: '996511', is_service: true }
-  ];
-  localStorage.setItem(stockKey, JSON.stringify(defaultStock));
-  return defaultStock;
-};
+  let rawItems = [];
+  const stockKeys = ['inventory_items', 'stock_master', 'items_list', 'stock_items'];
 
-/**
- * 1. MASTER STOCK ITEM CRUD: CREATE / UPDATE ITEM
- */
-export const saveStockItemMaster = (firmId = 'FIRM-001', itemPayload = {}) => {
-  const stockKey = `app_stock_${firmId}`;
-  const stockList = getStockItemsByFirm(firmId);
-
-  const cleanName = (itemPayload.item_name || '').trim();
-  if (!cleanName) {
-    throw new Error('Item name cannot be empty.');
-  }
-
-  const cleanStock = parseFloat(itemPayload.current_stock || 0);
-  const cleanSellingPrice = parseFloat(itemPayload.selling_price || 0);
-  const cleanPurchasePrice = parseFloat(itemPayload.unit_purchase_price || 0);
-  const isService = Boolean(itemPayload.is_service);
-
-  if (cleanStock < 0) {
-    throw new Error('Opening stock balance cannot be negative.');
-  }
-
-  const existingIdx = stockList.findIndex(
-    s => s.id === itemPayload.id || s.item_name.toLowerCase() === cleanName.toLowerCase()
-  );
-
-  const updatedItem = {
-    id: itemPayload.id || `STK-${Date.now()}`,
-    item_name: cleanName,
-    current_stock: cleanStock,
-    unit: itemPayload.unit || 'Pcs',
-    selling_price: cleanSellingPrice,
-    unit_purchase_price: cleanPurchasePrice,
-    hsn: (itemPayload.hsn || '69010010').trim(),
-    is_service: isService,
-    updated_at: new Date().toISOString()
-  };
-
-  if (existingIdx !== -1) {
-    stockList[existingIdx] = updatedItem;
-  } else {
-    stockList.push(updatedItem);
-  }
-
-  localStorage.setItem(stockKey, JSON.stringify(stockList));
-  window.dispatchEvent(new Event('stock_updated'));
-  window.dispatchEvent(new Event('app_state_updated'));
-
-  return updatedItem;
-};
-
-/**
- * 2. MASTER STOCK ITEM CRUD: DELETE ITEM
- */
-export const deleteStockItemMaster = (firmId = 'FIRM-001', itemId = '') => {
-  const stockKey = `app_stock_${firmId}`;
-  const stockList = getStockItemsByFirm(firmId);
-  const targetItem = stockList.find(s => s.id === itemId);
-
-  if (!targetItem) {
-    throw new Error('Stock item not found.');
-  }
-
-  // Safety Check: Verify if item is referenced in sales invoices
-  const salesHistory = JSON.parse(localStorage.getItem(`app_sales_invoices_${firmId}`) || '[]');
-  const isUsedInSales = salesHistory.some(inv => {
-    if (Array.isArray(inv.items)) {
-      return inv.items.some(it => it.item_name === targetItem.item_name);
-    }
-    return inv.item_name === targetItem.item_name;
+  // 1. Fetch from known stock storage keys
+  stockKeys.forEach(k => {
+    try {
+      const val = JSON.parse(localStorage.getItem(k) || '[]');
+      if (Array.isArray(val)) rawItems.push(...val);
+    } catch (e) {}
   });
 
-  if (isUsedInSales) {
-    throw new Error(
-      `Cannot delete "${targetItem.item_name}". It is referenced in existing sales invoices.`
-    );
-  }
-
-  const filtered = stockList.filter(s => s.id !== itemId);
-  localStorage.setItem(stockKey, JSON.stringify(filtered));
-
-  window.dispatchEvent(new Event('stock_updated'));
-  window.dispatchEvent(new Event('app_state_updated'));
-
-  return true;
-};
-
-/**
- * 3. RAW MATERIAL & FUEL CONSUMPTION ENGINE
- */
-export const recordStockConsumption = (firmId = 'FIRM-001', payload = {}) => {
-  const {
-    item_name,
-    quantity = 0,
-    consumption_date = new Date().toISOString().split('T')[0],
-    expense_account = 'Manufacturing & Fuel Expense',
-    batch_ref = '',
-    remarks = ''
-  } = payload;
-
-  const cleanQty = parseFloat(quantity || 0);
-  if (cleanQty <= 0) {
-    throw new Error('Consumption quantity must be greater than zero.');
-  }
-
-  if (!item_name || !item_name.trim()) {
-    throw new Error('Please select a material or fuel item.');
-  }
-
-  const stockKey = `app_stock_${firmId}`;
-  const stockList = getStockItemsByFirm(firmId);
-  const itemIndex = stockList.findIndex(s => s.item_name === item_name.trim());
-
-  if (itemIndex === -1) {
-    throw new Error(`Item "${item_name}" not found in stock master.`);
-  }
-
-  const targetItem = stockList[itemIndex];
-
-  // Negative Stock Guard
-  if (!targetItem.is_service) {
-    const currentQty = parseFloat(targetItem.current_stock || 0);
-    if (currentQty < cleanQty) {
-      throw new Error(
-        `⛔ Insufficient Stock! Cannot consume ${cleanQty} ${targetItem.unit}.\n` +
-        `Current available stock is only ${currentQty} ${targetItem.unit}.`
-      );
-    }
-    stockList[itemIndex].current_stock = parseFloat((currentQty - cleanQty).toFixed(3));
-  }
-
-  const unitCost = parseFloat(targetItem.unit_purchase_price || targetItem.selling_price || 0);
-  const totalCost = parseFloat((cleanQty * unitCost).toFixed(2));
-  const vchNumber = batch_ref.trim() || `CON-${Date.now().toString().slice(-6)}`;
-
-  localStorage.setItem(stockKey, JSON.stringify(stockList));
-
-  saveUniversalVoucher(firmId, {
-    voucher_type: 'JOURNAL',
-    voucher_date: consumption_date,
-    dr_account: expense_account.trim(),
-    cr_account: `${item_name.trim()} (Inventory A/c)`,
-    amount: totalCost > 0 ? totalCost : 1.00,
-    reference_no: vchNumber,
-    narration: `Material Consumed: ${cleanQty} ${targetItem.unit} of ${item_name} ${remarks ? `(${remarks})` : ''}`
-  });
-
-  const consumptionKey = `app_material_consumption_${firmId}`;
-  const existingLogs = JSON.parse(localStorage.getItem(consumptionKey) || '[]');
-  const logRecord = {
-    id: `CON-LOG-${Date.now()}`,
-    voucher_ref: vchNumber,
-    date: consumption_date,
-    item_name: item_name.trim(),
-    quantity: cleanQty,
-    unit: targetItem.unit,
-    unit_cost: unitCost,
-    total_cost: totalCost,
-    expense_account: expense_account.trim(),
-    remarks: remarks.trim()
-  };
-
-  existingLogs.push(logRecord);
-  localStorage.setItem(consumptionKey, JSON.stringify(existingLogs));
-
-  window.dispatchEvent(new Event('stock_updated'));
-  window.dispatchEvent(new Event('app_state_updated'));
-
-  return logRecord;
-};
-
-/**
- * 4. MULTI-ITEM SALES INVOICING ENGINE
- */
-export const recordMultiItemSale = (firmId = 'FIRM-001', payload = {}) => {
-  const {
-    invoice_no,
-    invoice_date = new Date().toISOString().split('T')[0],
-    customer_name,
-    customer_phone = '',
-    vehicle_no = '',
-    items = []
-  } = payload;
-
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    throw new Error('At least one item must be added to the invoice.');
-  }
-
-  if (!customer_name || !customer_name.trim()) {
-    throw new Error('Customer account selection is mandatory.');
-  }
-
-  const stockKey = `app_stock_${firmId}`;
-  const stockList = getStockItemsByFirm(firmId);
-
-  // Strict Negative Stock Verification Across All Lines
-  for (let i = 0; i < items.length; i++) {
-    const line = items[i];
-    const qty = parseFloat(line.quantity || 0);
-    const rate = parseFloat(line.rate || 0);
-
-    if (qty <= 0) throw new Error(`Row #${i + 1} (${line.item_name}): Quantity must be greater than zero.`);
-    if (rate < 0) throw new Error(`Row #${i + 1} (${line.item_name}): Rate cannot be negative.`);
-
-    const stockItem = stockList.find(s => s.item_name === line.item_name);
-    if (stockItem && !stockItem.is_service) {
-      const avail = parseFloat(stockItem.current_stock || 0);
-      if (avail < qty) {
-        throw new Error(
-          `⛔ Negative Stock Blocked!\nItem: "${stockItem.item_name}"\n` +
-          `Available: ${avail} ${stockItem.unit}\n` +
-          `Requested: ${qty} ${stockItem.unit}`
-        );
+  // 2. Deep scan localStorage for any stock/inventory related keys
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.includes('stock') || key.includes('inventory') || key.includes('item'))) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) rawItems.push(...parsed);
+        } catch (err) {}
       }
     }
   }
 
-  let totalTaxable = 0;
-  items.forEach(line => {
-    const qty = parseFloat(line.quantity);
-    const rate = parseFloat(line.rate);
-    totalTaxable += (qty * rate);
-
-    const stockIdx = stockList.findIndex(s => s.item_name === line.item_name);
-    if (stockIdx !== -1 && !stockList[stockIdx].is_service) {
-      const current = parseFloat(stockList[stockIdx].current_stock || 0);
-      stockList[stockIdx].current_stock = parseFloat((current - qty).toFixed(3));
+  // 3. Deduplicate items by ID or name
+  const uniqueMap = new Map();
+  rawItems.forEach(item => {
+    if (!item) return;
+    const uKey = item.id || item.item_name || item.name;
+    if (uKey && !uniqueMap.has(uKey)) {
+      uniqueMap.set(uKey, item);
     }
   });
 
-  const cgst = parseFloat((totalTaxable * 0.025).toFixed(2));
-  const sgst = parseFloat((totalTaxable * 0.025).toFixed(2));
-  const grandTotal = parseFloat((totalTaxable + cgst + sgst).toFixed(2));
+  const allItems = Array.from(uniqueMap.values());
 
-  localStorage.setItem(stockKey, JSON.stringify(stockList));
+  // 4. STRICT FIRM ISOLATION FILTER
+  const filteredItems = allItems.filter(item => {
+    const itemFirmId = String(item.firm_id || item.company_id || '').trim();
+    const itemFirmName = String(item.firm_name || item.company_name || '').trim().toLowerCase();
 
-  const compoundEntries = [
-    { type: 'Dr', account_name: customer_name.trim(), amount: grandTotal },
-    { type: 'Cr', account_name: 'Sales Account (बिक्री खाता)', amount: totalTaxable }
-  ];
-
-  if (cgst > 0) compoundEntries.push({ type: 'Cr', account_name: 'Output CGST Account (2.5%)', amount: cgst });
-  if (sgst > 0) compoundEntries.push({ type: 'Cr', account_name: 'Output SGST Account (2.5%)', amount: sgst });
-
-  saveUniversalVoucher(firmId, {
-    voucher_type: 'JOURNAL',
-    voucher_date: invoice_date,
-    reference_no: invoice_no,
-    narration: `Tax Invoice #${invoice_no} | Dispatched to ${customer_name} ${vehicle_no ? `[${vehicle_no}]` : ''}`,
-    is_compound: true,
-    entries: compoundEntries
-  });
-
-  const invRegistryKey = `app_sales_invoices_${firmId}`;
-  const existingInvoices = JSON.parse(localStorage.getItem(invRegistryKey) || '[]');
-  const savedInvoice = {
-    id: `INV-${Date.now()}`,
-    invoice_no,
-    date: invoice_date,
-    party: customer_name.trim(),
-    customer_phone: customer_phone.trim(),
-    vehicle_no: vehicle_no.trim(),
-    items,
-    taxable_amount: totalTaxable,
-    cgst,
-    sgst,
-    grand_total: grandTotal,
-    total: grandTotal,
-    type: 'SALE'
-  };
-
-  existingInvoices.push(savedInvoice);
-  localStorage.setItem(invRegistryKey, JSON.stringify(existingInvoices));
-
-  window.dispatchEvent(new Event('stock_updated'));
-  window.dispatchEvent(new Event('app_state_updated'));
-
-  return savedInvoice;
-};
-
-/**
- * 5. SINGLE-ITEM SALES ENGINE (Legacy Compatibility)
- */
-export const recordStockSale = (firmId = 'FIRM-001', payload = {}) => {
-  const {
-    invoice_no = `INV-${Date.now().toString().slice(-6)}`,
-    invoice_date = new Date().toISOString().split('T')[0],
-    customer_name,
-    item_name,
-    quantity,
-    selling_rate,
-    vehicle_no = ''
-  } = payload;
-
-  return recordMultiItemSale(firmId, {
-    invoice_no,
-    invoice_date,
-    customer_name,
-    vehicle_no,
-    items: [
-      {
-        item_name,
-        quantity: parseFloat(quantity || 0),
-        rate: parseFloat(selling_rate || 0),
-        hsn: '69010010'
-      }
-    ]
-  });
-};
-
-/**
- * 6. PURCHASE INWARD ENGINE
- */
-export const recordStockPurchase = (firmId = 'FIRM-001', payload = {}) => {
-  const {
-    bill_ref = `PUR-${Date.now().toString().slice(-6)}`,
-    purchase_date = new Date().toISOString().split('T')[0],
-    supplier_name,
-    item_name,
-    quantity = 0,
-    purchase_rate = 0,
-    vehicle_no = ''
-  } = payload;
-
-  const cleanQty = parseFloat(quantity || 0);
-  const cleanRate = parseFloat(purchase_rate || 0);
-
-  if (cleanQty <= 0) throw new Error('Purchase quantity must be greater than zero.');
-  if (cleanRate <= 0) throw new Error('Purchase rate must be greater than zero.');
-  if (!supplier_name || !supplier_name.trim()) throw new Error('Supplier name is mandatory.');
-  if (!item_name || !item_name.trim()) throw new Error('Stock item is mandatory.');
-
-  const stockKey = `app_stock_${firmId}`;
-  const stockList = getStockItemsByFirm(firmId);
-
-  const itemIdx = stockList.findIndex(s => s.item_name === item_name.trim());
-  if (itemIdx !== -1) {
-    if (!stockList[itemIdx].is_service) {
-      const current = parseFloat(stockList[itemIdx].current_stock || 0);
-      stockList[itemIdx].current_stock = parseFloat((current + cleanQty).toFixed(3));
+    if (itemFirmId && activeFirmId && itemFirmId !== 'FIRM-001' && activeFirmId !== 'FIRM-001') {
+      return itemFirmId === activeFirmId || itemFirmName === activeFirmName;
     }
-    stockList[itemIdx].unit_purchase_price = cleanRate;
-  } else {
-    stockList.push({
-      id: `STK-${Date.now()}`,
-      item_name: item_name.trim(),
-      current_stock: cleanQty,
-      unit: 'Units',
-      selling_price: parseFloat((cleanRate * 1.25).toFixed(2)),
-      unit_purchase_price: cleanRate,
-      hsn: '69010010',
-      is_service: false
-    });
-  }
 
-  const grossTotal = parseFloat((cleanQty * cleanRate).toFixed(2));
-  localStorage.setItem(stockKey, JSON.stringify(stockList));
+    if (itemFirmName && activeFirmName) {
+      return itemFirmName === activeFirmName;
+    }
 
-  saveUniversalVoucher(firmId, {
-    voucher_type: 'JOURNAL',
-    voucher_date: purchase_date,
-    dr_account: 'Purchase Account (खरीद खाता)',
-    cr_account: supplier_name.trim(),
-    amount: grossTotal,
-    reference_no: bill_ref,
-    narration: `Inward Goods Received #${bill_ref} | ${item_name} (${cleanQty} units @ ₹${cleanRate})`
+    return true; 
   });
 
-  const purRegistryKey = `app_purchase_bills_${firmId}`;
-  const existingBills = JSON.parse(localStorage.getItem(purRegistryKey) || '[]');
-  const savedPurchase = {
-    id: `PUR-${Date.now()}`,
-    bill_ref,
-    date: purchase_date,
-    party: supplier_name.trim(),
-    item_name: item_name.trim(),
-    quantity: cleanQty,
-    rate: cleanRate,
-    total: grossTotal,
-    vehicle_no: vehicle_no.trim(),
-    type: 'PURCHASE'
-  };
-
-  existingBills.push(savedPurchase);
-  localStorage.setItem(purRegistryKey, JSON.stringify(existingBills));
-
-  window.dispatchEvent(new Event('stock_updated'));
-  window.dispatchEvent(new Event('app_state_updated'));
-
-  return savedPurchase;
+  return filteredItems;
 };
+
+// Universal Aliases to support multiple component import naming conventions
+export const getStockItems = getActiveFirmStockItems;
+export const fetchInventoryItems = getActiveFirmStockItems;
+export const getStockInventory = getActiveFirmStockItems;
