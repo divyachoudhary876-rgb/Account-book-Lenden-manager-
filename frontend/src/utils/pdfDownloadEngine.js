@@ -18,7 +18,7 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * Convert ArrayBuffer to Base64 safely without text encoding corruption
+ * Safely convert ArrayBuffer to Base64 without text encoding corruption
  */
 const arrayBufferToBase64 = (buffer) => {
   let binary = '';
@@ -31,14 +31,13 @@ const arrayBufferToBase64 = (buffer) => {
 };
 
 /**
- * 100% Corruption-Free True PDF Exporter using ArrayBuffer Binary Stream
+ * 100% Corruption-Free True PDF Exporter (ArrayBuffer Binary Stream)
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fullFileName = `${cleanName}_${Date.now()}.pdf`;
 
   try {
-    // Generate pure binary ArrayBuffer directly from jsPDF
     const pdfArrayBuffer = doc.output('arraybuffer');
 
     // 1. Mobile Capacitor Native Environment (Android/iOS)
