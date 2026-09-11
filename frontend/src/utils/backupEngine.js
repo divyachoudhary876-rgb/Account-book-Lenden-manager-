@@ -4,7 +4,7 @@ import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 
 /**
- * Safe Firm Name Resolver
+ * Safe Firm Name Resolver from string or object parameters
  */
 const resolveFirmNameString = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') {
@@ -17,7 +17,7 @@ const resolveFirmNameString = (firmInput) => {
 };
 
 /**
- * 1. Export structured JSON backup with complete metadata
+ * 1. Export application state as a robust, versioned JSON backup
  */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
@@ -45,7 +45,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: {
         app: "AccountBook",
         firm: cleanFirm,
-        version: "1.0.9",
+        version: "1.0.10",
         export_timestamp: now.toISOString()
       },
       stats: {
@@ -97,7 +97,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. Crash-Proof Safe Restore Engine with Optional Chaining
+ * 2. Ultra-Safe, Backward-Compatible Restore Engine
  */
 export const restoreAppBackupFromFile = (rawFileEventOrFile, callback) => {
   try {
@@ -120,42 +120,54 @@ export const restoreAppBackupFromFile = (rawFileEventOrFile, callback) => {
       try {
         const fileContent = JSON.parse(event.target.result);
         
-        // SAFE OPTIONAL CHAINING TO PREVENT 'reading stats' CRASH
+        // SAFE OPTIONAL CHAINING: Handles both old v1.0.6 and new v1.0.10 structures without crashing
         const backupVersion = fileContent?.meta?.version || "1.0.0";
-        const backupStats = fileContent?.stats || {};
-        console.log(`Restoring version ${backupVersion}, stats:`, backupStats);
+        console.log(`Restoring backup version: ${backupVersion}`);
 
-        // Extract target data safely supporting multiple JSON structures
+        // UNIVERSAL DATA RESOLVER: Handles wrapped `.data` or raw flat JSON structures
         let targetData = null;
-        if (fileContent?.data && typeof fileContent.data === 'object') {
-          targetData = fileContent.data;
-        } else if (typeof fileContent === 'object') {
-          targetData = fileContent;
+        if (fileContent && typeof fileContent === 'object') {
+          if (fileContent.data && typeof fileContent.data === 'object' && !Array.isArray(fileContent.data)) {
+            targetData = fileContent.data;
+          } else if (fileContent.app_firms_registry || fileContent.account_book_vouchers) {
+            targetData = fileContent; // Flat structure support
+          } else {
+            targetData = fileContent;
+          }
         }
 
         if (!targetData || typeof targetData !== 'object' || Array.isArray(targetData)) {
           throw new Error("Invalid backup schema structure.");
         }
 
-        // Migration wrapper for older formats
-        if (Array.isArray(targetData.inventory_items)) {
-          targetData.inventory_items = targetData.inventory_items.map(item => ({
-            ...item,
-            firm_id: item?.firm_id || 'FIRM-001'
-          }));
-        }
+        // Migration Wrapper: Ensure all inventory items have firm isolation tags
+        Object.keys(targetData).forEach(key => {
+          const val = targetData[key];
+          if (Array.isArray(val)) {
+            targetData[key] = val.map(item => {
+              if (item && typeof item === 'object') {
+                return {
+                  ...item,
+                  firm_id: item?.firm_id || targetData.app_active_firm_id || 'FIRM-001'
+                };
+              }
+              return item;
+            });
+          }
+        });
 
-        // Inject into localStorage
+        // Write directly into localStorage
         Object.keys(targetData).forEach(key => {
           const val = targetData[key];
           const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
           localStorage.setItem(key, stringifiedVal);
         });
 
+        // Dispatch global events to instantly refresh UI components
         window.dispatchEvent(new Event('app_storage_updated'));
         window.dispatchEvent(new Event('app_state_updated'));
 
-        if (callback) callback({ success: true, message: "Backup restored successfully!" });
+        if (callback) callback({ success: true, message: "Backup restored and migrated successfully!" });
       } catch (parseErr) {
         console.error("Restore Parsing Failed:", parseErr);
         if (callback) callback({ success: false, message: `Restore Failed: ${parseErr.message}` });
