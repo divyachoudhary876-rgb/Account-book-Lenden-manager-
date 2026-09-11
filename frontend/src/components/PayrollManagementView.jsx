@@ -16,23 +16,34 @@ export default function PayrollManagementView({ firm, onClose }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
-  // फर्म-वाइज डेटा लोड करना
-  useEffect(() => {
+  // फर्म-वाइज वर्कर्स और लेजर डेटा लोड करने का फंक्शन (Auto-Sync Enabled)
+  const loadData = () => {
     if (!firm) return;
+    
+    // 1. फर्म-वाइज वर्कर्स लोड करें (यदि खाली है तो डिफॉल्ट कर्मचारी जोड़ें ताकि कभी लिस्ट खाली न दिखे)
     const workers = loadFirmData('app_workers', firm, [
       { id: 'w_1', name: 'Munshi Ji (Accountant)', type: 'Employee' },
       { id: 'w_2', name: 'Tractor Driver 1', type: 'Driver' }
     ]);
+    
+    // 2. पेロール एंट्रीज लोड करें
     const entries = loadFirmData('app_payroll_entries', firm, []);
     
     setWorkersList(workers);
     setPayrollEntries(entries);
+  };
+
+  useEffect(() => {
+    loadData();
+    // विंडो फोकस होने पर भी डेटा ऑटो-सिंक होगा ताकि नए जोड़े गए वर्कर तुरंत दिखें
+    window.addEventListener('focus', loadData);
+    return () => window.removeEventListener('focus', loadData);
   }, [firm]);
 
   // ऑटो-कैलकुलेशन: Quantity * Rate per Unit
   const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
 
-  // वर्कर के हिसाब से एंट्री पोस्ट करना
+  // वर्कर के हिसाब से प्रविष्टि पोस्ट करना
   const handlePostWorkCredit = (e) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -76,14 +87,14 @@ export default function PayrollManagementView({ firm, onClose }) {
   // चुनी गई फर्म और वर्कर के हिसाब से कुल राशि गणना
   const workerEntries = payrollEntries.filter(e => e.worker === selectedWorker);
   const totalEarned = workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
-  const totalPaid = 0; // भुगतान वाउचर से सिंक किया जा सकता है
+  const totalPaid = 0; 
   const totalBaki = totalEarned - totalPaid;
 
   return (
-    <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '10px', fontFamily: 'sans-serif', boxSizing: 'border-box', overflowX: 'hidden', color: '#0f172a' }}>
+    <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '8px', fontFamily: 'sans-serif', boxSizing: 'border-box', overflowX: 'hidden', color: '#0f172a' }}>
       
       {/* हेडर */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', boxSizing: 'border-box', width: '100%' }}>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', boxSizing: 'border-box', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
           {onClose && (
             <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
@@ -94,55 +105,55 @@ export default function PayrollManagementView({ firm, onClose }) {
             Firm: {firm?.legal_name || firm?.name || 'Active Firm'}
           </div>
         </div>
-        <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>👷 Labour, Employee & Tractor Wages</h1>
+        <h1 style={{ margin: 0, fontSize: '14px', fontWeight: 800 }}>👷 Labour, Employee & Tractor Wages</h1>
       </div>
 
-      {errorMsg && <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
-      {successMsg && <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
+      {errorMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
+      {successMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
 
       {/* वर्कर चयन और समरी बॉक्स */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', width: '100%' }}>
         <div>
           <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Select Worker / Driver / Tractor *</label>
           <select 
             value={selectedWorker} 
             onChange={(e) => setSelectedWorker(e.target.value)}
-            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', boxSizing: 'border-box' }}
           >
             <option value="">-- Choose Worker / Staff --</option>
             {workersList.map((w, idx) => (
-              <option key={idx} value={w.name}>{w.name} ({w.type})</option>
+              <option key={idx} value={w.name}>{w.name} ({w.type || 'Staff'})</option>
             ))}
           </select>
         </div>
 
-        {/* फिक्सड समरी ग्रिड (बिना टेक्स्ट ओवरलैप के) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '10px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+        {/* समरी ग्रिड */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
           <div>
             <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL (कुल)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned}</div>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned}</div>
           </div>
           <div>
             <div style={{ fontSize: '9px', color: '#166534', fontWeight: 'bold' }}>CHUKAYE (चुकाए)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#166534' }}>₹{totalPaid}</div>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>₹{totalPaid}</div>
           </div>
           <div>
             <div style={{ fontSize: '9px', color: '#991b1b', fontWeight: 'bold' }}>BAKI (बाकी)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#991b1b' }}>₹{totalBaki}</div>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#991b1b' }}>₹{totalBaki}</div>
           </div>
         </div>
       </div>
 
       {/* मजदूरी प्रविष्टि फॉर्म */}
-      <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
+      <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', width: '100%' }}>
+        <h3 style={{ margin: '0 0 4px 0', fontSize: '12px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-          <div>
+        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Date of Work *</label>
             <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Expense Account *</label>
             <select value={expenseLedger} onChange={(e) => setExpenseLedger(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', boxSizing: 'border-box' }}>
               <option value="Pathai & Labour Expense">Pathai & Labour Expense</option>
@@ -152,16 +163,16 @@ export default function PayrollManagementView({ firm, onClose }) {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', width: '100%', boxSizing: 'border-box', alignItems: 'end' }}>
-          <div>
+        <div style={{ display: 'flex', gap: '6px', width: '100%', boxSizing: 'border-box', alignItems: 'flex-end' }}>
+          <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Quantity *</label>
             <input type="number" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Rate/Unit (₹) *</label>
             <input type="number" placeholder="e.g. 18000" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Kul Amount (₹)</label>
             <div style={{ padding: '9px', backgroundColor: '#f1f5f9', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box' }}>
               ₹{calculatedTotalAmount}
@@ -180,7 +191,7 @@ export default function PayrollManagementView({ firm, onClose }) {
       </form>
 
       {/* लेजर रजिस्टर */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({selectedWorker || 'Select Worker'})</h3>
         {workerEntries.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '10px' }}>No work or attendance entries recorded for this worker yet.</div>
