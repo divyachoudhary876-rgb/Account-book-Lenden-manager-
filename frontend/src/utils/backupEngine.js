@@ -1,9 +1,12 @@
 // frontend/src/utils/backupEngine.js
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
 
 /**
- * 1. Export all application storage data as a structured JSON backup file
+ * 1. Export all application storage data as a structured JSON backup file with Unique Timestamp
  */
-export const downloadAppBackup = () => {
+export const downloadAppBackup = async (firmName = 'Neelkanth_Groups') => {
   try {
     const storageSnapshot = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -18,22 +21,59 @@ export const downloadAppBackup = () => {
       }
     }
 
+    const cleanFirm = String(firmName).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    // Add exact hours, minutes, and seconds so today's multiple backups never overwrite each other
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+    const fileName = `${cleanFirm}_Backup_${dateStr}_${timeStr}.json`;
+
     const backupPayload = {
       meta: {
         app: "AccountBook",
-        version: "1.0.4",
-        export_timestamp: new Date().toISOString()
+        firm: cleanFirm,
+        version: "1.0.6",
+        export_timestamp: now.toISOString()
       },
       data: storageSnapshot
     };
 
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupPayload, null, 2));
+    const jsonString = JSON.stringify(backupPayload, null, 2);
+
+    // 1. Mobile Capacitor Native Environment (Android/iOS)
+    if (Capacitor.isNativePlatform()) {
+      const writeResult = await Filesystem.writeFile({
+        path: fileName,
+        data: jsonString,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8
+      });
+
+      if (writeResult && writeResult.uri) {
+        await Share.share({
+          title: 'Account Book Backup',
+          text: `Secure Backup File: ${fileName}`,
+          url: writeResult.uri,
+          dialogTitle: 'Save or Share Backup File'
+        });
+        return { success: true, message: "Backup generated and ready to save!" };
+      }
+    }
+
+    // 2. Standard Web Browser Download via Blob
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+    const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `AccountBook_Backup_${new Date().toISOString().slice(0, 10)}.json`);
+    downloadAnchor.href = blobUrl;
+    downloadAnchor.setAttribute("download", fileName);
+    downloadAnchor.style.display = 'none';
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
-    downloadAnchor.remove();
+
+    setTimeout(() => {
+      document.body.removeChild(downloadAnchor);
+      URL.revokeObjectURL(blobUrl);
+    }, 1500);
 
     return { success: true, message: "Backup downloaded successfully!" };
   } catch (err) {
@@ -87,6 +127,6 @@ export const restoreAppBackupFromFile = (file, callback) => {
   reader.readAsText(file);
 };
 
-// --- UNIVERSAL ALIASES TO RESOLVE BUILD IMPORT MISMATCHES ---
+// Universal Aliases
 export const exportUniversalBackup = downloadAppBackup;
 export const restoreUniversalBackup = restoreAppBackupFromFile;
