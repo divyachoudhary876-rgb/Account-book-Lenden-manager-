@@ -1,7 +1,7 @@
-// frontend/src/utils/stockinventoryEngine.js
+// frontend/src/utils/stockinventory.js
 
 /**
- * Get stock items strictly filtered by the currently active Firm ID or Firm Name
+ * Core engine to get stock items strictly filtered by the active Firm ID or Firm Name
  */
 export const getActiveFirmStockItems = (activeFirmInput) => {
   let activeFirmId = 'FIRM-001';
@@ -71,7 +71,8 @@ export const getActiveFirmStockItems = (activeFirmInput) => {
   return filteredItems;
 };
 
-// Universal Aliases to support multiple component import naming conventions
+// --- UNIVERSAL EXPORT ALIASES TO RESOLVE BUILD IMPORT ERRORS ---
+export const getStockItemsByFirm = getActiveFirmStockItems;
 export const getStockItems = getActiveFirmStockItems;
 export const fetchInventoryItems = getActiveFirmStockItems;
 export const getStockInventory = getActiveFirmStockItems;
