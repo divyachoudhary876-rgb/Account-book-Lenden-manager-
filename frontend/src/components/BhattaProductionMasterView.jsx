@@ -21,14 +21,21 @@ export default function ProductionConversionView({ firm, onClose }) {
   const [successMsg, setSuccessMsg] = useState(null);
   const [batchesList, setBatchesList] = useState([]);
 
-  useEffect(() => {
+  // फर्म-वाइज इन्वेंट्री लोड करने का सुरक्षित फंक्शन (Auto-Sync Enabled)
+  const loadInventoryAndBatches = () => {
     if (!firm) return;
     try {
       const savedStock = loadFirmData('app_inventory', firm, []);
       const savedBatches = loadFirmData('app_production_batches', firm, []);
-      
-      setRawMaterials(savedStock.filter(i => i.type === 'raw' || !i.is_finished));
-      setFinishedItems(savedStock.filter(i => i.type === 'finished' || i.is_finished));
+
+      // यदि स्टॉक एन्ट्रीज मौजूद हैं, तो उन्हें बिना सख्त फिल्टर के फ्लेक्सिबल तरीके से बांटें
+      // ताकि कच्चा माल और तैयार माल दोनों ड्रॉपडाउन में जरूर दिखें।
+      const raw = savedStock.filter(i => i.type === 'raw' || i.category === 'raw' || !i.is_finished && i.type !== 'finished');
+      const finished = savedStock.filter(i => i.type === 'finished' || i.category === 'finished' || i.is_finished);
+
+      // यदि किसी कारण से टाइप मैच न हो रहा हो, तो सारे आइटम्स दोनों में दिखाएं ताकि लिस्ट खाली न रहे
+      setRawMaterials(raw.length > 0 ? raw : savedStock);
+      setFinishedItems(finished.length > 0 ? finished : savedStock);
       setBatchesList(savedBatches);
     } catch (e) {
       console.error("Error loading firm inventory:", e);
@@ -36,6 +43,12 @@ export default function ProductionConversionView({ firm, onClose }) {
       setFinishedItems([]);
       setBatchesList([]);
     }
+  };
+
+  useEffect(() => {
+    loadInventoryAndBatches();
+    window.addEventListener('focus', loadInventoryAndBatches);
+    return () => window.removeEventListener('focus', loadInventoryAndBatches);
   }, [firm]);
 
   const handleAddMaterialToCart = () => {
@@ -51,7 +64,7 @@ export default function ProductionConversionView({ firm, onClose }) {
     }
 
     const materialObj = rawMaterials.find(m => m.id === selectedMaterial || m.name === selectedMaterial);
-    const availableStock = Number(materialObj?.stock_qty || 0);
+    const availableStock = Number(materialObj?.stock_qty || materialObj?.quantity || 0);
 
     if (availableStock <= 0) {
       setErrorMsg(`❌ Stock Error: "${materialObj?.name || selectedMaterial}" is OUT OF STOCK (0). Cannot consume!`);
@@ -165,7 +178,7 @@ export default function ProductionConversionView({ firm, onClose }) {
               <select value={selectedOutput} onChange={(e) => setSelectedOutput(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', boxSizing: 'border-box' }}>
                 <option value="">-- Choose Output --</option>
                 {finishedItems.map((item, idx) => (
-                  <option key={idx} value={item.name}>{item.name}</option>
+                  <option key={idx} value={item.name || item.item_name}>{item.name || item.item_name}</option>
                 ))}
               </select>
             </div>
@@ -188,7 +201,7 @@ export default function ProductionConversionView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* कच्चा माल खपत अनुभाग (Strictly Overflow-Protected Flexbox Layout) */}
+        {/* कच्चा माल खपत अनुभाग */}
         <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '10px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
           <h3 style={{ margin: '0 0 6px 0', fontSize: '12px', fontWeight: 800 }}>🔥 Consumed Raw Materials & Fuels</h3>
           
@@ -198,8 +211,8 @@ export default function ProductionConversionView({ firm, onClose }) {
               <select value={selectedMaterial} onChange={(e) => setSelectedMaterial(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', boxSizing: 'border-box' }}>
                 <option value="">-- Choose Raw Material --</option>
                 {rawMaterials.map((mat, idx) => (
-                  <option key={idx} value={mat.name}>
-                    {mat.name} [Stock: {mat.stock_qty || 0}]
+                  <option key={idx} value={mat.name || mat.item_name}>
+                    {mat.name || mat.item_name} [Stock: {mat.stock_qty || mat.quantity || 0}]
                   </option>
                 ))}
               </select>
