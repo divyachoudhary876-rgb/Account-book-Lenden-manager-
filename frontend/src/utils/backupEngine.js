@@ -4,9 +4,22 @@ import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 
 /**
- * 1. Export all application storage data as a structured JSON backup file with Unique Timestamp
+ * Robustly resolve clean firm name string from any input (string or object)
  */
-export const downloadAppBackup = async (firmName = 'Neelkanth_Groups') => {
+const resolveFirmNameString = (firmInput) => {
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') {
+    return firmInput.trim();
+  }
+  if (firmInput && typeof firmInput === 'object') {
+    return firmInput.legal_name || firmInput.trade_name || firmInput.name || firmInput.firm_name || 'AccountBook';
+  }
+  return 'AccountBook';
+};
+
+/**
+ * 1. Export application storage as structured JSON with clean naming
+ */
+export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
     const storageSnapshot = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -21,10 +34,10 @@ export const downloadAppBackup = async (firmName = 'Neelkanth_Groups') => {
       }
     }
 
-    const cleanFirm = String(firmName).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const rawFirmName = resolveFirmNameString(firmInput);
+    const cleanFirm = String(rawFirmName).replace(/[^a-zA-Z0-9_-]/g, '_');
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
-    // Add exact hours, minutes, and seconds so today's multiple backups never overwrite each other
     const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
     const fileName = `${cleanFirm}_Backup_${dateStr}_${timeStr}.json`;
 
@@ -32,7 +45,7 @@ export const downloadAppBackup = async (firmName = 'Neelkanth_Groups') => {
       meta: {
         app: "AccountBook",
         firm: cleanFirm,
-        version: "1.0.6",
+        version: "1.0.7",
         export_timestamp: now.toISOString()
       },
       data: storageSnapshot
@@ -56,7 +69,7 @@ export const downloadAppBackup = async (firmName = 'Neelkanth_Groups') => {
           url: writeResult.uri,
           dialogTitle: 'Save or Share Backup File'
         });
-        return { success: true, message: "Backup generated and ready to save!" };
+        return { success: true, message: "Backup generated successfully!" };
       }
     }
 
@@ -83,48 +96,64 @@ export const downloadAppBackup = async (firmName = 'Neelkanth_Groups') => {
 };
 
 /**
- * 2. Read uploaded backup file and restore into localStorage with validation
+ * 2. Safe File Restoration with robust Blob/File type validation
  */
-export const restoreAppBackupFromFile = (file, callback) => {
-  if (!file) {
-    if (callback) callback({ success: false, message: "No backup file provided." });
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    try {
-      const fileContent = JSON.parse(event.target.result);
-      
-      const targetData = fileContent.data && typeof fileContent.data === 'object' 
-        ? fileContent.data 
-        : fileContent;
-
-      if (!targetData || typeof targetData !== 'object' || Array.isArray(targetData)) {
-        throw new Error("Invalid backup schema structure.");
-      }
-
-      Object.keys(targetData).forEach(key => {
-        const val = targetData[key];
-        const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
-        localStorage.setItem(key, stringifiedVal);
-      });
-
-      window.dispatchEvent(new Event('app_storage_updated'));
-      window.dispatchEvent(new Event('app_state_updated'));
-
-      if (callback) callback({ success: true, message: "Backup restored successfully!" });
-    } catch (err) {
-      console.error("Restore Parsing Failed:", err);
-      if (callback) callback({ success: false, message: `Restore Failed: ${err.message}` });
+export const restoreAppBackupFromFile = (rawFileEventOrFile, callback) => {
+  try {
+    // Extract actual File object safely whether passed from event or direct file handler
+    let file = rawFileEventOrFile;
+    if (file && file.target && file.target.files) {
+      file = file.target.files[0];
     }
-  };
 
-  reader.onerror = () => {
-    if (callback) callback({ success: false, message: "Failed to read file stream." });
-  };
+    if (!file) {
+      if (callback) callback({ success: false, message: "No backup file selected." });
+      return;
+    }
 
-  reader.readAsText(file);
+    // Verify it is a valid Blob/File instance before reading
+    if (!(file instanceof Blob)) {
+      throw new Error("Invalid file object received. Please re-select the file.");
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const fileContent = JSON.parse(event.target.result);
+        
+        const targetData = fileContent.data && typeof fileContent.data === 'object' 
+          ? fileContent.data 
+          : fileContent;
+
+        if (!targetData || typeof targetData !== 'object' || Array.isArray(targetData)) {
+          throw new Error("Invalid backup schema structure.");
+        }
+
+        Object.keys(targetData).forEach(key => {
+          const val = targetData[key];
+          const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+          localStorage.setItem(key, stringifiedVal);
+        });
+
+        window.dispatchEvent(new Event('app_storage_updated'));
+        window.dispatchEvent(new Event('app_state_updated'));
+
+        if (callback) callback({ success: true, message: "Backup restored successfully!" });
+      } catch (parseErr) {
+        console.error("Restore Parsing Failed:", parseErr);
+        if (callback) callback({ success: false, message: `Restore Failed: ${parseErr.message}` });
+      }
+    };
+
+    reader.onerror = () => {
+      if (callback) callback({ success: false, message: "Failed to read file stream." });
+    };
+
+    reader.readAsText(file);
+  } catch (err) {
+    console.error("Restore Execution Error:", err);
+    if (callback) callback({ success: false, message: `Error: ${err.message}` });
+  }
 };
 
 // Universal Aliases
