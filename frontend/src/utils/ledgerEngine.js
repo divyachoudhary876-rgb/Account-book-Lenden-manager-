@@ -2,28 +2,48 @@
 import { StorageService } from './storageSync';
 
 /**
- * सभी संभावित स्टोरेज कीज़ से वाउचर्स को सुरक्षित रूप से निकालता है
+ * Robustly fetch all vouchers across all possible local storage keys and formats
  */
-export const getAllFirmVouchers = (firmId = 'FIRM-001') => {
+export const getAllFirmVouchers = (activeFirmId = 'FIRM-001') => {
   let rawTx = [];
-  const keys = ['account_book_vouchers', 'vouchers', 'transactions', 'journal_entries', 'voucher_list', 'daybook'];
-  
-  keys.forEach(k => {
-    const val = StorageService.getItem(k);
-    if (Array.isArray(val)) {
-      rawTx.push(...val);
-    }
+  const primaryKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'daybook', 'journal_entries'];
+
+  // 1. Scan primary known keys
+  primaryKeys.forEach(k => {
+    const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
+    if (Array.isArray(val)) rawTx.push(...val);
   });
 
-  // डुप्लीकेट वाउचर्स हटाएं (यदि आईडी या रेफरेंस नंबर समान हो)
+  // 2. Deep scan localStorage for any keys containing voucher or transaction patterns
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('entry') || key.includes('daybook') || key.includes('book'))) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) rawTx.push(...parsed);
+          else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
+            if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
+          }
+        } catch (err) {}
+      }
+    }
+  }
+
+  // 3. Deduplicate and filter by firm safely
   const uniqueMap = new Map();
-  rawTx.forEach(v => {
-    if (!v) return;
-    const vId = v.id || v.voucher_number || v.reference_no || JSON.stringify(v);
-    // फर्म आईडी फिल्टर (यदिfirm_id मैच हो या न हो)
-    const matchesFirm = !v.firm_id || v.firm_id === firmId;
-    if (matchesFirm && !uniqueMap.has(vId)) {
-      uniqueMap.set(vId, v);
+  rawTx.forEach(tx => {
+    if (!tx) return;
+
+    if (tx.firm_id && activeFirmId && tx.firm_id !== activeFirmId && tx.firm_id !== 'FIRM-001' && activeFirmId !== 'FIRM-001') {
+      return;
+    }
+
+    const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount}-${tx.dr_account || tx.debit_account}-${tx.cr_account || tx.credit_account}`;
+    if (!uniqueMap.has(uId)) {
+      uniqueMap.set(uId, tx);
     }
   });
 
@@ -31,55 +51,73 @@ export const getAllFirmVouchers = (firmId = 'FIRM-001') => {
 };
 
 /**
- * किसी विशिष्ट खाते (Account/Party) के लिए सभी ट्रांजैक्शन और रनिंग बैलेंस निकालता है
+ * Universal multi-key ledger statement generator ensuring NO transaction is missed
  */
-export const getAccountLedgerStatement = (accountName, firmId = 'FIRM-001') => {
-  if (!accountName) return { transactions: [], openingBalance: 0, closingBalance: 0, totalDebit: 0, totalCredit: 0 };
+export const getAccountLedgerStatement = (partyName, activeFirmId = 'FIRM-001') => {
+  if (!partyName) {
+    return { openingBalance: 0, closingBalance: 0, balanceType: 'Dr', transactions: [] };
+  }
 
-  const target = String(accountName).trim().toLowerCase();
-  const vouchers = getAllFirmVouchers(firmId);
+  const allVouchers = getAllFirmVouchers(activeFirmId);
+  const targetClean = String(partyName).trim().toLowerCase();
+  const matchedTransactions = [];
 
-  let transactions = [];
-  let totalDebit = 0;
-  let totalCredit = 0;
+  allVouchers.forEach(v => {
+    const amt = parseFloat(v.amount || v.total_amount || v.grand_total || 0);
+    if (amt <= 0 || isNaN(amt)) return;
 
-  vouchers.forEach(v => {
-    // सभी संभावित डेबिट और क्रेडिट फील्ड्स की जाँच
-    const dr = String(v.dr_account || v.dr_party || v.debit_account || v.debit_ledger || v.account_dr || '').trim().toLowerCase();
-    const cr = String(v.cr_account || v.cr_party || v.credit_account || v.credit_ledger || v.account_cr || '').trim().toLowerCase();
-    
-    const amt = Number(v.amount || v.total_amount || v.net_amount || 0);
-    if (amt <= 0) return;
+    // Extract all possible debit and credit account representations from voucher
+    const drNames = [
+      v.dr_account, v.debit_account, v.dr_party, v.account_dr,
+      ...(Array.isArray(v.entries) ? v.entries.filter(e => (e.debit || e.dr || 0) > 0).map(e => e.account_name || e.party) : [])
+    ].filter(Boolean).map(s => String(s).trim().toLowerCase());
 
-    let isDr = dr === target || dr.includes(target);
-    let isCr = cr === target || cr.includes(target);
+    const crNames = [
+      v.cr_account, v.credit_account, v.cr_party, v.account_cr,
+      ...(Array.isArray(v.entries) ? v.entries.filter(e => (e.credit || e.cr || 0) > 0).map(e => e.account_name || e.party) : [])
+    ].filter(Boolean).map(s => String(s).trim().toLowerCase());
 
-    if (isDr || isCr) {
-      const debitVal = isDr ? amt : 0;
-      const creditVal = isCr ? amt : 0;
+    // Check strict or fuzzy matching across all extracted account names
+    const isDrMatch = drNames.some(name => name === targetClean || name.includes(targetClean) || targetClean.includes(name));
+    const isCrMatch = crNames.some(name => name === targetClean || name.includes(targetClean) || targetClean.includes(name));
 
-      totalDebit += debitVal;
-      totalCredit += creditVal;
+    if (isDrMatch || isCrMatch) {
+      // Determine effective debit and credit amounts for this party in this voucher
+      let debitVal = 0;
+      let creditVal = 0;
 
-      transactions.push({
-        date: v.voucher_date || v.date || '2026-09-06',
-        voucher_type: v.voucher_type || v.type || 'TX',
-        voucher_number: v.voucher_number || v.reference_no || 'N/A',
-        narration: v.narration || v.description || `Transaction for ${accountName}`,
+      if (isDrMatch && !isCrMatch) {
+        debitVal = amt;
+      } else if (isCrMatch && !isDrMatch) {
+        creditVal = amt;
+      } else if (isDrMatch && isCrMatch) {
+        // Self-transfer or contra entry edge case
+        debitVal = amt;
+        creditVal = amt;
+      }
+
+      const opposingParty = isDrMatch 
+        ? (crNames[0] ? crNames[0].toUpperCase() : 'Various Account') 
+        : (drNames[0] ? drNames[0].toUpperCase() : 'Various Account');
+
+      matchedTransactions.push({
+        date: v.voucher_date || v.date || '2026-04-01',
+        voucher_type: String(v.voucher_type || v.type || 'TX').toUpperCase(),
+        voucher_number: v.reference_no || v.voucher_number || v.id || 'N/A',
+        particulars: isDrMatch ? `To ${opposingParty}` : `By ${opposingParty}`,
+        narration: v.narration || v.notes || v.description || '',
         debit: debitVal,
-        credit: creditVal,
-        raw: v
+        credit: creditVal
       });
     }
   });
 
-  // तारीख के अनुसार सॉर्ट करें
-  transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+  // Sort chronological by date
+  matchedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  // रनिंग बैलेंस कैलकुलेट करें
+  // Compute running balance
   let runningBal = 0;
-  transactions = transactions.map(t => {
-    // सामान्यतः एसेट/कैश के लिए Debit (+) और Credit (-) होता है
+  const processedTransactions = matchedTransactions.map(t => {
     runningBal += (t.debit - t.credit);
     return {
       ...t,
@@ -88,12 +126,14 @@ export const getAccountLedgerStatement = (accountName, firmId = 'FIRM-001') => {
     };
   });
 
+  const lastClosing = processedTransactions.length > 0 
+    ? processedTransactions[processedTransactions.length - 1] 
+    : { runningBalance: 0, balanceType: 'Dr' };
+
   return {
-    transactions,
     openingBalance: 0,
-    closingBalance: Math.abs(runningBal),
-    balanceType: runningBal >= 0 ? 'Dr' : 'Cr',
-    totalDebit,
-    totalCredit
+    closingBalance: lastClosing.runningBalance,
+    balanceType: lastClosing.balanceType,
+    transactions: processedTransactions
   };
 };
