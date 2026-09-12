@@ -14,7 +14,13 @@ function createWindow () {
     }
   });
 
-  win.loadFile(path.join(__dirname, 'dist/index.html'));
+  // Yeh ensure karega ki file sahi path se load ho
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  console.log("Loading file from: ", indexPath);
+  
+  win.loadFile(indexPath).catch(err => {
+    console.error("Failed to load app:", err);
+  });
 }
 
 app.whenReady().then(() => {
