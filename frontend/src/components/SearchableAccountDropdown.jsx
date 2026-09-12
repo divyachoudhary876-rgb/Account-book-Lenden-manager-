@@ -43,14 +43,12 @@ export default function SearchableAccountDropdown({
 
   // A to Z (Ascending Order) Sorting & Real-Time Search Filtering
   const processedAccounts = useMemo(() => {
-    // 1. Sort A to Z using localeCompare
     const sortedList = [...accounts].sort((a, b) => {
       const nameA = a.account_name || '';
       const nameB = b.account_name || '';
       return nameA.localeCompare(nameB, 'en', { sensitivity: 'base' });
     });
 
-    // 2. Filter with Search Bar input
     const cleanSearch = searchTerm.trim().toLowerCase();
     if (!cleanSearch) return sortedList;
 
@@ -68,7 +66,7 @@ export default function SearchableAccountDropdown({
     setIsOpen(false);
   };
 
-  // Keyboard navigation (Arrow Up, Arrow Down, Enter, Escape)
+  // Keyboard navigation
   const handleKeyDown = (e) => {
     if (!isOpen) {
       if (e.key === 'Enter' || e.key === 'ArrowDown') {
@@ -142,7 +140,7 @@ export default function SearchableAccountDropdown({
             <span style={{ color: '#94a3b8', fontSize: '12px' }}>{placeholder}</span>
           )}
         </div>
-        <span style={{ fontSize: '10px', color: '#64748b', marginLeft: '6px' }}>{isOpen ? 'â–²' : 'â–¼'}</span>
+        <span style={{ fontSize: '10px', color: '#64748b', marginLeft: '6px' }}>{isOpen ? '\u25b2' : '\u25bc'}</span>
       </div>
 
       {/* Dropdown Floating Panel */}
@@ -162,7 +160,7 @@ export default function SearchableAccountDropdown({
         }}>
           {/* TOP SEARCH BAR */}
           <div style={{ padding: '8px 10px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <span style={{ fontSize: '13px', color: '#64748b' }}>ðŸ”</span>
+            <span style={{ fontSize: '13px', color: '#64748b' }}>{'\uD83D\uDD0D'}</span>
             <input
               ref={searchInputRef}
               type="text"
@@ -191,7 +189,7 @@ export default function SearchableAccountDropdown({
                 }}
                 style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '13px', padding: '0 4px', fontWeight: 'bold' }}
               >
-                âœ•
+                {'\u2715'}
               </button>
             )}
           </div>
@@ -234,7 +232,7 @@ export default function SearchableAccountDropdown({
 
                     {acc.opening_balance !== undefined && (
                       <span style={{ fontSize: '11px', fontWeight: 'bold', color: acc.balance_type === 'Dr' ? '#059669' : '#dc2626' }}>
-                        â‚¹{parseFloat(acc.opening_balance || 0).toLocaleString('en-IN')} {acc.balance_type}
+                        {'\u20b9'}{parseFloat(acc.opening_balance || 0).toLocaleString('en-IN')} {acc.balance_type}
                       </span>
                     )}
                   </div>
@@ -260,7 +258,7 @@ export default function SearchableAccountDropdown({
                 gap: '6px'
               }}
             >
-              <span>âž•</span> + Naya Account Banayein {searchTerm ? `"${searchTerm}"` : ''}
+              <span>{'\u2795'}</span> + Naya Account Banayein {searchTerm ? `"${searchTerm}"` : ''}
             </div>
           )}
         </div>
