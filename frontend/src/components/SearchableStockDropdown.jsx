@@ -1,11 +1,25 @@
 // frontend/src/components/SearchableStockDropdown.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { loadFirmData } from '../utils/firmIsolationEngine';
 
-export default function SearchableStockDropdown({ label = 'Select Stock Item', items = [], value = '', onChange, placeholder = '-- Search or Select Stock --', required = false }) {
+export default function SearchableStockDropdown({ firm, label = 'Select Stock Item', items = [], value = '', onChange, placeholder = '-- Search or Select Stock --', required = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [liveItems, setLiveItems] = useState(items);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
+
+  // यदि बाहर से props में items न आएं, तो सीधे एक्टिव फर्म के लोकल स्टोरेज से लाइव स्टॉक लोड करें
+  useEffect(() => {
+    if (items && items.length > 0) {
+      setLiveItems(items);
+    } else if (firm) {
+      const storedStock = loadFirmData('app_inventory', firm, []);
+      if (storedStock && storedStock.length > 0) {
+        setLiveItems(storedStock);
+      }
+    }
+  }, [firm, items]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -18,13 +32,13 @@ export default function SearchableStockDropdown({ label = 'Select Stock Item', i
   }, []);
 
   const filteredItems = useMemo(() => {
-    const list = [...items].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const list = [...liveItems].sort((a, b) => (a.name || a.item_name || '').localeCompare(b.name || b.item_name || ''));
     const cleanSearch = searchTerm.trim().toLowerCase();
     if (!cleanSearch) return list;
     return list.filter(i => (i.name || i.item_name || '').toLowerCase().includes(cleanSearch));
-  }, [items, searchTerm]);
+  }, [liveItems, searchTerm]);
 
-  const selectedItem = items.find(i => (i.name || i.item_name) === value);
+  const selectedItem = liveItems.find(i => (i.name || i.item_name) === value);
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
@@ -53,7 +67,7 @@ export default function SearchableStockDropdown({ label = 'Select Stock Item', i
 
           <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
             {filteredItems.length === 0 ? (
-              <div style={{ padding: '14px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>No stock items found.</div>
+              <div style={{ padding: '14px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>No stock items found in this firm.</div>
             ) : (
               filteredItems.map((item, idx) => {
                 const name = item.name || item.item_name;
