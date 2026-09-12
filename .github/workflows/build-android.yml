@@ -58,18 +58,17 @@ jobs:
 
       - name: Decode Keystore from GitHub Secrets
         run: |
-          # यह लाइन फिक्स कर दी गई है: फाइल अब सीधे 'app' फोल्डर में सेव होगी
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > frontend/android/app/my-release-key.jks
 
       - name: Build Signed Release APK via Gradle
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd frontend/android
           chmod +x gradlew
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=my-release-key.jks \
-            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEY_PASSWORD }}"
+          ./gradlew assembleRelease
 
       - name: Prepare Final APK Artifact
         run: |
