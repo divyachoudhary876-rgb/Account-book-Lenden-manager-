@@ -58,8 +58,8 @@ jobs:
 
       - name: Decode Keystore from GitHub Secrets
         run: |
-          cd frontend/android
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > my-release-key.jks
+          # यह लाइन फिक्स कर दी गई है: फाइल अब सीधे 'app' फोल्डर में सेव होगी
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > frontend/android/app/my-release-key.jks
 
       - name: Build Signed Release APK via Gradle
         run: |
