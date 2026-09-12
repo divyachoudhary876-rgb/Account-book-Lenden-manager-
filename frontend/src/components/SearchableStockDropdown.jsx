@@ -5,19 +5,19 @@ import { loadFirmData } from '../utils/firmIsolationEngine';
 export default function SearchableStockDropdown({ firm, label = 'Select Stock Item', items = [], value = '', onChange, placeholder = '-- Search or Select Stock --', required = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [liveItems, setLiveItems] = useState(items);
+  const [liveItems, setLiveItems] = useState([]);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // यदि बाहर से props में items न आएं, तो सीधे एक्टिव फर्म के लोकल स्टोरेज से लाइव स्टॉक लोड करें
+  // केवल और केवल इस फर्म के लोकल स्टोरेज से लाइव स्टॉक लोड करें (कोई डिफ़ॉल्ट फिक्स आइटम नहीं)
   useEffect(() => {
     if (items && items.length > 0) {
       setLiveItems(items);
     } else if (firm) {
       const storedStock = loadFirmData('app_inventory', firm, []);
-      if (storedStock && storedStock.length > 0) {
-        setLiveItems(storedStock);
-      }
+      setLiveItems(storedStock || []);
+    } else {
+      setLiveItems([]);
     }
   }, [firm, items]);
 
@@ -67,7 +67,9 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
 
           <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
             {filteredItems.length === 0 ? (
-              <div style={{ padding: '14px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>No stock items found in this firm.</div>
+              <div style={{ padding: '14px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
+                No stock items found. Please add items via Inventory Master.
+              </div>
             ) : (
               filteredItems.map((item, idx) => {
                 const name = item.name || item.item_name;
