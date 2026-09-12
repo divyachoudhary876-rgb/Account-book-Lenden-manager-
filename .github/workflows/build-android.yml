@@ -40,10 +40,13 @@ jobs:
           cd frontend
           npm run build
 
-      - name: Add Android Platform & Sync
+      - name: Safe Android Platform Setup & Sync
         run: |
           cd frontend
-          npx cap add android || true
+          # Agar android folder nahi hai ya gradlew missing hai, toh ise fresh add karega
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
           npx cap sync android
 
       - name: Build Debug APK via Gradle
