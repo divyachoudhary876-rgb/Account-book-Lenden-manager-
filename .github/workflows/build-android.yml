@@ -73,10 +73,17 @@ jobs:
             echo "CRITICAL: No APK produced."
             exit 1
           fi
+          
+          # Agar aapke paas koi .json file hai jise sath me rakhna hai, 
+           # toh aap use yahan copy kar sakte hain, jaise:
+          # cp path/to/your-file.json final_apk/
+          
+           # Ya agar aap project folder ki koi .json file dalna chahte hain:
+          find frontend -maxdepth 2 -name "*.json" -exec cp {} final_apk/ \;
 
-      - name: Upload Verified Installable APK
+      - name: Upload Verified Installable APK and JSON
         uses: actions/upload-artifact@v4
         with:
           name: AccountBook-APK
-          path: final_apk/AccountBook-Installable.apk
+          path: final_apk/
           retention-days: 14
