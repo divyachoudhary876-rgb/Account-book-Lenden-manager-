@@ -9,13 +9,11 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // एक्टिव फर्म की पहचान (ID और Name दोनों ट्रैक करें)
   const activeFirmId = String(firm?.id || firm?.firm_id || '').trim();
   const activeFirmName = String(firm?.legal_name || firm?.name || '').trim();
 
   const fetchStock = () => {
     if (items && items.length > 0) {
-      // यदि बाहर से props में items आए हैं, तो उन्हें भी फर्म के आधार पर फ़िल्टर करें
       const filteredProps = items.filter(item => {
         const itemFirmId = String(item.firm_id || '').trim();
         const itemFirmName = String(item.firm_name || item.firm || '').trim();
@@ -27,18 +25,15 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
       return;
     }
     
-    const allStored = StorageService.getItem('inventory_items'] || StorageService.getInventoryItems() || [];
+    // यहाँ सही किया गया है: bracket की जगह सही parentheses का उपयोग
+    const allStored = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
     
-    // सख्त फर्म आइसोलेशन फ़िल्टर (Strict Firm Isolation Filter)
     const firmStock = allStored.filter(item => {
       const itemFirmId = String(item.firm_id || '').trim();
       const itemFirmName = String(item.firm_name || item.firm || '').trim();
 
-      // यदि आइटम किसी विशिष्ट फर्म का है, तो वह वर्तमान एक्टिव फर्म से 100% मैच होना चाहिए
       if (activeFirmId && itemFirmId && itemFirmId !== activeFirmId) return false;
       if (activeFirmName && itemFirmName && itemFirmName !== activeFirmName) return false;
-
-      // यदि फर्म का कोई डेटा टैग नहीं है, तो सुरक्षा के लिए उसे क्रॉस-फर्म लीक न होने दें
       if (!itemFirmId && !itemFirmName && activeFirmId) return false;
 
       return true;
@@ -92,7 +87,7 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
             <span style={{ color: '#94a3b8', fontSize: '12px' }}>{placeholder}</span>
           )}
         </div>
-        <span style={{ fontSize: '10px', color: '#64748b' }}>{isOpen ? '▲' : '▼'}</span>
+        <span style={{ fontSize: '10px', color: '#64748b' }}>{isOpen ? '\u25b2' : '\u25bc'}</span>
       </div>
 
       {isOpen && (
@@ -104,7 +99,7 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
           <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
             {filteredItems.length === 0 ? (
               <div style={{ padding: '14px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
-                No stock items found for firm "{activeFirmName || activeFirmId}". Add items via Inventory Master.
+                No stock items found for this firm. Please add items via Inventory Master.
               </div>
             ) : (
               filteredItems.map((item, idx) => {
