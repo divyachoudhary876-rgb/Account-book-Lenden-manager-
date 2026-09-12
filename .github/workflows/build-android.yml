@@ -40,15 +40,12 @@ jobs:
           cd frontend
           npm run build
 
-      - name: Force Android Platform Generation & Sync
+      - name: Fresh Android Platform Generation
         run: |
           cd frontend
-          # Agar android folder pehle se nahi hai toh add karega, agar hai toh force copy karke gradlew laayega
-          if [ ! -d "android" ]; then
-            npx cap add android
-          else
-            npx cap copy android
-          fi
+          # Purana android folder hata kar hamesha naya generate karega taaki gradlew hamesha mile
+          rm -rf android
+          npx cap add android
           npx cap sync android
 
       - name: Build Debug APK via Gradle
