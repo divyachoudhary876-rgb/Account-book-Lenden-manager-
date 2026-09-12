@@ -56,24 +56,16 @@ jobs:
           fi
           npx cap sync android
 
-      - name: Decode Keystore from GitHub Secrets
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > frontend/android/app/my-release-key.jks
-
-      - name: Build Signed Release APK via Gradle
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: Build Debug APK via Gradle
         run: |
           cd frontend/android
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew clean assembleDebug --no-daemon --stacktrace
 
       - name: Prepare Final APK Artifact
         run: |
           mkdir -p final_apk
-          APK_FOUND=$(find frontend/android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          APK_FOUND=$(find frontend/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
           if [ -n "$APK_FOUND" ]; then
             echo "Found APK at: $APK_FOUND"
             cp "$APK_FOUND" final_apk/AccountBook-Installable.apk
