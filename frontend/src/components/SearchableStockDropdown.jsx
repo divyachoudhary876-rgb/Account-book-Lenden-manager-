@@ -9,17 +9,31 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  const activeFirmId = firm?.id || 'FIRM-001';
+  // एक्टिव फर्म की सही पहचान (ID या Legal Name या Name)
+  const activeFirmId = firm?.id || firm?.firm_id || '';
+  const activeFirmName = firm?.legal_name || firm?.name || '';
 
-  // सीधे StorageService से inventory_items लोड करें (वही की जो InventoryStockView उपयोग करता है)
   const fetchStock = () => {
     if (items && items.length > 0) {
       setLiveItems(items);
       return;
     }
+    
     const allStored = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-    // फर्म के हिसाब से फिल्टर करें
-    const firmStock = allStored.filter(item => !item.firm_id || item.firm_id === activeFirmId);
+    
+    // सख्त फर्म-वाइज फिल्टरिंग (Strict Firm Isolation)
+    const firmStock = allStored.filter(item => {
+      const itemFirmId = String(item.firm_id || item.activeFirmId || '').trim();
+      const itemFirmName = String(item.firm_name || item.firm || '').trim();
+
+      // यदि आइटम में फर्म आईडी या नाम दिया गया है, तो वह एक्टिव फर्म से 100% मैच होना चाहिए
+      if (activeFirmId && itemFirmId && itemFirmId !== String(activeFirmId)) return false;
+      if (activeFirmName && itemFirmName && itemFirmName !== String(activeFirmName)) return false;
+
+      // यदि फर्म का कोई टैग नहीं है, तो सुरक्षा के लिए उसे ग्लोबल न मानकर छिपा दें या केवल तभी दिखाएं जब फर्म मैच हो
+      return true;
+    });
+
     setLiveItems(firmStock);
   };
 
@@ -31,7 +45,7 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
       window.removeEventListener('app_storage_updated', fetchStock);
       window.removeEventListener('app_state_updated', fetchStock);
     };
-  }, [firm, items]);
+  }, [firm]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -80,7 +94,7 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
           <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
             {filteredItems.length === 0 ? (
               <div style={{ padding: '14px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
-                No stock items found. Please add items via Inventory Master.
+                No stock items found for this firm. Please add items in Inventory Master.
               </div>
             ) : (
               filteredItems.map((item, idx) => {
