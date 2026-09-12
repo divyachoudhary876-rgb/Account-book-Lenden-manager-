@@ -42,19 +42,24 @@ export default function App() {
   const [newFYStartYear, setNewFYStartYear] = useState('2027');
 
   const refreshState = () => {
-    const list = getFirmsRegistry();
-    const firm = getActiveFirm();
-    setFirmsList(list);
-    setActiveFirm(firm);
+    try {
+      const list = getFirmsRegistry() || [];
+      const firm = getActiveFirm();
+      setFirmsList(list);
+      setActiveFirm(firm);
 
-    if (list.length === 0) {
-      setIsCreatingFirm(true);
-    } else if (firm) {
-      const availableYears = getFirmFinancialYears(firm.id);
-      setFyList(availableYears);
-      if (!availableYears.some(y => y.label === selectedFY)) {
-        setSelectedFY(availableYears[0]?.label || 'FY 2026-27');
+      if (list.length === 0) {
+        setIsCreatingFirm(true);
+      } else if (firm) {
+        const availableYears = getFirmFinancialYears(firm.id) || [];
+        setFyList(availableYears);
+        if (!availableYears.some(y => y.label === selectedFY)) {
+          setSelectedFY(availableYears[0]?.label || 'FY 2026-27');
+        }
       }
+    } catch (e) {
+      console.error("State load error:", e);
+      setIsCreatingFirm(true);
     }
   };
 
@@ -62,9 +67,19 @@ export default function App() {
     refreshState();
     window.addEventListener('app_state_updated', refreshState);
     window.addEventListener('fy_state_updated', refreshState);
+
+    // 🛡️ Safety timeout to prevent infinite loading on desktop
+    const safetyTimer = setTimeout(() => {
+      const list = getFirmsRegistry() || [];
+      if (list.length === 0) {
+        setIsCreatingFirm(true);
+      }
+    }, 1500);
+
     return () => {
       window.removeEventListener('app_state_updated', refreshState);
       window.removeEventListener('fy_state_updated', refreshState);
+      clearTimeout(safetyTimer);
     };
   }, []);
 
@@ -112,13 +127,13 @@ export default function App() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
       
       {/* 1. Update Notification Banner */}
       <AppUpdateBanner />
 
       {/* 2. Top Header Bar */}
-      <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+      <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {currentView !== 'dashboard' && !isCreatingFirm ? (
             <button
@@ -146,7 +161,7 @@ export default function App() {
       </div>
 
       {/* 3. Sub-Header: Firm Selector + FY Picker + Menu Button */}
-      <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+      <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
         
         {/* Firm Picker */}
         <div style={{ flex: 1.3, minWidth: '130px' }}>
@@ -163,7 +178,7 @@ export default function App() {
                 refreshState();
               }
             }}
-            style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a' }}
+            style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
           >
             {firmsList.map(f => (
               <option key={f.id} value={f.id}>
@@ -179,7 +194,7 @@ export default function App() {
           <select
             value={selectedFY}
             onChange={handleFYSelectChange}
-            style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155' }}
+            style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box' }}
           >
             {fyList.map(fy => (
               <option key={fy.id} value={fy.label}>{fy.label}</option>
@@ -197,14 +212,15 @@ export default function App() {
         </button>
       </div>
 
-      {/* 4. Complete Workflow Menu Drawer (Now showing Payroll & Wages) */}
+      {/* 4. Complete Workflow Menu Drawer */}
       {isMenuOpen && (
         <div style={{
           backgroundColor: '#0c1322',
           padding: '16px 14px 24px 14px',
           borderBottom: '3px solid #0284c7',
           boxShadow: '0 20px 30px rgba(0,0,0,0.5)',
-          animation: 'fadeIn 0.15s ease-out'
+          width: '100%',
+          boxSizing: 'border-box'
         }}>
           <div style={{ color: '#94a3b8', fontSize: '11px', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '12px', paddingLeft: '4px' }}>
             ACCOUNTING WORKFLOW MENU
@@ -228,7 +244,9 @@ export default function App() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '12px',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                  width: '100%',
+                  boxSizing: 'border-box'
                 }}
               >
                 <span style={{ fontSize: '16px' }}>{item.icon}</span>
@@ -240,7 +258,7 @@ export default function App() {
       )}
 
       {/* 5. Main Screen Routing View */}
-      <main style={{ maxWidth: '900px', margin: '0 auto', padding: '14px', boxSizing: 'border-box' }}>
+      <main style={{ width: '100%', maxWidth: '1000px', margin: '0 auto', padding: '14px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
             onFirmCreated={(newFirm) => {
@@ -361,7 +379,8 @@ const modalOverlayStyle = {
   alignItems: 'center',
   justifyContent: 'center',
   zIndex: 9999,
-  padding: '16px'
+  padding: '16px',
+  boxSizing: 'border-box'
 };
 
 const modalCardStyle = {
