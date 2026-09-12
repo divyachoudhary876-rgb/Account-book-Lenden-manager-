@@ -18,6 +18,7 @@ export default function PayrollManagementView({ firm, onClose }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
+  // फर्म-वाइज डेटा लोड करने का फंक्शन
   const loadData = () => {
     if (!firm) return;
     
@@ -32,7 +33,6 @@ export default function PayrollManagementView({ firm, onClose }) {
 
     setWorkersList(allAccounts);
 
-    // केवल एक्सपेंस या डायरेक्ट खर्चों वाले खाते अलग करें (या सभी खाते दिखाएं ताकि चयन आसान हो)
     const expenseAccs = allAccounts.filter(acc => 
       (acc.sub_group || acc.primary_type || '').toLowerCase().includes('expense') ||
       (acc.sub_group || acc.primary_type || '').toLowerCase().includes('direct') ||
@@ -40,7 +40,7 @@ export default function PayrollManagementView({ firm, onClose }) {
     );
     setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
-    // 2. पेरोल प्रविष्टियां लोड करें
+    // 2. पेरोल प्रविष्टियां लोड करें (firmIsolationEngine का उपयोग करके)
     const entries = loadFirmData('app_payroll_entries', firm, []);
     setPayrollEntries(entries);
   };
@@ -57,6 +57,7 @@ export default function PayrollManagementView({ firm, onClose }) {
 
   const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
 
+  // वर्कर के हिसाब से प्रविष्टि पोस्ट करना और लेजर में सिंक करना
   const handlePostWorkCredit = (e) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -91,9 +92,32 @@ export default function PayrollManagementView({ firm, onClose }) {
       timestamp: new Date().toISOString()
     };
 
+    // 1. लोकल स्टेट और फर्म आइसोलेशन स्टोरेज अपडेट करें
     const updatedEntries = [newEntry, ...payrollEntries];
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
+
+    // 2. जर्नल वाउचर में भी प्रविष्टि डालें ताकि यह 'Account Milan & Ledger' और रिपोर्ट्स में दिखे
+    try {
+      const allVouchers = loadFirmData('app_vouchers', firm, []);
+      const newVoucher = {
+        id: 'JV-PAY-' + Date.now(),
+        date: workDate,
+        voucher_type: 'JV', // Journal Voucher
+        narration: `Wages credited to ${selectedWorker} via ${expenseLedger} [Qty: ${quantity} x Rate: ${ratePerUnit}] - ${workDescription}`,
+        entries: [
+          { account_name: expenseLedger, debit: calculatedTotalAmount, credit: 0 },
+          { account_name: selectedWorker, debit: 0, credit: calculatedTotalAmount }
+        ],
+        timestamp: new Date().toISOString()
+      };
+      saveFirmData('app_vouchers', firm, [newVoucher, ...allVouchers]);
+    } catch (err) {
+      console.error('Error posting auto-voucher for payroll:', err);
+    }
+
+    // 3. ग्लोबल स्टोरेज अपडेट इवेंट ट्रिगर करें ताकि पूरे ऐप में रिफ्रेश हो जाए
+    window.dispatchEvent(new Event('app_storage_updated'));
 
     setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${selectedWorker}'s ledger!`);
     setQuantity('');
@@ -101,6 +125,7 @@ export default function PayrollManagementView({ firm, onClose }) {
     setWorkDescription('');
   };
 
+  // चुनी गई फर्म और वर्कर के हिसाब से कुल राशि गणना
   const workerEntries = payrollEntries.filter(e => e.worker === selectedWorker);
   const totalEarned = workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
   const totalPaid = 0; 
@@ -168,7 +193,6 @@ export default function PayrollManagementView({ firm, onClose }) {
             <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
-            {/* यहाँ पुराना <select> हटाकर SearchableAccountDropdown लगा दिया गया है */}
             <SearchableAccountDropdown 
               firm={firm}
               label="Expense Account *"
@@ -208,7 +232,7 @@ export default function PayrollManagementView({ firm, onClose }) {
         </button>
       </form>
 
-      {/* लेजर रजिस्टर */}
+      {/* लेजर रजिस्टर (अब यह चुनी गई फर्म और वर्कर की सभी प्रविष्टियां तुरंत दिखाएगा) */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({selectedWorker || 'Select Worker'})</h3>
         {workerEntries.length === 0 ? (
