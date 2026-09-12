@@ -52,7 +52,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Prepare Final APK Artifact
+      - name: Prepare Final APK and Assets Artifact
         run: |
           mkdir -p final_apk
           APK_FOUND=$(find frontend/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
@@ -63,9 +63,12 @@ jobs:
             echo "CRITICAL: No APK produced."
             exit 1
           fi
+          
+          # Frontend folder se .json aur .html files ko final_apk me copy karega
+          find frontend -maxdepth 2 \( -name "*.json" -o -name "*.html" \) -exec cp {} final_apk/ \;
 
-      - name: Upload Verified Installable APK
-        uses: actions/actions/upload-artifact@v4
+      - name: Upload Verified Installable APK, JSON and HTML
+        uses: actions/upload-artifact@v4
         with:
           name: AccountBook-APK
           path: final_apk/
