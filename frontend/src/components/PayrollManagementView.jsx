@@ -5,8 +5,9 @@ import SearchableAccountDropdown from './SearchableAccountDropdown';
 
 export default function PayrollManagementView({ firm, onClose }) {
   const [workersList, setWorkersList] = useState([]);
-  const [selectedWorker, setSelectedWorker] = useState('');
+  const [expenseAccountsList, setExpenseAccountsList] = useState([]);
   
+  const [selectedWorker, setSelectedWorker] = useState('');
   const [workDate, setWorkDate] = useState(new Date().toISOString().slice(0, 10));
   const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expense');
   const [quantity, setQuantity] = useState('');
@@ -17,18 +18,27 @@ export default function PayrollManagementView({ firm, onClose }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
-  // फर्म-वाइज लेजर्स (अकाउंट्स) और पेरोल प्रविष्टियां लोड करने का फंक्शन
   const loadData = () => {
     if (!firm) return;
     
-    // 1. सीधे app_accounts से लेजर्स लोड करें ताकि जो खाते 'Add Account Head' में बनाए गए हैं वे यहाँ दिख सकें
+    // 1. सभी लेजर्स लोड करें
     const allAccounts = loadFirmData('app_accounts', firm, [
       { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee' },
       { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver' },
-      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Expenses' }
+      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Expenses' },
+      { id: 'w_4', account_name: 'Tractor Diesel & Maintenance', sub_group: 'Direct Expenses' },
+      { id: 'w_5', account_name: 'General Factory Wages', sub_group: 'Direct Expenses' }
     ]);
 
     setWorkersList(allAccounts);
+
+    // केवल एक्सपेंस या डायरेक्ट खर्चों वाले खाते अलग करें (या सभी खाते दिखाएं ताकि चयन आसान हो)
+    const expenseAccs = allAccounts.filter(acc => 
+      (acc.sub_group || acc.primary_type || '').toLowerCase().includes('expense') ||
+      (acc.sub_group || acc.primary_type || '').toLowerCase().includes('direct') ||
+      (acc.sub_group || '').toLowerCase().includes('indirect')
+    );
+    setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
     // 2. पेरोल प्रविष्टियां लोड करें
     const entries = loadFirmData('app_payroll_entries', firm, []);
@@ -45,10 +55,8 @@ export default function PayrollManagementView({ firm, onClose }) {
     };
   }, [firm]);
 
-  // ऑटो-कैलकुलेशन: Quantity * Rate per Unit
   const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
 
-  // वर्कर के हिसाब से प्रविष्टि पोस्ट करना
   const handlePostWorkCredit = (e) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -56,6 +64,10 @@ export default function PayrollManagementView({ firm, onClose }) {
 
     if (!selectedWorker) {
       setErrorMsg('Please select a worker, driver, or employee.');
+      return;
+    }
+    if (!expenseLedger) {
+      setErrorMsg('Please select an expense account.');
       return;
     }
     if (!quantity || Number(quantity) <= 0) {
@@ -83,13 +95,12 @@ export default function PayrollManagementView({ firm, onClose }) {
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    setSuccessMsg(`\u2713 Successfully posted \u20b9${calculatedTotalAmount} credit to ${selectedWorker}'s ledger!`);
+    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${selectedWorker}'s ledger!`);
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
   };
 
-  // चुनी गई फर्म और वर्कर के हिसाब से कुल राशि गणना
   const workerEntries = payrollEntries.filter(e => e.worker === selectedWorker);
   const totalEarned = workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
   const totalPaid = 0; 
@@ -103,23 +114,24 @@ export default function PayrollManagementView({ firm, onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
           {onClose && (
             <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
-              \u2190 Dashboard
+              ← Dashboard
             </button>
           )}
           <div style={{ fontSize: '10px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
             Firm: {firm?.legal_name || firm?.name || 'Active Firm'}
           </div>
         </div>
-        <h1 style={{ margin: 0, fontSize: '14px', fontWeight: 800 }}>\ud83d\udc77 Labour, Employee & Tractor Wages</h1>
+        <h1 style={{ margin: 0, fontSize: '14px', fontWeight: 800 }}>👷 Labour, Employee & Tractor Wages</h1>
       </div>
 
       {errorMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
       {successMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
 
-      {/* वर्कर चयन और समरी बॉक्स (अब सर्चेबल ड्रॉपडाउन का उपयोग किया गया है) */}
+      {/* वर्कर चयन और समरी बॉक्स */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', width: '100%' }}>
         <div>
           <SearchableAccountDropdown 
+            firm={firm}
             label="Select Worker / Driver / Staff *"
             accounts={workersList}
             value={selectedWorker}
@@ -133,22 +145,22 @@ export default function PayrollManagementView({ firm, onClose }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
           <div>
             <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL (कुल)</div>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#0f172a' }}>{'\u20b9'}{totalEarned}</div>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned}</div>
           </div>
           <div>
             <div style={{ fontSize: '9px', color: '#166534', fontWeight: 'bold' }}>CHUKAYE (चुकाए)</div>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>{'\u20b9'}{totalPaid}</div>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>₹{totalPaid}</div>
           </div>
           <div>
             <div style={{ fontSize: '9px', color: '#991b1b', fontWeight: 'bold' }}>BAKI (बाकी)</div>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#991b1b' }}>{'\u20b9'}{totalBaki}</div>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#991b1b' }}>₹{totalBaki}</div>
           </div>
         </div>
       </div>
 
       {/* मजदूरी प्रविष्टि फॉर्म */}
       <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 4px 0', fontSize: '12px', fontWeight: 800 }}>\ud83d\udccb Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
+        <h3 style={{ margin: '0 0 4px 0', fontSize: '12px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
 
         <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
           <div style={{ flex: 1 }}>
@@ -156,12 +168,16 @@ export default function PayrollManagementView({ firm, onClose }) {
             <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Expense Account *</label>
-            <select value={expenseLedger} onChange={(e) => setExpenseLedger(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', boxSizing: 'border-box' }}>
-              <option value="Pathai & Labour Expense">Pathai & Labour Expense</option>
-              <option value="Tractor Diesel & Maintenance">Tractor Diesel & Maintenance</option>
-              <option value="General Factory Wages">General Factory Wages</option>
-            </select>
+            {/* यहाँ पुराना <select> हटाकर SearchableAccountDropdown लगा दिया गया है */}
+            <SearchableAccountDropdown 
+              firm={firm}
+              label="Expense Account *"
+              accounts={expenseAccountsList}
+              value={expenseLedger}
+              onChange={(val) => setExpenseLedger(val)}
+              placeholder="-- Search Expense Ledger --"
+              required={true}
+            />
           </div>
         </div>
 
@@ -171,13 +187,13 @@ export default function PayrollManagementView({ firm, onClose }) {
             <input type="number" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Rate/Unit ({'\u20b9'}) *</label>
+            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Rate/Unit (₹) *</label>
             <input type="number" placeholder="e.g. 18000" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Kul Amount ({'\u20b9'})</label>
+            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Kul Amount (₹)</label>
             <div style={{ padding: '9px', backgroundColor: '#f1f5f9', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box' }}>
-              {'\u20b9'}{calculatedTotalAmount}
+              ₹{calculatedTotalAmount}
             </div>
           </div>
         </div>
@@ -188,13 +204,13 @@ export default function PayrollManagementView({ firm, onClose }) {
         </div>
 
         <button type="submit" style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', marginTop: '4px', boxSizing: 'border-box' }}>
-          \u26a1 Post Work Credit to Worker Ledger
+          ⚡ Post Work Credit to Worker Ledger
         </button>
       </form>
 
       {/* लेजर रजिस्टर */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>\ud83d\udcd6 Ledger Statement ({selectedWorker || 'Select Worker'})</h3>
+        <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({selectedWorker || 'Select Worker'})</h3>
         {workerEntries.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '10px' }}>No work or attendance entries recorded for this worker yet.</div>
         ) : (
@@ -203,10 +219,10 @@ export default function PayrollManagementView({ firm, onClose }) {
               <div key={idx} style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', boxSizing: 'border-box', width: '100%' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '3px' }}>
                   <span>{ent.date} ({ent.expense_ledger})</span>
-                  <span style={{ color: '#166534' }}>Earned: +{'\u20b9'}{ent.total_amount}</span>
+                  <span style={{ color: '#166534' }}>Earned: +₹{ent.total_amount}</span>
                 </div>
                 <div style={{ color: '#64748b', wordBreak: 'break-word' }}>
-                  {ent.description} [Qty: {ent.quantity} {'\u00d7'} Rate: {'\u20b9'}{ent.rate}]
+                  {ent.description} [Qty: {ent.quantity} × Rate: ₹{ent.rate}]
                 </div>
               </div>
             ))}
