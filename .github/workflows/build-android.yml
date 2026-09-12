@@ -40,12 +40,14 @@ jobs:
           cd frontend
           npm run build
 
-      - name: Safe Android Platform Setup & Sync
+      - name: Force Android Platform Generation & Sync
         run: |
           cd frontend
-          # Agar android folder nahi hai ya gradlew missing hai, toh ise fresh add karega
+          # Agar android folder pehle se nahi hai toh add karega, agar hai toh force copy karke gradlew laayega
           if [ ! -d "android" ]; then
             npx cap add android
+          else
+            npx cap copy android
           fi
           npx cap sync android
 
