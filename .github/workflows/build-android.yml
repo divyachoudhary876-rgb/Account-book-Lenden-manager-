@@ -40,13 +40,20 @@ jobs:
           cd frontend
           npm run build
 
-      - name: Fresh Android Platform Generation
+      - name: Force Android Platform Generation & Check
         run: |
           cd frontend
-          # Purana android folder hata kar hamesha naya generate karega taaki gradlew hamesha mile
           rm -rf android
-          npx cap add android
-          npx cap sync android
+          # Capacitor CLI ke zariye android platform add karein
+          npx @capacitor/cli add android
+          npx @capacitor/cli sync android
+          
+          # Check karein ki gradlew file aayi ya nahi
+          if [ ! -f "android/gradlew" ]; then
+            echo "ERROR: gradlew still missing! Forcing npm install of android platform package..."
+            npm install @capacitor/android
+            npx cap sync android
+          fi
 
       - name: Build Debug APK via Gradle
         run: |
