@@ -99,14 +99,14 @@ jobs:
           cd frontend
           npm run build
 
-      - name: Build Windows Executable
+      - name: Build Windows Executable (.exe)
         run: |
           cd frontend
-          npx electron-builder --windows --dir
+          npx electron-builder --win --x64
 
       - name: Upload Windows App Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Windows-EXE-App
-          path: frontend/dist/
+          path: frontend/release-builds/*.exe
           retention-days: 14
