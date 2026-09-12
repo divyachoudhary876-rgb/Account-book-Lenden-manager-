@@ -40,12 +40,11 @@ jobs:
           cd frontend
           npm run build
 
-      - name: Ensure Android Platform Exists
+      - name: Force Generate Android Platform & Gradlew
         run: |
           cd frontend
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
+          rm -rf android
+          npx cap add android
           npx cap sync android
 
       - name: Build Debug APK via Gradle
