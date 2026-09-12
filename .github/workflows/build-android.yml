@@ -21,48 +21,38 @@ jobs:
           node-version: 20
           cache-dependency-path: frontend/package.json
 
-      - name: Setup Java JDK 21
+      - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '21'
+          java-version: '17'
 
       - name: Setup Android SDK Tools
         uses: android-actions/setup-android@v3
 
-      - name: Clean Dependency Caches
-        run: |
-          cd frontend
-          npm cache clean --force || true
-          rm -rf node_modules package-lock.json
-
       - name: Install Frontend Dependencies
         run: |
           cd frontend
-          npm install --legacy-peer-deps --no-audit --no-fund
+          npm install
 
       - name: Build Web Application
         run: |
           cd frontend
           npm run build
 
-      - name: Fresh Native Android Scaffolding & Sync
+      - name: Add Android Platform & Sync
         run: |
           cd frontend
-          if [ ! -f "android/gradlew" ]; then
-            echo "Re-scaffolding Android project..."
-            rm -rf android
-            npx cap add android
-          fi
+          npx cap add android || true
           npx cap sync android
 
       - name: Build Debug APK via Gradle
         run: |
           cd frontend/android
           chmod +x gradlew
-          ./gradlew clean assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Prepare Final APK and Assets Artifact
+      - name: Prepare Final APK Artifact
         run: |
           mkdir -p final_apk
           APK_FOUND=$(find frontend/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
@@ -73,12 +63,9 @@ jobs:
             echo "CRITICAL: No APK produced."
             exit 1
           fi
-          
-          # Frontend folder se .json aur .html files ko final_apk me copy karega
-          find frontend -maxdepth 2 \( -name "*.json" -o -name "*.html" \) -exec cp {} final_apk/ \;
 
-      - name: Upload Verified Installable APK, JSON and HTML
-        uses: actions/upload-artifact@v4
+      - name: Upload Verified Installable APK
+        uses: actions/actions/upload-artifact@v4
         with:
           name: AccountBook-APK
           path: final_apk/
