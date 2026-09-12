@@ -10,28 +10,20 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         
         // Version increments for smooth in-place application updates
-        versionCode 4
-        versionName "1.0.3"
+        versionCode 3
+        versionName "1.0.2"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate Modern Web Apps.
+             // For more information see https://developer.android.com/studio/build/configure-apk-splits.html
              ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
-        }
-    }
-
-    signingConfigs {
-        release {
-            storeFile file('my-release-key.jks')
-            storePassword System.getenv("KEYSTORE_PASSWORD")
-            keyAlias System.getenv("KEY_ALIAS")
-            keyPassword System.getenv("KEY_PASSWORD")
         }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
