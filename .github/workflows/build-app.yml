@@ -1,0 +1,112 @@
+name: Build Cross-Platform App (Android & Windows)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js v20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache-dependency-path: frontend/package.json
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Build Web Application
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Generate Android Platform & Sync
+        run: |
+          cd frontend
+          rm -rf android
+          npx @capacitor/cli add android
+          npx @capacitor/cli sync android
+          if [ ! -f "android/gradlew" ]; then
+            npm install @capacitor/android
+            npx cap sync android
+          fi
+
+      - name: Build Debug APK via Gradle
+        run: |
+          cd frontend/android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare Android APK Artifact
+        run: |
+          mkdir -p android_artifact
+          APK_FOUND=$(find frontend/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          if [ -n "$APK_FOUND" ]; then
+            cp "$APK_FOUND" android_artifact/AccountBook-Installable.apk
+          else
+            exit 1
+          fi
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-APK-App
+          path: android_artifact/
+          retention-days: 14
+
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js v20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies & Electron Builder
+        run: |
+          cd frontend
+          npm install
+          npm install electron electron-builder --save-dev
+
+      - name: Build Web Application
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Build Windows Executable
+        run: |
+          cd frontend
+          npx electron-builder --windows --dir
+
+      - name: Upload Windows App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-EXE-App
+          path: frontend/dist/
+          retention-days: 14
