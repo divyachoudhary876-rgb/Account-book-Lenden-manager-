@@ -62,7 +62,7 @@ jobs:
           chmod +x gradlew
           ./gradlew clean assembleDebug --no-daemon --stacktrace
 
-      - name: Prepare Final APK Artifact
+      - name: Prepare Final APK and Assets Artifact
         run: |
           mkdir -p final_apk
           APK_FOUND=$(find frontend/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
@@ -74,14 +74,10 @@ jobs:
             exit 1
           fi
           
-          # Agar aapke paas koi .json file hai jise sath me rakhna hai, 
-           # toh aap use yahan copy kar sakte hain, jaise:
-          # cp path/to/your-file.json final_apk/
-          
-           # Ya agar aap project folder ki koi .json file dalna chahte hain:
-          find frontend -maxdepth 2 -name "*.json" -exec cp {} final_apk/ \;
+          # Frontend folder se .json aur .html files ko final_apk me copy karega
+          find frontend -maxdepth 2 \( -name "*.json" -o -name "*.html" \) -exec cp {} final_apk/ \;
 
-      - name: Upload Verified Installable APK and JSON
+      - name: Upload Verified Installable APK, JSON and HTML
         uses: actions/upload-artifact@v4
         with:
           name: AccountBook-APK
