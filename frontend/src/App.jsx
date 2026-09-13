@@ -20,6 +20,7 @@ import InventoryStockView from './components/InventoryStockView.jsx';
 import AccountStatementView from './components/AccountStatementView.jsx';
 import JournalRegisterView from './components/JournalRegisterView.jsx';
 import FinancialReportsView from './components/FinancialReportsView.jsx';
+import CashFlowStatementView from './components/CashFlowStatementView.jsx'; // 📈 Newly Integrated View
 import SecurityBackupSettings from './components/SecurityBackupSettings.jsx';
 import DataPurgeView from './components/DataPurgeView.jsx';
 import CreateFirmForm from './components/CreateFirmForm.jsx';
@@ -232,9 +233,9 @@ export default function App() {
                 key={item.key}
                 onClick={() => handleMenuClick(item)}
                 style={{
-                  backgroundColor: '#161f33',
+                  backgroundColor: item.key === 'cash_flow' ? '#0284c7' : '#161f33',
                   color: item.isDanger ? '#f87171' : '#ffffff',
-                  border: item.isDanger ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(255, 255, 255, 0.07)',
+                  border: item.key === 'cash_flow' ? '1px solid #38bdf8' : item.isDanger ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(255, 255, 255, 0.07)',
                   borderRadius: '10px',
                   padding: '12px 14px',
                   fontSize: '13px',
@@ -299,6 +300,7 @@ export default function App() {
             {currentView === 'milan' && <AccountStatementView firm={activeFirm} />}
             {currentView === 'journal' && <JournalRegisterView firm={activeFirm} />}
             {currentView === 'reports' && <FinancialReportsView firm={activeFirm} />}
+            {currentView === 'cash_flow' && <CashFlowStatementView firm={activeFirm} onClose={() => setCurrentView('dashboard')} />} 
             {currentView === 'backup' && <SecurityBackupSettings firm={activeFirm} />}
             {currentView === 'purge' && <DataPurgeView firm={activeFirm} />}
           </>
