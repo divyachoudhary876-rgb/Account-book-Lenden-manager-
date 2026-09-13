@@ -6,7 +6,10 @@ import { downloadJournalRegisterPDF } from '../utils/pdfDownloadEngine.js';
 export default function JournalRegisterView({ firm, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const [journalEntries, setJournalEntries] = useState([]);
+  const [filterType, setFilterType] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [sortOrder, setSortOrder] = useState('ASC');
   const [isExporting, setIsExporting] = useState(false);
   const [statusNotification, setStatusNotification] = useState(null);
@@ -48,15 +51,15 @@ export default function JournalRegisterView({ firm, onClose }) {
             if (cr) crAcc = (cr.account_name || cr.party || 'Account').trim();
             if (totalAmt <= 0) totalAmt = Number(dr?.amount || dr?.debit || 0);
           } else {
-            drAcc = (tx.dr_account || tx.debit_account || 'Account').trim();
-            crAcc = (tx.cr_account || tx.credit_account || 'Account').trim();
+            drAcc = (tx.dr_account || tx.debit_account || tx.expense_ledger || 'Account').trim();
+            crAcc = (tx.cr_account || tx.credit_account || tx.worker || 'Account').trim();
           }
 
           uniqueMap.set(uId, {
             ...tx,
             voucher_date: tx.voucher_date || tx.date || '2026-09-13',
             voucher_type: String(tx.voucher_type || tx.type || 'JV').toUpperCase(),
-            reference_no: tx.reference_no || tx.voucher_number || (tx.id ? tx.id.slice(-6) : '1001'),
+            reference_no: tx.reference_no || tx.voucher_number || (tx.id ? tx.id.slice(-6) : '154614'),
             dr_account: drAcc,
             cr_account: crAcc,
             amount: totalAmt
@@ -88,13 +91,19 @@ export default function JournalRegisterView({ firm, onClose }) {
 
   const filteredEntries = journalEntries.filter(entry => {
     if (!entry) return false;
+    const vDate = entry.voucher_date || '';
+    if (fromDate && vDate < fromDate) return false;
+    if (toDate && vDate > toDate) return false;
+
+    const typeMatch = filterType === 'ALL' || String(entry.voucher_type || '').toUpperCase() === filterType;
     const q = searchQuery.toLowerCase();
-    return (
-      (entry.reference_no && entry.reference_no.toLowerCase().includes(q)) ||
+    const searchMatch = 
+      (entry.reference_no && String(entry.reference_no).toLowerCase().includes(q)) ||
       (entry.dr_account && entry.dr_account.toLowerCase().includes(q)) ||
       (entry.cr_account && entry.cr_account.toLowerCase().includes(q)) ||
-      (entry.narration && entry.narration.toLowerCase().includes(q))
-    );
+      (entry.narration && entry.narration.toLowerCase().includes(q));
+
+    return typeMatch && searchMatch;
   });
 
   const totalDebit = filteredEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0);
@@ -123,13 +132,12 @@ export default function JournalRegisterView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto', boxSizing: 'border-box' }}>
       
-      {/* Original Daybook Header */}
+      {/* Original Chronological Audit Book Header & Filters matching your reference */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+        <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800', marginBottom: '2px' }}>CHRONOLOGICAL AUDIT BOOK</div>
+        
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-          <div>
-            <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>CHRONOLOGICAL AUDIT BOOK</div>
-            <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📖 General Journal / Daybook</h2>
-          </div>
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📖 General Journal / Daybook</h2>
 
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button
@@ -147,6 +155,27 @@ export default function JournalRegisterView({ firm, onClose }) {
               <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
             </button>
             {onClose && <button onClick={onClose} style={{ padding: '8px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>Close</button>}
+          </div>
+        </div>
+
+        {/* Date Filters & Voucher Type Dropdown matching original reference */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (से)</label>
+            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (तक)</label>
+            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Voucher Type</label>
+            <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', boxSizing: 'border-box' }}>
+              <option value="ALL">All Types</option>
+              <option value="JV">JV (Journal)</option>
+              <option value="PAY">PAY (Payment)</option>
+              <option value="REC">REC (Receipt)</option>
+            </select>
           </div>
         </div>
 
@@ -172,7 +201,7 @@ export default function JournalRegisterView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Original Daybook Entry Cards */}
+      {/* Journal Cards matching original design */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {filteredEntries.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
