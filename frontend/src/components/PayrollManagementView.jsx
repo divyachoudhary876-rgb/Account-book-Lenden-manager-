@@ -40,7 +40,7 @@ export default function PayrollManagementView({ firm, onClose }) {
     );
     setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
-    // 2. पेरोल प्रविष्टियां लोड करें (firmIsolationEngine का उपयोग करके)
+    // 2. पेरोल प्रविष्टियां लोड करें
     const entries = loadFirmData('app_payroll_entries', firm, []);
     setPayrollEntries(entries);
   };
@@ -63,11 +63,15 @@ export default function PayrollManagementView({ firm, onClose }) {
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    if (!selectedWorker) {
+    // Ensure worker and ledger are properly resolved as text strings
+    const workerName = typeof selectedWorker === 'object' ? (selectedWorker.account_name || selectedWorker.name || '') : selectedWorker;
+    const expenseName = typeof expenseLedger === 'object' ? (expenseLedger.account_name || expenseLedger.name || '') : expenseLedger;
+
+    if (!workerName) {
       setErrorMsg('Please select a worker, driver, or employee.');
       return;
     }
-    if (!expenseLedger) {
+    if (!expenseName) {
       setErrorMsg('Please select an expense account.');
       return;
     }
@@ -82,9 +86,9 @@ export default function PayrollManagementView({ firm, onClose }) {
 
     const newEntry = {
       id: 'PAY-' + Date.now(),
-      worker: selectedWorker,
+      worker: workerName,
       date: workDate,
-      expense_ledger: expenseLedger,
+      expense_ledger: expenseName,
       quantity: Number(quantity),
       rate: Number(ratePerUnit),
       total_amount: calculatedTotalAmount,
@@ -97,17 +101,17 @@ export default function PayrollManagementView({ firm, onClose }) {
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 2. जर्नल वाउचर में भी प्रविष्टि डालें ताकि यह 'Account Milan & Ledger' और रिपोर्ट्स में दिखे
+    // 2. जर्नल वाउचर में प्रविष्टि डालें ताकि यह 'Account Milan & Ledger' और Daybook रिपोर्ट्स में दिखे
     try {
       const allVouchers = loadFirmData('app_vouchers', firm, []);
       const newVoucher = {
         id: 'JV-PAY-' + Date.now(),
         date: workDate,
-        voucher_type: 'JV', // Journal Voucher
-        narration: `Wages credited to ${selectedWorker} via ${expenseLedger} [Qty: ${quantity} x Rate: ${ratePerUnit}] - ${workDescription}`,
+        voucher_type: 'JV', 
+        narration: `Wages credited to ${workerName} via ${expenseName} [Qty: ${quantity} x Rate: ${ratePerUnit}] - ${workDescription}`,
         entries: [
-          { account_name: expenseLedger, debit: calculatedTotalAmount, credit: 0 },
-          { account_name: selectedWorker, debit: 0, credit: calculatedTotalAmount }
+          { account_name: expenseName, debit: calculatedTotalAmount, credit: 0 },
+          { account_name: workerName, debit: 0, credit: calculatedTotalAmount }
         ],
         timestamp: new Date().toISOString()
       };
@@ -118,15 +122,17 @@ export default function PayrollManagementView({ firm, onClose }) {
 
     // 3. ग्लोबल स्टोरेज अपडेट इवेंट ट्रिगर करें ताकि पूरे ऐप में रिफ्रेश हो जाए
     window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('storage'));
 
-    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${selectedWorker}'s ledger!`);
+    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger!`);
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
   };
 
   // चुनी गई फर्म और वर्कर के हिसाब से कुल राशि गणना
-  const workerEntries = payrollEntries.filter(e => e.worker === selectedWorker);
+  const resolvedActiveWorker = typeof selectedWorker === 'object' ? (selectedWorker.account_name || '') : selectedWorker;
+  const workerEntries = payrollEntries.filter(e => e.worker === resolvedActiveWorker);
   const totalEarned = workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
   const totalPaid = 0; 
   const totalBaki = totalEarned - totalPaid;
@@ -212,7 +218,7 @@ export default function PayrollManagementView({ firm, onClose }) {
           </div>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Rate/Unit (₹) *</label>
-            <input type="number" placeholder="e.g. 18000" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+            <input type="number" placeholder="e.g. 100" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Kul Amount (₹)</label>
@@ -232,9 +238,9 @@ export default function PayrollManagementView({ firm, onClose }) {
         </button>
       </form>
 
-      {/* लेजर रजिस्टर (अब यह चुनी गई फर्म और वर्कर की सभी प्रविष्टियां तुरंत दिखाएगा) */}
+      {/* लेजर रजिस्टर */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({selectedWorker || 'Select Worker'})</h3>
+        <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({resolvedActiveWorker || 'Select Worker'})</h3>
         {workerEntries.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '10px' }}>No work or attendance entries recorded for this worker yet.</div>
         ) : (
