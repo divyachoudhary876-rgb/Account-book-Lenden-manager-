@@ -5,11 +5,13 @@ import SearchableAccountDropdown from './SearchableAccountDropdown';
 
 export default function PayrollManagementView({ firm, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const todayMaxDate = new Date().toISOString().slice(0, 10);
+
   const [workersList, setWorkersList] = useState([]);
   const [expenseAccountsList, setExpenseAccountsList] = useState([]);
   
   const [selectedWorker, setSelectedWorker] = useState('');
-  const [workDate, setWorkDate] = useState(new Date().toISOString().slice(0, 10));
+  const [workDate, setWorkDate] = useState(todayMaxDate);
   const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expenses');
   const [quantity, setQuantity] = useState('');
   const [ratePerUnit, setRatePerUnit] = useState('');
@@ -213,7 +215,13 @@ export default function PayrollManagementView({ firm, onClose }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Date of Work *</label>
-            <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+            <input 
+              type="date" 
+              max={todayMaxDate} 
+              value={workDate} 
+              onChange={(e) => setWorkDate(e.target.value)} 
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} 
+            />
           </div>
           <div>
             <SearchableAccountDropdown 
