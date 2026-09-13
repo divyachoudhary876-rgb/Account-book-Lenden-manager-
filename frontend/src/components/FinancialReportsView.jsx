@@ -3,12 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { downloadFinancialReportPDF } from '../utils/pdfDownloadEngine.js';
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
-import { Capacitor } from '@capacitor/core';
 
 export default function FinancialReportsView({ firm, onClose }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
 
   const [activeTab, setActiveTab] = useState('TRIAL_BALANCE');
@@ -28,49 +25,107 @@ export default function FinancialReportsView({ firm, onClose }) {
       const masterAccounts = getFirmMasterAccounts(activeFirmId) || [];
       const ledgerMap = {};
 
+      // 1. मास्टर अकाउंट्स से लेजर मैप तैयार करें
       masterAccounts.forEach(acc => {
         const name = acc.name || acc.account_name;
         if (name) {
-          ledgerMap[name.trim()] = {
-            name: name.trim(),
-            category: acc.category || acc.type || 'GENERAL',
-            debit: 0,
+          const cleanName = name.trim();
+          ledgerMap[cleanName] = {
+            name: cleanName,
+            category: (acc.category || acc.primary_type || 'GENERAL').toUpperCase(),
+            debit: Number(acc.opening_balance || 0),
             credit: 0
           };
+          if (acc.balance_type === 'Cr') {
+            ledgerMap[cleanName].debit = 0;
+            ledgerMap[cleanName].credit = Number(acc.opening_balance || 0);
+          }
         }
       });
 
+      // 2. सभी संभावित स्टोरेज कीज़ से वाउचर्स स्कैन करें (Universal Scan)
       let rawTx = [];
-      ['account_book_vouchers', 'vouchers', 'transactions', 'daybook'].forEach(k => {
+      const primaryKeys = ['account_book_vouchers', 'app_vouchers', 'vouchers', 'transactions', 'daybook', 'journal_entries'];
+      primaryKeys.forEach(k => {
         const val = StorageService.getItem(k);
         if (Array.isArray(val)) rawTx.push(...val);
       });
 
-      const firmVouchers = rawTx.filter(v => v && (!v.firm_id || v.firm_id === activeFirmId));
+      // लोकल स्टोरेज में डीप स्कैन ताकि कोई भी वाउचर छूटे नहीं
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('entry') || key.includes('daybook') || key.includes('book'))) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) rawTx.push(...parsed);
+              else if (parsed && typeof parsed === 'object') {
+                if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
+                if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
+              }
+            } catch (err) {}
+          }
+        }
+      }
+
+      // फर्म आईडी के हिसाब से फिल्टर करें
+      const firmVouchers = rawTx.filter(v => {
+        if (!v) return false;
+        if (v.firm_id && activeFirmId && v.firm_id !== activeFirmId && v.firm_id !== 'FIRM-001' && activeFirmId !== 'FIRM-001') {
+          return false;
+        }
+        return true;
+      });
 
       let totalPurchases = 0;
       let totalSales = 0;
 
+      // 3. वाउचर की प्रविष्टियों को प्रोसेस करें (Entries Array + Flat Format दोनों का सपोर्ट)
       firmVouchers.forEach(v => {
-        const amt = Number(v.amount || v.total_amount || 0);
-        if (amt <= 0) return;
-        const dr = (v.dr_account || v.dr_party || v.debit_account || '').trim();
-        const cr = (v.cr_account || v.cr_party || v.credit_account || '').trim();
         const vType = String(v.voucher_type || v.type || '').toUpperCase();
+        
+        if (Array.isArray(v.entries) && v.entries.length > 0) {
+          v.entries.forEach(e => {
+            const accName = (e.account_name || e.party || '').trim();
+            const amt = Number(e.amount || e.debit || e.credit || 0);
+            if (!accName || amt <= 0) return;
 
-        if (dr) {
-          if (!ledgerMap[dr]) ledgerMap[dr] = { name: dr, category: 'GENERAL', debit: 0, credit: 0 };
-          ledgerMap[dr].debit += amt;
-        }
-        if (cr) {
-          if (!ledgerMap[cr]) ledgerMap[cr] = { name: cr, category: 'GENERAL', debit: 0, credit: 0 };
-          ledgerMap[cr].credit += amt;
-        }
+            const isDr = (e.type || '').toUpperCase() === 'DR' || Number(e.debit || 0) > 0;
+            const isCr = (e.type || '').toUpperCase() === 'CR' || Number(e.credit || 0) > 0;
 
-        if (vType === 'PURCHASE') totalPurchases += amt;
-        if (vType === 'SALES') totalSales += amt;
+            if (!ledgerMap[accName]) {
+              ledgerMap[accName] = { name: accName, category: 'EXPENSES', debit: 0, credit: 0 };
+            }
+
+            if (isDr) ledgerMap[accName].debit += amt;
+            if (isCr) ledgerMap[accName].credit += amt;
+
+            if (vType === 'PURCHASE') totalPurchases += amt;
+            if (vType === 'SALES') totalSales += amt;
+          });
+        } else {
+          const amt = Number(v.amount || v.total_amount || v.grand_total || 0);
+          if (amt <= 0) return;
+
+          const dr = (v.dr_account || v.dr_party || v.debit_account || '').trim();
+          const cr = (v.cr_account || v.cr_party || v.credit_account || '').trim();
+
+          if (dr) {
+            if (!ledgerMap[dr]) ledgerMap[dr] = { name: dr, category: 'EXPENSES', debit: 0, credit: 0 };
+            ledgerMap[dr].debit += amt;
+          }
+          if (cr) {
+            if (!ledgerMap[cr]) ledgerMap[cr] = { name: cr, category: 'LIABILITIES', debit: 0, credit: 0 };
+            ledgerMap[cr].credit += amt;
+          }
+
+          if (vType === 'PURCHASE') totalPurchases += amt;
+          if (vType === 'SALES') totalSales += amt;
+        }
       });
 
+      // क्लोजिंग स्टॉक की गणना
       const inventory = StorageService.getItem('inventory_items') || [];
       const firmInventory = inventory.filter(i => !i.firm_id || i.firm_id === activeFirmId);
       const closingStockValue = firmInventory.reduce((sum, item) => {
@@ -112,9 +167,11 @@ export default function FinancialReportsView({ firm, onClose }) {
     computeFinancials();
     window.addEventListener('app_storage_updated', computeFinancials);
     window.addEventListener('app_state_updated', computeFinancials);
+    window.addEventListener('storage', computeFinancials);
     return () => {
       window.removeEventListener('app_storage_updated', computeFinancials);
       window.removeEventListener('app_state_updated', computeFinancials);
+      window.removeEventListener('storage', computeFinancials);
     };
   }, [activeFirmId]);
 
@@ -124,8 +181,6 @@ export default function FinancialReportsView({ firm, onClose }) {
 
     try {
       const res = await downloadFinancialReportPDF(firm, reportData, activeTab);
-      
-      // If PDF engine returns base64 or blob for mobile native handling
       if (res?.success) {
         setStatusNotification({ type: 'success', message: '✓ Financial Report PDF downloaded successfully!' });
       } else {
