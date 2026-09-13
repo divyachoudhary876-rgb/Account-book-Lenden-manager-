@@ -18,17 +18,16 @@ export default function PayrollManagementView({ firm, onClose }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
-  // फर्म-वाइज डेटा लोड करने का फंक्शन
   const loadData = () => {
     if (!firm) return;
     
-    // 1. सभी लेजर्स लोड करें
+    // 1. सभी लेजर्स app_accounts से लोड करें
     const allAccounts = loadFirmData('app_accounts', firm, [
-      { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee' },
-      { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver' },
-      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Expenses' },
-      { id: 'w_4', account_name: 'Tractor Diesel & Maintenance', sub_group: 'Direct Expenses' },
-      { id: 'w_5', account_name: 'General Factory Wages', sub_group: 'Direct Expenses' }
+      { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee', primary_type: 'Liabilities' },
+      { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver', primary_type: 'Liabilities' },
+      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Expenses', primary_type: 'Expenses' },
+      { id: 'w_4', account_name: 'Tractor Diesel & Maintenance', sub_group: 'Direct Expenses', primary_type: 'Expenses' },
+      { id: 'w_5', account_name: 'General Factory Wages', sub_group: 'Direct Expenses', primary_type: 'Expenses' }
     ]);
 
     setWorkersList(allAccounts);
@@ -57,13 +56,31 @@ export default function PayrollManagementView({ firm, onClose }) {
 
   const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
 
-  // वर्कर के हिसाब से प्रविष्टि पोस्ट करना और लेजर में सिंक करना
+  // सुनिश्चित करें कि लेजर 'app_accounts' में मौजूद है, यदि नहीं तो ऑटो-क्रिएट करें
+  const ensureAccountExists = (accountName, subGroup, primaryType) => {
+    if (!accountName) return;
+    const accounts = loadFirmData('app_accounts', firm, []);
+    const exists = accounts.some(acc => (acc.account_name || '').toLowerCase() === accountName.toLowerCase());
+    
+    if (!exists) {
+      const newAcc = {
+        id: 'ACC-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+        account_name: accountName,
+        sub_group: subGroup || 'Direct Expenses',
+        primary_type: primaryType || 'Expenses',
+        opening_balance: 0,
+        balance_type: 'Dr',
+        timestamp: new Date().toISOString()
+      };
+      saveFirmData('app_accounts', firm, [newAcc, ...accounts]);
+    }
+  };
+
   const handlePostWorkCredit = (e) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    // Ensure worker and ledger are properly resolved as text strings
     const workerName = typeof selectedWorker === 'object' ? (selectedWorker.account_name || selectedWorker.name || '') : selectedWorker;
     const expenseName = typeof expenseLedger === 'object' ? (expenseLedger.account_name || expenseLedger.name || '') : expenseLedger;
 
@@ -84,6 +101,10 @@ export default function PayrollManagementView({ firm, onClose }) {
       return;
     }
 
+    // 1. सुनिश्चित करें कि वर्कर और एक्सपेंस लेजर दोनों Chart of Accounts (app_accounts) में रजिस्टर्ड हैं
+    ensureAccountExists(workerName, 'Sundry Creditors (Labour/Staff)', 'Liabilities');
+    ensureAccountExists(expenseName, 'Direct Expenses', 'Expenses');
+
     const newEntry = {
       id: 'PAY-' + Date.now(),
       worker: workerName,
@@ -96,12 +117,12 @@ export default function PayrollManagementView({ firm, onClose }) {
       timestamp: new Date().toISOString()
     };
 
-    // 1. लोकल स्टेट और फर्म आइसोलेशन स्टोरेज अपडेट करें
+    // 2. पेरोल स्टोरेज अपडेट करें
     const updatedEntries = [newEntry, ...payrollEntries];
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 2. जर्नल वाउचर में प्रविष्टि डालें ताकि यह 'Account Milan & Ledger' और Daybook रिपोर्ट्स में दिखे
+    // 3. जर्नल वाउचर (Double-Entry Voucher) पोस्ट करें ताकि ट्रायल बैलेंस, पीएंडएल और डेबुक में दिखे
     try {
       const allVouchers = loadFirmData('app_vouchers', firm, []);
       const newVoucher = {
@@ -120,7 +141,7 @@ export default function PayrollManagementView({ firm, onClose }) {
       console.error('Error posting auto-voucher for payroll:', err);
     }
 
-    // 3. ग्लोबल स्टोरेज अपडेट इवेंट ट्रिगर करें ताकि पूरे ऐप में रिफ्रेश हो जाए
+    // 4. ग्लोबल सिंक इवेंट ट्रिगर करें
     window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('storage'));
 
@@ -128,9 +149,9 @@ export default function PayrollManagementView({ firm, onClose }) {
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
+    loadData(); // रिफ्रेश लिस्ट
   };
 
-  // चुनी गई फर्म और वर्कर के हिसाब से कुल राशि गणना
   const resolvedActiveWorker = typeof selectedWorker === 'object' ? (selectedWorker.account_name || '') : selectedWorker;
   const workerEntries = payrollEntries.filter(e => e.worker === resolvedActiveWorker);
   const totalEarned = workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
