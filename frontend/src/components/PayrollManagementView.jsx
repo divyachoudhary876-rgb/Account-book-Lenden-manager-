@@ -4,6 +4,7 @@ import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import SearchableAccountDropdown from './SearchableAccountDropdown';
 
 export default function PayrollManagementView({ firm, onClose }) {
+  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const [workersList, setWorkersList] = useState([]);
   const [expenseAccountsList, setExpenseAccountsList] = useState([]);
   
@@ -21,23 +22,25 @@ export default function PayrollManagementView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     
+    // 1. Load accounts from master
     const allAccounts = loadFirmData('app_accounts', firm, [
-      { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee', primary_type: 'Liabilities' },
-      { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver', primary_type: 'Liabilities' },
-      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Expenses', primary_type: 'Expenses' },
-      { id: 'w_4', account_name: 'Tractor Diesel & Maintenance', sub_group: 'Direct Expenses', primary_type: 'Expenses' },
-      { id: 'w_5', account_name: 'General Factory Wages', sub_group: 'Direct Expenses', primary_type: 'Expenses' }
+      { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee', primary_type: 'LIABILITIES' },
+      { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver', primary_type: 'LIABILITIES' },
+      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Labor & Pathai Expenses (मजदूरी)', primary_type: 'EXPENSES' },
+      { id: 'w_4', account_name: 'Tractor Diesel & Maintenance', sub_group: 'Operating Fuel Costs (Tractor / Generator Diesel)', primary_type: 'EXPENSES' },
+      { id: 'w_5', account_name: 'General Factory Wages', sub_group: 'Direct Production Expenses', primary_type: 'EXPENSES' }
     ]);
 
     setWorkersList(allAccounts);
 
     const expenseAccs = allAccounts.filter(acc => 
-      (acc.sub_group || acc.primary_type || '').toLowerCase().includes('expense') ||
-      (acc.sub_group || acc.primary_type || '').toLowerCase().includes('direct') ||
-      (acc.sub_group || '').toLowerCase().includes('indirect')
+      (acc.primary_type || '').toUpperCase() === 'EXPENSES' ||
+      (acc.sub_group || '').toLowerCase().includes('expense') ||
+      (acc.sub_group || '').toLowerCase().includes('direct')
     );
     setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
+    // 2. Load payroll entries
     const entries = loadFirmData('app_payroll_entries', firm, []);
     setPayrollEntries(entries);
   };
@@ -54,7 +57,6 @@ export default function PayrollManagementView({ firm, onClose }) {
 
   const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
 
-  // हेल्पर फंक्शन: किसी भी वैल्यू से सही अकाउंट नेम स्ट्रिंग निकालने के लिए
   const resolveName = (val) => {
     if (!val) return '';
     if (typeof val === 'string') return val.trim();
@@ -73,10 +75,10 @@ export default function PayrollManagementView({ firm, onClose }) {
       const newAcc = {
         id: 'ACC-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
         account_name: accountName,
-        sub_group: subGroup || 'Direct Expenses',
-        primary_type: primaryType || 'Expenses',
+        sub_group: subGroup || 'Direct Labor & Pathai Expenses (मजदूरी)',
+        primary_type: primaryType || 'EXPENSES',
         opening_balance: 0,
-        balance_type: 'Dr',
+        balance_type: primaryType === 'LIABILITIES' ? 'Cr' : 'Dr',
         timestamp: new Date().toISOString()
       };
       saveFirmData('app_accounts', firm, [newAcc, ...accounts]);
@@ -88,7 +90,6 @@ export default function PayrollManagementView({ firm, onClose }) {
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    // पूरी तरह सुरक्षित तरीके से नाम निकालें
     const workerName = resolveName(selectedWorker);
     const expenseName = resolveName(expenseLedger);
 
@@ -109,12 +110,16 @@ export default function PayrollManagementView({ firm, onClose }) {
       return;
     }
 
-    // 1. सुनिश्चित करें कि खाते मास्टर में मौजूद हैं
-    ensureAccountExists(workerName, 'Sundry Creditors (Labour/Staff)', 'Liabilities');
-    ensureAccountExists(expenseName, 'Direct Expenses', 'Expenses');
+    // 1. Ensure master accounts exist
+    ensureAccountExists(workerName, 'Sundry Creditors (Suppliers / लेनदार)', 'LIABILITIES');
+    ensureAccountExists(expenseName, 'Direct Labor & Pathai Expenses (मजदूरी)', 'EXPENSES');
+
+    const timestamp = new Date().toISOString();
+    const uniqueId = 'PAY-' + Date.now();
 
     const newEntry = {
-      id: 'PAY-' + Date.now(),
+      id: uniqueId,
+      firm_id: activeFirmId,
       worker: workerName,
       date: workDate,
       expense_ledger: expenseName,
@@ -122,38 +127,48 @@ export default function PayrollManagementView({ firm, onClose }) {
       rate: Number(ratePerUnit),
       total_amount: calculatedTotalAmount,
       description: workDescription || 'Work Attendance Entry',
-      timestamp: new Date().toISOString()
+      timestamp
     };
 
-    // 2. पेरोल प्रविष्टियां सेव करें
+    // 2. Save to payroll list storage
     const updatedEntries = [newEntry, ...payrollEntries];
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 3. जर्नल वाउचर पोस्ट करें ताकि ट्रायल बैलेंस और लेजर में सही नाम और अमाउंट जाए
+    // 3. CRITICAL: Save natively as a voucher to keys scanned by ledgerEngine and financialReportEngine
     try {
-      const allVouchers = loadFirmData('app_vouchers', firm, []);
-      const newVoucher = {
-        id: 'JV-PAY-' + Date.now(),
+      const vchPayload = {
+        id: uniqueId,
+        firm_id: activeFirmId,
+        voucher_date: workDate,
         date: workDate,
-        voucher_type: 'JV', 
+        voucher_type: 'JV',
+        type: 'JV',
+        voucher_number: uniqueId.slice(-6),
+        reference_no: uniqueId.slice(-6),
         narration: `Wages credited to ${workerName} via ${expenseName} [Qty: ${quantity} x Rate: ${ratePerUnit}] - ${workDescription}`,
         entries: [
-          { account_name: expenseName, debit: calculatedTotalAmount, credit: 0 },
-          { account_name: workerName, debit: 0, credit: calculatedTotalAmount }
+          { account_name: expenseName, type: 'Dr', amount: calculatedTotalAmount },
+          { account_name: workerName, type: 'Cr', amount: calculatedTotalAmount }
         ],
-        timestamp: new Date().toISOString()
+        created_at: timestamp
       };
-      saveFirmData('app_vouchers', firm, [newVoucher, ...allVouchers]);
+
+      // Push to standard keys recognized by getAllFirmVouchers()
+      const targets = [`account_book_vouchers_${activeFirmId}`, `app_vouchers_${activeFirmId}`, 'account_book_vouchers', 'app_vouchers'];
+      targets.forEach(key => {
+        const existing = JSON.parse(localStorage.getItem(key) || '[]');
+        localStorage.setItem(key, JSON.stringify([vchPayload, ...existing]));
+      });
     } catch (err) {
       console.error('Error posting auto-voucher for payroll:', err);
     }
 
-    // 4. ग्लोबल सिंक इवेंट ट्रिगर करें
+    // 4. Trigger global UI sync events
     window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('storage'));
 
-    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger!`);
+    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger & updated Financial Statements!`);
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
@@ -169,7 +184,7 @@ export default function PayrollManagementView({ firm, onClose }) {
   return (
     <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '8px', fontFamily: 'sans-serif', boxSizing: 'border-box', overflowX: 'hidden', color: '#0f172a' }}>
       
-      {/* हेडर */}
+      {/* Header */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', boxSizing: 'border-box', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
           {onClose && (
@@ -187,7 +202,7 @@ export default function PayrollManagementView({ firm, onClose }) {
       {errorMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
       {successMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
 
-      {/* वर्कर चयन और समरी बॉक्स */}
+      {/* Worker Selector & Summary */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', width: '100%' }}>
         <div>
           <SearchableAccountDropdown 
@@ -201,7 +216,6 @@ export default function PayrollManagementView({ firm, onClose }) {
           />
         </div>
 
-        {/* समरी ग्रिड */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
           <div>
             <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL (कुल)</div>
@@ -218,7 +232,7 @@ export default function PayrollManagementView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* मजदूरी प्रविष्टि फॉर्म */}
+      {/* Wage Entry Form */}
       <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 4px 0', fontSize: '12px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
 
@@ -267,7 +281,7 @@ export default function PayrollManagementView({ firm, onClose }) {
         </button>
       </form>
 
-      {/* लेजर रजिस्टर */}
+      {/* Ledger Statement */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({resolvedActiveWorker || 'Select Worker'})</h3>
         {workerEntries.length === 0 ? (
