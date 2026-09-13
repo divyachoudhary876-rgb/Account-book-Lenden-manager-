@@ -1,15 +1,13 @@
 // frontend/src/components/EnterpriseDashboard.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import AccountingDashboard from './AccountingDashboard';
 import CashFlowStatementView from './CashFlowStatementView';
 import FinancialReportsView from './FinancialReportsView';
 import JournalRegisterView from './JournalRegisterView';
 import SecurityBackupSettings from './SecurityBackupSettings';
-// (अन्य कंपोनेंट्स को आवश्यकतानुसार इम्पोर्ट करें)
 
 export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
   const [activeView, setActiveView] = useState('DASHBOARD');
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
 
   // Render active view router
   if (activeView === 'CASH_FLOW') {
@@ -96,7 +94,7 @@ export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
           <span>📑</span> General Journal Register (रोज़नामचा)
         </button>
 
-        {/* 📈 Newly Integrated Cash Flow Statement Menu Button */}
+        {/* 📈 Cash Flow Statement Menu Button (Added Here) */}
         <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0284c7', borderColor: '#38bdf8' }}>
           <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
         </button>
