@@ -99,7 +99,21 @@ export default function JournalRegisterView({ firm, onClose }) {
     if (toDate && vDate && vDate > toDate) return false;
 
     const entryType = String(entry.voucher_type || 'JV').toUpperCase();
-    const typeMatch = filterType === 'ALL' || !filterType || entryType === filterType.toUpperCase();
+    let typeMatch = true;
+    if (filterType && filterType !== 'ALL') {
+      const f = filterType.toUpperCase();
+      if (f === 'PAY' || f === 'PAYMENT') {
+        typeMatch = entryType.includes('PAY');
+      } else if (f === 'REC' || f === 'RECEIPT') {
+        typeMatch = entryType.includes('REC');
+      } else if (f === 'JV' || f === 'JOURNAL') {
+        typeMatch = entryType.includes('JV') || entryType.includes('JOURNAL');
+      } else if (f === 'CONTRA') {
+        typeMatch = entryType.includes('CONTRA');
+      } else {
+        typeMatch = entryType === f;
+      }
+    }
     
     const q = (searchQuery || '').toLowerCase();
     const searchMatch = !q || 
@@ -163,39 +177,47 @@ export default function JournalRegisterView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* Date Filters & Voucher Type Dropdown (Properly Grid-Aligned & Max Date Restricted) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1fr', gap: '8px', marginBottom: '12px', boxSizing: 'border-box' }}>
+        {/* Status Notification Banner */}
+        {statusNotification && (
+          <div style={{ padding: '10px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', marginBottom: '12px', backgroundColor: statusNotification.type === 'error' ? '#fef2f2' : statusNotification.type === 'success' ? '#ecfdf5' : '#f0f9ff', color: statusNotification.type === 'error' ? '#991b1b' : statusNotification.type === 'success' ? '#065f46' : '#0369a1', border: `1px solid ${statusNotification.type === 'error' ? '#fecaca' : statusNotification.type === 'success' ? '#a7f3d0' : '#bae6fd'}` }}>
+            {statusNotification.message}
+          </div>
+        )}
+
+        {/* Date Filters & Voucher Type Dropdown (Clean Responsive Grid) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.1fr', gap: '10px', marginBottom: '12px', boxSizing: 'border-box', alignItems: 'center' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (से)</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>From Date (से)</label>
             <input 
               type="date" 
               max={todayMaxDate}
               value={fromDate} 
               onChange={e => setFromDate(e.target.value)} 
-              style={{ width: '100%', padding: '9px 6px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff' }} 
+              style={{ width: '100%', padding: '10px 8px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
             />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (तक)</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>To Date (तक)</label>
             <input 
               type="date" 
               max={todayMaxDate}
               value={toDate} 
               onChange={e => setToDate(e.target.value)} 
-              style={{ width: '100%', padding: '9px 6px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff' }} 
+              style={{ width: '100%', padding: '10px 8px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
             />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Voucher Type</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Voucher Type</label>
             <select 
               value={filterType} 
               onChange={e => setFilterType(e.target.value)} 
-              style={{ width: '100%', padding: '9px 6px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', color: '#0f172a', fontWeight: 'bold', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '10px 8px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#f8fafc', color: '#0f172a', fontWeight: '700', boxSizing: 'border-box' }}
             >
               <option value="ALL">All Types</option>
               <option value="JV">JV (Journal)</option>
               <option value="PAY">PAY (Payment)</option>
               <option value="REC">REC (Receipt)</option>
+              <option value="CONTRA">Contra</option>
             </select>
           </div>
         </div>
@@ -206,7 +228,7 @@ export default function JournalRegisterView({ firm, onClose }) {
             placeholder="🔍 Search account, ref no, narration..." 
             value={searchQuery} 
             onChange={e => setSearchQuery(e.target.value)}
-            style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box', backgroundColor: '#f8fafc' }}
           />
         </div>
 
