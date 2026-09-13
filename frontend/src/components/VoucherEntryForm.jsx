@@ -11,6 +11,7 @@ import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 export default function VoucherEntryForm({ firm }) {
   const activeFirmId = firm?.id || 'FIRM-001';
+  const todayMaxDate = new Date().toISOString().split('T')[0];
 
   const [accounts, setAccounts] = useState([]);
   const [voucherList, setVoucherList] = useState([]);
@@ -20,7 +21,7 @@ export default function VoucherEntryForm({ firm }) {
 
   // Form Fields
   const [voucherType, setVoucherType] = useState('PAYMENT');
-  const [voucherDate, setVoucherDate] = useState(new Date().toISOString().split('T')[0]);
+  const [voucherDate, setVoucherDate] = useState(todayMaxDate);
   const [referenceNo, setReferenceNo] = useState('');
   const [drAccount, setDrAccount] = useState('');
   const [crAccount, setCrAccount] = useState('');
@@ -54,7 +55,7 @@ export default function VoucherEntryForm({ firm }) {
   const handleEditInit = (voucher) => {
     setEditingId(voucher.id);
     setVoucherType(voucher.voucher_type || voucher.type || 'PAYMENT');
-    setVoucherDate(voucher.voucher_date || voucher.date || new Date().toISOString().split('T')[0]);
+    setVoucherDate(voucher.voucher_date || voucher.date || todayMaxDate);
     setReferenceNo(voucher.reference_no || voucher.voucher_number || '');
     setDrAccount(voucher.dr_account || voucher.dr_party || '');
     setCrAccount(voucher.cr_account || voucher.cr_party || '');
@@ -75,6 +76,7 @@ export default function VoucherEntryForm({ firm }) {
     setAmount('');
     setNarration('');
     setReferenceNo('');
+    setVoucherDate(todayMaxDate);
     setStatus(null);
   };
 
@@ -212,6 +214,7 @@ export default function VoucherEntryForm({ firm }) {
             <label style={labelStyle}>Date *</label>
             <input
               type="date"
+              max={todayMaxDate}
               value={voucherDate}
               onChange={e => setVoucherDate(e.target.value)}
               style={inputStyle}
