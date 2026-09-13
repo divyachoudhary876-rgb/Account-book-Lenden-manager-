@@ -6,7 +6,9 @@ import SearchableAccountDropdown from './SearchableAccountDropdown';
 
 export default function MaterialConsumptionView({ firm, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
-  const [usageDate, setUsageDate] = useState(new Date().toISOString().slice(0, 10));
+  const todayMaxDate = new Date().toISOString().slice(0, 10);
+
+  const [usageDate, setUsageDate] = useState(todayMaxDate);
   const [vehicleRef, setVehicleRef] = useState('');
   
   const [stockItems, setStockItems] = useState([]);
@@ -23,17 +25,14 @@ export default function MaterialConsumptionView({ firm, onClose }) {
 
   const loadData = () => {
     try {
-      // 1. सीधे StorageService से inventory_items लोड करें (कोई डिफ़ॉल्ट हार्डकोडेड आइटम नहीं)
       const allStoredStock = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
       const firmStock = allStoredStock.filter(item => !item.firm_id || item.firm_id === activeFirmId);
       setStockItems(firmStock);
 
-      // 2. लेजर्स/अकाउंट्स लोड करें
       const allAccounts = StorageService.getItem('app_accounts') || [];
       const firmAccounts = allAccounts.filter(acc => !acc.firm_id || acc.firm_id === activeFirmId);
       setExpenseAccounts(firmAccounts);
 
-      // 3. कंजम्पशन बैचेस लोड करें
       const savedBatches = StorageService.getItem(`app_fuel_consumption_batches_${activeFirmId}`) || [];
       setBatchesList(savedBatches);
     } catch (e) {
@@ -115,7 +114,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       setBatchesList(updatedBatches);
       StorageService.setItem(`app_fuel_consumption_batches_${activeFirmId}`, updatedBatches);
 
-      // स्टॉक घटाने की लॉजिक (इन्वेंट्री अपडेट करें)
       let allStoredStock = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
       consumptionCart.forEach(cartItem => {
         const target = allStoredStock.find(i => (i.item_name || i.name) === cartItem.item_name && (!i.firm_id || i.firm_id === activeFirmId));
@@ -161,7 +159,13 @@ export default function MaterialConsumptionView({ firm, onClose }) {
         <div style={{ display: 'flex', gap: '10px' }}>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#475569' }}>Date of Usage *</label>
-            <input type="date" value={usageDate} onChange={(e) => setUsageDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+            <input 
+              type="date" 
+              max={todayMaxDate} 
+              value={usageDate} 
+              onChange={(e) => setUsageDate(e.target.value)} 
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} 
+            />
           </div>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#475569' }}>Vehicle / Chamber Ref *</label>
