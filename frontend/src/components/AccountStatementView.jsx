@@ -3,18 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
-import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
-import { getAccountLedgerStatement } from '../utils/ledgerEngine.js';
 
 export default function AccountStatementView({ firm }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
-  const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
-
+  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const [accounts, setAccounts] = useState([]);
   const [selectedParty, setSelectedParty] = useState('');
   const [statementData, setStatementData] = useState(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const [statusNotification, setStatusNotification] = useState(null);
 
   const loadData = () => {
     try {
@@ -30,15 +24,14 @@ export default function AccountStatementView({ firm }) {
 
   useEffect(() => {
     loadData();
-    window.addEventListener('app_state_updated', loadData);
     window.addEventListener('app_storage_updated', loadData);
+    window.addEventListener('storage', loadData);
     return () => {
-      window.removeEventListener('app_state_updated', loadData);
       window.removeEventListener('app_storage_updated', loadData);
+      window.removeEventListener('storage', loadData);
     };
   }, [activeFirmId]);
 
-  // Unified & Robust Account Statement Computation via centralized ledgerEngine
   useEffect(() => {
     if (!selectedParty) {
       setStatementData(null);
@@ -46,196 +39,127 @@ export default function AccountStatementView({ firm }) {
     }
 
     try {
-      // centralized engine call to prevent any missing transaction discrepancies
-      const statement = getAccountLedgerStatement(selectedParty, activeFirmId);
-      
+      let rawTx = [];
+      const keysToScan = [
+        'account_book_vouchers',
+        'app_vouchers',
+        'vouchers',
+        'transactions',
+        'daybook',
+        'app_payroll_entries',
+        `account_book_vouchers_${activeFirmId}`,
+        `app_vouchers_${activeFirmId}`,
+        `app_payroll_entries_${activeFirmId}`
+      ];
+
+      keysToScan.forEach(k => {
+        const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
+        if (Array.isArray(val)) rawTx.push(...val);
+      });
+
+      const targetClean = String(selectedParty).trim().toLowerCase();
+      const matchedTransactions = [];
+
+      rawTx.forEach(v => {
+        if (!v) return;
+
+        // यदि यह डायरेक्ट पेरोल एंट्री है
+        if (v.worker && v.expense_ledger && v.total_amount) {
+          if (String(v.worker).trim().toLowerCase() === targetClean) {
+            matchedTransactions.push({
+              date: v.date || '2026-09-13',
+              voucher_type: 'PAY',
+              voucher_number: v.id ? v.id.slice(-6) : '0000',
+              narration: `Wages via ${v.expense_ledger} [Qty: ${v.quantity} x Rate: ${v.rate}] - ${v.description || ''}`,
+              debit: 0,
+              credit: Number(v.total_amount || 0)
+            });
+          }
+          return;
+        }
+
+        // यदि यह वाउचर (entries array) है
+        if (Array.isArray(v.entries) && v.entries.length > 0) {
+          let partyDebit = 0;
+          let partyCredit = 0;
+          let isMatch = false;
+
+          v.entries.forEach(e => {
+            const accName = (e.account_name || e.party || '').trim();
+            if (accName.toLowerCase() === targetClean) {
+              isMatch = true;
+              const amt = Number(e.amount || 0);
+              const type = (e.type || '').toUpperCase();
+              if (type === 'DR' || Number(e.debit || 0) > 0) partyDebit += amt;
+              if (type === 'CR' || Number(e.credit || 0) > 0) partyCredit += amt;
+            }
+          });
+
+          if (isMatch) {
+            matchedTransactions.push({
+              date: v.voucher_date || v.date || '2026-04-01',
+              voucher_type: String(v.voucher_type || 'JV').toUpperCase(),
+              voucher_number: v.reference_no || v.voucher_number || 'N/A',
+              narration: v.narration || '',
+              debit: partyDebit,
+              credit: partyCredit
+            });
+          }
+        }
+      });
+
+      matchedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      let runningBal = 0;
+      const processedTransactions = matchedTransactions.map(t => {
+        runningBal += (t.debit - t.credit);
+        return {
+          ...t,
+          runningBalance: Math.abs(runningBal),
+          balanceType: runningBal >= 0 ? 'Dr' : 'Cr'
+        };
+      });
+
+      const lastClosing = processedTransactions.length > 0 
+        ? processedTransactions[processedTransactions.length - 1] 
+        : { runningBalance: 0, balanceType: 'Dr' };
+
       setStatementData({
-        openingBalance: statement.openingBalance || 0,
+        openingBalance: 0,
         openingType: 'Dr',
-        closingBalance: statement.closingBalance || 0,
-        closingType: statement.balanceType || 'Dr',
-        transactions: statement.transactions || []
+        closingBalance: lastClosing.runningBalance,
+        closingType: lastClosing.balanceType,
+        transactions: processedTransactions
       });
 
     } catch (e) {
-      console.error("Error generating account statement:", e);
+      console.error("Error generating statement:", e);
     }
   }, [selectedParty, activeFirmId]);
 
-  // PDF Export Handler
-  const handleExportPDF = async () => {
-    if (!statementData || statementData.transactions.length === 0) {
-      alert("⚠️ No transactions found to export.");
-      return;
-    }
-
-    setIsExporting(true);
-    setStatusNotification({ type: 'info', message: '⏳ Generating PDF document...' });
-
-    try {
-      const res = await downloadAccountStatementPDF(statementData, selectedParty, firm);
-      if (res?.success) {
-        setStatusNotification({ type: 'success', message: '✓ PDF downloaded successfully!' });
-      } else {
-        setStatusNotification(null);
-      }
-    } catch (e) {
-      setStatusNotification({ type: 'error', message: `❌ Export Failed: ${e.message}` });
-    } finally {
-      setIsExporting(false);
-      setTimeout(() => setStatusNotification(null), 5000);
-    }
-  };
-
-  // Direct WhatsApp Khata Statement Sender
-  const handleShareWhatsApp = () => {
-    if (!statementData) return;
-
-    const accountMaster = accounts.find(a => (a.name || a.account_name) === selectedParty);
-    const phone = (accountMaster?.contact_phone || '').replace(/\D/g, '');
-
-    const balText = statementData.closingType === 'Dr'
-      ? `₹${statementData.closingBalance.toLocaleString('en-IN')} (बाकी / लेना है)`
-      : `₹${statementData.closingBalance.toLocaleString('en-IN')} (जमा / देना है)`;
-
-    const message = 
-      `*खाता विवरण (Account Statement)*\n` +
-      `*फर्म:* ${firmName}\n` +
-      `--------------------------------\n` +
-      `*खातेदार:* ${selectedParty}\n` +
-      `*तारीख:* ${new Date().toLocaleDateString('en-IN')}\n` +
-      `*प्रारंभिक शेष (Opening):* ₹${statementData.openingBalance.toLocaleString('en-IN')} ${statementData.openingType}\n` +
-      `*कुल लेन-देन संख्या:* ${statementData.transactions.length}\n` +
-      `--------------------------------\n` +
-      `*अंतिम शेष (Net Balance):* *${balText}*\n` +
-      `--------------------------------\n` +
-      `_कृपया अपने खाते का मिलान करें। धन्यवाद!_`;
-
-    const targetUrl = phone.length >= 10
-      ? `https://wa.me/91${phone.slice(-10)}?text=${encodeURIComponent(message)}`
-      : `https://wa.me/?text=${encodeURIComponent(message)}`;
-
-    window.open(targetUrl, '_blank');
-  };
-
   return (
-    <div style={{ width: '100%', maxWidth: '750px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      
-      {/* Header Banner with PDF & WhatsApp Export */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
-              📖 खाता मिलान (Account Statement)
-            </h3>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry General Ledger & Real-Time Balance</span>
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={handleExportPDF}
-              disabled={isExporting || !statementData || statementData.transactions.length === 0}
-              style={{
-                backgroundColor: '#0f172a',
-                color: '#ffffff',
-                border: 'none',
-                padding: '8px 12px',
-                borderRadius: '8px',
-                fontSize: '11px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                opacity: isExporting ? 0.7 : 1
-              }}
-            >
-              <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
-            </button>
-
-            {statementData && statementData.transactions.length > 0 && (
-              <button
-                type="button"
-                onClick={handleShareWhatsApp}
-                style={{
-                  backgroundColor: '#25D366',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  fontSize: '11px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  boxShadow: '0 2px 6px rgba(37,211,102,0.3)'
-                }}
-              >
-                <span>💬</span> WhatsApp
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Status Notification */}
-      {statusNotification && (
-        <div style={{
-          backgroundColor: statusNotification.type === 'error' ? '#fef2f2' : statusNotification.type === 'info' ? '#eff6ff' : '#ecfdf5',
-          border: `1px solid ${statusNotification.type === 'error' ? '#fecaca' : statusNotification.type === 'info' ? '#bfdbfe' : '#a7f3d0'}`,
-          color: statusNotification.type === 'error' ? '#991b1b' : statusNotification.type === 'info' ? '#1e40af' : '#065f46',
-          padding: '10px 14px',
-          borderRadius: '10px',
-          fontSize: '12px',
-          fontWeight: 'bold'
-        }}>
-          {statusNotification.message}
-        </div>
-      )}
-
-      {/* Account Selector */}
-      <div style={cardStyle}>
+    <div style={{ width: '100%', maxWidth: '750px', margin: '0 auto', padding: '12px', fontFamily: 'sans-serif' }}>
+      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '14px', border: '1px solid #cbd5e1', marginBottom: '14px' }}>
+        <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', fontWeight: '800' }}>📖 खाता मिलान (Account Statement)</h3>
         <SearchableAccountDropdown
           label="खाता चुनें (Select Party/Account) *"
           accounts={accounts}
           value={selectedParty}
           onChange={val => setSelectedParty(val)}
           placeholder="पार्टी का नाम खोजें..."
-          colorAccent="#0284c7"
           required
         />
       </div>
 
-      {/* Summary KPI Bar */}
-      {statementData && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-          <div style={{ ...cardStyle, backgroundColor: '#f8fafc' }}>
-            <div style={labelStyle}>Opening Balance</div>
-            <strong style={{ fontSize: '16px', color: '#0f172a' }}>
-              ₹{statementData.openingBalance.toLocaleString('en-IN')} {statementData.openingType}
-            </strong>
-          </div>
-          <div style={{ ...cardStyle, backgroundColor: statementData.closingType === 'Dr' ? '#eff6ff' : '#fef2f2' }}>
-            <div style={labelStyle}>Net Closing Balance</div>
-            <strong style={{ fontSize: '16px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
-              ₹{statementData.closingBalance.toLocaleString('en-IN')} {statementData.closingType}
-            </strong>
-          </div>
-        </div>
-      )}
-
-      {/* Ledger Table */}
-      <div style={{ ...cardStyle, padding: '12px', overflowX: 'auto' }}>
+      <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '14px', border: '1px solid #cbd5e1', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
           <thead>
             <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-              <th style={thStyle}>तारीख</th>
-              <th style={thStyle}>विवरण (Particulars)</th>
-              <th style={{ ...thStyle, textAlign: 'right' }}>नामे (Dr ₹)</th>
-              <th style={{ ...thStyle, textAlign: 'right' }}>जमा (Cr ₹)</th>
-              <th style={{ ...thStyle, textAlign: 'right' }}>बाकी (Balance ₹)</th>
+              <th style={{ padding: '10px' }}>तारीख</th>
+              <th style={{ padding: '10px' }}>विवरण</th>
+              <th style={{ padding: '10px', textAlign: 'right' }}>नामे (Dr)</th>
+              <th style={{ padding: '10px', textAlign: 'right' }}>जमा (Cr)</th>
+              <th style={{ padding: '10px', textAlign: 'right' }}>बाकी (Balance)</th>
             </tr>
           </thead>
           <tbody>
@@ -247,41 +171,18 @@ export default function AccountStatementView({ firm }) {
               </tr>
             ) : (
               statementData.transactions.map((t, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                  <td style={tdStyle}>{t.date}</td>
-                  <td style={tdStyle}>
-                    <strong>{t.voucher_type}</strong> #{t.voucher_number}
-                    {t.narration && <div style={{ color: '#64748b', fontSize: '10px' }}>{t.narration}</div>}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', color: t.debit > 0 ? '#059669' : '#94a3b8', fontWeight: t.debit > 0 ? 'bold' : 'normal' }}>
-                    {t.debit > 0 ? t.debit.toFixed(2) : '-'}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', color: t.credit > 0 ? '#dc2626' : '#94a3b8', fontWeight: t.credit > 0 ? 'bold' : 'normal' }}>
-                    {t.credit > 0 ? t.credit.toFixed(2) : '-'}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: t.balanceType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
-                    {t.runningBalance.toFixed(2)} {t.balanceType}
-                  </td>
+                <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '10px' }}>{t.date}</td>
+                  <td style={{ padding: '10px' }}>{t.voucher_type} - {t.narration}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#059669', fontWeight: 'bold' }}>{t.debit > 0 ? t.debit.toFixed(2) : '-'}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#dc2626', fontWeight: 'bold' }}>{t.credit > 0 ? t.credit.toFixed(2) : '-'}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold' }}>{t.runningBalance.toFixed(2)} {t.balanceType}</td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
-
     </div>
   );
 }
-
-const cardStyle = {
-  backgroundColor: '#ffffff',
-  borderRadius: '14px',
-  padding: '16px',
-  border: '1px solid #cbd5e1',
-  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-  boxSizing: 'border-box'
-};
-
-const labelStyle = { fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' };
-const thStyle = { padding: '10px 8px', fontWeight: 'bold' };
-const tdStyle = { padding: '10px 8px', verticalAlign: 'top' };
