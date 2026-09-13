@@ -1,3 +1,4 @@
+// frontend/src/components/InventoryStockView.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 
