@@ -1,3 +1,4 @@
+// frontend/src/components/CreateInvoice.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
@@ -6,6 +7,8 @@ import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function CreateInvoice({ firm, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
+  // आज की अधिकतम तारीख (भविष्य की तारीख रोकने के लिए)
+  const todayMaxDate = new Date().toISOString().split('T')[0];
   
   let allItems = [];
   try {
@@ -18,7 +21,7 @@ export default function CreateInvoice({ firm, onClose }) {
   const [invoiceList, setInvoiceList] = useState([]);
 
   const [editingId, setEditingId] = useState(null);
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [invoiceDate, setInvoiceDate] = useState(todayMaxDate); // डिफ़ॉल्ट आज की तारीख
   const [invoiceNo, setInvoiceNo] = useState(`INV-${Math.floor(Date.now() / 1000)}`);
   const [customerParty, setCustomerParty] = useState(''); 
   const [vehicleNo, setVehicleNo] = useState('');
@@ -98,7 +101,7 @@ export default function CreateInvoice({ firm, onClose }) {
     e.preventDefault();
     setFeedback(null);
     if (!customerParty) return alert('कृपया कस्टमर पार्टी चुनें!');
-    if (cart.length === 0) return alert('कम से कम एक आइटम बिल में जोड़ें।');
+    if (cart.length === 0) return alert('कम से কমপক্ষে एक आइटम बिल में जोड़ें।');
 
     try {
       const currentInventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
@@ -172,7 +175,7 @@ export default function CreateInvoice({ firm, onClose }) {
   const handleEdit = (inv) => {
     if (!inv) return;
     setEditingId(inv.id);
-    setInvoiceDate(inv.voucher_date || new Date().toISOString().split('T')[0]);
+    setInvoiceDate(inv.voucher_date || todayMaxDate);
     setInvoiceNo(inv.reference_no || '');
     setCustomerParty(inv.dr_account || '');
     setVehicleNo(inv.vehicle_no || '');
@@ -268,7 +271,14 @@ export default function CreateInvoice({ firm, onClose }) {
           <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Invoice Date *</label>
-              <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }} required />
+              <input 
+                type="date" 
+                max={todayMaxDate} // <-- यहाँ भविष्य की तारीख को रोका गया है
+                value={invoiceDate} 
+                onChange={e => setInvoiceDate(e.target.value)} 
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }} 
+                required 
+              />
             </div>
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Invoice No *</label>
