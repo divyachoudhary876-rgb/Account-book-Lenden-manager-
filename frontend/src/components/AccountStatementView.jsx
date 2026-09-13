@@ -8,9 +8,12 @@ import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
 export default function AccountStatementView({ firm }) {
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
+  const todayMaxDate = new Date().toISOString().split('T')[0];
 
   const [accounts, setAccounts] = useState([]);
   const [selectedParty, setSelectedParty] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [statementData, setStatementData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const [statusNotification, setStatusNotification] = useState(null);
@@ -83,6 +86,11 @@ export default function AccountStatementView({ firm }) {
 
       uniqueVouchers.forEach(v => {
         const vDate = v.voucher_date || v.date || '2026-04-01';
+        
+        // Date range filtering validation
+        if (fromDate && vDate < fromDate) return;
+        if (toDate && vDate > toDate) return;
+
         const vType = String(v.voucher_type || v.type || 'JV').toUpperCase();
         const vNum = v.reference_no || v.voucher_number || (v.id ? v.id.slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
@@ -177,7 +185,7 @@ export default function AccountStatementView({ firm }) {
     } catch (e) {
       console.error("Error generating account statement:", e);
     }
-  }, [selectedParty, activeFirmId]);
+  }, [selectedParty, fromDate, toDate, activeFirmId]);
 
   const handleExportPDF = async () => {
     if (!statementData || statementData.transactions.length === 0) {
@@ -204,7 +212,7 @@ export default function AccountStatementView({ firm }) {
   return (
     <div style={{ width: '100%', maxWidth: '750px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: 'sans-serif' }}>
       
-      {/* Original Header Design */}
+      {/* Header Design */}
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div>
@@ -231,8 +239,8 @@ export default function AccountStatementView({ firm }) {
         </div>
       )}
 
-      {/* Account Selector */}
-      <div style={cardStyle}>
+      {/* Account Selector & Date Filters */}
+      <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <SearchableAccountDropdown
           label="खाता चुनें (Select Party/Account) *"
           accounts={accounts}
@@ -242,6 +250,29 @@ export default function AccountStatementView({ firm }) {
           colorAccent="#0284c7"
           required
         />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (से)</label>
+            <input 
+              type="date" 
+              max={todayMaxDate}
+              value={fromDate} 
+              onChange={e => setFromDate(e.target.value)} 
+              style={{ width: '100%', padding: '9px 8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff' }} 
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (तक)</label>
+            <input 
+              type="date" 
+              max={todayMaxDate}
+              value={toDate} 
+              onChange={e => setToDate(e.target.value)} 
+              style={{ width: '100%', padding: '9px 8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff' }} 
+            />
+          </div>
+        </div>
       </div>
 
       {/* Summary KPI Cards */}
