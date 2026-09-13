@@ -9,7 +9,7 @@ import SecurityBackupSettings from './SecurityBackupSettings';
 export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
   const [activeView, setActiveView] = useState('DASHBOARD');
 
-  // Render active view router
+  // Render active view router for specialized modules
   if (activeView === 'CASH_FLOW') {
     return <CashFlowStatementView firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
   }
@@ -94,7 +94,7 @@ export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
           <span>📑</span> General Journal Register (रोज़नामचा)
         </button>
 
-        {/* 📈 Cash Flow Statement Menu Button (Added Here) */}
+        {/* 📈 Cash Flow Statement Menu Button (Clearly Highlighted) */}
         <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0284c7', borderColor: '#38bdf8' }}>
           <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
         </button>
