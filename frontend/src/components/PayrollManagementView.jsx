@@ -10,7 +10,7 @@ export default function PayrollManagementView({ firm, onClose }) {
   
   const [selectedWorker, setSelectedWorker] = useState('');
   const [workDate, setWorkDate] = useState(new Date().toISOString().slice(0, 10));
-  const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expense');
+  const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expenses');
   const [quantity, setQuantity] = useState('');
   const [ratePerUnit, setRatePerUnit] = useState('');
   const [workDescription, setWorkDescription] = useState('');
@@ -22,11 +22,10 @@ export default function PayrollManagementView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     
-    // 1. Load accounts from master
     const allAccounts = loadFirmData('app_accounts', firm, [
       { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee', primary_type: 'LIABILITIES' },
       { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver', primary_type: 'LIABILITIES' },
-      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Labor & Pathai Expenses (मजदूरी)', primary_type: 'EXPENSES' },
+      { id: 'w_3', account_name: 'Pathai & Labour Expenses', sub_group: 'Direct Labor & Pathai Expenses (मजदूरी)', primary_type: 'EXPENSES' },
       { id: 'w_4', account_name: 'Tractor Diesel & Maintenance', sub_group: 'Operating Fuel Costs (Tractor / Generator Diesel)', primary_type: 'EXPENSES' },
       { id: 'w_5', account_name: 'General Factory Wages', sub_group: 'Direct Production Expenses', primary_type: 'EXPENSES' }
     ]);
@@ -40,7 +39,6 @@ export default function PayrollManagementView({ firm, onClose }) {
     );
     setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
-    // 2. Load payroll entries
     const entries = loadFirmData('app_payroll_entries', firm, []);
     setPayrollEntries(entries);
   };
@@ -110,7 +108,6 @@ export default function PayrollManagementView({ firm, onClose }) {
       return;
     }
 
-    // 1. Ensure master accounts exist
     ensureAccountExists(workerName, 'Sundry Creditors (Suppliers / लेनदार)', 'LIABILITIES');
     ensureAccountExists(expenseName, 'Direct Labor & Pathai Expenses (मजदूरी)', 'EXPENSES');
 
@@ -130,12 +127,12 @@ export default function PayrollManagementView({ firm, onClose }) {
       timestamp
     };
 
-    // 2. Save to payroll list storage
+    // 1. Save locally in payroll records
     const updatedEntries = [newEntry, ...payrollEntries];
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 3. CRITICAL: Save natively as a voucher to keys scanned by ledgerEngine and financialReportEngine
+    // 2. CRITICAL: Push directly as a standard double-entry voucher to financial report storage keys
     try {
       const vchPayload = {
         id: uniqueId,
@@ -154,9 +151,15 @@ export default function PayrollManagementView({ firm, onClose }) {
         created_at: timestamp
       };
 
-      // Push to standard keys recognized by getAllFirmVouchers()
-      const targets = [`account_book_vouchers_${activeFirmId}`, `app_vouchers_${activeFirmId}`, 'account_book_vouchers', 'app_vouchers'];
-      targets.forEach(key => {
+      // Target keys scanned by ledgerEngine and financialReportEngine
+      const keysToUpdate = [
+        `account_book_vouchers_${activeFirmId}`,
+        `app_vouchers_${activeFirmId}`,
+        'account_book_vouchers',
+        'app_vouchers'
+      ];
+
+      keysToUpdate.forEach(key => {
         const existing = JSON.parse(localStorage.getItem(key) || '[]');
         localStorage.setItem(key, JSON.stringify([vchPayload, ...existing]));
       });
@@ -164,11 +167,12 @@ export default function PayrollManagementView({ firm, onClose }) {
       console.error('Error posting auto-voucher for payroll:', err);
     }
 
-    // 4. Trigger global UI sync events
+    // 3. Broadcast sync events
     window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('storage'));
 
-    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger & updated Financial Statements!`);
+    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger & financial statements!`);
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
