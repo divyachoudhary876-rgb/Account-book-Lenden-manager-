@@ -127,12 +127,10 @@ export default function PayrollManagementView({ firm, onClose }) {
       timestamp
     };
 
-    // 1. Save locally in payroll records
     const updatedEntries = [newEntry, ...payrollEntries];
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 2. CRITICAL: Push directly as a standard double-entry voucher to financial report storage keys
     try {
       const vchPayload = {
         id: uniqueId,
@@ -151,7 +149,6 @@ export default function PayrollManagementView({ firm, onClose }) {
         created_at: timestamp
       };
 
-      // Target keys scanned by ledgerEngine and financialReportEngine
       const keysToUpdate = [
         `account_book_vouchers_${activeFirmId}`,
         `app_vouchers_${activeFirmId}`,
@@ -167,12 +164,11 @@ export default function PayrollManagementView({ firm, onClose }) {
       console.error('Error posting auto-voucher for payroll:', err);
     }
 
-    // 3. Broadcast sync events
     window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('storage'));
 
-    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger & financial statements!`);
+    setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger!`);
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
@@ -186,13 +182,13 @@ export default function PayrollManagementView({ firm, onClose }) {
   const totalBaki = totalEarned - totalPaid;
 
   return (
-    <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '8px', fontFamily: 'sans-serif', boxSizing: 'border-box', overflowX: 'hidden', color: '#0f172a' }}>
+    <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '12px', fontFamily: 'sans-serif', boxSizing: 'border-box', overflowX: 'hidden', color: '#0f172a' }}>
       
       {/* Header */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', boxSizing: 'border-box', width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', boxSizing: 'border-box', width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           {onClose && (
-            <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
+            <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
               ← Dashboard
             </button>
           )}
@@ -200,14 +196,14 @@ export default function PayrollManagementView({ firm, onClose }) {
             Firm: {firm?.legal_name || firm?.name || 'Active Firm'}
           </div>
         </div>
-        <h1 style={{ margin: 0, fontSize: '14px', fontWeight: 800 }}>👷 Labour, Employee & Tractor Wages</h1>
+        <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>👷 Labour, Employee & Tractor Wages</h1>
       </div>
 
-      {errorMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
-      {successMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
+      {errorMsg && <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
+      {successMsg && <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
 
       {/* Worker Selector & Summary */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', width: '100%' }}>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
         <div>
           <SearchableAccountDropdown 
             firm={firm}
@@ -220,32 +216,32 @@ export default function PayrollManagementView({ firm, onClose }) {
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
           <div>
             <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL (कुल)</div>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned}</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned}</div>
           </div>
           <div>
             <div style={{ fontSize: '9px', color: '#166534', fontWeight: 'bold' }}>CHUKAYE (चुकाए)</div>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>₹{totalPaid}</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: '#166534' }}>₹{totalPaid}</div>
           </div>
           <div>
             <div style={{ fontSize: '9px', color: '#991b1b', fontWeight: 'bold' }}>BAKI (बाकी)</div>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#991b1b' }}>₹{totalBaki}</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: '#991b1b' }}>₹{totalBaki}</div>
           </div>
         </div>
       </div>
 
       {/* Wage Entry Form */}
-      <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '8px', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 4px 0', fontSize: '12px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
+      <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
+        <h3 style={{ margin: '0 0 6px 0', fontSize: '13px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
 
-        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Date of Work *</label>
-            <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ width: '100%' }}>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Date of Work *</label>
+            <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ width: '100%' }}>
             <SearchableAccountDropdown 
               firm={firm}
               label="Expense Account *"
@@ -258,43 +254,44 @@ export default function PayrollManagementView({ firm, onClose }) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '6px', width: '100%', boxSizing: 'border-box', alignItems: 'flex-end' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Quantity *</label>
-            <input type="number" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Quantity *</label>
+            <input type="number" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Rate/Unit (₹) *</label>
-            <input type="number" placeholder="e.g. 100" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Kul Amount (₹)</label>
-            <div style={{ padding: '9px', backgroundColor: '#f1f5f9', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box' }}>
-              ₹{calculatedTotalAmount}
-            </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Rate/Unit (₹) *</label>
+            <input type="number" placeholder="e.g. 100" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
           </div>
         </div>
 
         <div>
-          <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px' }}>Work Description (विवरण)</label>
-          <input type="text" placeholder="e.g. Chamber No. 3 pathai work" value={workDescription} onChange={(e) => setWorkDescription(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+          <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Kul Amount (₹)</label>
+          <div style={{ padding: '10px', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box' }}>
+            ₹{calculatedTotalAmount}
+          </div>
         </div>
 
-        <button type="submit" style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', marginTop: '4px', boxSizing: 'border-box' }}>
+        <div>
+          <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Work Description (विवरण)</label>
+          <input type="text" placeholder="e.g. Chamber No. 3 pathai work" value={workDescription} onChange={(e) => setWorkDescription(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+        </div>
+
+        <button type="submit" style={{ width: '100%', padding: '13px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', marginTop: '6px', boxSizing: 'border-box' }}>
           ⚡ Post Work Credit to Worker Ledger
         </button>
       </form>
 
       {/* Ledger Statement */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({resolvedActiveWorker || 'Select Worker'})</h3>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
+        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({resolvedActiveWorker || 'Select Worker'})</h3>
         {workerEntries.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '10px' }}>No work or attendance entries recorded for this worker yet.</div>
+          <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '12px', padding: '14px' }}>No work or attendance entries recorded for this worker yet.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
             {workerEntries.map((ent, idx) => (
-              <div key={idx} style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', boxSizing: 'border-box', width: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '3px' }}>
+              <div key={idx} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', boxSizing: 'border-box', width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '4px' }}>
                   <span>{ent.date} ({ent.expense_ledger})</span>
                   <span style={{ color: '#166534' }}>Earned: +₹{ent.total_amount}</span>
                 </div>
