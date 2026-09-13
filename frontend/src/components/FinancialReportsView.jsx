@@ -14,7 +14,9 @@ export default function FinancialReportsView({ firm, onClose }) {
     totalCredit: 0,
     isBalanced: true,
     trading: { purchases: 0, directExpenses: 0, sales: 0, closingStock: 0, grossResult: 0 },
-    pnl: { grossProfit: 0, indirectIncomes: 0, indirectExpenses: 0, netResult: 0 }
+    pnl: { grossProfit: 0, indirectIncomes: 0, indirectExpenses: 0, netResult: 0 },
+    balanceSheet: { assets: [], liabilities: [], totalAssets: 0, totalLiabilities: 0 },
+    gstSummary: { taxableSales: 0, outputTax: 0, taxablePurchases: 0, inputTax: 0, netTaxPayable: 0 }
   });
   const [isExporting, setIsExporting] = useState(false);
   const [statusNotification, setStatusNotification] = useState(null);
@@ -24,7 +26,6 @@ export default function FinancialReportsView({ firm, onClose }) {
       const masterAccounts = getFirmMasterAccounts(activeFirmId) || [];
       const ledgerMap = {};
 
-      // 1. Initialize Master Accounts with proper category detection
       masterAccounts.forEach(acc => {
         const name = (acc.name || acc.account_name || '').trim();
         if (name) {
@@ -38,7 +39,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         }
       });
 
-      // 2. Scan all storage locations
       let rawTx = [];
       const keysToScan = [
         'account_book_vouchers',
@@ -56,14 +56,13 @@ export default function FinancialReportsView({ firm, onClose }) {
         } catch (e) {}
       });
 
-      // 3. Strict ID Deduplication
       const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
         const vFirm = v.firm_id || activeFirmId;
         if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
 
-        const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}-${JSON.stringify(v.entries || '')}`;
+        const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}`;
         if (!uniqueVoucherMap.has(uniqueId)) {
           uniqueVoucherMap.set(uniqueId, v);
         }
@@ -71,8 +70,23 @@ export default function FinancialReportsView({ firm, onClose }) {
 
       const uniqueVouchers = Array.from(uniqueVoucherMap.values());
 
-      // 4. Process Vouchers & Populate Ledgers
+      let gstTaxableSales = 0;
+      let gstOutputTax = 0;
+      let gstTaxablePurchases = 0;
+      let gstInputTax = 0;
+
       uniqueVouchers.forEach(v => {
+        const vType = String(v.voucher_type || v.type || '').toUpperCase();
+        
+        // Extract GST data from invoices if available
+        if (vType === 'SALES') {
+          gstTaxableSales += Number(v.total_taxable || v.amount || 0);
+          gstOutputTax += Number(v.total_cgst || 0) + Number(v.total_sgst || 0);
+        } else if (vType === 'PURCHASE') {
+          gstTaxablePurchases += Number(v.total_taxable || v.amount || 0);
+          gstInputTax += Number(v.total_cgst || 0) + Number(v.total_sgst || 0);
+        }
+
         if (v.worker && v.expense_ledger && v.total_amount) {
           const workerName = String(v.worker).trim();
           const expenseName = String(v.expense_ledger).trim();
@@ -104,7 +118,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         }
       });
 
-      // 5. Generate Trial Balance Rows
       const tbRows = Object.values(ledgerMap).map(l => {
         const net = l.debit - l.credit;
         return {
@@ -118,11 +131,15 @@ export default function FinancialReportsView({ firm, onClose }) {
       const tDr = tbRows.reduce((s, r) => s + r.dr, 0);
       const tCr = tbRows.reduce((s, r) => s + r.cr, 0);
 
-      // 6. Compute Trading & P&L Accurately from Trial Balance
       let totalSales = 0;
       let totalPurchasesOrWages = 0;
       let indirectExpenses = 0;
       let indirectIncomes = 0;
+
+      const assets = [];
+      const liabilities = [];
+      let totalAssets = 0;
+      let totalLiabilities = 0;
 
       tbRows.forEach(row => {
         const n = row.name.toLowerCase();
@@ -132,6 +149,14 @@ export default function FinancialReportsView({ firm, onClose }) {
           totalSales += row.cr;
         } else if (cat.includes('expense') || n.includes('wages') || n.includes('pathai') || n.includes('purchase') || n.includes('coal')) {
           totalPurchasesOrWages += row.dr;
+        }
+
+        if (cat.includes('asset') || n.includes('cash') || n.includes('bank') || n.includes('stock') || n.includes('debtor')) {
+          assets.push({ name: row.name, amount: row.dr - row.cr });
+          totalAssets += (row.dr - row.cr);
+        } else if (cat.includes('liability') || cat.includes('capital') || n.includes('creditor') || n.includes('loan')) {
+          liabilities.push({ name: row.name, amount: row.cr - row.dr });
+          totalLiabilities += (row.cr - row.dr);
         }
       });
 
@@ -144,7 +169,9 @@ export default function FinancialReportsView({ firm, onClose }) {
         totalCredit: tCr,
         isBalanced: Math.abs(tDr - tCr) < 1,
         trading: { purchases: 0, directExpenses: totalPurchasesOrWages, sales: totalSales, closingStock: 0, grossResult },
-        pnl: { grossProfit: grossResult, indirectIncomes, indirectExpenses, netResult }
+        pnl: { grossProfit: grossResult, indirectIncomes, indirectExpenses, netResult },
+        balanceSheet: { assets, liabilities, totalAssets, totalLiabilities: totalLiabilities + netResult },
+        gstSummary: { taxableSales: gstTaxableSales, outputTax: gstOutputTax, taxablePurchases: gstTaxablePurchases, inputTax: gstInputTax, netTaxPayable: Math.max(0, gstOutputTax - gstInputTax) }
       });
 
     } catch (e) {
@@ -185,7 +212,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div>
             <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>ENTERPRISE GENERAL LEDGER</div>
-            <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📊 वित्तीय विवरण (Financial Statements)</h2>
+            <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📊 वित्तीय विवरण & रिपोर्ट्स (Financial Reports & GST)</h2>
           </div>
 
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -206,117 +233,119 @@ export default function FinancialReportsView({ firm, onClose }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', flexWrap: 'wrap' }}>
-          <button 
-            onClick={() => setActiveTab('TRIAL_BALANCE')}
-            style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'TRIAL_BALANCE' ? '#0284c7' : '#f1f5f9', color: activeTab === 'TRIAL_BALANCE' ? '#fff' : '#475569', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-          >
-            1. Trial Balance (तलपट)
-          </button>
-          <button 
-            onClick={() => setActiveTab('TRADING')}
-            style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'TRADING' ? '#0284c7' : '#f1f5f9', color: activeTab === 'TRADING' ? '#fff' : '#475569', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-          >
-            2. Trading Account (व्यापार खाता)
-          </button>
-          <button 
-            onClick={() => setActiveTab('PNL')}
-            style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'PNL' ? '#0284c7' : '#f1f5f9', color: activeTab === 'PNL' ? '#fff' : '#475569', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-          >
-            3. Profit & Loss (लाभ-हानि)
-          </button>
+        <div style={{ display: 'flex', gap: '6px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', flexWrap: 'wrap' }}>
+          {['TRIAL_BALANCE', 'TRADING', 'PNL', 'BALANCE_SHEET', 'GST_SUMMARY'].map(tab => (
+            <button 
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === tab ? '#0284c7' : '#f1f5f9', color: activeTab === tab ? '#fff' : '#475569', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+            >
+              {tab === 'TRIAL_BALANCE' && '1. Trial Balance'}
+              {tab === 'TRADING' && '2. Trading'}
+              {tab === 'PNL' && '3. P&L'}
+              {tab === 'BALANCE_SHEET' && '4. Balance Sheet'}
+              {tab === 'GST_SUMMARY' && '5. GSTR Summary'}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Trial Balance View */}
+      {/* Trial Balance */}
       {activeTab === 'TRIAL_BALANCE' && (
-        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>तलपट विवरण (Trial Balance)</h3>
-            <span style={{ fontSize: '11px', backgroundColor: reportData.isBalanced ? '#f0fdf4' : '#fef2f2', color: reportData.isBalanced ? '#166534' : '#991b1b', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold' }}>
-              {reportData.isBalanced ? '✓ Balanced (संतुलित)' : '⚠ Unbalanced'}
-            </span>
-          </div>
+        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>तलपट विवरण (Trial Balance)</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#0f172a', color: '#fff' }}>
+                <th style={{ padding: '10px', textAlign: 'left' }}>Account Name</th>
+                <th style={{ padding: '10px', textAlign: 'right' }}>Dr (₹)</th>
+                <th style={{ padding: '10px', textAlign: 'right' }}>Cr (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reportData.trialBalance.map((r, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '10px', fontWeight: 'bold' }}>{r.name}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#059669' }}>{r.dr > 0 ? r.dr.toFixed(2) : '-'}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#dc2626' }}>{r.cr > 0 ? r.cr.toFixed(2) : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#0f172a', color: '#fff' }}>
-                  <th style={{ padding: '10px', textAlign: 'left' }}>खाते का नाम (Account Name)</th>
-                  <th style={{ padding: '10px', textAlign: 'left' }}>प्रकार (Category)</th>
-                  <th style={{ padding: '10px', textAlign: 'right' }}>नामे (Dr ₹)</th>
-                  <th style={{ padding: '10px', textAlign: 'right' }}>जमा (Cr ₹)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(!reportData.trialBalance || reportData.trialBalance.length === 0) ? (
-                  <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>No active accounts found.</td>
-                  </tr>
-                ) : (
-                  reportData.trialBalance.map((row, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{row.name}</td>
-                      <td style={{ padding: '10px', color: '#64748b' }}>{row.category}</td>
-                      <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>{row.dr > 0 ? row.dr.toFixed(2) : '-'}</td>
-                      <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#dc2626' }}>{row.cr > 0 ? row.cr.toFixed(2) : '-'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-              <tfoot>
-                <tr style={{ backgroundColor: '#f1f5f9', fontWeight: '900' }}>
-                  <td colSpan={2} style={{ padding: '12px' }}>कुल योग (Total)</td>
-                  <td style={{ padding: '12px', textAlign: 'right', color: '#059669' }}>₹{Number(reportData.totalDebit || 0).toFixed(2)}</td>
-                  <td style={{ padding: '12px', textAlign: 'right', color: '#dc2626' }}>₹{Number(reportData.totalCredit || 0).toFixed(2)}</td>
-                </tr>
-              </tfoot>
-            </table>
+      {/* Trading Account */}
+      {activeTab === 'TRADING' && (
+        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>व्यापार खाता (Trading Account)</h3>
+          <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div>Total Sales: <strong>₹{reportData.trading.sales.toFixed(2)}</strong></div>
+            <div>Direct Expenses / Purchases: <strong>₹{reportData.trading.directExpenses.toFixed(2)}</strong></div>
+            <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f0fdf4', borderRadius: '8px', color: '#166534', fontWeight: 'bold' }}>
+              Gross Profit / Loss: ₹{reportData.trading.grossResult.toFixed(2)}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Trading Account View (Now reflecting Trial Balance data dynamically) */}
-      {activeTab === 'TRADING' && (
+      {/* P&L Statement */}
+      {activeTab === 'PNL' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>व्यापार खाता (Trading Account)</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginBottom: '14px' }}>
-            <div style={{ backgroundColor: '#fef2f2', padding: '16px', borderRadius: '12px', border: '1px solid #fecaca' }}>
-              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#991b1b', textTransform: 'uppercase', marginBottom: '8px' }}>व्यय विवरण (Debit / Direct Cost)</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
-                <span>कुल खरीद व मजदूरी (Purchases & Wages):</span>
-                <strong style={{ color: '#991b1b' }}>₹{reportData.trading.directExpenses.toFixed(2)}</strong>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase', marginBottom: '8px' }}>आय व स्टॉक (Credit / Revenue)</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
-                <span>कुल बिक्री (Sales):</span>
-                <strong style={{ color: '#166534' }}>₹{reportData.trading.sales.toFixed(2)}</strong>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ padding: '14px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 'bold', fontSize: '13px' }}>सकल परिणाम (Gross Profit / Loss):</span>
-            <strong style={{ fontSize: '15px', color: reportData.trading.grossResult >= 0 ? '#166534' : '#b91c1c' }}>
-              ₹{reportData.trading.grossResult.toFixed(2)}
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>लाभ-हानि विवरण (Profit & Loss)</h3>
+          <div style={{ padding: '16px', backgroundColor: reportData.pnl.netResult >= 0 ? '#f0fdf4' : '#fef2f2', borderRadius: '12px' }}>
+            <strong style={{ fontSize: '16px', color: reportData.pnl.netResult >= 0 ? '#15803d' : '#dc2626' }}>
+              Net Profit / Loss: ₹{reportData.pnl.netResult.toFixed(2)}
             </strong>
           </div>
         </div>
       )}
 
-      {/* Profit & Loss View (Now reflecting Trial Balance data dynamically) */}
-      {activeTab === 'PNL' && (
+      {/* Balance Sheet (Module 1 & 2 Integrated) */}
+      {activeTab === 'BALANCE_SHEET' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>लाभ-हानि विवरण (Profit & Loss Statement)</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '16px', backgroundColor: reportData.pnl.netResult >= 0 ? '#f0fdf4' : '#fef2f2', borderRadius: '12px', border: `1px solid ${reportData.pnl.netResult >= 0 ? '#bbf7d0' : '#fecaca'}` }}>
-              <span style={{ fontWeight: 'bold', color: reportData.pnl.netResult >= 0 ? '#166534' : '#991b1b' }}>शुद्ध लाभ / हानि (Net Profit / Loss):</span>
-              <strong style={{ fontSize: '16px', color: reportData.pnl.netResult >= 0 ? '#15803d' : '#dc2626' }}>
-                ₹{reportData.pnl.netResult.toFixed(2)}
-              </strong>
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>🏛️ बैलेंस शीट (Balance Sheet - Assets & Liabilities)</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#1d4ed8' }}>Assets (संपत्ति)</h4>
+              {reportData.balanceSheet.assets.map((a, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid #e2e8f0' }}>
+                  <span>{a.name}</span>
+                  <strong>₹{a.amount.toFixed(2)}</strong>
+                </div>
+              ))}
+              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px' }}>Total Assets: ₹{reportData.balanceSheet.totalAssets.toFixed(2)}</div>
+            </div>
+            <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#b91c1c' }}>Liabilities & Capital (दायित्व)</h4>
+              {reportData.balanceSheet.liabilities.map((l, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid #e2e8f0' }}>
+                  <span>{l.name}</span>
+                  <strong>₹{l.amount.toFixed(2)}</strong>
+                </div>
+              ))}
+              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px' }}>Total Liabilities: ₹{reportData.balanceSheet.totalLiabilities.toFixed(2)}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GST Summary Report (Module 4) */}
+      {activeTab === 'GST_SUMMARY' && (
+        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>🧾 GSTR-1 & GSTR-3B Tax Summary</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
+            <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div>Taxable Outward Sales: <strong>₹{reportData.gstSummary.taxableSales.toFixed(2)}</strong></div>
+              <div>Output GST Collected: <strong style={{ color: '#059669' }}>₹{reportData.gstSummary.outputTax.toFixed(2)}</strong></div>
+            </div>
+            <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div>Taxable Inward Purchases: <strong>₹{reportData.gstSummary.taxablePurchases.toFixed(2)}</strong></div>
+              <div>Input Tax Credit (ITC): <strong style={{ color: '#1d4ed8' }}>₹{reportData.gstSummary.inputTax.toFixed(2)}</strong></div>
+            </div>
+            <div style={{ padding: '14px', backgroundColor: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 'bold', color: '#166534' }}>Net Tax Payable (शुद्ध कर देय):</span>
+              <strong style={{ fontSize: '16px', color: '#15803d' }}>₹{reportData.gstSummary.netTaxPayable.toFixed(2)}</strong>
             </div>
           </div>
         </div>
