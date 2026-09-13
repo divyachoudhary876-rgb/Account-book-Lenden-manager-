@@ -19,13 +19,14 @@ function createWindow () {
   // Maximize ya responsive start karne ke liye
   win.maximize();
 
-  const indexPath = path.join(__dirname, 'dist', 'index.html');
-  win.loadFile(indexPath).catch(err => {
+  // 🛠️ FIX: win.loadFile ki jagah win.loadURL use karne se dobara kholne par blank page nahi aayega
+  const indexPath = `file://${path.join(__dirname, 'dist', 'index.html')}`;
+  win.loadURL(indexPath).catch(err => {
     console.error("Failed to load app:", err);
   });
 
-  // 🛠️ YE ERROR DEKHNE KE LIYE HAI: Yeh automatic Console/DevTools khol dega
-  win.webContents.openDevTools();
+  // Optional: Agar aapko ab DevTools ki zaroorat nahi hai toh niche wali line hata sakte hain, warna rehne dein
+  // win.webContents.openDevTools();
 }
 
 app.whenReady().then(() => {
