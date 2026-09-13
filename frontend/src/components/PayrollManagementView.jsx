@@ -21,7 +21,6 @@ export default function PayrollManagementView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     
-    // 1. सभी लेजर्स app_accounts से लोड करें
     const allAccounts = loadFirmData('app_accounts', firm, [
       { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee', primary_type: 'Liabilities' },
       { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver', primary_type: 'Liabilities' },
@@ -39,7 +38,6 @@ export default function PayrollManagementView({ firm, onClose }) {
     );
     setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
-    // 2. पेरोल प्रविष्टियां लोड करें
     const entries = loadFirmData('app_payroll_entries', firm, []);
     setPayrollEntries(entries);
   };
@@ -56,11 +54,20 @@ export default function PayrollManagementView({ firm, onClose }) {
 
   const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
 
-  // सुनिश्चित करें कि लेजर 'app_accounts' में मौजूद है, यदि नहीं तो ऑटो-क्रिएट करें
+  // हेल्पर फंक्शन: किसी भी वैल्यू से सही अकाउंट नेम स्ट्रिंग निकालने के लिए
+  const resolveName = (val) => {
+    if (!val) return '';
+    if (typeof val === 'string') return val.trim();
+    if (typeof val === 'object') {
+      return (val.account_name || val.name || val.label || '').trim();
+    }
+    return String(val).trim();
+  };
+
   const ensureAccountExists = (accountName, subGroup, primaryType) => {
     if (!accountName) return;
     const accounts = loadFirmData('app_accounts', firm, []);
-    const exists = accounts.some(acc => (acc.account_name || '').toLowerCase() === accountName.toLowerCase());
+    const exists = accounts.some(acc => resolveName(acc.account_name).toLowerCase() === accountName.toLowerCase());
     
     if (!exists) {
       const newAcc = {
@@ -81,15 +88,16 @@ export default function PayrollManagementView({ firm, onClose }) {
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const workerName = typeof selectedWorker === 'object' ? (selectedWorker.account_name || selectedWorker.name || '') : selectedWorker;
-    const expenseName = typeof expenseLedger === 'object' ? (expenseLedger.account_name || expenseLedger.name || '') : expenseLedger;
+    // पूरी तरह सुरक्षित तरीके से नाम निकालें
+    const workerName = resolveName(selectedWorker);
+    const expenseName = resolveName(expenseLedger);
 
     if (!workerName) {
-      setErrorMsg('Please select a worker, driver, or employee.');
+      setErrorMsg('Please select a valid worker, driver, or employee.');
       return;
     }
     if (!expenseName) {
-      setErrorMsg('Please select an expense account.');
+      setErrorMsg('Please select a valid expense account.');
       return;
     }
     if (!quantity || Number(quantity) <= 0) {
@@ -101,7 +109,7 @@ export default function PayrollManagementView({ firm, onClose }) {
       return;
     }
 
-    // 1. सुनिश्चित करें कि वर्कर और एक्सपेंस लेजर दोनों Chart of Accounts (app_accounts) में रजिस्टर्ड हैं
+    // 1. सुनिश्चित करें कि खाते मास्टर में मौजूद हैं
     ensureAccountExists(workerName, 'Sundry Creditors (Labour/Staff)', 'Liabilities');
     ensureAccountExists(expenseName, 'Direct Expenses', 'Expenses');
 
@@ -117,12 +125,12 @@ export default function PayrollManagementView({ firm, onClose }) {
       timestamp: new Date().toISOString()
     };
 
-    // 2. पेरोल स्टोरेज अपडेट करें
+    // 2. पेरोल प्रविष्टियां सेव करें
     const updatedEntries = [newEntry, ...payrollEntries];
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 3. जर्नल वाउचर (Double-Entry Voucher) पोस्ट करें ताकि ट्रायल बैलेंस, पीएंडएल और डेबुक में दिखे
+    // 3. जर्नल वाउचर पोस्ट करें ताकि ट्रायल बैलेंस और लेजर में सही नाम और अमाउंट जाए
     try {
       const allVouchers = loadFirmData('app_vouchers', firm, []);
       const newVoucher = {
@@ -149,11 +157,11 @@ export default function PayrollManagementView({ firm, onClose }) {
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
-    loadData(); // रिफ्रेश लिस्ट
+    loadData();
   };
 
-  const resolvedActiveWorker = typeof selectedWorker === 'object' ? (selectedWorker.account_name || '') : selectedWorker;
-  const workerEntries = payrollEntries.filter(e => e.worker === resolvedActiveWorker);
+  const resolvedActiveWorker = resolveName(selectedWorker);
+  const workerEntries = payrollEntries.filter(e => resolveName(e.worker).toLowerCase() === resolvedActiveWorker.toLowerCase());
   const totalEarned = workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
   const totalPaid = 0; 
   const totalBaki = totalEarned - totalPaid;
