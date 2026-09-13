@@ -24,23 +24,20 @@ export default function FinancialReportsView({ firm, onClose }) {
       const masterAccounts = getFirmMasterAccounts(activeFirmId) || [];
       const ledgerMap = {};
 
+      // 1. Initialize master accounts
       masterAccounts.forEach(acc => {
-        const name = acc.name || acc.account_name;
+        const name = (acc.name || acc.account_name || '').trim();
         if (name) {
-          const cleanName = name.trim();
-          ledgerMap[cleanName] = {
-            name: cleanName,
+          ledgerMap[name] = {
+            name,
             category: (acc.category || acc.primary_type || 'GENERAL').toUpperCase(),
-            debit: Number(acc.opening_balance || 0),
+            debit: 0,
             credit: 0
           };
-          if (acc.balance_type === 'Cr') {
-            ledgerMap[cleanName].debit = 0;
-            ledgerMap[cleanName].credit = Number(acc.opening_balance || 0);
-          }
         }
       });
 
+      // 2. Scan all possible storage keys
       let rawTx = [];
       const keysToScan = [
         'account_book_vouchers',
@@ -58,13 +55,29 @@ export default function FinancialReportsView({ firm, onClose }) {
         } catch (e) {}
       });
 
-      let totalPurchases = 0;
-      let totalSales = 0;
-      let directExpensesSum = 0;
-
+      // 3. STRICT ID-BASED DEDUPLICATION MAP
+      const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
+        const vFirm = v.firm_id || activeFirmId;
+        if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
 
+        // Unique deterministic signature to prevent duplicate accumulation
+        const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}-${JSON.stringify(v.entries || '')}`;
+        
+        if (!uniqueVoucherMap.has(uniqueId)) {
+          uniqueVoucherMap.set(uniqueId, v);
+        }
+      });
+
+      const uniqueVouchers = Array.from(uniqueVoucherMap.values());
+      let directExpensesSum = 0;
+      let totalSales = 0;
+      let totalPurchases = 0;
+
+      // 4. Process unique vouchers with Double-Entry rules
+      uniqueVouchers.forEach(v => {
+        // Payroll / Wage entry format
         if (v.worker && v.expense_ledger && v.total_amount) {
           const workerName = String(v.worker).trim();
           const expenseName = String(v.expense_ledger).trim();
@@ -85,6 +98,7 @@ export default function FinancialReportsView({ firm, onClose }) {
           return;
         }
 
+        // Standard JV / Sales / Purchase entries (Entries Array)
         if (Array.isArray(v.entries) && v.entries.length > 0) {
           v.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
@@ -106,6 +120,22 @@ export default function FinancialReportsView({ firm, onClose }) {
               ledgerMap[accName].credit += amt;
             }
           });
+        } 
+        // Flat voucher format fallback
+        else {
+          const amt = Number(v.amount || v.total_amount || 0);
+          if (amt <= 0) return;
+          const dr = (v.dr_account || '').trim();
+          const cr = (v.cr_account || '').trim();
+
+          if (dr) {
+            if (!ledgerMap[dr]) ledgerMap[dr] = { name: dr, category: 'EXPENSES', debit: 0, credit: 0 };
+            ledgerMap[dr].debit += amt;
+          }
+          if (cr) {
+            if (!ledgerMap[cr]) ledgerMap[cr] = { name: cr, category: 'LIABILITIES', debit: 0, credit: 0 };
+            ledgerMap[cr].credit += amt;
+          }
         }
       });
 
@@ -166,7 +196,7 @@ export default function FinancialReportsView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto', boxSizing: 'border-box' }}>
       
-      {/* Original Enterprise Header & Tabs Layout */}
+      {/* Enterprise Header & Tabs */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div>
@@ -192,7 +222,6 @@ export default function FinancialReportsView({ firm, onClose }) {
           </div>
         )}
 
-        {/* Original 3 Navigation Tabs */}
         <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', flexWrap: 'wrap' }}>
           <button 
             onClick={() => setActiveTab('TRIAL_BALANCE')}
@@ -215,7 +244,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Tab 1: Trial Balance (Original Table with 'प्रकार' Column) */}
+      {/* Trial Balance View */}
       {activeTab === 'TRIAL_BALANCE' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
@@ -263,7 +292,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       )}
 
-      {/* Tab 2: Trading Account (Original Design Restored) */}
+      {/* Trading Account View */}
       {activeTab === 'TRADING' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>व्यापार खाता (Trading Account)</h3>
@@ -271,7 +300,7 @@ export default function FinancialReportsView({ firm, onClose }) {
             <div style={{ backgroundColor: '#fef2f2', padding: '16px', borderRadius: '12px', border: '1px solid #fecaca' }}>
               <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#991b1b', textTransform: 'uppercase', marginBottom: '8px' }}>व्यय विवरण (Debit / Direct Cost)</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
-                <span>कुल खरीद (Purchases & Direct Wages):</span>
+                <span>कुल खरीद व मजदूरी (Purchases & Wages):</span>
                 <strong>₹{reportData.trading.directExpenses.toFixed(2)}</strong>
               </div>
             </div>
@@ -287,7 +316,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       )}
 
-      {/* Tab 3: Profit & Loss (Original Design Restored) */}
+      {/* Profit & Loss View */}
       {activeTab === 'PNL' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>लाभ-हानि विवरण (Profit & Loss Statement)</h3>
