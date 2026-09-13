@@ -1,3 +1,4 @@
+// frontend/src/components/PurchaseStockEntryForm.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { useItemMaster } from '../hooks/useItemMaster';
@@ -6,11 +7,13 @@ import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   const activeFirmId = firm?.id || 'FIRM-001';
+  const todayMaxDate = new Date().toISOString().split('T')[0];
+
   const allItems = useItemMaster(); 
   const [accountsList, setAccountsList] = useState([]);
   const [purchaseList, setPurchaseList] = useState([]);
 
-  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [purchaseDate, setPurchaseDate] = useState(todayMaxDate);
   const [billNo, setBillNo] = useState(`PUR-${Math.floor(Date.now() / 1000)}`);
   const [supplierParty, setSupplierParty] = useState(''); 
   const [selectedItemId, setSelectedItemId] = useState('');
@@ -106,7 +109,6 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     if (!window.confirm(`Bill #${refNo} को हटाने से इसका स्टॉक वापस माइनस हो जाएगा। जारी रखें?`)) return;
 
     try {
-      // 🔥 FIX: Corrected bracket syntax error here
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
       const targetVoucher = vouchers.find(v => v && v.id === voucherId);
 
@@ -156,7 +158,14 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Purchase Date *</label>
-              <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }} required />
+              <input 
+                type="date" 
+                max={todayMaxDate}
+                value={purchaseDate} 
+                onChange={e => setPurchaseDate(e.target.value)} 
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '13px', outline: 'none' }} 
+                required 
+              />
             </div>
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '6px', textTransform: 'uppercase', display: 'block' }}>Bill / Ref No *</label>
