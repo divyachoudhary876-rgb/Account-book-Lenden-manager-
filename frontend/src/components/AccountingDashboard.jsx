@@ -1,182 +1,141 @@
-// frontend/src/components/AccountingDashboard.jsx
-
+// frontend/src/components/EnterpriseDashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { getDynamicDashboardMetrics } from '../utils/dashboardDataEngine.js';
+import AccountingDashboard from './AccountingDashboard';
+import CashFlowStatementView from './CashFlowStatementView';
+import FinancialReportsView from './FinancialReportsView';
+import JournalRegisterView from './JournalRegisterView';
+import SecurityBackupSettings from './SecurityBackupSettings';
+// (अन्य कंपोनेंट्स को आवश्यकतानुसार इम्पोर्ट करें)
 
-export default function AccountingDashboard({ firm, onNavigate }) {
-  const [metrics, setMetrics] = useState(null);
+export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
+  const [activeView, setActiveView] = useState('DASHBOARD');
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
 
-  const loadData = () => {
-    try {
-      const data = getDynamicDashboardMetrics(firm);
-      setMetrics(data || {});
-    } catch (err) {
-      console.error("Error loading dashboard metrics:", err);
-      setMetrics({
-        receivables: 0,
-        payables: 0,
-        cashAndBank: 0,
-        categorySpecifics: { cards: [], actions: [] }
-      });
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-    window.addEventListener('app_state_updated', loadData);
-    window.addEventListener('stock_updated', loadData);
-    window.addEventListener('app_storage_updated', loadData);
-    return () => {
-      window.removeEventListener('app_state_updated', loadData);
-      window.removeEventListener('stock_updated', loadData);
-      window.removeEventListener('app_storage_updated', loadData);
-    };
-  }, [firm, activeFirmId]);
-
-  if (!metrics) {
-    return (
-      <div style={{ padding: '30px', textAlign: 'center', fontSize: '13px', color: '#64748b', fontWeight: 'bold' }}>
-        Loading Accounting Dashboard & Financial KPIs...
-      </div>
-    );
+  // Render active view router
+  if (activeView === 'CASH_FLOW') {
+    return <CashFlowStatementView firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
+  }
+  if (activeView === 'FINANCIAL_REPORTS') {
+    return <FinancialReportsView firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
+  }
+  if (activeView === 'JOURNAL_REGISTER') {
+    return <JournalRegisterView firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
+  }
+  if (activeView === 'BACKUP_CENTER') {
+    return <SecurityBackupSettings firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
   }
 
-  const receivables = Number(metrics.receivables || 0);
-  const payables = Number(metrics.payables || 0);
-  const cashAndBank = Number(metrics.cashAndBank || 0);
-  
-  const legalName = firm?.legal_name || firm?.trade_name || firm?.name || 'Enterprise Profile';
-  const categoryLabel = firm?.category || firm?.business_category || 'INDUSTRIAL / TRADING';
-  
-  const cards = metrics.categorySpecifics?.cards || [];
-  const actions = metrics.categorySpecifics?.actions || [];
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', boxSizing: 'border-box' }}>
+    <div style={{ padding: '16px', backgroundColor: '#0f172a', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', color: '#fff' }}>
       
-      {/* Top Banner */}
-      <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#ffffff', borderRadius: '16px', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+      {/* Top Header Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', backgroundColor: '#1e293b', padding: '14px 16px', borderRadius: '12px', border: '1px solid #334155' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '24px' }}>🏢</span>
-            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', letterSpacing: '-0.01em' }}>{legalName}</h2>
-          </div>
-          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>Category:</span>
-            <span style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '2px 8px', borderRadius: '4px', fontWeight: '700', fontSize: '10px', textTransform: 'uppercase' }}>
-              {categoryLabel}
-            </span>
-            <span style={{ marginLeft: '8px', opacity: 0.7 }}>Firm ID: {activeFirmId}</span>
-          </div>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Account Book Smart Manager</div>
+          <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '800' }}>{firm?.legal_name || firm?.name || 'Enterprise Firm'}</h3>
         </div>
-      </div>
-
-      {/* Financial KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
-        
-        {/* Receivables Card */}
-        <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', borderLeft: '5px solid #10b981', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', letterSpacing: '0.03em' }}>RECEIVABLES (देनदार)</span>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#059669', marginTop: '6px' }}>
-            ₹{receivables.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-
-        {/* Payables Card */}
-        <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', borderLeft: '5px solid #ef4444', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', letterSpacing: '0.03em' }}>PAYABLES (लेनदार)</span>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626', marginTop: '6px' }}>
-            ₹{payables.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-
-        {/* Cash & Bank Card */}
-        <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', borderLeft: '5px solid #0284c7', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', letterSpacing: '0.03em' }}>CASH & BANK BALANCE</span>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0284c7', marginTop: '6px' }}>
-            ₹{cashAndBank.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-
-      </div>
-
-      {/* Category Specific Operational Insights */}
-      {cards.length > 0 && (
-        <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-          <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-            ⚡ {categoryLabel} Operational Insights
-          </h4>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
-            {cards.map((card, idx) => (
-              <div key={idx} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', borderLeft: `4px solid ${card.color || '#3b82f6'}` }}>
-                <span style={{ fontSize: '10px', color: '#475569', fontWeight: 'bold', textTransform: 'uppercase' }}>{card.label}</span>
-                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>{card.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Quick Accounting Actions */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-          ⚡ Quick Accounting Actions
-        </h4>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
-          
-          {/* Dedicated Cash Flow Statement Navigation Button */}
-          <button
-            onClick={() => onNavigate && onNavigate('CASH_FLOW')}
-            style={{ 
-              backgroundColor: '#0f172a', 
-              color: '#ffffff', 
-              border: 'none', 
-              borderRadius: '10px', 
-              padding: '12px 10px', 
-              fontSize: '12px', 
-              fontWeight: '700', 
-              cursor: 'pointer', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              gap: '6px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-              transition: 'transform 0.1s ease'
-            }}
-          >
-            <span style={{ fontSize: '14px' }}>📈</span>
-            <span>Cash Flow Statement</span>
+        {onClose && (
+          <button onClick={onClose} style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+            ✕ Close
           </button>
+        )}
+      </div>
 
-          {actions.map((act, idx) => (
-            <button
-              key={idx}
-              onClick={() => onNavigate && onNavigate(act.key)}
-              style={{ 
-                backgroundColor: act.bg || '#334155', 
-                color: '#ffffff', 
-                border: 'none', 
-                borderRadius: '10px', 
-                padding: '12px 10px', 
-                fontSize: '12px', 
-                fontWeight: '700', 
-                cursor: 'pointer', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                gap: '6px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                transition: 'transform 0.1s ease'
-              }}
-            >
-              <span style={{ fontSize: '14px' }}>{act.icon}</span>
-              <span>{act.label}</span>
-            </button>
-          ))}
-        </div>
+      {/* Accounting Workflow Menu List */}
+      <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.05em' }}>
+        Accounting Workflow Menu
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        
+        <button onClick={() => setActiveView('DASHBOARD')} style={menuButtonStyle}>
+          <span>📊</span> Dashboard (डैशबोर्ड)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('ADD_ACCOUNT')} style={menuButtonStyle}>
+          <span>➕</span> Add Account Head (नया खाता)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('SALES')} style={menuButtonStyle}>
+          <span>📄</span> Sales / Tax Invoice (बिक्री बिल)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('PURCHASE')} style={menuButtonStyle}>
+          <span>📦</span> Purchase & Inward Stock (खरीद बिल)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('VOUCHER')} style={menuButtonStyle}>
+          <span>📝</span> Voucher Entry (JV / PV / RV / Contra)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('FUEL')} style={menuButtonStyle}>
+          <span>🚜</span> Fuel & Material Consumption (डीजल/खपत)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('PRODUCTION')} style={menuButtonStyle}>
+          <span>🧱</span> Production & Conversion (ईंट पकाई / निर्माण)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('LABOUR')} style={menuButtonStyle}>
+          <span>👷</span> Labour, Wages & Tractor (मजदूरी/वेतन)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('SETTLEMENT')} style={menuButtonStyle}>
+          <span>⚖️</span> Bill Settlement / Khata Milan
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('INVENTORY')} style={menuButtonStyle}>
+          <span>📋</span> Inventory & Stock Count (स्टॉक रजिस्टर)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('LEDGER')} style={menuButtonStyle}>
+          <span>📖</span> Account Milan & Ledger (खाता बही)
+        </button>
+
+        <button onClick={() => setActiveView('JOURNAL_REGISTER')} style={menuButtonStyle}>
+          <span>📑</span> General Journal Register (रोज़नामचा)
+        </button>
+
+        {/* 📈 Newly Integrated Cash Flow Statement Menu Button */}
+        <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0284c7', borderColor: '#38bdf8' }}>
+          <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
+        </button>
+
+        <button onClick={() => setActiveView('FINANCIAL_REPORTS')} style={menuButtonStyle}>
+          <span>📈</span> Financial Reports (P&L / Balance Sheet)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('SETTINGS')} style={menuButtonStyle}>
+          <span>⚙️</span> Firm Profile & Settings (फर्म विवरण)
+        </button>
+
+        <button onClick={() => setActiveView('BACKUP_CENTER')} style={menuButtonStyle}>
+          <span>🔒</span> Backup & Restore Center (डाटा बैकअप)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('RESET')} style={{ ...menuButtonStyle, borderColor: '#7f1d1d', color: '#fca5a5' }}>
+          <span>🗑️</span> Factory Reset / Clear Data (डेटा रीसेट)
+        </button>
+
       </div>
 
     </div>
   );
 }
+
+const menuButtonStyle = {
+  width: '100%',
+  padding: '14px 16px',
+  backgroundColor: '#1e293b',
+  color: '#ffffff',
+  border: '1px solid #334155',
+  borderRadius: '12px',
+  fontWeight: '700',
+  fontSize: '13px',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+  boxSizing: 'border-box',
+  textAlign: 'left'
+};
