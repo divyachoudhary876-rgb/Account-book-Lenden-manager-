@@ -39,7 +39,6 @@ export default function AccountStatementView({ firm }) {
     };
   }, [activeFirmId]);
 
-  // Bulletproof Statement Computation with Strict ID Deduplication
   useEffect(() => {
     if (!selectedParty) {
       setStatementData(null);
@@ -52,7 +51,6 @@ export default function AccountStatementView({ firm }) {
         'account_book_vouchers',
         'app_vouchers',
         'transactions',
-        'daybook',
         'app_payroll_entries',
         `account_book_vouchers_${activeFirmId}`,
         `app_vouchers_${activeFirmId}`,
@@ -66,21 +64,14 @@ export default function AccountStatementView({ firm }) {
         } catch (e) {}
       });
 
-      // 1. STRICT DEDUPLICATION MAP BY UNIQUE ID OR SIGNATURE
+      // Strict Deduplication Map
       const uniqueVoucherMap = new Map();
-
       rawTx.forEach(v => {
         if (!v) return;
-
-        // Firm Isolation Check
         const vFirm = v.firm_id || activeFirmId;
-        if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') {
-          return;
-        }
+        if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
 
-        // Generate a deterministic unique key to prevent any duplicate rendering
-        const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}-${JSON.stringify(v.entries || '')}`;
-
+        const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}`;
         if (!uniqueVoucherMap.has(uniqueId)) {
           uniqueVoucherMap.set(uniqueId, v);
         }
@@ -96,7 +87,7 @@ export default function AccountStatementView({ firm }) {
         const vNum = v.reference_no || v.voucher_number || (v.id ? v.id.slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
 
-        // Handle direct payroll/wage entry format
+        // Handle Direct Payroll/Wages Entry
         if (v.worker && v.expense_ledger && v.total_amount) {
           if (String(v.worker).trim().toLowerCase() === targetClean) {
             matchedTransactions.push({
@@ -111,7 +102,7 @@ export default function AccountStatementView({ firm }) {
           return;
         }
 
-        // Handle structured entries array format (Double-Entry JV)
+        // Handle Structured Entries Array
         if (Array.isArray(v.entries) && v.entries.length > 0) {
           let partyDebit = 0;
           let partyCredit = 0;
@@ -139,7 +130,7 @@ export default function AccountStatementView({ firm }) {
             });
           }
         } 
-        // Handle flat voucher format
+        // Handle Flat Format
         else {
           const amt = Number(v.amount || v.total_amount || 0);
           if (amt <= 0) return;
@@ -159,10 +150,8 @@ export default function AccountStatementView({ firm }) {
         }
       });
 
-      // Chronological Sorting
       matchedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      // Running Balance Calculation
       let runningBal = 0;
       const processedTransactions = matchedTransactions.map(t => {
         runningBal += (t.debit - t.credit);
@@ -203,21 +192,19 @@ export default function AccountStatementView({ firm }) {
       const res = await downloadAccountStatementPDF(statementData, selectedParty, firm);
       if (res?.success) {
         setStatusNotification({ type: 'success', message: '✓ PDF downloaded successfully!' });
-      } else {
-        setStatusNotification(null);
       }
     } catch (e) {
       setStatusNotification({ type: 'error', message: `❌ Export Failed: ${e.message}` });
     } finally {
       setIsExporting(false);
-      setTimeout(() => setStatusNotification(null), 5000);
+      setTimeout(() => setStatusNotification(null), 4000);
     }
   };
 
   return (
-    <div style={{ width: '100%', maxWidth: '750px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div style={{ width: '100%', maxWidth: '750px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: 'sans-serif' }}>
       
-      {/* Header Banner */}
+      {/* Original Header Design */}
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div>
@@ -227,16 +214,14 @@ export default function AccountStatementView({ firm }) {
             <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry General Ledger & Real-Time Balance</span>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={handleExportPDF}
-              disabled={isExporting || !statementData || statementData.transactions.length === 0}
-              style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            disabled={isExporting || !statementData || statementData.transactions.length === 0}
+            style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
+          </button>
         </div>
       </div>
 
@@ -259,17 +244,17 @@ export default function AccountStatementView({ firm }) {
         />
       </div>
 
-      {/* Summary KPI Bar */}
+      {/* Summary KPI Cards */}
       {statementData && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div style={{ ...cardStyle, backgroundColor: '#f8fafc' }}>
-            <div style={labelStyle}>Opening Balance</div>
+            <div style={labelStyle}>OPENING BALANCE</div>
             <strong style={{ fontSize: '16px', color: '#0f172a' }}>
               ₹{statementData.openingBalance.toLocaleString('en-IN')} {statementData.openingType}
             </strong>
           </div>
           <div style={{ ...cardStyle, backgroundColor: statementData.closingType === 'Dr' ? '#eff6ff' : '#fef2f2' }}>
-            <div style={labelStyle}>Net Closing Balance</div>
+            <div style={labelStyle}>NET CLOSING BALANCE</div>
             <strong style={{ fontSize: '16px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
               ₹{statementData.closingBalance.toLocaleString('en-IN')} {statementData.closingType}
             </strong>
@@ -277,7 +262,7 @@ export default function AccountStatementView({ firm }) {
         </div>
       )}
 
-      {/* Ledger Table */}
+      {/* Original Ledger Table */}
       <div style={{ ...cardStyle, padding: '12px', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
           <thead>
@@ -324,15 +309,7 @@ export default function AccountStatementView({ firm }) {
   );
 }
 
-const cardStyle = {
-  backgroundColor: '#ffffff',
-  borderRadius: '14px',
-  padding: '16px',
-  border: '1px solid #cbd5e1',
-  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-  boxSizing: 'border-box'
-};
-
+const cardStyle = { backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', border: '1px solid #cbd5e1', boxSizing: 'border-box' };
 const labelStyle = { fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' };
 const thStyle = { padding: '10px 8px', fontWeight: 'bold' };
 const tdStyle = { padding: '10px 8px', verticalAlign: 'top' };
