@@ -5,6 +5,8 @@ import { downloadJournalRegisterPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function JournalRegisterView({ firm, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const todayMaxDate = new Date().toISOString().split('T')[0];
+
   const [journalEntries, setJournalEntries] = useState([]);
   const [filterType, setFilterType] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,12 +94,15 @@ export default function JournalRegisterView({ firm, onClose }) {
   const filteredEntries = journalEntries.filter(entry => {
     if (!entry) return false;
     const vDate = entry.voucher_date || '';
-    if (fromDate && vDate < fromDate) return false;
-    if (toDate && vDate > toDate) return false;
+    
+    if (fromDate && vDate && vDate < fromDate) return false;
+    if (toDate && vDate && vDate > toDate) return false;
 
-    const typeMatch = filterType === 'ALL' || String(entry.voucher_type || '').toUpperCase() === filterType;
-    const q = searchQuery.toLowerCase();
-    const searchMatch = 
+    const entryType = String(entry.voucher_type || 'JV').toUpperCase();
+    const typeMatch = filterType === 'ALL' || !filterType || entryType === filterType.toUpperCase();
+    
+    const q = (searchQuery || '').toLowerCase();
+    const searchMatch = !q || 
       (entry.reference_no && String(entry.reference_no).toLowerCase().includes(q)) ||
       (entry.dr_account && entry.dr_account.toLowerCase().includes(q)) ||
       (entry.cr_account && entry.cr_account.toLowerCase().includes(q)) ||
@@ -132,7 +137,7 @@ export default function JournalRegisterView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto', boxSizing: 'border-box' }}>
       
-      {/* Original Chronological Audit Book Header & Filters matching your reference */}
+      {/* Chronological Audit Book Header */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800', marginBottom: '2px' }}>CHRONOLOGICAL AUDIT BOOK</div>
         
@@ -158,19 +163,35 @@ export default function JournalRegisterView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* Date Filters & Voucher Type Dropdown matching original reference */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+        {/* Date Filters & Voucher Type Dropdown (Properly Grid-Aligned & Max Date Restricted) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1fr', gap: '8px', marginBottom: '12px', boxSizing: 'border-box' }}>
           <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (से)</label>
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+            <input 
+              type="date" 
+              max={todayMaxDate}
+              value={fromDate} 
+              onChange={e => setFromDate(e.target.value)} 
+              style={{ width: '100%', padding: '9px 6px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff' }} 
+            />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (तक)</label>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+            <input 
+              type="date" 
+              max={todayMaxDate}
+              value={toDate} 
+              onChange={e => setToDate(e.target.value)} 
+              style={{ width: '100%', padding: '9px 6px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff' }} 
+            />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>Voucher Type</label>
-            <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', boxSizing: 'border-box' }}>
+            <select 
+              value={filterType} 
+              onChange={e => setFilterType(e.target.value)} 
+              style={{ width: '100%', padding: '9px 6px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#fff', color: '#0f172a', fontWeight: 'bold', boxSizing: 'border-box' }}
+            >
               <option value="ALL">All Types</option>
               <option value="JV">JV (Journal)</option>
               <option value="PAY">PAY (Payment)</option>
@@ -201,7 +222,7 @@ export default function JournalRegisterView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Journal Cards matching original design */}
+      {/* Journal Cards */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {filteredEntries.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
