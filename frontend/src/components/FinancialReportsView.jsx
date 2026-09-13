@@ -24,20 +24,21 @@ export default function FinancialReportsView({ firm, onClose }) {
       const masterAccounts = getFirmMasterAccounts(activeFirmId) || [];
       const ledgerMap = {};
 
-      // 1. Initialize master accounts
+      // 1. Initialize Master Accounts with proper category detection
       masterAccounts.forEach(acc => {
         const name = (acc.name || acc.account_name || '').trim();
         if (name) {
+          const category = (acc.category || acc.primary_type || 'GENERAL').toUpperCase();
           ledgerMap[name] = {
             name,
-            category: (acc.category || acc.primary_type || 'GENERAL').toUpperCase(),
-            debit: 0,
-            credit: 0
+            category,
+            debit: Number(acc.opening_balance || 0) * (acc.balance_type === 'Dr' ? 1 : 0),
+            credit: Number(acc.opening_balance || 0) * (acc.balance_type === 'Cr' ? 1 : 0)
           };
         }
       });
 
-      // 2. Scan all possible storage keys
+      // 2. Scan all storage locations
       let rawTx = [];
       const keysToScan = [
         'account_book_vouchers',
@@ -55,50 +56,38 @@ export default function FinancialReportsView({ firm, onClose }) {
         } catch (e) {}
       });
 
-      // 3. STRICT ID-BASED DEDUPLICATION MAP
+      // 3. Strict ID Deduplication
       const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
         const vFirm = v.firm_id || activeFirmId;
         if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
 
-        // Unique deterministic signature to prevent duplicate accumulation
         const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}-${JSON.stringify(v.entries || '')}`;
-        
         if (!uniqueVoucherMap.has(uniqueId)) {
           uniqueVoucherMap.set(uniqueId, v);
         }
       });
 
       const uniqueVouchers = Array.from(uniqueVoucherMap.values());
-      let directExpensesSum = 0;
-      let totalSales = 0;
-      let totalPurchases = 0;
 
-      // 4. Process unique vouchers with Double-Entry rules
+      // 4. Process Vouchers & Populate Ledgers
       uniqueVouchers.forEach(v => {
-        // Payroll / Wage entry format
         if (v.worker && v.expense_ledger && v.total_amount) {
           const workerName = String(v.worker).trim();
           const expenseName = String(v.expense_ledger).trim();
           const amt = Number(v.total_amount || 0);
 
           if (amt > 0) {
-            if (!ledgerMap[expenseName]) {
-              ledgerMap[expenseName] = { name: expenseName, category: 'EXPENSES', debit: 0, credit: 0 };
-            }
+            if (!ledgerMap[expenseName]) ledgerMap[expenseName] = { name: expenseName, category: 'EXPENSES', debit: 0, credit: 0 };
             ledgerMap[expenseName].debit += amt;
-            directExpensesSum += amt;
 
-            if (!ledgerMap[workerName]) {
-              ledgerMap[workerName] = { name: workerName, category: 'LIABILITIES', debit: 0, credit: 0 };
-            }
+            if (!ledgerMap[workerName]) ledgerMap[workerName] = { name: workerName, category: 'LIABILITIES', debit: 0, credit: 0 };
             ledgerMap[workerName].credit += amt;
           }
           return;
         }
 
-        // Standard JV / Sales / Purchase entries (Entries Array)
         if (Array.isArray(v.entries) && v.entries.length > 0) {
           v.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
@@ -108,37 +97,14 @@ export default function FinancialReportsView({ firm, onClose }) {
             const isDr = (e.type || '').toUpperCase() === 'DR' || Number(e.debit || 0) > 0;
             const isCr = (e.type || '').toUpperCase() === 'CR' || Number(e.credit || 0) > 0;
 
-            if (!ledgerMap[accName]) {
-              ledgerMap[accName] = { name: accName, category: 'EXPENSES', debit: 0, credit: 0 };
-            }
-
-            if (isDr) {
-              ledgerMap[accName].debit += amt;
-              if (ledgerMap[accName].category === 'EXPENSES') directExpensesSum += amt;
-            }
-            if (isCr) {
-              ledgerMap[accName].credit += amt;
-            }
+            if (!ledgerMap[accName]) ledgerMap[accName] = { name: accName, category: 'EXPENSES', debit: 0, credit: 0 };
+            if (isDr) ledgerMap[accName].debit += amt;
+            if (isCr) ledgerMap[accName].credit += amt;
           });
-        } 
-        // Flat voucher format fallback
-        else {
-          const amt = Number(v.amount || v.total_amount || 0);
-          if (amt <= 0) return;
-          const dr = (v.dr_account || '').trim();
-          const cr = (v.cr_account || '').trim();
-
-          if (dr) {
-            if (!ledgerMap[dr]) ledgerMap[dr] = { name: dr, category: 'EXPENSES', debit: 0, credit: 0 };
-            ledgerMap[dr].debit += amt;
-          }
-          if (cr) {
-            if (!ledgerMap[cr]) ledgerMap[cr] = { name: cr, category: 'LIABILITIES', debit: 0, credit: 0 };
-            ledgerMap[cr].credit += amt;
-          }
         }
       });
 
+      // 5. Generate Trial Balance Rows
       const tbRows = Object.values(ledgerMap).map(l => {
         const net = l.debit - l.credit;
         return {
@@ -152,15 +118,33 @@ export default function FinancialReportsView({ firm, onClose }) {
       const tDr = tbRows.reduce((s, r) => s + r.dr, 0);
       const tCr = tbRows.reduce((s, r) => s + r.cr, 0);
 
-      const grossResult = totalSales - (totalPurchases + directExpensesSum);
+      // 6. Compute Trading & P&L Accurately from Trial Balance
+      let totalSales = 0;
+      let totalPurchasesOrWages = 0;
+      let indirectExpenses = 0;
+      let indirectIncomes = 0;
+
+      tbRows.forEach(row => {
+        const n = row.name.toLowerCase();
+        const cat = row.category.toLowerCase();
+
+        if (cat.includes('income') || n.includes('sale') || n.includes('revenue')) {
+          totalSales += row.cr;
+        } else if (cat.includes('expense') || n.includes('wages') || n.includes('pathai') || n.includes('purchase') || n.includes('coal')) {
+          totalPurchasesOrWages += row.dr;
+        }
+      });
+
+      const grossResult = totalSales - totalPurchasesOrWages;
+      const netResult = grossResult + indirectIncomes - indirectExpenses;
 
       setReportData({
         trialBalance: tbRows,
         totalDebit: tDr,
         totalCredit: tCr,
         isBalanced: Math.abs(tDr - tCr) < 1,
-        trading: { purchases: totalPurchases, directExpenses: directExpensesSum, sales: totalSales, closingStock: 0, grossResult },
-        pnl: { grossProfit: grossResult, indirectIncomes: 0, indirectExpenses: 0, netResult: grossResult }
+        trading: { purchases: 0, directExpenses: totalPurchasesOrWages, sales: totalSales, closingStock: 0, grossResult },
+        pnl: { grossProfit: grossResult, indirectIncomes, indirectExpenses, netResult }
       });
 
     } catch (e) {
@@ -196,7 +180,7 @@ export default function FinancialReportsView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto', boxSizing: 'border-box' }}>
       
-      {/* Enterprise Header & Tabs */}
+      {/* Header & Tabs */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div>
@@ -292,16 +276,16 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       )}
 
-      {/* Trading Account View */}
+      {/* Trading Account View (Now reflecting Trial Balance data dynamically) */}
       {activeTab === 'TRADING' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>व्यापार खाता (Trading Account)</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginBottom: '14px' }}>
             <div style={{ backgroundColor: '#fef2f2', padding: '16px', borderRadius: '12px', border: '1px solid #fecaca' }}>
               <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#991b1b', textTransform: 'uppercase', marginBottom: '8px' }}>व्यय विवरण (Debit / Direct Cost)</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
                 <span>कुल खरीद व मजदूरी (Purchases & Wages):</span>
-                <strong>₹{reportData.trading.directExpenses.toFixed(2)}</strong>
+                <strong style={{ color: '#991b1b' }}>₹{reportData.trading.directExpenses.toFixed(2)}</strong>
               </div>
             </div>
 
@@ -309,14 +293,21 @@ export default function FinancialReportsView({ firm, onClose }) {
               <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase', marginBottom: '8px' }}>आय व स्टॉक (Credit / Revenue)</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
                 <span>कुल बिक्री (Sales):</span>
-                <strong>₹{reportData.trading.sales.toFixed(2)}</strong>
+                <strong style={{ color: '#166534' }}>₹{reportData.trading.sales.toFixed(2)}</strong>
               </div>
             </div>
+          </div>
+
+          <div style={{ padding: '14px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 'bold', fontSize: '13px' }}>सकल परिणाम (Gross Profit / Loss):</span>
+            <strong style={{ fontSize: '15px', color: reportData.trading.grossResult >= 0 ? '#166534' : '#b91c1c' }}>
+              ₹{reportData.trading.grossResult.toFixed(2)}
+            </strong>
           </div>
         </div>
       )}
 
-      {/* Profit & Loss View */}
+      {/* Profit & Loss View (Now reflecting Trial Balance data dynamically) */}
       {activeTab === 'PNL' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>लाभ-हानि विवरण (Profit & Loss Statement)</h3>
