@@ -94,13 +94,13 @@ export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
           <span>📑</span> General Journal Register (रोज़नामचा)
         </button>
 
-        {/* 📈 Cash Flow Statement Menu Button (Clearly Highlighted) */}
-        <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0284c7', borderColor: '#38bdf8' }}>
-          <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
-        </button>
-
         <button onClick={() => setActiveView('FINANCIAL_REPORTS')} style={menuButtonStyle}>
           <span>📈</span> Financial Reports (P&L / Balance Sheet)
+        </button>
+
+        {/* 📈 Cash Flow Statement Menu Button (Added to Enterprise Dashboard) */}
+        <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0284c7', borderColor: '#38bdf8' }}>
+          <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
         </button>
 
         <button onClick={() => onNavigate && onNavigate('SETTINGS')} style={menuButtonStyle}>
