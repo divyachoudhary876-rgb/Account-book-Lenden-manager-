@@ -59,9 +59,9 @@ export default function JournalRegisterView({ firm, onClose }) {
 
           uniqueMap.set(uId, {
             ...tx,
-            voucher_date: tx.voucher_date || tx.date || '2026-09-13',
+            voucher_date: tx.voucher_date || tx.date || todayMaxDate,
             voucher_type: String(tx.voucher_type || tx.type || 'JV').toUpperCase(),
-            reference_no: tx.reference_no || tx.voucher_number || (tx.id ? tx.id.slice(-6) : '154614'),
+            reference_no: tx.reference_no || tx.voucher_number || (tx.id ? tx.id.slice(-6) : '1001'),
             dr_account: drAcc,
             cr_account: crAcc,
             amount: totalAmt
@@ -184,44 +184,52 @@ export default function JournalRegisterView({ firm, onClose }) {
           </div>
         )}
 
-        {/* Date Filters & Voucher Type Dropdown (Clean Responsive Grid) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.1fr', gap: '10px', marginBottom: '12px', boxSizing: 'border-box', alignItems: 'center' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>From Date (से)</label>
-            <input 
-              type="date" 
-              max={todayMaxDate}
-              value={fromDate} 
-              onChange={e => setFromDate(e.target.value)} 
-              style={{ width: '100%', padding: '10px 8px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
-            />
+        {/* Clean, Stacked Filter Layout (Dates on top, Voucher Type cleanly below) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
+          
+          {/* Row 1: From Date & To Date side-by-side */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>From Date (से)</label>
+              <input 
+                type="date" 
+                max={todayMaxDate}
+                value={fromDate} 
+                onChange={e => setFromDate(e.target.value)} 
+                style={{ width: '100%', padding: '10px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>To Date (तक)</label>
+              <input 
+                type="date" 
+                max={todayMaxDate}
+                value={toDate} 
+                onChange={e => setToDate(e.target.value)} 
+                style={{ width: '100%', padding: '10px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
+              />
+            </div>
           </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>To Date (तक)</label>
-            <input 
-              type="date" 
-              max={todayMaxDate}
-              value={toDate} 
-              onChange={e => setToDate(e.target.value)} 
-              style={{ width: '100%', padding: '10px 8px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
-            />
-          </div>
+
+          {/* Row 2: Voucher Type Selector spanning full width */}
           <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Voucher Type</label>
             <select 
               value={filterType} 
               onChange={e => setFilterType(e.target.value)} 
-              style={{ width: '100%', padding: '10px 8px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#f8fafc', color: '#0f172a', fontWeight: '700', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', backgroundColor: '#f8fafc', color: '#0f172a', fontWeight: '700', boxSizing: 'border-box' }}
             >
-              <option value="ALL">All Types</option>
-              <option value="JV">JV (Journal)</option>
-              <option value="PAY">PAY (Payment)</option>
-              <option value="REC">REC (Receipt)</option>
-              <option value="CONTRA">Contra</option>
+              <option value="ALL">All Types (सभी वाउचर)</option>
+              <option value="JV">JV - Journal (रोज़नामचा)</option>
+              <option value="PAY">PAY - Payment (भुगतान)</option>
+              <option value="REC">REC - Receipt (प्राप्ति)</option>
+              <option value="CONTRA">CONTRA - Contra (कोंट्रा)</option>
             </select>
           </div>
+
         </div>
 
+        {/* Search Input Bar */}
         <div style={{ marginBottom: '12px' }}>
           <input 
             type="text" 
@@ -232,6 +240,7 @@ export default function JournalRegisterView({ firm, onClose }) {
           />
         </div>
 
+        {/* Totals Summary Card */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px' }}>
           <div>
             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase' }}>TOTAL DEBIT (नामे)</div>
@@ -244,7 +253,7 @@ export default function JournalRegisterView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Journal Cards */}
+      {/* Journal Cards List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {filteredEntries.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
