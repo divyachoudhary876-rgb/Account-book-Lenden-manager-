@@ -2,7 +2,7 @@
 
 export const getActiveFirmId = (firm) => {
   if (!firm) return 'default_firm_id';
-  return firm.firm_id || firm.id || String(firm.legal_name || firm.name || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return String(firm.firm_id || firm.id || firm.legal_name || firm.name || 'default_firm').replace(/[^a-zA-Z0-9_-]/g, '_');
 };
 
 export const getFirmScopedStorageKey = (baseKey, firm) => {
@@ -14,10 +14,11 @@ export const loadFirmData = (baseKey, firm, fallbackValue = []) => {
   try {
     const scopedKey = getFirmScopedStorageKey(baseKey, firm);
     const data = localStorage.getItem(scopedKey);
-    if (data) {
+    if (data !== null && data !== undefined) {
       return JSON.parse(data);
     }
-    // Return empty array by default for new/empty firms to prevent cross-firm leakage
+    
+    // Strict isolation: Never fallback to global keys to prevent cross-firm leakage
     return fallbackValue;
   } catch (e) {
     console.error(`Error loading scoped data for ${baseKey}:`, e);
