@@ -1,356 +1,289 @@
 // frontend/src/components/BhattaProductionMasterView.jsx
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
-import SearchableStockDropdown from './SearchableStockDropdown';
-import { getAutoMaterialRate, getAutoLaborAndOverheads } from '../utils/costingEngine';
 
-export default function BhattaProductionMasterView({ firm, onClose }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
-  const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
-  const [batchRef, setBatchRef] = useState(`CHAMBER-${Math.floor(1000 + Math.random() * 9000)}`);
+export default function BhattaProductionMasterView({ firm, selectedFY }) {
+  const firmId = firm?.id || 'FIRM-001';
+  const storageKey = `bhatta_production_${firmId}_${selectedFY}`;
+  const stockStorageKey = `trading_catalog_${firmId}_${selectedFY}`;
+
+  const [batches, setBatches] = useState([]);
+  const [productionDate, setProductionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [batchRef, setBatchRef] = useState('');
+  
+  // Inventory items for raw material consumption
   const [stockItems, setStockItems] = useState([]);
-  
-  const [selectedOutput, setSelectedOutput] = useState('');
-  const [producedQty, setProducedQty] = useState('');
-  const [unitRate, setUnitRate] = useState('');
-  const [laborCost, setLaborCost] = useState('0');
-  const [overheadCost, setOverheadCost] = useState('0');
-  
   const [selectedMaterial, setSelectedMaterial] = useState('');
-  const [consumedQty, setConsumedQty] = useState('');
-  const [materialCart, setMaterialCart] = useState([]);
-  
-  const [errorMsg, setErrorMsg] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [batchesList, setBatchesList] = useState([]);
+  const [materialQty, setMaterialQty] = useState('');
+  const [consumedList, setConsumedList] = useState([]);
 
-  const loadData = () => {
+  // Costs & Output
+  const [directLabor, setDirectLabor] = useState('');
+  const [machineryOverhead, setMachineryOverhead] = useState('');
+  const [outputItemName, setOutputItemName] = useState('Pakki Eent (Number 1)');
+  const [producedQty, setProducedQty] = useState('');
+
+  useEffect(() => {
     try {
-      const allStoredStock = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-      const firmStock = allStoredStock.filter(item => !item.firm_id || item.firm_id === activeFirmId);
-      setStockItems(firmStock);
+      const savedBatches = StorageService.getItem ? StorageService.getItem(storageKey) : JSON.parse(localStorage.getItem(storageKey) || '[]');
+      if (Array.isArray(savedBatches)) setBatches(savedBatches);
 
-      const savedBatches = StorageService.getItem(`app_production_batches_${activeFirmId}`) || [];
-      setBatchesList(savedBatches);
-
-      // Auto fetch past labor & overheads from past vouchers
-      const pastExpenses = getAutoLaborAndOverheads(activeFirmId);
-      if (pastExpenses.totalLabor > 0 && Number(laborCost) === 0) {
-        setLaborCost(pastExpenses.totalLabor.toString());
-      }
-      if (pastExpenses.totalOverhead > 0 && Number(overheadCost) === 0) {
-        setOverheadCost(pastExpenses.totalOverhead.toString());
-      }
+      const savedCatalog = StorageService.getItem ? StorageService.getItem(stockStorageKey) : JSON.parse(localStorage.getItem(stockStorageKey) || '[]');
+      if (Array.isArray(savedCatalog)) setStockItems(savedCatalog);
     } catch (e) {
       console.error("Error loading production data:", e);
     }
-  };
+  }, [storageKey, stockStorageKey]);
 
-  useEffect(() => {
-    loadData();
-    window.addEventListener('app_storage_updated', loadData);
-    window.addEventListener('app_state_updated', loadData);
-    return () => {
-      window.removeEventListener('app_storage_updated', loadData);
-      window.removeEventListener('app_state_updated', loadData);
-    };
-  }, [activeFirmId]);
-
-  const autoCalculateRate = (cart = materialCart, labor = laborCost, overhead = overheadCost, qty = producedQty) => {
-    const totalMatCost = cart.reduce((sum, m) => sum + (m.totalCost || 0), 0);
-    const totalLabor = Number(labor) || 0;
-    const totalOverhead = Number(overhead) || 0;
-    const prodQty = Number(qty) || 0;
-
-    if (prodQty > 0) {
-      const calculatedRate = (totalMatCost + totalLabor + totalOverhead) / prodQty;
-      setUnitRate(calculatedRate.toFixed(3));
-    } else {
-      setUnitRate('');
-    }
-  };
-
-  const handleAddMaterialToCart = () => {
-    setErrorMsg(null);
-    if (!selectedMaterial) {
-      setErrorMsg('Please select a raw material/fuel.');
-      return;
-    }
-    const qtyNum = Number(consumedQty);
-    if (!qtyNum || qtyNum <= 0) {
-      setErrorMsg('Please enter a valid consumption quantity.');
+  const handleAddMaterial = () => {
+    if (!selectedMaterial || !materialQty || Number(materialQty) <= 0) {
+      alert("Kripya valid raw material aur quantity chunein!");
       return;
     }
 
-    const materialObj = stockItems.find(m => (m.item_name || m.name) === selectedMaterial);
-    const availableStock = Number(materialObj?.current_stock || materialObj?.stock || 0);
-
-    if (qtyNum > availableStock) {
-      setErrorMsg(`❌ Insufficient stock for "${selectedMaterial}". Available: ${availableStock}`);
-      return;
-    }
-
-    // Auto-fetch historical purchase rate using costing engine
-    const historicalRate = getAutoMaterialRate(activeFirmId, selectedMaterial);
-    const matRate = Number(materialObj?.unit_purchase_price || materialObj?.purchase_price || historicalRate);
+    const itemObj = stockItems.find(i => i.id === selectedMaterial || i.itemName === selectedMaterial);
+    const itemName = itemObj ? itemObj.itemName : selectedMaterial;
+    const unitCost = itemObj ? (itemObj.purchasePrice || itemObj.sellingPrice || 0) : 0;
+    const qty = Number(materialQty) || 0;
 
     const newItem = {
-      id: materialObj?.id || Math.random().toString(),
-      name: selectedMaterial,
-      qty: qtyNum,
-      rate: matRate,
-      totalCost: qtyNum * matRate
+      id: 'MAT-' + Date.now(),
+      itemName,
+      qty,
+      unitCost,
+      totalCost: qty * unitCost
     };
 
-    const updatedCart = [...materialCart, newItem];
-    setMaterialCart(updatedCart);
+    setConsumedList([...consumedList, newItem]);
     setSelectedMaterial('');
-    setConsumedQty('');
-
-    autoCalculateRate(updatedCart, laborCost, overheadCost, producedQty);
+    setMaterialQty('');
   };
 
-  const handleLaborChange = (val) => {
-    setLaborCost(val);
-    autoCalculateRate(materialCart, val, overheadCost, producedQty);
+  const handleRemoveMaterial = (id) => {
+    setConsumedList(consumedList.filter(m => m.id !== id));
   };
 
-  const handleOverheadChange = (val) => {
-    setOverheadCost(val);
-    autoCalculateRate(materialCart, laborCost, val, producedQty);
-  };
+  // Calculations
+  const totalMaterialCost = consumedList.reduce((sum, m) => sum + m.totalCost, 0);
+  const laborCostNum = Number(directLabor) || 0;
+  const overheadNum = Number(machineryOverhead) || 0;
+  const totalProductionCost = totalMaterialCost + laborCostNum + overheadNum;
+  
+  const producedQtyNum = Number(producedQty) || 0;
+  const costPerPiece = producedQtyNum > 0 ? (totalProductionCost / producedQtyNum) : 0;
+  const costPerThousand = costPerPiece * 1000; // Per 1,000 Bricks calculation
 
-  const handleProducedQtyChange = (val) => {
-    setProducedQty(val);
-    autoCalculateRate(materialCart, laborCost, overheadCost, val);
-  };
-
-  const handleProcessProduction = (e) => {
+  const handleSaveProduction = (e) => {
     e.preventDefault();
-    setErrorMsg(null);
-    setSuccessMsg(null);
-
-    if (materialCart.length === 0) {
-      setErrorMsg('Please add at least one consumed raw material.');
-      return;
-    }
-    if (!selectedOutput) {
-      setErrorMsg('Please select an output finished product.');
-      return;
-    }
-    if (!producedQty || Number(producedQty) <= 0) {
-      setErrorMsg('Please enter valid produced quantity.');
+    if (!batchRef || producedQtyNum <= 0) {
+      alert("Kripya Batch/Chamber Ref aur Produced Qty (Quantity) sahi se bharein!");
       return;
     }
 
-    try {
-      const finalRate = Number(unitRate) || 0;
+    const newBatch = {
+      id: 'PROD-' + Date.now(),
+      productionDate,
+      batchRef,
+      consumedList,
+      totalMaterialCost,
+      directLabor: laborCostNum,
+      machineryOverhead: overheadNum,
+      totalProductionCost,
+      outputItemName,
+      producedQty: producedQtyNum,
+      costPerPiece: Number(costPerPiece.toFixed(4)),
+      costPerThousand: Number(costPerThousand.toFixed(2)),
+      selectedFY
+    };
 
-      const newBatch = {
-        id: 'BATCH-' + Date.now(),
-        date: productionDate,
-        batch_ref: batchRef,
-        output_item: selectedOutput,
-        produced_qty: Number(producedQty),
-        unit_rate: finalRate,
-        labor_cost: Number(laborCost) || 0,
-        overhead_cost: Number(overheadCost) || 0,
-        consumed_materials: materialCart,
-        timestamp: new Date().toISOString()
-      };
+    const updated = [newBatch, ...batches];
+    setBatches(updated);
+    StorageService.setItem(storageKey, updated);
+    window.dispatchEvent(new Event('app_storage_updated'));
 
-      const updatedBatches = [newBatch, ...batchesList];
-      setBatchesList(updatedBatches);
-      StorageService.setItem(`app_production_batches_${activeFirmId}`, updatedBatches);
-
-      let allStoredStock = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-      
-      materialCart.forEach(mat => {
-        const target = allStoredStock.find(i => (i.item_name || i.name) === mat.name && (!i.firm_id || i.firm_id === activeFirmId));
-        if (target) {
-          const current = Number(target.current_stock || target.stock || 0);
-          target.current_stock = Math.max(0, current - mat.qty);
-        }
-      });
-
-      const outputTarget = allStoredStock.find(i => (i.item_name || i.name) === selectedOutput && (!i.firm_id || i.firm_id === activeFirmId));
-      if (outputTarget) {
-        const currentOut = Number(outputTarget.current_stock || outputTarget.stock || 0);
-        outputTarget.current_stock = currentOut + Number(producedQty);
-        if (finalRate > 0) {
-          outputTarget.unit_purchase_price = finalRate;
-          outputTarget.purchase_price = finalRate;
-        }
-      } else {
-        allStoredStock.unshift({
-          id: `ITEM-${Date.now()}`,
-          firm_id: activeFirmId,
-          item_name: selectedOutput,
-          current_stock: Number(producedQty),
-          unit_purchase_price: finalRate,
-          purchase_price: finalRate,
-          unit: selectedOutput.toLowerCase().includes('int') ? 'Pcs' : 'Units'
-        });
-      }
-
-      StorageService.setItem('inventory_items', allStoredStock);
-      window.dispatchEvent(new Event('app_storage_updated'));
-
-      setSuccessMsg(`✓ Production Batch ${batchRef} recorded! Valuation & stock updated automatically.`);
-      setBatchRef(`CHAMBER-${Math.floor(1000 + Math.random() * 9000)}`);
-      setProducedQty('');
-      setUnitRate('');
-      setMaterialCart([]);
-      loadData();
-    } catch (err) {
-      setErrorMsg('Error processing production: ' + err.message);
-    }
+    // Reset Form
+    setBatchRef('');
+    setConsumedList([]);
+    setDirectLabor('');
+    setMachineryOverhead('');
+    setProducedQty('');
+    alert("✓ Production batch & Cost Valuation successfully recorded!");
   };
 
-  const totalMaterialExpense = materialCart.reduce((sum, m) => sum + (m.totalCost || 0), 0);
-  const totalProductionCost = totalMaterialExpense + (Number(laborCost) || 0) + (Number(overheadCost) || 0);
+  const handleDelete = (id) => {
+    if (window.confirm("Kya aap is production record ko delete karna chahte hain?")) {
+      const updated = batches.filter(b => b.id !== id);
+      setBatches(updated);
+      StorageService.setItem(storageKey, updated);
+      window.dispatchEvent(new Event('app_storage_updated'));
+    }
+  };
 
   return (
-    <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '16px', fontFamily: 'sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
-      
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-          {onClose && (
-            <button onClick={onClose} style={{ backgroundColor: '#f1f5f9', color: '#475569', padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
-              ← Dashboard
-            </button>
-          )}
-          <div style={{ fontSize: '11px', fontWeight: 'bold', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569' }}>
-            Firm ID: {activeFirmId}
+    <div style={{ padding: '10px', maxWidth: '900px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '20px' }}>
+        <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          ⚙️ Smart Production & Auto-Valuation ({selectedFY})
+        </h3>
+
+        <form onSubmit={handleSaveProduction}>
+          {/* Basic Info */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Production Date *</label>
+              <input type="date" value={productionDate} onChange={e => setProductionDate(e.target.value)} style={inputStyle} required />
+            </div>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Batch / Chamber Ref *</label>
+              <input type="text" value={batchRef} onChange={e => setBatchRef(e.target.value)} placeholder="e.g. CHAMBER-1254" style={inputStyle} required />
+            </div>
           </div>
-        </div>
-        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 800 }}>⚙️ Smart Production & Auto-Valuation</h1>
+
+          {/* Step 1: Raw Materials */}
+          <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#b45309', display: 'block', marginBottom: '6px' }}>
+              🔥 Step 1: Consumed Raw Materials & Fuels
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '8px', alignItems: 'end' }}>
+              <div>
+                <select value={selectedMaterial} onChange={e => setSelectedMaterial(e.target.value)} style={inputStyle}>
+                  <option value="">-- Select Raw Material / Fuel --</option>
+                  {stockItems.map(item => (
+                    <option key={item.id} value={item.id}>{item.itemName} (Stock: {item.stockQty} {item.unit})</option>
+                  ))}
+                  <option value="Manual Coal / Petcoke">Manual Coal / Petcoke</option>
+                  <option value="Manual Diesel">Manual Diesel</option>
+                </select>
+              </div>
+              <div>
+                <input type="number" value={materialQty} onChange={e => setMaterialQty(e.target.value)} placeholder="Quantity" style={inputStyle} />
+              </div>
+              <div>
+                <button type="button" onClick={handleAddMaterial} style={{ backgroundColor: '#d97706', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>
+                  + Add
+                </button>
+              </div>
+            </div>
+
+            {consumedList.length > 0 && (
+              <div style={{ marginTop: '8px', fontSize: '11px', backgroundColor: '#fff', padding: '6px', borderRadius: '6px', border: '1px solid #fde68a' }}>
+                {consumedList.map(m => (
+                  <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid #fef3c7' }}>
+                    <span>{m.itemName} (Qty: {m.qty})</span>
+                    <span>₹{m.totalCost} <button type="button" onClick={() => handleRemoveMaterial(m.id)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer', fontWeight: 'bold' }}>✕</button></span>
+                  </div>
+                ))}
+                <div style={{ textAlign: 'right', fontWeight: 'bold', marginTop: '4px', color: '#b45309' }}>
+                  Total Material Cost: ₹{totalMaterialCost}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Step 2: Labor & Overheads */}
+          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#15803d', display: 'block', marginBottom: '6px' }}>
+              👷 Step 2: Direct Labor & Overheads
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#374155' }}>Direct Labor Cost (₹)</label>
+                <input type="number" value={directLabor} onChange={e => setDirectLabor(e.target.value)} placeholder="0" style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#374155' }}>Machinery & Overheads (₹)</label>
+                <input type="number" value={machineryOverhead} onChange={e => setMachineryOverhead(e.target.value)} placeholder="0" style={inputStyle} />
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', fontWeight: 'bold', marginTop: '8px', color: '#15803d', fontSize: '12px' }}>
+              Total Production Cost: ₹{totalProductionCost}
+            </div>
+          </div>
+
+          {/* Step 3: Output & Valuation */}
+          <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', padding: '12px', borderRadius: '8px', marginBottom: '14px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#0369a1', display: 'block', marginBottom: '6px' }}>
+              📦 Step 3: Output Finished Product & Auto Valuation
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#374155' }}>Output Item Name</label>
+                <input type="text" value={outputItemName} onChange={e => setOutputItemName(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#374155' }}>Produced Qty (Pcs) *</label>
+                <input type="number" value={producedQty} onChange={e => setProducedQty(e.target.value)} placeholder="e.g. 30000" style={inputStyle} required />
+              </div>
+            </div>
+
+            {producedQtyNum > 0 && (
+              <div style={{ backgroundColor: '#ffffff', padding: '10px', borderRadius: '6px', border: '1px solid #7dd3fc', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold' }}>Cost Per Piece</div>
+                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#0f172a' }}>₹{costPerPiece.toFixed(2)}</div>
+                </div>
+                <div style={{ width: '1px', height: '24px', backgroundColor: '#cbd5e1' }}></div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold' }}>Cost Per 1,000 Bricks (Per Hazaar)</div>
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: '#0284c7' }}>₹{costPerThousand.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button type="submit" style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '13px' }}>
+            ⚡ Save Production & Update Cost Valuation
+          </button>
+        </form>
       </div>
 
-      {errorMsg && <div style={{ marginBottom: '12px', padding: '12px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>{errorMsg}</div>}
-      {successMsg && <div style={{ marginBottom: '12px', padding: '12px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #bbf7d0' }}>{successMsg}</div>}
-
-      <form onSubmit={handleProcessProduction} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-        
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#475569' }}>Production Date *</label>
-            <input type="date" value={productionDate} onChange={(e) => setProductionDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#475569' }}>Batch / Chamber Ref *</label>
-            <input type="text" value={batchRef} onChange={(e) => setBatchRef(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
-          </div>
-        </div>
-
-        {/* Step 1 */}
-        <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800 }}>🔥 Step 1: Consumed Raw Materials & Fuels</h3>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <SearchableStockDropdown 
-              firm={firm}
-              label="Select Raw Material / Fuel *"
-              items={stockItems}
-              value={selectedMaterial}
-              onChange={(val) => setSelectedMaterial(val)}
-              placeholder="-- Search Raw Material --"
-            />
-
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#475569' }}>Quantity *</label>
-                <input type="number" step="0.01" placeholder="Enter Qty" value={consumedQty} onChange={(e) => setConsumedQty(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
-              </div>
-              <button type="button" onClick={handleAddMaterialToCart} style={{ padding: '10px 16px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', height: '38px' }}>
-                + Add Material
-              </button>
-            </div>
-          </div>
-
-          {materialCart.length > 0 && (
-            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {materialCart.map((item, index) => (
-                <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }}>
-                  <span><b>{item.name}</b> — Qty: {item.qty} @ ₹{item.rate} (Total: ₹{item.totalCost})</span>
-                  <button type="button" onClick={() => { 
-                    const u = [...materialCart]; 
-                    u.splice(index, 1); 
-                    setMaterialCart(u); 
-                    autoCalculateRate(u, laborCost, overheadCost, producedQty);
-                  }} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>Remove</button>
-                </div>
-              ))}
-              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#334155', textAlign: 'right', marginTop: '4px' }}>
-                Auto-Fetched Material Cost: ₹{totalMaterialExpense}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Step 2 */}
-        <div style={{ backgroundColor: '#fffbeb', padding: '14px', borderRadius: '12px', border: '1px solid #fde68a' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800, color: '#92400e' }}>👷 Step 2: Direct Labor & Overheads</h3>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#92400e' }}>Direct Labor Cost (₹)</label>
-              <input type="number" step="0.01" value={laborCost} onChange={(e) => handleLaborChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #fcd34d', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#fff' }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#92400e' }}>Machinery & Overheads (₹)</label>
-              <input type="number" step="0.01" value={overheadCost} onChange={(e) => handleOverheadChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #fcd34d', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#fff' }} />
-            </div>
-          </div>
-          <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#92400e', textAlign: 'right', marginTop: '8px' }}>
-            Total Production Cost: ₹{totalProductionCost}
-          </div>
-        </div>
-
-        {/* Step 3 */}
-        <div style={{ backgroundColor: '#f0fdf4', padding: '14px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800, color: '#166534' }}>📦 Step 3: Output Finished Product & Auto Valuation</h3>
-          
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '10px' }}>
-            <div style={{ flex: 3 }}>
-              <SearchableStockDropdown 
-                firm={firm}
-                label="Select Output Item (e.g. Int) *"
-                items={stockItems}
-                value={selectedOutput}
-                onChange={(val) => setSelectedOutput(val)}
-                placeholder="-- Search & Choose Output --"
-              />
-            </div>
-            <div style={{ flex: 2 }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Produced Qty *</label>
-              <input type="number" step="0.01" placeholder="e.g. 50000" value={producedQty} onChange={(e) => handleProducedQtyChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#fff' }} />
-            </div>
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>⚡ Auto-Calculated Unit Valuation Rate per Piece (₹)</label>
-            <input type="number" step="0.001" value={unitRate} onChange={(e) => setUnitRate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #166534', fontSize: '13px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box', backgroundColor: '#ffffff' }} />
-            <span style={{ fontSize: '10px', color: '#15803d', marginTop: '3px', display: 'block' }}>* Purane bills aur expenses se cost automatic fetch karke rate tay hua hai.</span>
-          </div>
-        </div>
-
-        <button type="submit" style={{ width: '100%', padding: '14px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', marginTop: '4px' }}>
-          ⚡ Deduct Stock & Update Finished Valuation Automatically
-        </button>
-      </form>
-
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-        <h3 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 800 }}>📋 Production Batches Register ({batchesList.length})</h3>
-        {batchesList.length === 0 ? (
-          <div style={{ color: '#94a3b8', fontSize: '12px', textAlign: 'center', padding: '12px' }}>No production records found.</div>
+      {/* Production Register Table */}
+      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#334155' }}>Production Batches Register ({selectedFY})</h4>
+        {batches.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '12px' }}>Koi production record darj nahi hai.</div>
         ) : (
-          batchesList.map((batch, idx) => (
-            <div key={idx} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', marginBottom: '8px' }}>
-              <b>{batch.batch_ref}</b> ({batch.date}) — <b>{batch.output_item}</b>: +{batch.produced_qty} Pcs @ ₹{batch.unit_rate || 0} valuation
-            </div>
-          ))
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                  <th style={{ padding: '8px' }}>Date / Chamber</th>
+                  <th style={{ padding: '8px' }}>Output Qty</th>
+                  <th style={{ padding: '8px' }}>Total Cost</th>
+                  <th style={{ padding: '8px' }}>Cost / 1,000 Bricks</th>
+                  <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map(b => (
+                  <tr key={b.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '8px' }}>{b.productionDate}<br /><strong>{b.batchRef}</strong></td>
+                    <td style={{ padding: '8px', fontWeight: 'bold' }}>{b.producedQty} Pcs</td>
+                    <td style={{ padding: '8px', color: '#b45309' }}>₹{b.totalProductionCost}</td>
+                    <td style={{ padding: '8px', fontWeight: 'bold', color: '#0284c7' }}>₹{b.costPerThousand?.toLocaleString('en-IN')}</td>
+                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                      <button onClick={() => handleDelete(b.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
   );
 }
+
+const inputStyle = {
+  width: '100%',
+  padding: '8px',
+  borderRadius: '6px',
+  border: '1px solid #cbd5e1',
+  fontSize: '12px',
+  boxSizing: 'border-box',
+  marginTop: '4px'
+};
