@@ -7,16 +7,18 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
   const firmId = firm?.id || 'FIRM-001';
   const storageKey = `fuel_consumption_${firmId}_${selectedFY}`;
   const stockStorageKey = `trading_catalog_${firmId}_${selectedFY}`;
+  const accountsStorageKey = `account_heads_${firmId}_${selectedFY}`;
 
   const [consumptions, setConsumptions] = useState([]);
   const [usageDate, setUsageDate] = useState(new Date().toISOString().split('T')[0]);
   const [vehicleRef, setVehicleRef] = useState('');
 
-  // Catalog items & Accounts
+  // Catalog items & Expense Accounts
   const [stockItems, setStockItems] = useState([]);
+  const [expenseAccountsList, setExpenseAccountsList] = useState([]);
   const [selectedItem, setSelectedItem] = useState('');
   const [qty, setQty] = useState('');
-  const [expenseAccount, setExpenseAccount] = useState('Fuel & Power Expense');
+  const [expenseAccount, setExpenseAccount] = useState('');
   const [cartItems, setCartItems] = useState([]);
 
   useEffect(() => {
@@ -26,25 +28,40 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
 
       const catalog = StorageService.getItem ? StorageService.getItem(stockStorageKey) : JSON.parse(localStorage.getItem(stockStorageKey) || '[]');
       if (Array.isArray(catalog)) setStockItems(catalog);
+
+      // Load created account heads from storage
+      const accounts = StorageService.getItem ? StorageService.getItem(accountsStorageKey) : JSON.parse(localStorage.getItem(accountsStorageKey) || '[]');
+      if (Array.isArray(accounts)) {
+        // Filter out expense accounts or show all created ledger accounts
+        const expenses = accounts.filter(acc => 
+          String(acc.group || acc.accountGroup || '').toLowerCase().includes('expense') ||
+          String(acc.type || '').toLowerCase().includes('expense') ||
+          true // showing created accounts so user can select their expense head
+        );
+        setExpenseAccountsList(expenses.length > 0 ? expenses : accounts);
+      }
     } catch (e) {
       console.error("Error loading consumption data:", e);
     }
-  }, [storageKey, stockStorageKey]);
+  }, [storageKey, stockStorageKey, accountsStorageKey]);
 
   const handleAddToCart = () => {
-    if (!selectedItem || !qty || Number(qty) <= 0) {
-      alert("Kripya inventory item aur valid quantity chunein!");
+    if (!selectedItem || !qty || Number(qty) <= 0 || !expenseAccount) {
+      alert("Kripya inventory item, quantity aur debit expense account teeno chunein!");
       return;
     }
 
     const itemObj = stockItems.find(i => i.id === selectedItem || i.itemName === selectedItem);
     const itemName = itemObj ? itemObj.itemName : selectedItem;
 
+    const accObj = expenseAccountsList.find(a => a.id === expenseAccount || a.name === expenseAccount || a.accountName === expenseAccount);
+    const accountName = accObj ? (accObj.name || accObj.accountName) : expenseAccount;
+
     const newCartItem = {
       id: 'CART-' + Date.now(),
       itemName,
       qty: Number(qty) || 0,
-      expenseAccount
+      expenseAccount: accountName
     };
 
     setCartItems([...cartItems, newCartItem]);
@@ -78,7 +95,7 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
 
     // Reset Form
     setVehicleRef('');
-    setCartItems([]);
+    setCartItems('');
     alert("✓ Fuel & Material consumption successfully posted & stock deducted!");
   };
 
@@ -136,9 +153,10 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
                 <div>
                   <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#374155' }}>Debit Expense Account *</label>
                   <select value={expenseAccount} onChange={e => setExpenseAccount(e.target.value)} style={inputStyle}>
-                    <option value="Fuel & Power Expense">Fuel & Power Expense</option>
-                    <option value="Raw Material Consumed">Raw Material Consumed</option>
-                    <option value="Factory Maintenance">Factory Maintenance</option>
+                    <option value="">-- Select Created Expense Account --</option>
+                    {expenseAccountsList.map(acc => (
+                      <option key={acc.id || acc.name} value={acc.id || acc.name}>{acc.name || acc.accountName}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -189,7 +207,7 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
                     <td style={{ padding: '6px' }}>{c.usageDate}<br /><strong>{c.vehicleRef}</strong></td>
                     <td style={{ padding: '6px' }}>
                       {c.items.map((it, idx) => (
-                        <div key={idx}>• {it.itemName}: <strong>{it.qty}</strong></div>
+                        <div key={idx}>• {it.itemName}: <strong>{it.qty}</strong> ({it.expenseAccount})</div>
                       ))}
                     </td>
                     <td style={{ padding: '6px', textAlign: 'center' }}>
