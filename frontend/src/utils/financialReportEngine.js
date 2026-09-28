@@ -40,16 +40,53 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
 
     if (Array.isArray(vch.entries) && vch.entries.length > 0) {
       vch.entries.forEach((entry) => {
-        flatLines.push({
-          voucher_id: vch.id,
-          date: vchDate,
-          voucher_number: vchNum,
-          voucher_type: vchType,
-          account_name: (entry.account_name || '').trim(),
-          entry_type: entry.type === 'Dr' ? 'Dr' : 'Cr',
-          amount: parseFloat(entry.amount || 0),
-          narration
-        });
+        const accName = (entry.account_name || '').trim();
+        const drVal = parseFloat(entry.debit || 0);
+        const crVal = parseFloat(entry.credit || 0);
+
+        // Handle standard debit/credit entry format from vouchers
+        if (drVal > 0) {
+          flatLines.push({
+            voucher_id: vch.id,
+            date: vchDate,
+            voucher_number: vchNum,
+            voucher_type: vchType,
+            account_name: accName,
+            entry_type: 'Dr',
+            amount: drVal,
+            narration
+          });
+        }
+        if (crVal > 0) {
+          flatLines.push({
+            voucher_id: vch.id,
+            date: vchDate,
+            voucher_number: vchNum,
+            voucher_type: vchType,
+            account_name: accName,
+            entry_type: 'Cr',
+            amount: crVal,
+            narration
+          });
+        }
+
+        // Fallback for amount/type format if used anywhere
+        if (drVal === 0 && crVal === 0 && entry.amount !== undefined) {
+          const amt = parseFloat(entry.amount || 0);
+          const isDr = entry.type === 'Dr' || entry.entry_type === 'Dr';
+          if (amt > 0) {
+            flatLines.push({
+              voucher_id: vch.id,
+              date: vchDate,
+              voucher_number: vchNum,
+              voucher_type: vchType,
+              account_name: accName,
+              entry_type: isDr ? 'Dr' : 'Cr',
+              amount: amt,
+              narration
+            });
+          }
+        }
       });
     } else {
       const amt = parseFloat(vch.amount || 0);
@@ -91,7 +128,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
   const masterAccounts = getSafeAccounts(firmId);
   const flatLines = getNormalizedLedgerLines(firmId);
 
-  // Map to hold all unique accounts
   const accountTotals = {};
 
   // 1. Seed with Master Accounts & Opening Balances
@@ -147,7 +183,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
   Object.values(accountTotals).forEach((acc) => {
     const net = acc.debit - acc.credit;
 
-    // Only display accounts that have non-zero activity
     if (Math.abs(net) > 0.001 || acc.debit > 0 || acc.credit > 0) {
       let finalDr = 0;
       let finalCr = 0;
@@ -171,7 +206,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
     }
   });
 
-  // Sort rows: Expenses & Incomes first, then Assets & Liabilities
   trialBalances.sort((a, b) => a.account_name.localeCompare(b.account_name));
 
   const difference = Math.abs(grandTotalDebit - grandTotalCredit);
@@ -204,7 +238,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
     }
   });
 
-  // Closing stock valuation
   let closingStockValuation = 0;
   try {
     const stockKey = `app_stock_${firmId}`;
