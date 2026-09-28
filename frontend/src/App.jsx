@@ -20,7 +20,7 @@ import InventoryStockView from './components/InventoryStockView.jsx';
 import AccountStatementView from './components/AccountStatementView.jsx';
 import JournalRegisterView from './components/JournalRegisterView.jsx';
 import FinancialReportsView from './components/FinancialReportsView.jsx';
-import CashFlowStatementView from './components/CashFlowStatementView.jsx'; // 📈 Newly Integrated View
+import CashFlowStatementView from './components/CashFlowStatementView.jsx';
 import SecurityBackupSettings from './components/SecurityBackupSettings.jsx';
 import DataPurgeView from './components/DataPurgeView.jsx';
 import CreateFirmForm from './components/CreateFirmForm.jsx';
@@ -54,7 +54,12 @@ export default function App() {
       } else if (firm) {
         const availableYears = getFirmFinancialYears(firm.id) || [];
         setFyList(availableYears);
-        if (!availableYears.some(y => y.label === selectedFY)) {
+        
+        // Load saved FY for this firm from localStorage if available
+        const savedFY = localStorage.getItem(`app_active_fy_${firm.id}`);
+        if (savedFY && availableYears.some(y => y.label === savedFY)) {
+          setSelectedFY(savedFY);
+        } else if (!availableYears.some(y => y.label === selectedFY)) {
           setSelectedFY(availableYears[0]?.label || 'FY 2026-27');
         }
       }
@@ -69,7 +74,6 @@ export default function App() {
     window.addEventListener('app_state_updated', refreshState);
     window.addEventListener('fy_state_updated', refreshState);
 
-    // 🛡️ Safety timeout to prevent infinite loading on desktop
     const safetyTimer = setTimeout(() => {
       const list = getFirmsRegistry() || [];
       if (list.length === 0) {
@@ -110,7 +114,10 @@ export default function App() {
       setIsAddFYModalOpen(true);
     } else {
       setSelectedFY(val);
-      localStorage.setItem(`app_active_fy_${activeFirm?.id}`, val);
+      if (activeFirm?.id) {
+        localStorage.setItem(`app_active_fy_${activeFirm.id}`, val);
+      }
+      window.dispatchEvent(new Event('app_storage_updated'));
     }
   };
 
@@ -119,6 +126,9 @@ export default function App() {
     try {
       const created = createFinancialYear(activeFirm?.id || 'FIRM-001', newFYStartYear);
       setSelectedFY(created.label);
+      if (activeFirm?.id) {
+        localStorage.setItem(`app_active_fy_${activeFirm.id}`, created.label);
+      }
       setIsAddFYModalOpen(false);
       refreshState();
       alert(`✓ ${created.label} registered successfully!`);
@@ -130,10 +140,9 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
       
-      {/* 1. Update Notification Banner */}
       <AppUpdateBanner />
 
-      {/* 2. Top Header Bar */}
+      {/* Top Header Bar */}
       <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {currentView !== 'dashboard' && !isCreatingFirm ? (
@@ -161,10 +170,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* 3. Sub-Header: Firm Selector + FY Picker + Menu Button */}
+      {/* Sub-Header: Firm Selector + FY Picker + Menu Button */}
       <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
         
-        {/* Firm Picker */}
         <div style={{ flex: 1.3, minWidth: '130px' }}>
           <select
             value={isCreatingFirm ? 'CREATE_NEW' : (activeFirm?.id || '')}
@@ -190,7 +198,6 @@ export default function App() {
           </select>
         </div>
 
-        {/* Financial Year Selector */}
         <div style={{ flex: 0.9, minWidth: '110px' }}>
           <select
             value={selectedFY}
@@ -204,7 +211,6 @@ export default function App() {
           </select>
         </div>
 
-        {/* Menu Toggle */}
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -213,7 +219,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* 4. Complete Workflow Menu Drawer */}
+      {/* Workflow Menu Drawer */}
       {isMenuOpen && (
         <div style={{
           backgroundColor: '#0c1322',
@@ -258,7 +264,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. Main Screen Routing View */}
+      {/* Main Screen Routing View with selectedFY passed down */}
       <main style={{ width: '100%', maxWidth: '1000px', margin: '0 auto', padding: '14px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
@@ -276,6 +282,7 @@ export default function App() {
             {currentView === 'dashboard' && (
               <EnterpriseDashboard 
                 firm={activeFirm} 
+                selectedFY={selectedFY}
                 onNavigate={(viewKey) => {
                   if (viewKey === 'firm_settings') setCurrentView('firm_settings');
                   else setCurrentView(viewKey);
@@ -285,29 +292,30 @@ export default function App() {
             {currentView === 'firm_settings' && (
               <FirmProfileSettingsView 
                 firm={activeFirm} 
+                selectedFY={selectedFY}
                 onNavigateToCreate={() => setIsCreatingFirm(true)}
                 onNavigateDashboard={() => setCurrentView('dashboard')}
               />
             )}
-            {currentView === 'sales' && <CreateInvoice firm={activeFirm} />}
-            {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} />}
-            {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} />}
-            {currentView === 'consumption' && <MaterialConsumptionView firm={activeFirm} />}
-            {currentView === 'production' && <BhattaProductionMasterView firm={activeFirm} />}
-            {currentView === 'payroll' && <PayrollManagementView firm={activeFirm} />}
-            {currentView === 'settlement' && <BillSettlementView firm={activeFirm} />}
-            {currentView === 'inventory' && <InventoryStockView firm={activeFirm} />}
-            {currentView === 'milan' && <AccountStatementView firm={activeFirm} />}
-            {currentView === 'journal' && <JournalRegisterView firm={activeFirm} />}
-            {currentView === 'reports' && <FinancialReportsView firm={activeFirm} />}
-            {currentView === 'cash_flow' && <CashFlowStatementView firm={activeFirm} onClose={() => setCurrentView('dashboard')} />} 
-            {currentView === 'backup' && <SecurityBackupSettings firm={activeFirm} />}
-            {currentView === 'purge' && <DataPurgeView firm={activeFirm} />}
+            {currentView === 'sales' && <CreateInvoice firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'consumption' && <MaterialConsumptionView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'production' && <BhattaProductionMasterView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'payroll' && <PayrollManagementView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'settlement' && <BillSettlementView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'inventory' && <InventoryStockView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'milan' && <AccountStatementView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'journal' && <JournalRegisterView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'reports' && <FinancialReportsView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'cash_flow' && <CashFlowStatementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />} 
+            {currentView === 'backup' && <SecurityBackupSettings firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'purge' && <DataPurgeView firm={activeFirm} selectedFY={selectedFY} />}
           </>
         )}
       </main>
 
-      {/* 6. Dynamic Financial Year Creation Modal */}
+      {/* Add New FY Modal */}
       {isAddFYModalOpen && (
         <div style={modalOverlayStyle}>
           <div style={modalCardStyle}>
@@ -359,7 +367,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 7. Directory Head Modal */}
       <CreateAccountHeadModal 
         firm={activeFirm} 
         isOpen={isAccountModalOpen} 
