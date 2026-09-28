@@ -46,7 +46,18 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     };
   }, [activeFirmId]);
 
-  // Material add karte waqt inventory se uska purchase rate automatic uthayega
+  const autoCalculateRate = (cart = materialCart, labor = laborCost, overhead = overheadCost, qty = producedQty) => {
+    const totalMatCost = cart.reduce((sum, m) => sum + (m.totalCost || 0), 0);
+    const totalLabor = Number(labor) || 0;
+    const totalOverhead = Number(overhead) || 0;
+    const prodQty = Number(qty) || 0;
+
+    if (prodQty > 0) {
+      const calculatedRate = (totalMatCost + totalLabor + totalOverhead) / prodQty;
+      setUnitRate(calculatedRate.toFixed(3));
+    }
+  };
+
   const handleAddMaterialToCart = () => {
     setErrorMsg(null);
     if (!selectedMaterial) {
@@ -67,7 +78,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       return;
     }
 
-    // Auto fetch unit rate of raw material from inventory master
     const matRate = Number(materialObj?.unit_purchase_price || materialObj?.purchase_price || materialObj?.rate || 1);
 
     const newItem = {
@@ -83,24 +93,9 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     setSelectedMaterial('');
     setConsumedQty('');
 
-    // Auto trigger rate calculation after adding material
     autoCalculateRate(updatedCart, laborCost, overheadCost, producedQty);
   };
 
-  // Automatic rate calculation function based on total cost / quantity
-  const autoCalculateRate = (cart = materialCart, labor = laborCost, overhead = overheadCost, qty = producedQty) => {
-    const totalMatCost = cart.reduce((sum, m) => sum + (m.totalCost || 0), 0);
-    const totalLabor = Number(labor) || 0;
-    const totalOverhead = Number(overhead) || 0;
-    const prodQty = Number(qty) || 0;
-
-    if (prodQty > 0) {
-      const calculatedRate = (totalMatCost + totalLabor + totalOverhead) / prodQty;
-      setUnitRate(calculatedRate.toFixed(3));
-    }
-  };
-
-  // Jab labor ya overhead change ho toh rate recalculate ho
   const handleLaborChange = (val) => {
     setLaborCost(val);
     autoCalculateRate(materialCart, val, overheadCost, producedQty);
@@ -150,13 +145,12 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
         timestamp: new Date().toISOString()
       };
 
-      const updatedBatches = [newBatch, ...batchesList];
+      const updatedBatches = [newBatch, [...batchesList]];
       setBatchesList(updatedBatches);
       StorageService.setItem(`app_production_batches_${activeFirmId}`, updatedBatches);
 
       let allStoredStock = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
       
-      // 1. Raw material stock deduct karein
       materialCart.forEach(mat => {
         const target = allStoredStock.find(i => (i.item_name || i.name) === mat.name && (!i.firm_id || i.firm_id === activeFirmId));
         if (target) {
@@ -165,7 +159,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
         }
       });
 
-      // 2. Finished product (Output) stock add karein aur auto-calculated rate update karein
       const outputTarget = allStoredStock.find(i => (i.item_name || i.name) === selectedOutput && (!i.firm_id || i.firm_id === activeFirmId));
       if (outputTarget) {
         const currentOut = Number(outputTarget.current_stock || outputTarget.stock || 0);
@@ -189,7 +182,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       StorageService.setItem('inventory_items', allStoredStock);
       window.dispatchEvent(new Event('app_storage_updated'));
 
-      setSuccessMsg(`✓ Production Batch ${batchRef} recorded successfully! Finished rate auto-set to ₹${finalRate}.`);
+      setSuccessMsg(`✓ Production Batch ${batchRef} recorded successfully! Finished rate set to ₹${finalRate}.`);
       setBatchRef(`CHAMBER-${Math.floor(1000 + Math.random() * 9000)}`);
       setProducedQty('');
       setUnitRate('');
@@ -203,6 +196,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
   return (
     <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '16px', fontFamily: 'sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
       
+      {/* Header */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           {onClose && (
@@ -222,6 +216,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
       <form onSubmit={handleProcessProduction} style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
         
+        {/* Date & Batch */}
         <div style={{ display: 'flex', gap: '10px' }}>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#475569' }}>Production Date *</label>
@@ -233,9 +228,37 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* Consumed Raw Materials First */}
+        {/* STEP 1: Output Finished Product & Auto Rate */}
+        <div style={{ backgroundColor: '#f0fdf4', padding: '14px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800, color: '#166534' }}>📦 Step 1: Output Finished Product & Auto Rate</h3>
+          
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '10px' }}>
+            <div style={{ flex: 3 }}>
+              <SearchableStockDropdown 
+                firm={firm}
+                label="Select Output Item (e.g. Int) *"
+                items={stockItems}
+                value={selectedOutput}
+                onChange={(val) => setSelectedOutput(val)}
+                placeholder="-- Search & Choose Output --"
+              />
+            </div>
+            <div style={{ flex: 2 }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Produced Qty *</label>
+              <input type="number" step="0.01" placeholder="e.g. 50000" value={producedQty} onChange={(e) => handleProducedQtyChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#fff' }} />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>⚡ Auto-Calculated Unit Rate / Cost per Piece (₹)</label>
+            <input type="number" step="0.001" value={unitRate} onChange={(e) => setUnitRate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #166534', fontSize: '13px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box', backgroundColor: '#ffffff' }} />
+            <span style={{ fontSize: '10px', color: '#15803d', marginTop: '3px', display: 'block' }}>* Materials cost + labor + overheads ko produced quantity se divide karke auto-calculate hota hai. Aap ise manually bhi edit kar sakte hain.</span>
+          </div>
+        </div>
+
+        {/* STEP 2: Consumed Raw Materials & Fuels */}
         <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800 }}>🔥 Consumed Raw Materials & Fuels</h3>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800 }}>🔥 Step 2: Consumed Raw Materials & Fuels</h3>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <SearchableStockDropdown 
@@ -275,43 +298,18 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
           )}
         </div>
 
-        {/* Expenses */}
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#475569' }}>Direct Labor Cost (₹)</label>
-            <input type="number" step="0.01" value={laborCost} onChange={(e) => handleLaborChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#475569' }}>Machinery & Overheads (₹)</label>
-            <input type="number" step="0.01" value={overheadCost} onChange={(e) => handleOverheadChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
-          </div>
-        </div>
-
-        {/* Output Finished Product with Auto-Calculated Rate */}
-        <div style={{ backgroundColor: '#f0fdf4', padding: '14px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800, color: '#166534' }}>📦 Output Finished Product & Auto Rate</h3>
-          
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '10px' }}>
-            <div style={{ flex: 3 }}>
-              <SearchableStockDropdown 
-                firm={firm}
-                label="Select Output Item (e.g. Int) *"
-                items={stockItems}
-                value={selectedOutput}
-                onChange={(val) => setSelectedOutput(val)}
-                placeholder="-- Search & Choose Output --"
-              />
+        {/* STEP 3: Direct Labor & Overheads */}
+        <div style={{ backgroundColor: '#fffbeb', padding: '14px', borderRadius: '12px', border: '1px solid #fde68a' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800, color: '#92400e' }}>👷 Step 3: Direct Labor & Overheads</h3>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#92400e' }}>Direct Labor Cost (₹)</label>
+              <input type="number" step="0.01" value={laborCost} onChange={(e) => handleLaborChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #fcd34d', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#fff' }} />
             </div>
-            <div style={{ flex: 2 }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Produced Qty *</label>
-              <input type="number" step="0.01" placeholder="e.g. 50000" value={producedQty} onChange={(e) => handleProducedQtyChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#fff' }} />
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#92400e' }}>Machinery & Overheads (₹)</label>
+              <input type="number" step="0.01" value={overheadCost} onChange={(e) => handleOverheadChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #fcd34d', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#fff' }} />
             </div>
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>⚡ Auto-Calculated Unit Rate / Cost per Piece (₹)</label>
-            <input type="number" step="0.001" value={unitRate} onChange={(e) => setUnitRate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #166534', fontSize: '13px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box', backgroundColor: '#ffffff' }} />
-            <span style={{ fontSize: '10px', color: '#15803d', marginTop: '3px', display: 'block' }}>* Yeh rate materials cost + labor + overheads ko produced quantity se divide karke automatic bana hai. Aap ise manually bhi edit kar sakte hain.</span>
           </div>
         </div>
 
@@ -320,6 +318,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
         </button>
       </form>
 
+      {/* Register */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 800 }}>📋 Production Batches Register ({batchesList.length})</h3>
         {batchesList.length === 0 ? (
