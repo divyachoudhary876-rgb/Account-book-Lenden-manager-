@@ -9,14 +9,12 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // Robust Firm ID and Name extraction
   const firmId = String(firm?.firm_id || firm?.id || '').trim();
   const firmName = String(firm?.legal_name || firm?.name || 'default').trim();
   const activeFirmKey = firmId || firmName.replace(/[^a-zA-Z0-9_-]/g, '_');
 
   const fetchStock = () => {
     try {
-      // 1. Agar props me items aaye hain toh unhe strict firm ID/Name par filter karein
       if (Array.isArray(items) && items.length > 0) {
         const filteredProps = items.filter(item => {
           const itemFirmId = String(item.firm_id || '').trim();
@@ -30,7 +28,6 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
         return;
       }
       
-      // 2. Strict Firm-Scoped Storage Key se stock load karein taaki cross-leakage bilkul na ho
       const scopedKey = `inventory_items_${activeFirmKey}`;
       const scopedStored = StorageService.getItem(scopedKey) || JSON.parse(localStorage.getItem(scopedKey) || '[]');
       
@@ -39,8 +36,7 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
         return;
       }
 
-      // 3. Fallback: Global inventory items ko strict firm_id match ke sath filter karein
-      const allStored = StorageService.getItem('inventory_items'] || StorageService.getInventoryItems() || [];
+      const allStored = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
       const firmStock = allStored.filter(item => {
         const itemFirmId = String(item.firm_id || '').trim();
         const itemFirmName = String(item.firm_name || item.firm || '').trim();
@@ -48,7 +44,6 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
         if (firmId && itemFirmId) return itemFirmId === firmId;
         if (firmName && itemFirmName) return itemFirmName.toLowerCase() === firmName.toLowerCase();
         
-        // Agar item me firm_id nahi hai aur default firm hai
         return !itemFirmId && !itemFirmName;
       });
 
