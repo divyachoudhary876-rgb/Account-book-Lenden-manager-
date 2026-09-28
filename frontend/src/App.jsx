@@ -27,6 +27,10 @@ import DataPurgeView from './components/DataPurgeView.jsx';
 import CreateFirmForm from './components/CreateFirmForm.jsx';
 import AppUpdateBanner from './components/AppUpdateBanner.jsx';
 
+// Sector-Specific Views
+import TransportTripView from './components/TransportTripView.jsx';
+import TradingInventoryCatalogView from './components/TradingInventoryCatalogView.jsx';
+
 export default function App() {
   const [activeFirm, setActiveFirm] = useState(null);
   const [firmsList, setFirmsList] = useState([]);
@@ -56,15 +60,12 @@ export default function App() {
         const availableYears = getFirmFinancialYears(firm.id) || [];
         setFyList(availableYears);
         
-        // Load saved FY for this firm from localStorage if available
         const savedFY = localStorage.getItem(`app_active_fy_${firm.id}`);
         let activeTargetFY = savedFY && availableYears.some(y => y.label === savedFY) 
           ? savedFY 
           : (availableYears[0]?.label || 'FY 2026-27');
         
         setSelectedFY(activeTargetFY);
-
-        // 🔄 Execute Automatic FY Rollover for Opening Balances & Stock
         performFinancialYearRollover(firm.id, activeTargetFY);
       }
     } catch (e) {
@@ -92,7 +93,8 @@ export default function App() {
     };
   }, []);
 
-  const menuItems = getDynamicWorkflowMenu(activeFirm?.category || 'TRADING');
+  const firmCat = String(activeFirm?.category || 'TRADING').toUpperCase();
+  const menuItems = getDynamicWorkflowMenu(firmCat);
 
   const handleMenuClick = (item) => {
     setIsMenuOpen(false);
@@ -141,6 +143,17 @@ export default function App() {
     } catch (err) {
       alert(err.message);
     }
+  };
+
+  // Render Dynamic Sector-Specific View for Production/Operations Menu Key
+  const renderProductionOrSectorView = () => {
+    if (firmCat.includes('TRANSPORT') || firmCat.includes('LOGISTICS')) {
+      return <TransportTripView firm={activeFirm} selectedFY={selectedFY} />;
+    }
+    if (firmCat.includes('TRADING') || firmCat.includes('RETAIL') || firmCat.includes('WHOLESALE')) {
+      return <TradingInventoryCatalogView firm={activeFirm} selectedFY={selectedFY} />;
+    }
+    return <BhattaProductionMasterView firm={activeFirm} selectedFY={selectedFY} />;
   };
 
   return (
@@ -236,7 +249,7 @@ export default function App() {
           boxSizing: 'border-box'
         }}>
           <div style={{ color: '#94a3b8', fontSize: '11px', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '12px', paddingLeft: '4px' }}>
-            ACCOUNTING WORKFLOW MENU
+            ACCOUNTING WORKFLOW MENU ({firmCat})
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -270,7 +283,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Screen Routing View with selectedFY passed down */}
+      {/* Main Screen Routing View */}
       <main style={{ width: '100%', maxWidth: '1000px', margin: '0 auto', padding: '14px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
@@ -307,7 +320,7 @@ export default function App() {
             {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} selectedFY={selectedFY} />}
             {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} selectedFY={selectedFY} />}
             {currentView === 'consumption' && <MaterialConsumptionView firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'production' && <BhattaProductionMasterView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'production' && renderProductionOrSectorView()}
             {currentView === 'payroll' && <PayrollManagementView firm={activeFirm} selectedFY={selectedFY} />}
             {currentView === 'settlement' && <BillSettlementView firm={activeFirm} selectedFY={selectedFY} />}
             {currentView === 'inventory' && <InventoryStockView firm={activeFirm} selectedFY={selectedFY} />}
