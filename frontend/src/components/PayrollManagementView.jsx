@@ -4,15 +4,12 @@ import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import SearchableAccountDropdown from './SearchableAccountDropdown';
 
 export default function PayrollManagementView({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
-  const todayMaxDate = new Date().toISOString().slice(0, 10);
-
   const [workersList, setWorkersList] = useState([]);
   const [expenseAccountsList, setExpenseAccountsList] = useState([]);
   
   const [selectedWorker, setSelectedWorker] = useState('');
-  const [workDate, setWorkDate] = useState(todayMaxDate);
-  const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expenses');
+  const [workDate, setWorkDate] = useState(new Date().toISOString().slice(0, 10));
+  const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expense');
   const [quantity, setQuantity] = useState('');
   const [ratePerUnit, setRatePerUnit] = useState('');
   const [workDescription, setWorkDescription] = useState('');
@@ -25,21 +22,22 @@ export default function PayrollManagementView({ firm, onClose }) {
     if (!firm) return;
     
     const allAccounts = loadFirmData('app_accounts', firm, [
-      { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee', primary_type: 'LIABILITIES' },
-      { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver', primary_type: 'LIABILITIES' },
-      { id: 'w_3', account_name: 'Pathai & Labour Expenses', sub_group: 'Direct Labor & Pathai Expenses (मजदूरी)', primary_type: 'EXPENSES' }
+      { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee' },
+      { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver' },
+      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Expenses' },
+      { id: 'w_4', account_name: 'Tractor Diesel & Maintenance', sub_group: 'Direct Expenses' },
+      { id: 'w_5', account_name: 'General Factory Wages', sub_group: 'Direct Expenses' }
     ]);
 
     setWorkersList(allAccounts);
 
     const expenseAccs = allAccounts.filter(acc => 
-      (acc.primary_type || '').toUpperCase() === 'EXPENSES' ||
-      (acc.sub_group || '').toLowerCase().includes('expense') ||
-      (acc.sub_group || '').toLowerCase().includes('direct')
+      (acc.sub_group || acc.primary_type || '').toLowerCase().includes('expense') ||
+      (acc.sub_group || acc.primary_type || '').toLowerCase().includes('direct') ||
+      (acc.sub_group || '').toLowerCase().includes('indirect')
     );
     setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
-    // Load existing payroll entries
     const entries = loadFirmData('app_payroll_entries', firm, []);
     setPayrollEntries(entries);
   };
@@ -56,33 +54,24 @@ export default function PayrollManagementView({ firm, onClose }) {
 
   const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
 
-  const resolveName = (val) => {
-    if (!val) return '';
-    if (typeof val === 'string') return val.trim();
-    if (typeof val === 'object') {
-      return (val.account_name || val.name || val.label || '').trim();
-    }
-    return String(val).trim();
-  };
-
   const handlePostWorkCredit = (e) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const workerName = resolveName(selectedWorker);
-    const expenseName = resolveName(expenseLedger);
+    const workerName = typeof selectedWorker === 'object' ? (selectedWorker.account_name || selectedWorker.name || '') : selectedWorker;
+    const expenseName = typeof expenseLedger === 'object' ? (expenseLedger.account_name || expenseLedger.name || '') : expenseLedger;
 
     if (!workerName) {
-      setErrorMsg('Please select a valid worker, driver, or employee.');
+      setErrorMsg('Please select a worker, driver, or employee.');
       return;
     }
     if (!expenseName) {
-      setErrorMsg('Please select a valid expense account.');
+      setErrorMsg('Please select an expense account.');
       return;
     }
     if (!quantity || Number(quantity) <= 0) {
-      setErrorMsg('Please enter a valid quantity.');
+      setErrorMsg('Please enter a valid quantity/days/units.');
       return;
     }
     if (!ratePerUnit || Number(ratePerUnit) <= 0) {
@@ -90,12 +79,8 @@ export default function PayrollManagementView({ firm, onClose }) {
       return;
     }
 
-    const timestamp = new Date().toISOString();
-    const uniqueId = 'PAY-' + Date.now();
-
     const newEntry = {
-      id: uniqueId,
-      firm_id: activeFirmId,
+      id: 'PAY-' + Date.now(),
       worker: workerName,
       date: workDate,
       expense_ledger: expenseName,
@@ -103,42 +88,27 @@ export default function PayrollManagementView({ firm, onClose }) {
       rate: Number(ratePerUnit),
       total_amount: calculatedTotalAmount,
       description: workDescription || 'Work Attendance Entry',
-      timestamp
+      timestamp: new Date().toISOString()
     };
 
-    // 1. Update payroll state & storage
     const updatedEntries = [newEntry, ...payrollEntries];
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 2. Post corresponding Double-Entry Voucher to account_book_vouchers for Trial Balance & Daybook
     try {
-      const vchPayload = {
-        id: uniqueId,
-        firm_id: activeFirmId,
-        voucher_date: workDate,
+      const allVouchers = loadFirmData('app_vouchers', firm, []);
+      const newVoucher = {
+        id: 'JV-PAY-' + Date.now(),
         date: workDate,
-        voucher_type: 'JV',
-        type: 'JV',
-        voucher_number: uniqueId.slice(-6),
-        reference_no: uniqueId.slice(-6),
-        dr_account: expenseName,
-        cr_account: workerName,
-        amount: calculatedTotalAmount,
-        total_amount: calculatedTotalAmount,
+        voucher_type: 'JV', 
         narration: `Wages credited to ${workerName} via ${expenseName} [Qty: ${quantity} x Rate: ${ratePerUnit}] - ${workDescription}`,
         entries: [
-          { account_name: expenseName, type: 'Dr', amount: calculatedTotalAmount },
-          { account_name: workerName, type: 'Cr', amount: calculatedTotalAmount }
+          { account_name: expenseName, debit: calculatedTotalAmount, credit: 0 },
+          { account_name: workerName, debit: 0, credit: calculatedTotalAmount }
         ],
-        created_at: timestamp
+        timestamp: new Date().toISOString()
       };
-
-      const storageKey = `account_book_vouchers_${activeFirmId}`;
-      const existingVouchers = JSON.parse(localStorage.getItem(storageKey) || '[]');
-      const filtered = existingVouchers.filter(v => v.id !== uniqueId);
-      localStorage.setItem(storageKey, JSON.stringify([vchPayload, ...filtered]));
-      localStorage.setItem('account_book_vouchers', JSON.stringify([vchPayload, ...filtered]));
+      saveFirmData('app_vouchers', firm, [newVoucher, ...allVouchers]);
     } catch (err) {
       console.error('Error posting auto-voucher for payroll:', err);
     }
@@ -150,17 +120,16 @@ export default function PayrollManagementView({ firm, onClose }) {
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
-    loadData();
   };
 
-  const resolvedActiveWorker = resolveName(selectedWorker);
-  const workerEntries = payrollEntries.filter(e => resolveName(e.worker).toLowerCase() === resolvedActiveWorker.toLowerCase());
+  const resolvedActiveWorker = typeof selectedWorker === 'object' ? (selectedWorker.account_name || '') : selectedWorker;
+  const workerEntries = payrollEntries.filter(e => e.worker === resolvedActiveWorker);
   const totalEarned = workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
   const totalPaid = 0; 
   const totalBaki = totalEarned - totalPaid;
 
   return (
-    <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '12px', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
+    <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '10px', fontFamily: 'sans-serif', boxSizing: 'border-box', overflowX: 'hidden', color: '#0f172a' }}>
       
       {/* Header */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', boxSizing: 'border-box', width: '100%' }}>
@@ -171,28 +140,30 @@ export default function PayrollManagementView({ firm, onClose }) {
             </button>
           )}
           <div style={{ fontSize: '10px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
-            Firm: {firm?.legal_name || firm?.name || 'Active Firm'}
+            🏢 Firm: {firm?.legal_name || firm?.name || 'Active Firm'}
           </div>
         </div>
         <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>👷 Labour, Employee & Tractor Wages</h1>
       </div>
 
-      {errorMsg && <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>{errorMsg}</div>}
-      {successMsg && <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }}>{successMsg}</div>}
+      {errorMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
+      {successMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
 
-      {/* Worker Selector & Summary KPI Cards */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
-        <SearchableAccountDropdown 
-          firm={firm}
-          label="Select Worker / Driver / Staff *"
-          accounts={workersList}
-          value={selectedWorker}
-          onChange={(val) => setSelectedWorker(val)}
-          placeholder="-- Search Worker or Staff --"
-          required={true}
-        />
+      {/* Worker Selection & Summary */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
+        <div>
+          <SearchableAccountDropdown 
+            firm={firm}
+            label="Select Worker / Driver / Staff *"
+            accounts={workersList}
+            value={selectedWorker}
+            onChange={(val) => setSelectedWorker(val)}
+            placeholder="-- Search Worker or Staff --"
+            required={true}
+          />
+        </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
           <div>
             <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL (कुल)</div>
             <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned}</div>
@@ -208,22 +179,16 @@ export default function PayrollManagementView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Wage Entry Form (Original Layout) */}
-      <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
-        <h3 style={{ margin: '0 0 6px 0', fontSize: '13px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
+      {/* Entry Form */}
+      <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
+        <h3 style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div>
+        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Date of Work *</label>
-            <input 
-              type="date" 
-              max={todayMaxDate} 
-              value={workDate} 
-              onChange={(e) => setWorkDate(e.target.value)} 
-              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} 
-            />
+            <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <SearchableAccountDropdown 
               firm={firm}
               label="Expense Account *"
@@ -236,48 +201,47 @@ export default function PayrollManagementView({ firm, onClose }) {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-          <div>
+        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box', alignItems: 'flex-end' }}>
+          <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Quantity *</label>
-            <input type="number" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+            <input type="number" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Rate/Unit (₹) *</label>
-            <input type="number" placeholder="e.g. 100" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+            <input type="number" placeholder="e.g. 100" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Kul Amount (₹)</label>
-          <div style={{ padding: '10px', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', color: '#166534' }}>
-            ₹{calculatedTotalAmount}
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Kul Amount (₹)</label>
+            <div style={{ padding: '10px', backgroundColor: '#f1f5f9', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box' }}>
+              ₹{calculatedTotalAmount}
+            </div>
           </div>
         </div>
 
         <div>
           <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Work Description (विवरण)</label>
-          <input type="text" placeholder="e.g. Chamber No. 3 pathai work" value={workDescription} onChange={(e) => setWorkDescription(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} />
+          <input type="text" placeholder="e.g. Chamber No. 3 pathai work" value={workDescription} onChange={(e) => setWorkDescription(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
         </div>
 
-        <button type="submit" style={{ width: '100%', padding: '13px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', marginTop: '6px' }}>
+        <button type="submit" style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', marginTop: '6px', boxSizing: 'border-box' }}>
           ⚡ Post Work Credit to Worker Ledger
         </button>
       </form>
 
-      {/* Ledger Statement Card (Restored at bottom matching screenshot) */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+      {/* Ledger Statement */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800 }}>📖 Ledger Statement ({resolvedActiveWorker || 'Select Worker'})</h3>
         {workerEntries.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '12px', padding: '14px' }}>No work or attendance entries recorded for this worker yet.</div>
+          <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '12px' }}>No work or attendance entries recorded for this worker yet.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
             {workerEntries.map((ent, idx) => (
-              <div key={idx} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
+              <div key={idx} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', boxSizing: 'border-box', width: '100%' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '4px' }}>
                   <span>{ent.date} ({ent.expense_ledger})</span>
                   <span style={{ color: '#166534' }}>Earned: +₹{ent.total_amount}</span>
                 </div>
-                <div style={{ color: '#64748b' }}>
+                <div style={{ color: '#64748b', wordBreak: 'break-word' }}>
                   {ent.description} [Qty: {ent.quantity} × Rate: ₹{ent.rate}]
                 </div>
               </div>
