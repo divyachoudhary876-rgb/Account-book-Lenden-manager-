@@ -9,37 +9,54 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  const activeFirmId = String(firm?.id || firm?.firm_id || '').trim();
-  const activeFirmName = String(firm?.legal_name || firm?.name || '').trim();
+  // Robust Firm ID and Name extraction
+  const firmId = String(firm?.firm_id || firm?.id || '').trim();
+  const firmName = String(firm?.legal_name || firm?.name || 'default').trim();
+  const activeFirmKey = firmId || firmName.replace(/[^a-zA-Z0-9_-]/g, '_');
 
   const fetchStock = () => {
-    if (items && items.length > 0) {
-      const filteredProps = items.filter(item => {
+    try {
+      // 1. Agar props me items aaye hain toh unhe strict firm ID/Name par filter karein
+      if (Array.isArray(items) && items.length > 0) {
+        const filteredProps = items.filter(item => {
+          const itemFirmId = String(item.firm_id || '').trim();
+          const itemFirmName = String(item.firm_name || item.firm || '').trim();
+          
+          if (firmId && itemFirmId && itemFirmId !== firmId) return false;
+          if (firmName && itemFirmName && itemFirmName.toLowerCase() !== firmName.toLowerCase()) return false;
+          return true;
+        });
+        setLiveItems(filteredProps);
+        return;
+      }
+      
+      // 2. Strict Firm-Scoped Storage Key se stock load karein taaki cross-leakage bilkul na ho
+      const scopedKey = `inventory_items_${activeFirmKey}`;
+      const scopedStored = StorageService.getItem(scopedKey) || JSON.parse(localStorage.getItem(scopedKey) || '[]');
+      
+      if (Array.isArray(scopedStored) && scopedStored.length > 0) {
+        setLiveItems(scopedStored);
+        return;
+      }
+
+      // 3. Fallback: Global inventory items ko strict firm_id match ke sath filter karein
+      const allStored = StorageService.getItem('inventory_items'] || StorageService.getInventoryItems() || [];
+      const firmStock = allStored.filter(item => {
         const itemFirmId = String(item.firm_id || '').trim();
         const itemFirmName = String(item.firm_name || item.firm || '').trim();
-        if (activeFirmId && itemFirmId && itemFirmId !== activeFirmId) return false;
-        if (activeFirmName && itemFirmName && itemFirmName !== activeFirmName) return false;
-        return true;
+
+        if (firmId && itemFirmId) return itemFirmId === firmId;
+        if (firmName && itemFirmName) return itemFirmName.toLowerCase() === firmName.toLowerCase();
+        
+        // Agar item me firm_id nahi hai aur default firm hai
+        return !itemFirmId && !itemFirmName;
       });
-      setLiveItems(filteredProps);
-      return;
+
+      setLiveItems(firmStock);
+    } catch (e) {
+      console.error("Error fetching scoped stock:", e);
+      setLiveItems([]);
     }
-    
-    // यहाँ सही किया गया है: bracket की जगह सही parentheses का उपयोग
-    const allStored = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-    
-    const firmStock = allStored.filter(item => {
-      const itemFirmId = String(item.firm_id || '').trim();
-      const itemFirmName = String(item.firm_name || item.firm || '').trim();
-
-      if (activeFirmId && itemFirmId && itemFirmId !== activeFirmId) return false;
-      if (activeFirmName && itemFirmName && itemFirmName !== activeFirmName) return false;
-      if (!itemFirmId && !itemFirmName && activeFirmId) return false;
-
-      return true;
-    });
-
-    setLiveItems(firmStock);
   };
 
   useEffect(() => {
@@ -50,7 +67,7 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
       window.removeEventListener('app_storage_updated', fetchStock);
       window.removeEventListener('app_state_updated', fetchStock);
     };
-  }, [firm]);
+  }, [firm, items]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
