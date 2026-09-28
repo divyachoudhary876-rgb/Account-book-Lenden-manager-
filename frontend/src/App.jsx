@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getActiveFirm, getFirmsRegistry, setActiveFirmId } from './utils/multiFirmEngine.js';
 import { getDynamicWorkflowMenu } from './utils/navigationRegistry.js';
 import { getFirmFinancialYears, createFinancialYear } from './utils/financialYearEngine.js';
+import { performFinancialYearRollover } from './utils/autoRolloverEngine.js';
 
 // Application Core Views
 import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
@@ -57,11 +58,14 @@ export default function App() {
         
         // Load saved FY for this firm from localStorage if available
         const savedFY = localStorage.getItem(`app_active_fy_${firm.id}`);
-        if (savedFY && availableYears.some(y => y.label === savedFY)) {
-          setSelectedFY(savedFY);
-        } else if (!availableYears.some(y => y.label === selectedFY)) {
-          setSelectedFY(availableYears[0]?.label || 'FY 2026-27');
-        }
+        let activeTargetFY = savedFY && availableYears.some(y => y.label === savedFY) 
+          ? savedFY 
+          : (availableYears[0]?.label || 'FY 2026-27');
+        
+        setSelectedFY(activeTargetFY);
+
+        // 🔄 Execute Automatic FY Rollover for Opening Balances & Stock
+        performFinancialYearRollover(firm.id, activeTargetFY);
       }
     } catch (e) {
       console.error("State load error:", e);
@@ -116,6 +120,7 @@ export default function App() {
       setSelectedFY(val);
       if (activeFirm?.id) {
         localStorage.setItem(`app_active_fy_${activeFirm.id}`, val);
+        performFinancialYearRollover(activeFirm.id, val);
       }
       window.dispatchEvent(new Event('app_storage_updated'));
     }
@@ -128,10 +133,11 @@ export default function App() {
       setSelectedFY(created.label);
       if (activeFirm?.id) {
         localStorage.setItem(`app_active_fy_${activeFirm.id}`, created.label);
+        performFinancialYearRollover(activeFirm.id, created.label);
       }
       setIsAddFYModalOpen(false);
       refreshState();
-      alert(`✓ ${created.label} registered successfully!`);
+      alert(`✓ ${created.label} registered & balances rolled over successfully!`);
     } catch (err) {
       alert(err.message);
     }
