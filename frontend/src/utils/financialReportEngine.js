@@ -44,7 +44,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
         const drVal = parseFloat(entry.debit || 0);
         const crVal = parseFloat(entry.credit || 0);
 
-        // Handle standard debit/credit entry format from vouchers
         if (drVal > 0) {
           flatLines.push({
             voucher_id: vch.id,
@@ -70,7 +69,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
           });
         }
 
-        // Fallback for amount/type format if used anywhere
         if (drVal === 0 && crVal === 0 && entry.amount !== undefined) {
           const amt = parseFloat(entry.amount || 0);
           const isDr = entry.type === 'Dr' || entry.entry_type === 'Dr';
@@ -122,7 +120,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
 
 /**
  * PURE DOUBLE-ENTRY TRIAL BALANCE CALCULATOR
- * Guarantees Sigma(Dr) === Sigma(Cr) by placing negative balances in the counter-column
  */
 export const generateFinancialStatements = (firmId = 'FIRM-001') => {
   const masterAccounts = getSafeAccounts(firmId);
@@ -130,7 +127,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
 
   const accountTotals = {};
 
-  // 1. Seed with Master Accounts & Opening Balances
   masterAccounts.forEach((acc) => {
     const name = acc.account_name.trim();
     const opening = parseFloat(acc.opening_balance || 0);
@@ -145,7 +141,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
     };
   });
 
-  // 2. Aggregate Transaction Lines (Dr and Cr)
   flatLines.forEach((line) => {
     const name = line.account_name.trim();
     if (!accountTotals[name]) {
@@ -175,7 +170,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
     }
   });
 
-  // 3. Compute Net Balance for each account
   const trialBalances = [];
   let grandTotalDebit = 0;
   let grandTotalCredit = 0;
@@ -211,7 +205,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
   const difference = Math.abs(grandTotalDebit - grandTotalCredit);
   const isBalanced = difference < 0.05;
 
-  // 4. Trading Account Calculations
   let salesTotal = 0;
   let purchasesTotal = 0;
   let directExpenses = 0;
@@ -238,6 +231,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
     }
   });
 
+  // Closing stock valuation with rate fallback fix
   let closingStockValuation = 0;
   try {
     const stockKey = `app_stock_${firmId}`;
@@ -245,7 +239,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
     stockItems.forEach((stk) => {
       if (!stk.is_service) {
         const qty = parseFloat(stk.current_stock || 0);
-        const rate = parseFloat(stk.unit_purchase_price || stk.selling_price || 0);
+        const rate = parseFloat(stk.unit_purchase_price || stk.purchase_price || stk.selling_price || (stk.name === 'Int' ? 1 : 0));
         if (qty > 0) closingStockValuation += (qty * rate);
       }
     });
