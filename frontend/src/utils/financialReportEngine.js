@@ -1,7 +1,6 @@
 // frontend/src/utils/financialReportEngine.js
 
 import { getFirmMasterAccounts } from './accountMasterEngine.js';
-import { getFirmScopedStorageKey } from './firmIsolationEngine.js';
 
 export const getSafeAccounts = (firmId = 'FIRM-001') => {
   try {
@@ -24,11 +23,18 @@ export const getSafeAccounts = (firmId = 'FIRM-001') => {
 };
 
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
-  // Use exact firm-scoped storage key
+  // Try firm-scoped vouchers key first, then fallback to global/default
   const vouchersKey = `app_vouchers_${firmId}`;
   let rawVouchers = [];
   try {
-    rawVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
+    const data = localStorage.getItem(vouchersKey);
+    if (data) {
+      rawVouchers = JSON.parse(data);
+    } else {
+      // Fallback check if stored globally
+      const fallback = localStorage.getItem('app_vouchers') || '[]';
+      rawVouchers = JSON.parse(fallback);
+    }
   } catch (e) {
     console.error('Error loading vouchers:', e);
   }
@@ -46,31 +52,59 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001') => {
         const drVal = parseFloat(entry.debit || 0);
         const crVal = parseFloat(entry.credit || 0);
 
-        if (drVal > 0) {
-          flatLines.push({
-            voucher_id: vch.id,
-            date: vchDate,
-            voucher_number: vchNum,
-            voucher_type: vchType,
-            account_name: accName,
-            entry_type: 'Dr',
-            amount: drVal,
-            narration
-          });
-        }
-        if (crVal > 0) {
-          flatLines.push({
-            voucher_id: vch.id,
-            date: vchDate,
-            voucher_number: vchNum,
-            voucher_type: vchType,
-            account_name: accName,
-            entry_type: 'Cr',
-            amount: crVal,
-            narration
-          });
+        if (accName) {
+          if (drVal > 0) {
+            flatLines.push({
+              voucher_id: vch.id,
+              date: vchDate,
+              voucher_number: vchNum,
+              voucher_type: vchType,
+              account_name: accName,
+              entry_type: 'Dr',
+              amount: drVal,
+              narration
+            });
+          }
+          if (crVal > 0) {
+            flatLines.push({
+              voucher_id: vch.id,
+              date: vchDate,
+              voucher_number: vchNum,
+              voucher_type: vchType,
+              account_name: accName,
+              entry_type: 'Cr',
+              amount: crVal,
+              narration
+            });
+          }
         }
       });
+    } else {
+      const amt = parseFloat(vch.amount || 0);
+      if (vch.dr_account && amt > 0) {
+        flatLines.push({
+          voucher_id: vch.id,
+          date: vchDate,
+          voucher_number: vchNum,
+          voucher_type: vchType,
+          account_name: vch.dr_account.trim(),
+          entry_type: 'Dr',
+          amount: amt,
+          narration
+        });
+      }
+      if (vch.cr_account && amt > 0) {
+        flatLines.push({
+          voucher_id: vch.id,
+          date: vchDate,
+          voucher_number: vchNum,
+          voucher_type: vchType,
+          account_name: vch.cr_account.trim(),
+          entry_type: 'Cr',
+          amount: amt,
+          narration
+        });
+      }
     }
   });
 
@@ -190,10 +224,10 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
   let closingStockValuation = 0;
   try {
     const stockKey = `app_stock_${firmId}`;
-    const stockItems = JSON.parse(localStorage.getItem(stockKey) || '[]');
+    const stockItems = JSON.parse(localStorage.getItem(stockKey) || localStorage.getItem('inventory_items') || '[]');
     stockItems.forEach((stk) => {
       if (!stk.is_service) {
-        const qty = parseFloat(stk.current_stock || 0);
+        const qty = parseFloat(stk.current_stock || stk.stock || 0);
         const rate = parseFloat(stk.unit_purchase_price || stk.purchase_price || stk.selling_price || 1);
         if (qty > 0) closingStockValuation += (qty * rate);
       }
@@ -228,5 +262,85 @@ export const generateFinancialStatements = (firmId = 'FIRM-001') => {
       netProfit,
       closingStock: parseFloat(closingStockValuation.toFixed(2))
     }
+  };
+};
+
+export const calculateDashboardKPIs = (firmId = 'FIRM-001') => {
+  const flatLines = getNormalizedLedgerLines(firmId);
+  const balances = {};
+
+  flatLines.forEach((line) => {
+    const acc = line.account_name;
+    if (!balances[acc]) balances[acc] = 0;
+    if (line.entry_type === 'Dr') balances[acc] += line.amount;
+    if (line.entry_type === 'Cr') balances[acc] -= line.amount;
+  });
+
+  let cash = 0;
+  let bank = 0;
+  let debtors = 0;
+  let creditors = 0;
+
+  Object.keys(balances).forEach((accName) => {
+    const net = balances[accName];
+    const lower = accName.toLowerCase();
+
+    if (lower.includes('cash') || lower.includes('रोकड़')) {
+      cash += net;
+    } else if (lower.includes('bank') || lower.includes('बैंक')) {
+      bank += net;
+    } else if (net > 0) {
+      debtors += net;
+    } else if (net < 0) {
+      creditors += Math.abs(net);
+    }
+  });
+
+  return {
+    cashInHand: parseFloat(cash.toFixed(2)),
+    bankBalance: parseFloat(bank.toFixed(2)),
+    sundryDebtors: parseFloat(debtors.toFixed(2)),
+    sundryCreditors: parseFloat(creditors.toFixed(2))
+  };
+};
+
+export const getAccountStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
+  if (!targetAccountName) return { openingBalance: 0, transactions: [], closingBalance: 0 };
+
+  const accounts = getSafeAccounts(firmId);
+  const accountMaster = accounts.find(a => a.account_name.toLowerCase() === targetAccountName.toLowerCase());
+  
+  let runningBal = 0;
+  const opening = parseFloat(accountMaster?.opening_balance || 0);
+  runningBal = (accountMaster?.balance_type === 'Dr') ? opening : -opening;
+
+  const flatLines = getNormalizedLedgerLines(firmId);
+  const partyLines = flatLines.filter(l => l.account_name.toLowerCase() === targetAccountName.toLowerCase());
+  partyLines.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const transactions = partyLines.map((line) => {
+    const dr = line.entry_type === 'Dr' ? line.amount : 0;
+    const cr = line.entry_type === 'Cr' ? line.amount : 0;
+    runningBal = runningBal + dr - cr;
+
+    return {
+      date: line.date,
+      voucher_number: line.voucher_number,
+      voucher_type: line.voucher_type,
+      narration: line.narration,
+      debit: dr,
+      credit: cr,
+      runningBalance: Math.abs(runningBal),
+      balanceType: runningBal >= 0 ? 'Dr' : 'Cr'
+    };
+  });
+
+  return {
+    accountName: targetAccountName,
+    openingBalance: Math.abs(opening),
+    openingType: accountMaster?.balance_type || 'Dr',
+    transactions,
+    closingBalance: Math.abs(runningBal),
+    closingType: runningBal >= 0 ? 'Dr' : 'Cr'
   };
 };
