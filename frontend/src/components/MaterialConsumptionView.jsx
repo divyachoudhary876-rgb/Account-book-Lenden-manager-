@@ -11,9 +11,8 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
 
   const [consumptions, setConsumptions] = useState([]);
   const [usageDate, setUsageDate] = useState(new Date().toISOString().split('T')[0]);
-  const [vehicleRef, setVehicleRef] = useState('');
+  const [usesFor, setUsesFor] = useState('');
 
-  // Catalog items & Expense Accounts
   const [stockItems, setStockItems] = useState([]);
   const [expenseAccountsList, setExpenseAccountsList] = useState([]);
   const [selectedItem, setSelectedItem] = useState('');
@@ -26,24 +25,22 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
       const saved = StorageService.getItem ? StorageService.getItem(storageKey) : JSON.parse(localStorage.getItem(storageKey) || '[]');
       if (Array.isArray(saved)) setConsumptions(saved);
 
-      const catalog = StorageService.getItem ? StorageService.getItem(stockStorageKey) : JSON.parse(localStorage.getItem(stockStorageKey) || '[]');
+      // Fallback inventory loading across possible keys
+      let catalog = StorageService.getItem ? StorageService.getItem(stockStorageKey) : JSON.parse(localStorage.getItem(stockStorageKey) || '[]');
+      if (!catalog || catalog.length === 0) {
+        catalog = JSON.parse(localStorage.getItem(`trading_catalog_${firmId}`) || localStorage.getItem('inventory_catalog') || '[]');
+      }
       if (Array.isArray(catalog)) setStockItems(catalog);
 
-      // Load created account heads from storage
-      const accounts = StorageService.getItem ? StorageService.getItem(accountsStorageKey) : JSON.parse(localStorage.getItem(accountsStorageKey) || '[]');
-      if (Array.isArray(accounts)) {
-        // Filter out expense accounts or show all created ledger accounts
-        const expenses = accounts.filter(acc => 
-          String(acc.group || acc.accountGroup || '').toLowerCase().includes('expense') ||
-          String(acc.type || '').toLowerCase().includes('expense') ||
-          true // showing created accounts so user can select their expense head
-        );
-        setExpenseAccountsList(expenses.length > 0 ? expenses : accounts);
+      let accounts = StorageService.getItem ? StorageService.getItem(accountsStorageKey) : JSON.parse(localStorage.getItem(accountsStorageKey) || '[]');
+      if (!accounts || accounts.length === 0) {
+        accounts = JSON.parse(localStorage.getItem(`account_heads_${firmId}`) || '[]');
       }
+      if (Array.isArray(accounts)) setExpenseAccountsList(accounts);
     } catch (e) {
       console.error("Error loading consumption data:", e);
     }
-  }, [storageKey, stockStorageKey, accountsStorageKey]);
+  }, [storageKey, stockStorageKey, accountsStorageKey, firmId]);
 
   const handleAddToCart = () => {
     if (!selectedItem || !qty || Number(qty) <= 0 || !expenseAccount) {
@@ -52,7 +49,7 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
     }
 
     const itemObj = stockItems.find(i => i.id === selectedItem || i.itemName === selectedItem);
-    const itemName = itemObj ? itemObj.itemName : selectedItem;
+    const itemName = itemObj ? (itemObj.itemName || itemObj.name) : selectedItem;
 
     const accObj = expenseAccountsList.find(a => a.id === expenseAccount || a.name === expenseAccount || a.accountName === expenseAccount);
     const accountName = accObj ? (accObj.name || accObj.accountName) : expenseAccount;
@@ -75,15 +72,15 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
 
   const handlePostConsumptions = (e) => {
     e.preventDefault();
-    if (!vehicleRef || cartItems.length === 0) {
-      alert("Kripya Vehicle/Chamber Ref bharein aur cart me items jodein!");
+    if (!usesFor || cartItems.length === 0) {
+      alert("Kripya 'Uses For' (Kaha use hua h) bharein aur cart me items jodein!");
       return;
     }
 
     const record = {
       id: 'CONS-' + Date.now(),
       usageDate,
-      vehicleRef,
+      usesFor,
       items: cartItems,
       selectedFY
     };
@@ -93,9 +90,8 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
     StorageService.setItem(storageKey, updated);
     window.dispatchEvent(new Event('app_storage_updated'));
 
-    // Reset Form
-    setVehicleRef('');
-    setCartItems('');
+    setUsesFor('');
+    setCartItems([]);
     alert("✓ Fuel & Material consumption successfully posted & stock deducted!");
   };
 
@@ -116,19 +112,17 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
         </h3>
 
         <form onSubmit={handlePostConsumptions}>
-          {/* Top Date & Ref Inputs */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
             <div>
               <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Date of Usage *</label>
               <input type="date" value={usageDate} onChange={e => setUsageDate(e.target.value)} style={inputStyle} required />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Vehicle / Chamber Ref *</label>
-              <input type="text" value={vehicleRef} onChange={e => setVehicleRef(e.target.value)} placeholder="e.g. Tractor-1 / Chamber-1" style={inputStyle} required />
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Uses For (Kaha use hua h) *</label>
+              <input type="text" value={usesFor} onChange={e => setUsesFor(e.target.value)} placeholder="e.g. Chamber-1 / Tractor" style={inputStyle} required />
             </div>
           </div>
 
-          {/* Cart Box */}
           <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', marginBottom: '14px' }}>
             <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#15803d', marginBottom: '8px' }}>
               ➕ Add Items to Consumption Cart
@@ -138,9 +132,11 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
               <div>
                 <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#374155' }}>Select Stock Item / Fuel *</label>
                 <select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} style={inputStyle}>
-                  <option value="">-- Search & Choose Fuel/Stock --</option>
+                  <option value="">-- Search & Choose Fuel/Stock ({stockItems.length} available) --</option>
                   {stockItems.map(item => (
-                    <option key={item.id} value={item.id}>{item.itemName} (Stock: {item.stockQty} {item.unit})</option>
+                    <option key={item.id || item.itemName} value={item.id || item.itemName}>
+                      {item.itemName || item.name} (Stock: {item.stockQty ?? item.qty ?? 0} {item.unit || ''})
+                    </option>
                   ))}
                 </select>
               </div>
@@ -153,7 +149,7 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
                 <div>
                   <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#374155' }}>Debit Expense Account *</label>
                   <select value={expenseAccount} onChange={e => setExpenseAccount(e.target.value)} style={inputStyle}>
-                    <option value="">-- Select Created Expense Account --</option>
+                    <option value="">-- Select Expense Account --</option>
                     {expenseAccountsList.map(acc => (
                       <option key={acc.id || acc.name} value={acc.id || acc.name}>{acc.name || acc.accountName}</option>
                     ))}
@@ -166,7 +162,6 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
               + Add Item to Cart
             </button>
 
-            {/* Cart Items List */}
             {cartItems.length > 0 && (
               <div style={{ marginTop: '10px', backgroundColor: '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #dcfce7' }}>
                 <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>Items in Current Cart:</div>
@@ -186,7 +181,6 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
         </form>
       </div>
 
-      {/* Consumption Register */}
       <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#334155' }}>Consumption Register ({selectedFY})</h4>
         {consumptions.length === 0 ? (
@@ -196,7 +190,7 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                  <th style={{ padding: '6px' }}>Date / Ref</th>
+                  <th style={{ padding: '6px' }}>Date / Uses For</th>
                   <th style={{ padding: '6px' }}>Consumed Items & Qty</th>
                   <th style={{ padding: '6px', textAlign: 'center' }}>Action</th>
                 </tr>
@@ -204,7 +198,7 @@ export default function MaterialConsumptionView({ firm, selectedFY }) {
               <tbody>
                 {consumptions.map(c => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '6px' }}>{c.usageDate}<br /><strong>{c.vehicleRef}</strong></td>
+                    <td style={{ padding: '6px' }}>{c.usageDate}<br /><strong>{c.usesFor || c.vehicleRef}</strong></td>
                     <td style={{ padding: '6px' }}>
                       {c.items.map((it, idx) => (
                         <div key={idx}>• {it.itemName}: <strong>{it.qty}</strong> ({it.expenseAccount})</div>
