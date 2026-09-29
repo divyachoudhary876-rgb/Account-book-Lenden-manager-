@@ -155,16 +155,16 @@ export default function App() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#0f172a', color: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
+    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
       
       <AppUpdateBanner />
 
-      {/* Single Clean Unified Header (Only when active firm exists) */}
+      {/* Clean Professional Light Theme Header */}
       {!isCreatingFirm && activeFirm && currentView === 'dashboard' && (
-        <div style={{ backgroundColor: '#1e293b', borderBottom: '1px solid #334155', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ backgroundColor: '#0f766e', color: '#fff', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '11px' }}>
+            <div style={{ backgroundColor: '#0f172a', color: '#fff', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '11px' }}>
               AB
             </div>
           </div>
@@ -183,7 +183,7 @@ export default function App() {
                   refreshState();
                 }
               }}
-              style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #475569', fontSize: '11px', fontWeight: '700', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
             >
               {firmsList.map(f => (
                 <option key={f.id} value={f.id}>🏢 {f.legal_name}</option>
@@ -196,7 +196,7 @@ export default function App() {
             <select
               value={selectedFY}
               onChange={handleFYSelectChange}
-              style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #475569', fontSize: '11px', fontWeight: '700', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box' }}
             >
               {fyList.map(fy => (
                 <option key={fy.id} value={fy.label}>{fy.label}</option>
@@ -207,24 +207,24 @@ export default function App() {
 
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f766e', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+            style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
           >
             {isMenuOpen ? '✕' : '☰ Menu'}
           </button>
         </div>
       )}
 
-      {/* Workflow Menu Drawer */}
+      {/* Workflow Menu Drawer (Light Theme) */}
       {isMenuOpen && currentView === 'dashboard' && (
         <div style={{
-          backgroundColor: '#0c1322',
+          backgroundColor: '#ffffff',
           padding: '14px',
-          borderBottom: '3px solid #0284c7',
-          boxShadow: '0 20px 30px rgba(0,0,0,0.5)',
+          borderBottom: '2px solid #e2e8f0',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.08)',
           width: '100%',
           boxSizing: 'border-box'
         }}>
-          <div style={{ color: '#94a3b8', fontSize: '10px', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>
+          <div style={{ color: '#64748b', fontSize: '10px', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>
             ACCOUNTING WORKFLOW MENU ({firmCat})
           </div>
 
@@ -234,9 +234,9 @@ export default function App() {
                 key={item.key}
                 onClick={() => handleMenuClick(item)}
                 style={{
-                  backgroundColor: item.key === 'cash_flow' ? '#0284c7' : '#161f33',
-                  color: item.isDanger ? '#f87171' : '#ffffff',
-                  border: '1px solid rgba(255, 255, 255, 0.07)',
+                  backgroundColor: item.key === 'cash_flow' ? '#0284c7' : '#f1f5f9',
+                  color: item.isDanger ? '#dc2626' : (item.key === 'cash_flow' ? '#ffffff' : '#0f172a'),
+                  border: '1px solid #e2e8f0',
                   borderRadius: '8px',
                   padding: '10px 12px',
                   fontSize: '12px',
@@ -287,7 +287,7 @@ export default function App() {
               <div>
                 <button 
                   onClick={() => setCurrentView('dashboard')} 
-                  style={{ marginBottom: '12px', backgroundColor: '#334155', color: '#fff', border: 'none', padding: '7px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}
+                  style={{ marginBottom: '12px', backgroundColor: '#e2e8f0', color: '#0f172a', border: 'none', padding: '7px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}
                 >
                   ← Back to Dashboard
                 </button>
@@ -329,16 +329,16 @@ export default function App() {
       {isAddFYModalOpen && (
         <div style={modalOverlayStyle}>
           <div style={modalCardStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '15px', fontWeight: 'bold' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px', fontWeight: 'bold' }}>
                 📅 Add New Financial Year
               </h3>
-              <button onClick={() => setIsAddFYModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+              <button onClick={() => setIsAddFYModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>✕</button>
             </div>
 
             <form onSubmit={handleCreateFYSubmit}>
               <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
                   Starting Year (1st April)
                 </label>
                 <input
@@ -347,12 +347,12 @@ export default function App() {
                   max="2040"
                   value={newFYStartYear}
                   onChange={(e) => setNewFYStartYear(e.target.value)}
-                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #475569', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#0f172a', color: '#fff' }}
+                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a' }}
                   required
                 />
               </div>
 
-              <div style={{ backgroundColor: '#064e3b', border: '1px solid #059669', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: '#ecfdf5' }}>
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: '#166534' }}>
                 <strong>Generated Period:</strong><br />
                 01-Apr-{newFYStartYear} to 31-Mar-{parseInt(newFYStartYear || 0, 10) + 1} (FY {newFYStartYear}-{((parseInt(newFYStartYear || 0, 10) + 1) % 100).toString().padStart(2, '0')})
               </div>
@@ -361,13 +361,13 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsAddFYModalOpen(false)}
-                  style={{ flex: 1, backgroundColor: '#334155', color: '#cbd5e1', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                  style={{ flex: 1, backgroundColor: '#e2e8f0', color: '#475569', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  style={{ flex: 1.5, backgroundColor: '#0f766e', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                  style={{ flex: 1.5, backgroundColor: '#0284c7', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   💾 Create FY
                 </button>
@@ -387,7 +387,7 @@ const modalOverlayStyle = {
   left: 0,
   right: 0,
   bottom: 0,
-  backgroundColor: 'rgba(15, 23, 42, 0.8)',
+  backgroundColor: 'rgba(15, 23, 42, 0.5)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -397,12 +397,12 @@ const modalOverlayStyle = {
 };
 
 const modalCardStyle = {
-  backgroundColor: '#1e293b',
+  backgroundColor: '#ffffff',
   borderRadius: '16px',
   padding: '20px',
   width: '100%',
   maxWidth: '400px',
-  border: '1px solid #334155',
-  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+  border: '1px solid #e2e8f0',
+  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
   boxSizing: 'border-box'
 };
