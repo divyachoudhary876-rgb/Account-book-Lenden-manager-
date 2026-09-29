@@ -159,14 +159,23 @@ export default function App() {
       
       <AppUpdateBanner />
 
-      {/* Clean Professional Light Theme Header */}
-      {!isCreatingFirm && activeFirm && currentView === 'dashboard' && (
+      {/* Unified Professional Top Header (Active across all pages) */}
+      {!isCreatingFirm && activeFirm && (
         <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ backgroundColor: '#0f172a', color: '#fff', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '11px' }}>
-              AB
-            </div>
+            {currentView !== 'dashboard' ? (
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                ← Dashboard
+              </button>
+            ) : (
+              <div style={{ backgroundColor: '#0f172a', color: '#fff', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '11px' }}>
+                AB
+              </div>
+            )}
           </div>
 
           <div style={{ flex: 1.2, minWidth: '120px' }}>
@@ -214,8 +223,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Workflow Menu Drawer (Light Theme) */}
-      {isMenuOpen && currentView === 'dashboard' && (
+      {/* Workflow Menu Drawer */}
+      {isMenuOpen && (
         <div style={{
           backgroundColor: '#ffffff',
           padding: '14px',
@@ -284,20 +293,12 @@ export default function App() {
               />
             )}
             {currentView === 'ADD_ACCOUNT' && (
-              <div>
-                <button 
-                  onClick={() => setCurrentView('dashboard')} 
-                  style={{ marginBottom: '12px', backgroundColor: '#e2e8f0', color: '#0f172a', border: 'none', padding: '7px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}
-                >
-                  ← Back to Dashboard
-                </button>
-                <CreateAccountHeadModal 
-                  firm={activeFirm} 
-                  selectedFY={selectedFY} 
-                  isOpen={true}
-                  onClose={() => setCurrentView('dashboard')} 
-                />
-              </div>
+              <CreateAccountHeadModal 
+                firm={activeFirm} 
+                selectedFY={selectedFY} 
+                isOpen={true}
+                onClose={() => setCurrentView('dashboard')} 
+              />
             )}
             {currentView === 'firm_settings' && (
               <FirmProfileSettingsView 
