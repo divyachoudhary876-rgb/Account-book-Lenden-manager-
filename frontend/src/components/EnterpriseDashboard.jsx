@@ -5,6 +5,7 @@ import CashFlowStatementView from './CashFlowStatementView';
 import FinancialReportsView from './FinancialReportsView';
 import JournalRegisterView from './JournalRegisterView';
 import SecurityBackupSettings from './SecurityBackupSettings';
+import CreateAccountHeadModal from './CreateAccountHeadModal';
 import { StorageService } from '../utils/storageSync';
 
 export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onClose }) {
@@ -31,6 +32,16 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
   }, [firmId, selectedFY, prodStorageKey, consStorageKey]);
 
   // Handle specific sub-views cleanly
+  if (activeView === 'ADD_ACCOUNT') {
+    return (
+      <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', padding: '16px', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
+        <button onClick={() => setActiveView('DASHBOARD')} style={{ marginBottom: '14px', backgroundColor: '#334155', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+          ← Back to Dashboard
+        </button>
+        <CreateAccountHeadModal firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />
+      </div>
+    );
+  }
   if (activeView === 'CASH_FLOW') {
     return <CashFlowStatementView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
@@ -47,7 +58,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
   return (
     <div style={{ padding: '16px', backgroundColor: '#0f172a', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', color: '#fff', position: 'relative' }}>
       
-      {/* Top Header Bar with Menu Button */}
+      {/* Top Header Bar with Single Menu Button */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', backgroundColor: '#1e293b', padding: '14px 16px', borderRadius: '12px', border: '1px solid #334155' }}>
         <div>
           <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Account Book Manager ({selectedFY})</div>
@@ -66,7 +77,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         </div>
       </div>
 
-      {/* Slide-out Menu Drawer */}
+      {/* Slide-out Dropdown Menu Drawer */}
       {isMenuOpen && (
         <div style={{ position: 'absolute', top: '75px', left: '16px', right: '16px', backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '12px', padding: '14px', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', maxHeight: '75vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
@@ -78,7 +89,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
             <button onClick={() => { setActiveView('DASHBOARD'); setIsMenuOpen(false); }} style={menuButtonStyle}>
               <span>📊</span> Dashboard (डैशबोर्ड)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('ADD_ACCOUNT'); setIsMenuOpen(false); }} style={{ ...menuButtonStyle, backgroundColor: '#0f766e' }}>
+            <button onClick={() => { setActiveView('ADD_ACCOUNT'); setIsMenuOpen(false); }} style={{ ...menuButtonStyle, backgroundColor: '#0f766e' }}>
               <span>➕</span> Add Account Head (नया खाता)
             </button>
             <button onClick={() => { if(onNavigate) onNavigate('SALES'); setIsMenuOpen(false); }} style={menuButtonStyle}>
