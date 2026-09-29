@@ -6,10 +6,12 @@ import CashFlowStatementView from './CashFlowStatementView';
 import FinancialReportsView from './FinancialReportsView';
 import JournalRegisterView from './JournalRegisterView';
 import SecurityBackupSettings from './SecurityBackupSettings';
+import AccountHeadManager from './AccountHeadManager';
 import { StorageService } from '../utils/storageSync';
 
 export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onClose }) {
   const [activeView, setActiveView] = useState('DASHBOARD');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [summaryStats, setSummaryStats] = useState({ totalProduction: 0, totalConsumption: 0 });
 
   const firmId = firm?.id || 'FIRM-001';
@@ -30,7 +32,17 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     }
   }, [firmId, selectedFY, prodStorageKey, consStorageKey]);
 
-  // Render active view router for specialized modules handled inside dashboard
+  // Handle specific sub-views cleanly
+  if (activeView === 'ADD_ACCOUNT') {
+    return (
+      <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', padding: '12px', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
+        <button onClick={() => setActiveView('DASHBOARD')} style={{ marginBottom: '12px', backgroundColor: '#334155', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+          ← Back to Dashboard
+        </button>
+        <AccountHeadManager firm={firm} selectedFY={selectedFY} />
+      </div>
+    );
+  }
   if (activeView === 'CASH_FLOW') {
     return <CashFlowStatementView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
@@ -45,108 +57,109 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
   }
 
   return (
-    <div style={{ padding: '16px', backgroundColor: '#0f172a', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', color: '#fff' }}>
+    <div style={{ padding: '16px', backgroundColor: '#0f172a', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', color: '#fff', position: 'relative' }}>
       
-      {/* Top Header Bar */}
+      {/* Top Header Bar with Menu Button */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', backgroundColor: '#1e293b', padding: '14px 16px', borderRadius: '12px', border: '1px solid #334155' }}>
         <div>
-          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Account Book Smart Manager ({selectedFY})</div>
-          <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '800' }}>{firm?.legal_name || firm?.name || 'Enterprise Firm'}</h3>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Account Book Manager ({selectedFY})</div>
+          <h3 style={{ margin: '2px 0 0 0', fontSize: '15px', fontWeight: '800' }}>{firm?.legal_name || firm?.name || 'Enterprise Firm'}</h3>
         </div>
-        {onClose && (
-          <button onClick={onClose} style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
-            ✕ Close
-          </button>
-        )}
-      </div>
-
-      {/* Quick Summary Card */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
-        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
-          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Total Production Qty</div>
-          <div style={{ fontSize: '16px', fontWeight: '800', color: '#38bdf8', marginTop: '4px' }}>{summaryStats.totalProduction.toLocaleString('en-IN')} Units</div>
-        </div>
-        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
-          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Consumption Batches</div>
-          <div style={{ fontSize: '16px', fontWeight: '800', color: '#4ade80', marginTop: '4px' }}>{summaryStats.totalConsumption} Records</div>
-        </div>
-      </div>
-
-      {/* Accounting Workflow Menu List */}
-      <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.05em' }}>
-        Accounting Workflow Menu
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         
-        <button onClick={() => setActiveView('DASHBOARD')} style={menuButtonStyle}>
-          <span>📊</span> Dashboard (डैशबोर्ड)
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button onClick={() => setIsMenuOpen(!isMenuOpen)} style={{ backgroundColor: '#0f766e', color: '#fff', border: 'none', padding: '7px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span>☰</span> Menu
+          </button>
+          {onClose && (
+            <button onClick={onClose} style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '7px 10px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
 
-        <button onClick={() => onNavigate && onNavigate('ADD_ACCOUNT')} style={{ ...menuButtonStyle, backgroundColor: '#0f766e', borderColor: '#14b8a6' }}>
-          <span>➕</span> Add Account Head (नया खाता)
-        </button>
+      {/* Slide-out / Popover Menu Drawer */}
+      {isMenuOpen && (
+        <div style={{ position: 'absolute', top: '75px', left: '16px', right: '16px', backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '12px', padding: '14px', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', maxHeight: '75vh', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#38bdf8', textTransform: 'uppercase' }}>Accounting Workflow Menu</span>
+            <button onClick={() => setIsMenuOpen(false)} style={{ background: 'none', border: 'none', color: '#cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: 'bold' }}>✕ Close</button>
+          </div>
 
-        <button onClick={() => onNavigate && onNavigate('SALES')} style={menuButtonStyle}>
-          <span>📄</span> Sales / Tax Invoice (बिक्री बिल)
-        </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <button onClick={() => { setActiveView('DASHBOARD'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📊</span> Dashboard (डैशबोर्ड)
+            </button>
+            <button onClick={() => { setActiveView('ADD_ACCOUNT'); setIsMenuOpen(false); }} style={{ ...menuButtonStyle, backgroundColor: '#0f766e' }}>
+              <span>➕</span> Add Account Head (नया खाता)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('SALES'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📄</span> Sales / Tax Invoice (बिक्री बिल)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('PURCHASE'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📦</span> Purchase & Inward Stock (खरीद बिल)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('VOUCHER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📝</span> Voucher Entry (JV / PV / RV / Contra)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('FUEL'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>🚜</span> Fuel & Material Consumption (डीजल/खपत)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('PRODUCTION'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>🧱</span> Production & Cost Valuation (उत्पादन लागत)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('LABOUR'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>👷</span> Labour, Wages & Tractor (मजदूरी/वेतन)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('SETTLEMENT'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>⚖️</span> Bill Settlement / Khata Milan
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('INVENTORY'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📋</span> Inventory & Stock Count (स्टॉक रजिस्टर)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('LEDGER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📖</span> Account Milan & Ledger (खाता बही)
+            </button>
+            <button onClick={() => { setActiveView('JOURNAL_REGISTER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📑</span> General Journal Register (रोज़नामचा)
+            </button>
+            <button onClick={() => { setActiveView('FINANCIAL_REPORTS'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📈</span> Financial Reports (P&L / Balance Sheet)
+            </button>
+            <button onClick={() => { setActiveView('CASH_FLOW'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('SETTINGS'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>⚙️</span> Firm Profile & Settings (फर्म विवरण)
+            </button>
+            <button onClick={() => { setActiveView('BACKUP_CENTER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+              <span>🔒</span> Backup & Restore Center (डाटा बैकअप)
+            </button>
+            <button onClick={() => { if(onNavigate) onNavigate('RESET'); setIsMenuOpen(false); }} style={{ ...menuButtonStyle, backgroundColor: '#7f1d1d' }}>
+              <span>🗑️</span> Factory Reset / Clear Data (डेटा रीसेट)
+            </button>
+          </div>
+        </div>
+      )}
 
-        <button onClick={() => onNavigate && onNavigate('PURCHASE')} style={menuButtonStyle}>
-          <span>📦</span> Purchase & Inward Stock (खरीद बिल)
-        </button>
+      {/* Main Dashboard Overview Page Content */}
+      <div>
+        {/* Quick Summary Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Total Production Qty</div>
+            <div style={{ fontSize: '18px', fontWeight: '800', color: '#38bdf8', marginTop: '4px' }}>{summaryStats.totalProduction.toLocaleString('en-IN')} Units</div>
+          </div>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Consumption Batches</div>
+            <div style={{ fontSize: '18px', fontWeight: '800', color: '#4ade80', marginTop: '4px' }}>{summaryStats.totalConsumption} Records</div>
+          </div>
+        </div>
 
-        <button onClick={() => onNavigate && onNavigate('VOUCHER')} style={menuButtonStyle}>
-          <span>📝</span> Voucher Entry (JV / PV / RV / Contra)
-        </button>
-
-        <button onClick={() => onNavigate && onNavigate('FUEL')} style={{ ...menuButtonStyle, backgroundColor: '#064e3b', borderColor: '#059669' }}>
-          <span>🚜</span> Fuel & Material Consumption (डीजल/खपत)
-        </button>
-
-        <button onClick={() => onNavigate && onNavigate('PRODUCTION')} style={{ ...menuButtonStyle, backgroundColor: '#0c4a6e', borderColor: '#0284c7' }}>
-          <span>🧱</span> Production & Cost Valuation (उत्पादन लागत)
-        </button>
-
-        <button onClick={() => onNavigate && onNavigate('LABOUR')} style={menuButtonStyle}>
-          <span>👷</span> Labour, Wages & Tractor (मजदूरी/वेतन)
-        </button>
-
-        <button onClick={() => onNavigate && onNavigate('SETTLEMENT')} style={menuButtonStyle}>
-          <span>⚖️</span> Bill Settlement / Khata Milan
-        </button>
-
-        <button onClick={() => onNavigate && onNavigate('INVENTORY')} style={menuButtonStyle}>
-          <span>📋</span> Inventory & Stock Count (स्टॉक रजिस्टर)
-        </button>
-
-        <button onClick={() => onNavigate && onNavigate('LEDGER')} style={menuButtonStyle}>
-          <span>📖</span> Account Milan & Ledger (खाता बही)
-        </button>
-
-        <button onClick={() => setActiveView('JOURNAL_REGISTER')} style={menuButtonStyle}>
-          <span>📑</span> General Journal Register (रोज़नामचा)
-        </button>
-
-        <button onClick={() => setActiveView('FINANCIAL_REPORTS')} style={menuButtonStyle}>
-          <span>📈</span> Financial Reports (P&L / Balance Sheet)
-        </button>
-
-        <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0369a1', borderColor: '#38bdf8' }}>
-          <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
-        </button>
-
-        <button onClick={() => onNavigate && onNavigate('SETTINGS')} style={menuButtonStyle}>
-          <span>⚙️</span> Firm Profile & Settings (फर्म विवरण)
-        </button>
-
-        <button onClick={() => setActiveView('BACKUP_CENTER')} style={menuButtonStyle}>
-          <span>🔒</span> Backup & Restore Center (डाटा बैकअप)
-        </button>
-
-        <button onClick={() => onNavigate && onNavigate('RESET')} style={{ ...menuButtonStyle, borderColor: '#7f1d1d', color: '#fca5a5' }}>
-          <span>🗑️</span> Factory Reset / Clear Data (डेटा रीसेट)
-        </button>
-
+        {/* Embedded Accounting Dashboard View */}
+        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '14px' }}>
+          <AccountingDashboard firm={firm} selectedFY={selectedFY} />
+        </div>
       </div>
 
     </div>
@@ -155,17 +168,17 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
 const menuButtonStyle = {
   width: '100%',
-  padding: '14px 16px',
-  backgroundColor: '#1e293b',
+  padding: '10px 12px',
+  backgroundColor: '#0f172a',
   color: '#ffffff',
   border: '1px solid #334155',
-  borderRadius: '12px',
+  borderRadius: '8px',
   fontWeight: '700',
-  fontSize: '13px',
+  fontSize: '12px',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
-  gap: '12px',
+  gap: '10px',
   boxSizing: 'border-box',
   textAlign: 'left'
 };
