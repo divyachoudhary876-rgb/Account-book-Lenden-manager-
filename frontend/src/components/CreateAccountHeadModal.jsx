@@ -1,460 +1,283 @@
-// frontend/src/components/CreateAccountHeadModal.jsx
+// frontend/src/components/AccountHeadManager.jsx
 
 import React, { useState, useEffect } from 'react';
-import { 
-  getFirmMasterAccounts, 
-  saveMasterAccount, 
-  deleteMasterAccount, 
-  ACCOUNT_HIERARCHY 
-} from '../utils/accountMasterEngine.js';
+import { StorageService } from '../utils/storageSync';
 
-export default function CreateAccountHeadModal({ firm, isOpen, onClose, onAccountCreated }) {
-  if (isOpen === false) return null;
+export default function AccountHeadManager({ firm, selectedFY }) {
+  const firmId = firm?.id || 'FIRM-001';
+  const businessCategory = firm?.businessCategory || firm?.firmType || 'MANUFACTURING';
+  const storageKey = `account_heads_${firmId}_${selectedFY}`;
 
-  const activeFirmId = firm?.id || 'FIRM-001';
-
-  // Accounts state
-  const [accountList, setAccountList] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // Form View Visibility State (Default: False taaki Directory puri dikhe)
-  const [isFormOpen, setIsFormOpen] = useState(false);
-
-  // Form Field States
-  const [editingId, setEditingId] = useState(null);
+  const [accounts, setAccounts] = useState([]);
   const [accountName, setAccountName] = useState('');
-  const [primaryType, setPrimaryType] = useState('ASSETS');
-  const [subGroup, setSubGroup] = useState(ACCOUNT_HIERARCHY.ASSETS.subGroups[0]);
-  const [openingBalance, setOpeningBalance] = useState('0');
+  const [accountType, setAccountType] = useState('Expenses');
+  const [selectedGroup, setSelectedGroup] = useState('');
+  const [openingBalance, setOpeningBalance] = useState('');
   const [balanceType, setBalanceType] = useState('Dr');
-  const [gstin, setGstin] = useState('');
-  const [phone, setPhone] = useState('');
 
-  const loadAccounts = () => {
-    const list = getFirmMasterAccounts(activeFirmId);
-    setAccountList(list);
-  };
-
-  useEffect(() => {
-    loadAccounts();
-    // Modal open hone par default directory list dikhayenge
-    setIsFormOpen(false);
-    handleResetForm();
-  }, [activeFirmId, isOpen]);
-
-  const handlePrimaryTypeChange = (type) => {
-    setPrimaryType(type);
-    const config = ACCOUNT_HIERARCHY[type];
-    setSubGroup(config.subGroups[0]);
-    setBalanceType(config.defaultBalanceType);
-  };
-
-  const openCreateMode = () => {
-    handleResetForm();
-    setIsFormOpen(true);
-  };
-
-  const handleEditClick = (acc) => {
-    setEditingId(acc.id);
-    setAccountName(acc.account_name);
-    setPrimaryType(acc.primary_type || 'ASSETS');
-    setSubGroup(acc.sub_group || ACCOUNT_HIERARCHY[acc.primary_type || 'ASSETS']?.subGroups[0] || 'General');
-    setOpeningBalance(acc.opening_balance?.toString() || '0');
-    setBalanceType(acc.balance_type || 'Dr');
-    setGstin(acc.gstin || '');
-    setPhone(acc.phone || '');
-    setIsFormOpen(true); // Edit click hone par form open hoga
-  };
-
-  const handleResetForm = () => {
-    setEditingId(null);
-    setAccountName('');
-    setPrimaryType('ASSETS');
-    setSubGroup(ACCOUNT_HIERARCHY.ASSETS.subGroups[0]);
-    setOpeningBalance('0');
-    setBalanceType('Dr');
-    setGstin('');
-    setPhone('');
-  };
-
-  const handleCancelForm = () => {
-    handleResetForm();
-    setIsFormOpen(false); // Form band karke list par wapas le jayega
-  };
-
-  const handleDeleteClick = (acc) => {
-    if (window.confirm(`⚠️ Are you sure you want to delete ledger account "${acc.account_name}"?`)) {
-      try {
-        deleteMasterAccount(activeFirmId, acc.id);
-        loadAccounts();
-        if (editingId === acc.id) handleCancelForm();
-      } catch (err) {
-        alert(err.message);
+  // Dynamic Groups & Sub-Groups based on General Manufacturing & Business Categories
+  const getDynamicGroups = (type) => {
+    if (type === 'Expenses') {
+      if (businessCategory === 'MANUFACTURING' || businessCategory === 'BRICK_KILN' || businessCategory.includes('MANUF')) {
+        return [
+          'Direct Production & Factory Expenses',
+          'Raw Material Consumed',
+          'Operating Fuel & Power (Diesel / Electricity)',
+          'Direct Labor & Wages (मज़दूर)',
+          'Factory Machinery Repairs & Maintenance',
+          'Freight & Cartage Inward (भाड़ा)',
+          'Administrative & Office Expenses',
+          'Financial Charges & Bank Interest'
+        ];
+      } else if (businessCategory === 'TRANSPORT') {
+        return [
+          'Direct Trip & Route Expenses',
+          'Vehicle Diesel & Fuel Expenses',
+          'Vehicle Maintenance & Spare Parts',
+          'Driver Salary & Allowances',
+          'Toll & Permit Charges',
+          'Administrative & Office Expenses',
+          'Financial Charges & Bank Interest'
+        ];
+      } else {
+        // Trading / General
+        return [
+          'Direct Purchase & Trading Expenses',
+          'Freight & Cartage Inward',
+          'Selling & Distribution Expenses',
+          'Administrative & Office Expenses',
+          'Salary & Staff Welfare',
+          'Financial Charges & Bank Interest'
+        ];
       }
+    } else if (type === 'Fixed Assets') {
+      if (businessCategory === 'MANUFACTURING' || businessCategory === 'BRICK_KILN' || businessCategory.includes('MANUF')) {
+        return [
+          'Factory Building & Civil Construction',
+          'Plant, Machinery & Equipment',
+          'Land Development & Site Preparation',
+          'Sheds & Infrastructure',
+          'Tubewell & Boring Installation',
+          'Electrical Installation & Transformers',
+          'Office Equipment & Computers'
+        ];
+      } else if (businessCategory === 'TRANSPORT') {
+        return [
+          'Commercial Vehicles / Trucks / Fleet',
+          'Garage & Workshop Equipment',
+          'Office Equipment & Computers'
+        ];
+      } else {
+        return [
+          'Building & Office Premises',
+          'Plant, Machinery & Equipment',
+          'Furniture & Fixtures',
+          'Computers & Technology'
+        ];
+      }
+    } else if (type === 'Liabilities') {
+      return [
+        'Bank Loans & Term Loans',
+        'Working Capital / CC Limit',
+        'Sundry Creditors (Suppliers)',
+        'Secured / Unsecured Loans',
+        'Duties & Taxes (GST / TDS Payable)'
+      ];
+    } else if (type === 'Assets') {
+      return [
+        'Sundry Debtors (Customers)',
+        'Bank Accounts',
+        'Cash-in-Hand',
+        'Security Deposits & Advances'
+      ];
+    } else {
+      return ['Income / Revenue Accounts', 'Capital / Equity'];
     }
   };
 
-  const handleSubmit = (e) => {
+  const currentSubGroups = getDynamicGroups(accountType);
+
+  useEffect(() => {
+    try {
+      const saved = StorageService.getItem ? StorageService.getItem(storageKey) : JSON.parse(localStorage.getItem(storageKey) || '[]');
+      if (Array.isArray(saved)) setAccounts(saved);
+    } catch (e) {
+      console.error("Error loading account heads:", e);
+    }
+  }, [storageKey]);
+
+  // Reset default group when account type changes
+  useEffect(() => {
+    const groups = getDynamicGroups(accountType);
+    if (groups.length > 0) setSelectedGroup(groups[0]);
+  }, [accountType, businessCategory]);
+
+  const handleSaveAccount = (e) => {
     e.preventDefault();
     if (!accountName.trim()) {
-      alert("⚠️ Please enter Account / Party Name.");
+      alert("Kripya Account Name darj karein!");
       return;
     }
 
-    try {
-      const saved = saveMasterAccount(activeFirmId, {
-        id: editingId,
-        account_name: accountName.trim(),
-        primary_type: primaryType,
-        sub_group: subGroup,
-        opening_balance: openingBalance,
-        balance_type: balanceType,
-        gstin,
-        phone
-      });
+    const newAccount = {
+      id: 'ACC-' + Date.now(),
+      name: accountName.trim(),
+      type: accountType,
+      group: selectedGroup,
+      openingBalance: Number(openingBalance) || 0,
+      balanceType: openingBalance ? balanceType : '',
+      businessCategory,
+      selectedFY
+    };
 
-      alert(`✓ Ledger Account "${saved.account_name}" ${editingId ? 'Updated' : 'Created'} Successfully!`);
-      handleResetForm();
-      setIsFormOpen(false); // Save ke baad form auto-close hoga taaki updated list dikhe
-      loadAccounts();
-      if (onAccountCreated) onAccountCreated(saved);
-    } catch (err) {
-      alert(err.message);
+    const updated = [newAccount, ...accounts];
+    setAccounts(updated);
+    StorageService.setItem(storageKey, updated);
+    window.dispatchEvent(new Event('app_storage_updated'));
+
+    // Reset Form
+    setAccountName('');
+    setOpeningBalance('');
+    alert("✓ Account Head successfully created!");
+  };
+
+  const handleDelete = (id) => {
+    if (window.confirm("Kya aap is account head ko delete karna chahte hain?")) {
+      const updated = accounts.filter(a => a.id !== id);
+      setAccounts(updated);
+      StorageService.setItem(storageKey, updated);
+      window.dispatchEvent(new Event('app_storage_updated'));
     }
   };
 
-  const availableSubGroups = ACCOUNT_HIERARCHY[primaryType]?.subGroups || [];
-
-  const filteredAccounts = accountList.filter(a => {
-    const q = searchQuery.toLowerCase();
-    return (
-      (a.account_name || '').toLowerCase().includes(q) ||
-      (a.sub_group || '').toLowerCase().includes(q) ||
-      (a.phone || '').includes(q)
-    );
-  });
-
   return (
-    <div style={overlayStyle}>
-      <div style={modalCardStyle}>
-        
-        {/* Modal Top Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-          <h3 style={{ margin: 0, color: '#1e293b', fontSize: '17px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📋</span> Chart of Accounts & Ledger Master
-          </h3>
-          <button 
-            type="button" 
-            onClick={onClose} 
-            style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}
-          >
-            ✕
-          </button>
-        </div>
+    <div style={{ padding: '8px', maxWidth: '900px', margin: '0 auto', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
+      <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
+        <h3 style={{ margin: '0 0 10px 0', color: '#0f172a', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          📊 Create & Manage Account Heads ({businessCategory})
+        </h3>
 
-        {/* 1. COLLAPSIBLE FORM: Sirf tabhi dikhega jab isFormOpen === true ho */}
-        {isFormOpen ? (
-          <form onSubmit={handleSubmit} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
-              <strong style={{ color: '#0f172a', fontSize: '14px' }}>
-                {editingId ? '✏️ Edit Ledger Account' : '➕ Create New Ledger Account'}
-              </strong>
-              <button 
-                type="button" 
-                onClick={handleCancelForm} 
-                style={{ background: '#e2e8f0', border: 'none', borderRadius: '4px', padding: '3px 8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', color: '#475569' }}
-              >
-                ✕ Close Form
-              </button>
-            </div>
-
-            <div style={{ marginBottom: '10px' }}>
-              <label style={labelStyle}>Account / Party Name *</label>
+        <form onSubmit={handleSaveAccount}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Account Name *</label>
               <input 
                 type="text" 
-                placeholder="e.g. Proprietor Capital A/C / Radhey Traders" 
                 value={accountName} 
                 onChange={e => setAccountName(e.target.value)} 
+                placeholder="e.g. Plant & Machinery A/c" 
                 style={inputStyle} 
                 required 
-                autoFocus
               />
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-              <div>
-                <label style={labelStyle}>1. Primary Account Type *</label>
-                <select 
-                  value={primaryType} 
-                  onChange={e => handlePrimaryTypeChange(e.target.value)} 
-                  style={inputStyle}
-                >
-                  {Object.entries(ACCOUNT_HIERARCHY).map(([key, item]) => (
-                    <option key={key} value={key}>{item.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>2. Accounting Sub-Group *</label>
-                <select 
-                  value={subGroup} 
-                  onChange={e => setSubGroup(e.target.value)} 
-                  style={inputStyle}
-                >
-                  {availableSubGroups.map(sg => (
-                    <option key={sg} value={sg}>{sg}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-              <div>
-                <label style={labelStyle}>Opening Balance (₹)</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  value={openingBalance} 
-                  onChange={e => setOpeningBalance(e.target.value)} 
-                  style={inputStyle} 
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Balance Type</label>
-                <select 
-                  value={balanceType} 
-                  onChange={e => setBalanceType(e.target.value)} 
-                  style={inputStyle}
-                >
-                  <option value="Dr">Debit (Dr)</option>
-                  <option value="Cr">Credit (Cr)</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
-              <div>
-                <label style={labelStyle}>GSTIN (Optional)</label>
-                <input 
-                  type="text" 
-                  placeholder="08AAAAA0000A1Z5" 
-                  value={gstin} 
-                  onChange={e => setGstin(e.target.value)} 
-                  style={inputStyle} 
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Mobile / Phone</label>
-                <input 
-                  type="tel" 
-                  placeholder="98290XXXXX" 
-                  value={phone} 
-                  onChange={e => setPhone(e.target.value)} 
-                  style={inputStyle} 
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '10px' }}>
-              <button 
-                type="button" 
-                onClick={handleCancelForm} 
-                style={cancelButtonStyle}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Account Type *</label>
+              <select 
+                value={accountType} 
+                onChange={e => setAccountType(e.target.value)} 
+                style={inputStyle}
               >
-                Cancel
-              </button>
-              <button 
-                type="submit" 
-                style={saveButtonStyle}
-              >
-                💾 {editingId ? 'Update Account' : 'Save Account'}
-              </button>
+                <option value="Expenses">Expenses</option>
+                <option value="Fixed Assets">Fixed Assets</option>
+                <option value="Liabilities">Liabilities</option>
+                <option value="Assets">Assets</option>
+                <option value="Income">Income</option>
+              </select>
             </div>
-          </form>
-        ) : (
-          /* 2. DIRECTORY TOP ACTION BAR (Jab form band ho tab bada button dikhega) */
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
-              Accounts Directory ({accountList.length})
-            </div>
-            <button 
-              type="button" 
-              onClick={openCreateMode} 
-              style={{
-                backgroundColor: '#10b981',
-                color: '#ffffff',
-                border: 'none',
-                padding: '9px 16px',
-                borderRadius: '8px',
-                fontWeight: 'bold',
-                fontSize: '13px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
-              }}
-            >
-              ➕ Add New Account
-            </button>
           </div>
-        )}
 
-        {/* 3. FULL DIRECTORY DIRECTORY & SEARCH VIEW */}
-        <div>
           <div style={{ marginBottom: '10px' }}>
-            <input 
-              type="text" 
-              placeholder="🔍 Search party name, phone, or group..." 
-              value={searchQuery} 
-              onChange={e => setSearchQuery(e.target.value)} 
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }} 
-            />
+            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Sub-Group Category *</label>
+            <select 
+              value={selectedGroup} 
+              onChange={e => setSelectedGroup(e.target.value)} 
+              style={inputStyle}
+              required
+            >
+              {currentSubGroups.map((grp, idx) => (
+                <option key={idx} value={grp}>{grp}</option>
+              ))}
+            </select>
           </div>
 
-          <div style={{ maxHeight: isFormOpen ? '200px' : '480px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '10px', transition: 'max-height 0.3s ease' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '400px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px', marginBottom: '14px' }}>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Opening Balance (₹)</label>
+              <input 
+                type="number" 
+                value={openingBalance} 
+                onChange={e => setOpeningBalance(e.target.value)} 
+                placeholder="0.00" 
+                style={inputStyle} 
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Dr / Cr</label>
+              <select 
+                value={balanceType} 
+                onChange={e => setBalanceType(e.target.value)} 
+                style={inputStyle}
+              >
+                <option value="Dr">Debit (Dr)</option>
+                <option value="Cr">Credit (Cr)</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '12px' }}>
+            + Save Account Head
+          </button>
+        </form>
+      </div>
+
+      {/* Accounts List Register */}
+      <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#334155' }}>Existing Account Heads ({selectedFY})</h4>
+        {accounts.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '16px', fontSize: '11px' }}>Koi account head create nahi kiya gaya hai.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
               <thead>
-                <tr style={{ backgroundColor: '#0f172a', color: '#ffffff', position: 'sticky', top: 0, zIndex: 1 }}>
-                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Account / Party Name</th>
-                  <th style={{ padding: '10px 8px', textAlign: 'left' }}>Sub-Group</th>
-                  <th style={{ padding: '10px 10px', textAlign: 'right' }}>Opening Bal</th>
-                  <th style={{ padding: '10px', textAlign: 'center' }}>Actions</th>
+                <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                  <th style={{ padding: '6px' }}>Account Name</th>
+                  <th style={{ padding: '6px' }}>Type / Sub-Group</th>
+                  <th style={{ padding: '6px' }}>Opening Balance</th>
+                  <th style={{ padding: '6px', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredAccounts.length === 0 ? (
-                  <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
-                      No ledger accounts found. Click <strong>"+ Add New Account"</strong> to create one.
+                {accounts.map(acc => (
+                  <tr key={acc.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '6px', fontWeight: 'bold' }}>{acc.name}</td>
+                    <td style={{ padding: '6px' }}>
+                      <span style={{ color: '#0284c7', fontWeight: 'bold' }}>{acc.type}</span>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>{acc.group}</div>
+                    </td>
+                    <td style={{ padding: '6px' }}>{acc.openingBalance ? `₹${acc.openingBalance} ${acc.balanceType}` : '-'}</td>
+                    <td style={{ padding: '6px', textAlign: 'center' }}>
+                      <button onClick={() => handleDelete(acc.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
+                        Delete
+                      </button>
                     </td>
                   </tr>
-                ) : (
-                  filteredAccounts.map(acc => (
-                    <tr key={acc.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: editingId === acc.id ? '#eff6ff' : '#ffffff' }}>
-                      <td style={{ padding: '10px 12px', fontWeight: 'bold', color: '#1e293b' }}>
-                        {acc.account_name}
-                        {acc.phone && <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 'normal' }}>📞 {acc.phone}</div>}
-                      </td>
-                      <td style={{ padding: '10px 8px', color: '#475569' }}>
-                        <span style={{ backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '4px', fontSize: '11px' }}>
-                          {acc.sub_group}
-                        </span>
-                      </td>
-                      <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 'bold', color: acc.balance_type === 'Dr' ? '#dc2626' : '#16a34a', whiteSpace: 'nowrap' }}>
-                        ₹{parseFloat(acc.opening_balance || 0).toFixed(2)} {acc.balance_type}
-                      </td>
-                      <td style={{ padding: '10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <button 
-                          type="button" 
-                          onClick={() => handleEditClick(acc)} 
-                          style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '6px', padding: '5px 10px', marginRight: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                        >
-                          ✏️ Edit
-                        </button>
-                        {!acc.is_system_locked && (
-                          <button 
-                            type="button" 
-                            onClick={() => handleDeleteClick(acc)} 
-                            style={{ backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', fontSize: '11px' }}
-                          >
-                            🗑️
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* Modal Bottom Footer (Jab Form Band Ho) */}
-        {!isFormOpen && (
-          <div style={{ marginTop: '14px', textAlign: 'right' }}>
-            <button 
-              type="button" 
-              onClick={onClose} 
-              style={{ backgroundColor: '#64748b', color: '#ffffff', border: 'none', padding: '8px 18px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
-            >
-              Close
-            </button>
-          </div>
         )}
-
       </div>
     </div>
   );
 }
 
-const overlayStyle = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(15, 23, 42, 0.65)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 9999,
-  padding: '14px'
-};
-
-const modalCardStyle = {
-  backgroundColor: '#ffffff',
-  borderRadius: '16px',
-  padding: '18px',
-  width: '100%',
-  maxWidth: '520px',
-  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
-  boxSizing: 'border-box',
-  maxHeight: '94vh',
-  overflowY: 'auto'
-};
-
-const labelStyle = {
-  display: 'block',
-  fontSize: '11px',
-  fontWeight: 'bold',
-  color: '#334155',
-  marginBottom: '4px'
-};
-
 const inputStyle = {
   width: '100%',
-  padding: '8px 10px',
+  padding: '7px',
   borderRadius: '6px',
   border: '1px solid #cbd5e1',
-  fontSize: '12px',
+  fontSize: '11px',
   boxSizing: 'border-box',
-  backgroundColor: '#ffffff',
-  color: '#0f172a'
-};
-
-const cancelButtonStyle = {
-  backgroundColor: '#94a3b8',
-  color: '#ffffff',
-  border: 'none',
-  padding: '10px',
-  borderRadius: '6px',
-  fontWeight: 'bold',
-  cursor: 'pointer',
-  fontSize: '13px'
-};
-
-const saveButtonStyle = {
-  backgroundColor: '#10b981',
-  color: '#ffffff',
-  border: 'none',
-  padding: '10px',
-  borderRadius: '6px',
-  fontWeight: 'bold',
-  cursor: 'pointer',
-  fontSize: '13px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: '4px'
+  marginTop: '3px',
+  backgroundColor: '#ffffff'
 };
