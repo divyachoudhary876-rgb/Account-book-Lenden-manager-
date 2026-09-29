@@ -1,9 +1,9 @@
-// frontend/src/components/AccountHeadManager.jsx
+// frontend/src/components/CreateAccountHeadModal.jsx
 
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 
-export default function AccountHeadManager({ firm, selectedFY, onClose }) {
+export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
   const firmId = firm?.id || 'FIRM-001';
   const businessCategory = firm?.businessCategory || firm?.firmType || 'MANUFACTURING';
   const storageKey = `account_heads_${firmId}_${selectedFY}`;
@@ -126,29 +126,18 @@ export default function AccountHeadManager({ firm, selectedFY, onClose }) {
   };
 
   return (
-    <div style={{ padding: '16px', maxWidth: '650px', margin: '0 auto', fontFamily: 'sans-serif', boxSizing: 'border-box', backgroundColor: '#0f172a', minHeight: '100vh', color: '#fff' }}>
+    <div style={{ padding: '4px', maxWidth: '650px', margin: '0 auto', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', backgroundColor: '#f8fafc', color: '#0f172a' }}>
       
-      {/* Top Navigation / Close Header */}
-      {onClose && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <button 
-            onClick={onClose} 
-            style={{ backgroundColor: '#334155', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
-          >
-            ← Back to Dashboard
-          </button>
-        </div>
-      )}
-
-      <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '16px', borderRadius: '12px', marginBottom: '16px', boxSizing: 'border-box' }}>
-        <h3 style={{ margin: '0 0 12px 0', color: '#f8fafc', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {/* Form Container */}
+      <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', marginBottom: '16px', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
           📊 Create & Manage Account Heads ({businessCategory})
         </h3>
 
         <form onSubmit={handleSaveAccount}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>Account Name *</label>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Account Name *</label>
               <input 
                 type="text" 
                 value={accountName} 
@@ -159,7 +148,7 @@ export default function AccountHeadManager({ firm, selectedFY, onClose }) {
               />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>Account Type *</label>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Account Type *</label>
               <select 
                 value={accountType} 
                 onChange={e => setAccountType(e.target.value)} 
@@ -175,7 +164,7 @@ export default function AccountHeadManager({ firm, selectedFY, onClose }) {
           </div>
 
           <div style={{ marginBottom: '12px' }}>
-            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>Sub-Group Category *</label>
+            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Sub-Group Category *</label>
             <select 
               value={selectedGroup} 
               onChange={e => setSelectedGroup(e.target.value)} 
@@ -190,7 +179,7 @@ export default function AccountHeadManager({ firm, selectedFY, onClose }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', marginBottom: '16px' }}>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>Opening Balance (₹)</label>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Opening Balance (₹)</label>
               <input 
                 type="number" 
                 value={openingBalance} 
@@ -200,7 +189,7 @@ export default function AccountHeadManager({ firm, selectedFY, onClose }) {
               />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>Dr / Cr</label>
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Dr / Cr</label>
               <select 
                 value={balanceType} 
                 onChange={e => setBalanceType(e.target.value)} 
@@ -212,21 +201,22 @@ export default function AccountHeadManager({ firm, selectedFY, onClose }) {
             </div>
           </div>
 
-          <button type="submit" style={{ backgroundColor: '#0f766e', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '13px' }}>
+          <button type="submit" style={{ backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '11px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '12px' }}>
             + Save Professional Account Head
           </button>
         </form>
       </div>
 
-      <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '16px', borderRadius: '12px', boxSizing: 'border-box' }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#f8fafc' }}>Existing Account Heads ({selectedFY})</h4>
+      {/* Existing List Container */}
+      <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#0f172a', fontWeight: 'bold' }}>Existing Account Heads ({selectedFY})</h4>
         {accounts.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '16px', fontSize: '12px' }}>Koi account head create nahi kiya gaya hai.</div>
+          <div style={{ textAlign: 'center', color: '#64748b', padding: '16px', fontSize: '11px' }}>Koi account head create nahi kiya gaya hai.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
               <thead>
-                <tr style={{ backgroundColor: '#0f172a', borderBottom: '2px solid #334155', color: '#94a3b8' }}>
+                <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
                   <th style={{ padding: '8px' }}>Account Name</th>
                   <th style={{ padding: '8px' }}>Type / Sub-Group</th>
                   <th style={{ padding: '8px' }}>Opening Balance</th>
@@ -235,15 +225,15 @@ export default function AccountHeadManager({ firm, selectedFY, onClose }) {
               </thead>
               <tbody>
                 {accounts.map(acc => (
-                  <tr key={acc.id} style={{ borderBottom: '1px solid #334155' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold', color: '#fff' }}>{acc.name}</td>
+                  <tr key={acc.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{acc.name}</td>
                     <td style={{ padding: '8px' }}>
-                      <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>{acc.type}</span>
-                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>{acc.group}</div>
+                      <span style={{ color: '#0284c7', fontWeight: 'bold' }}>{acc.type}</span>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>{acc.group}</div>
                     </td>
-                    <td style={{ padding: '8px', color: '#cbd5e1' }}>{acc.openingBalance ? `₹${acc.openingBalance} ${acc.balanceType}` : '-'}</td>
+                    <td style={{ padding: '8px', color: '#334155' }}>{acc.openingBalance ? `₹${acc.openingBalance} ${acc.balanceType}` : '-'}</td>
                     <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <button onClick={() => handleDelete(acc.id)} style={{ backgroundColor: '#7f1d1d', color: '#fca5a5', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>
+                      <button onClick={() => handleDelete(acc.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
                         Delete
                       </button>
                     </td>
@@ -260,12 +250,12 @@ export default function AccountHeadManager({ firm, selectedFY, onClose }) {
 
 const inputStyle = {
   width: '100%',
-  padding: '9px',
-  borderRadius: '8px',
-  border: '1px solid #475569',
-  fontSize: '12px',
+  padding: '8px',
+  borderRadius: '6px',
+  border: '1px solid #cbd5e1',
+  fontSize: '11px',
   boxSizing: 'border-box',
   marginTop: '4px',
-  backgroundColor: '#0f172a',
-  color: '#fff'
+  backgroundColor: '#ffffff',
+  color: '#0f172a'
 };
