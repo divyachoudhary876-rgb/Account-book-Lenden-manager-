@@ -131,7 +131,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SETTINGS'); }} style={menuButtonStyle}>
               <span>⚙️</span> Firm Profile & Settings (फर्म विवरण)
             </button>
-            <button onClick={() => { setActiveView('BACKUP_CENTER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('BACKUP_CENTER'); }} style={menuButtonStyle}>
               <span>🔒</span> Backup & Restore Center (डाटा बैकअप)
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('RESET'); }} style={{ ...menuButtonStyle, backgroundColor: '#7f1d1d' }}>
