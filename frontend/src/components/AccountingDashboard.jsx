@@ -1,26 +1,47 @@
 // frontend/src/components/EnterpriseDashboard.jsx
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import AccountingDashboard from './AccountingDashboard';
 import CashFlowStatementView from './CashFlowStatementView';
 import FinancialReportsView from './FinancialReportsView';
 import JournalRegisterView from './JournalRegisterView';
 import SecurityBackupSettings from './SecurityBackupSettings';
+import { StorageService } from '../utils/storageSync';
 
-export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
+export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onClose }) {
   const [activeView, setActiveView] = useState('DASHBOARD');
+  const [summaryStats, setSummaryStats] = useState({ totalProduction: 0, totalConsumption: 0 });
+
+  const firmId = firm?.id || 'FIRM-001';
+  const prodStorageKey = `bhatta_production_${firmId}_${selectedFY}`;
+  const consStorageKey = `fuel_consumption_${firmId}_${selectedFY}`;
+
+  useEffect(() => {
+    try {
+      const prodData = StorageService.getItem ? StorageService.getItem(prodStorageKey) : JSON.parse(localStorage.getItem(prodStorageKey) || '[]');
+      const consData = StorageService.getItem ? StorageService.getItem(consStorageKey) : JSON.parse(localStorage.getItem(consStorageKey) || '[]');
+      
+      const totalProd = Array.isArray(prodData) ? prodData.reduce((sum, item) => sum + (Number(item.producedQty) || 0), 0) : 0;
+      const totalCons = Array.isArray(consData) ? consData.length : 0;
+
+      setSummaryStats({ totalProduction: totalProd, totalConsumption: totalCons });
+    } catch (e) {
+      console.error("Error loading dashboard stats:", e);
+    }
+  }, [firmId, selectedFY, prodStorageKey, consStorageKey]);
 
   // Render active view router for specialized modules
   if (activeView === 'CASH_FLOW') {
-    return <CashFlowStatementView firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
+    return <CashFlowStatementView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
   if (activeView === 'FINANCIAL_REPORTS') {
-    return <FinancialReportsView firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
+    return <FinancialReportsView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
   if (activeView === 'JOURNAL_REGISTER') {
-    return <JournalRegisterView firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
+    return <JournalRegisterView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
   if (activeView === 'BACKUP_CENTER') {
-    return <SecurityBackupSettings firm={firm} onClose={() => setActiveView('DASHBOARD')} />;
+    return <SecurityBackupSettings firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
 
   return (
@@ -29,7 +50,7 @@ export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
       {/* Top Header Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', backgroundColor: '#1e293b', padding: '14px 16px', borderRadius: '12px', border: '1px solid #334155' }}>
         <div>
-          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Account Book Smart Manager</div>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Account Book Smart Manager ({selectedFY})</div>
           <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '800' }}>{firm?.legal_name || firm?.name || 'Enterprise Firm'}</h3>
         </div>
         {onClose && (
@@ -37,6 +58,18 @@ export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
             ✕ Close
           </button>
         )}
+      </div>
+
+      {/* Quick Summary Card */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Total Production Qty</div>
+          <div style={{ fontSize: '16px', fontWeight: '800', color: '#38bdf8', marginTop: '4px' }}>{summaryStats.totalProduction.toLocaleString('en-IN')} Units</div>
+        </div>
+        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Consumption Batches</div>
+          <div style={{ fontSize: '16px', fontWeight: '800', color: '#4ade80', marginTop: '4px' }}>{summaryStats.totalConsumption} Records</div>
+        </div>
       </div>
 
       {/* Accounting Workflow Menu List */}
@@ -66,12 +99,12 @@ export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
           <span>📝</span> Voucher Entry (JV / PV / RV / Contra)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('FUEL')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('FUEL')} style={{ ...menuButtonStyle, backgroundColor: '#064e3b', borderColor: '#059669' }}>
           <span>🚜</span> Fuel & Material Consumption (डीजल/खपत)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('PRODUCTION')} style={menuButtonStyle}>
-          <span>🧱</span> Production & Conversion (ईंट पकाई / निर्माण)
+        <button onClick={() => onNavigate && onNavigate('PRODUCTION')} style={{ ...menuButtonStyle, backgroundColor: '#0c4a6e', borderColor: '#0284c7' }}>
+          <span>🧱</span> Production & Cost Valuation (उत्पादन लागत)
         </button>
 
         <button onClick={() => onNavigate && onNavigate('LABOUR')} style={menuButtonStyle}>
@@ -98,8 +131,7 @@ export default function EnterpriseDashboard({ firm, onNavigate, onClose }) {
           <span>📈</span> Financial Reports (P&L / Balance Sheet)
         </button>
 
-        {/* 📈 Cash Flow Statement Menu Button (Added to Enterprise Dashboard) */}
-        <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0284c7', borderColor: '#38bdf8' }}>
+        <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0369a1', borderColor: '#38bdf8' }}>
           <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
         </button>
 
