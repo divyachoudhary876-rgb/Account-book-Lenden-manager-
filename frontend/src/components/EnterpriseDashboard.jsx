@@ -5,6 +5,7 @@ import CashFlowStatementView from './CashFlowStatementView';
 import FinancialReportsView from './FinancialReportsView';
 import JournalRegisterView from './JournalRegisterView';
 import SecurityBackupSettings from './SecurityBackupSettings';
+import CreateAccountHeadModal from './CreateAccountHeadModal';
 import { StorageService } from '../utils/storageSync';
 
 export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onClose }) {
@@ -30,6 +31,16 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     }
   }, [firmId, selectedFY, prodStorageKey, consStorageKey]);
 
+  if (activeView === 'ADD_ACCOUNT') {
+    return (
+      <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', padding: '16px', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
+        <button onClick={() => setActiveView('DASHBOARD')} style={{ marginBottom: '14px', backgroundColor: '#334155', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+          ← Back to Dashboard
+        </button>
+        <CreateAccountHeadModal firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />
+      </div>
+    );
+  }
   if (activeView === 'CASH_FLOW') {
     return <CashFlowStatementView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
@@ -77,7 +88,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
             <button onClick={() => { setActiveView('DASHBOARD'); setIsMenuOpen(false); }} style={menuButtonStyle}>
               <span>📊</span> Dashboard (डैशबोर्ड)
             </button>
-            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('ADD_ACCOUNT'); }} style={{ ...menuButtonStyle, backgroundColor: '#0f766e' }}>
+            <button onClick={() => { setActiveView('ADD_ACCOUNT'); setIsMenuOpen(false); }} style={{ ...menuButtonStyle, backgroundColor: '#0f766e' }}>
               <span>➕</span> Add Account Head (नया खाता)
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SALES'); }} style={menuButtonStyle}>
