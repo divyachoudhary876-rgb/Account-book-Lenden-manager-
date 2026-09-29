@@ -159,15 +159,15 @@ export default function App() {
       
       <AppUpdateBanner />
 
-      {/* Unified Professional Top Header (Active across all pages) */}
+      {/* Responsive Unified Top Header */}
       {!isCreatingFirm && activeFirm && (
-        <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+        <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', width: '100%', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', flexWrap: 'wrap' }}>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
             {currentView !== 'dashboard' ? (
               <button
                 onClick={() => setCurrentView('dashboard')}
-                style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
                 ← Dashboard
               </button>
@@ -178,48 +178,50 @@ export default function App() {
             )}
           </div>
 
-          <div style={{ flex: 1.2, minWidth: '120px' }}>
-            <select
-              value={activeFirm?.id || ''}
-              onChange={(e) => {
-                if (e.target.value === 'CREATE_NEW') {
-                  setIsCreatingFirm(true);
-                  setIsMenuOpen(false);
-                } else {
-                  setActiveFirmId(e.target.value);
-                  setIsCreatingFirm(false);
-                  setIsMenuOpen(false);
-                  refreshState();
-                }
-              }}
-              style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
-            >
-              {firmsList.map(f => (
-                <option key={f.id} value={f.id}>🏢 {f.legal_name}</option>
-              ))}
-              <option value="CREATE_NEW">➕ Create New Firm...</option>
-            </select>
-          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: '220px', justifyContent: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: '110px' }}>
+              <select
+                value={activeFirm?.id || ''}
+                onChange={(e) => {
+                  if (e.target.value === 'CREATE_NEW') {
+                    setIsCreatingFirm(true);
+                    setIsMenuOpen(false);
+                  } else {
+                    setActiveFirmId(e.target.value);
+                    setIsCreatingFirm(false);
+                    setIsMenuOpen(false);
+                    refreshState();
+                  }
+                }}
+                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
+              >
+                {firmsList.map(f => (
+                  <option key={f.id} value={f.id}>🏢 {f.legal_name}</option>
+                ))}
+                <option value="CREATE_NEW">➕ New Firm...</option>
+              </select>
+            </div>
 
-          <div style={{ flex: 0.9, minWidth: '100px' }}>
-            <select
-              value={selectedFY}
-              onChange={handleFYSelectChange}
-              style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box' }}
-            >
-              {fyList.map(fy => (
-                <option key={fy.id} value={fy.label}>{fy.label}</option>
-              ))}
-              <option value="ADD_NEW_FY">➕ Add FY...</option>
-            </select>
-          </div>
+            <div style={{ width: '100px' }}>
+              <select
+                value={selectedFY}
+                onChange={handleFYSelectChange}
+                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box' }}
+              >
+                {fyList.map(fy => (
+                  <option key={fy.id} value={fy.label}>{fy.label}</option>
+                ))}
+                <option value="ADD_NEW_FY">➕ Add FY</option>
+              </select>
+            </div>
 
-          <button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-          >
-            {isMenuOpen ? '✕' : '☰ Menu'}
-          </button>
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              {isMenuOpen ? '✕' : '☰ Menu'}
+            </button>
+          </div>
         </div>
       )}
 
