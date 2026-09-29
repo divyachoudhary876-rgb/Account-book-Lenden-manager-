@@ -1,156 +1,171 @@
 // frontend/src/components/EnterpriseDashboard.jsx
 
 import React, { useState, useEffect } from 'react';
-import { getDynamicDashboardMetrics } from '../utils/dashboardDataEngine.js';
+import AccountingDashboard from './AccountingDashboard';
+import CashFlowStatementView from './CashFlowStatementView';
+import FinancialReportsView from './FinancialReportsView';
+import JournalRegisterView from './JournalRegisterView';
+import SecurityBackupSettings from './SecurityBackupSettings';
+import { StorageService } from '../utils/storageSync';
 
-export default function EnterpriseDashboard({ firm, onNavigate }) {
-  const [metrics, setMetrics] = useState(null);
+export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onClose }) {
+  const [activeView, setActiveView] = useState('DASHBOARD');
+  const [summaryStats, setSummaryStats] = useState({ totalProduction: 0, totalConsumption: 0 });
 
-  const loadData = () => {
-    const data = getDynamicDashboardMetrics(firm);
-    setMetrics(data);
-  };
+  const firmId = firm?.id || 'FIRM-001';
+  const prodStorageKey = `bhatta_production_${firmId}_${selectedFY}`;
+  const consStorageKey = `fuel_consumption_${firmId}_${selectedFY}`;
 
   useEffect(() => {
-    loadData();
-    window.addEventListener('app_state_updated', loadData);
-    window.addEventListener('stock_updated', loadData);
-    return () => {
-      window.removeEventListener('app_state_updated', loadData);
-      window.removeEventListener('stock_updated', loadData);
-    };
-  }, [firm]);
+    try {
+      const prodData = StorageService.getItem ? StorageService.getItem(prodStorageKey) : JSON.parse(localStorage.getItem(prodStorageKey) || '[]');
+      const consData = StorageService.getItem ? StorageService.getItem(consStorageKey) : JSON.parse(localStorage.getItem(consStorageKey) || '[]');
+      
+      const totalProd = Array.isArray(prodData) ? prodData.reduce((sum, item) => sum + (Number(item.producedQty) || 0), 0) : 0;
+      const totalCons = Array.isArray(consData) ? consData.length : 0;
 
-  if (!metrics) return <div style={{ padding: '20px', textAlign: 'center' }}>Loading Dashboard...</div>;
+      setSummaryStats({ totalProduction: totalProd, totalConsumption: totalCons });
+    } catch (e) {
+      console.error("Error loading dashboard stats:", e);
+    }
+  }, [firmId, selectedFY, prodStorageKey, consStorageKey]);
 
-  const { receivables, payables, cashAndBank, categorySpecifics } = metrics;
-  const legalName = firm?.legal_name || firm?.name || 'Enterprise Profile';
-  const categoryLabel = firm?.category || firm?.business_category || 'TRADING';
-  const gstin = firm?.gstin || 'Unregistered / Regular';
+  // Render active view router for specialized modules handled inside dashboard
+  if (activeView === 'CASH_FLOW') {
+    return <CashFlowStatementView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
+  }
+  if (activeView === 'FINANCIAL_REPORTS') {
+    return <FinancialReportsView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
+  }
+  if (activeView === 'JOURNAL_REGISTER') {
+    return <JournalRegisterView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
+  }
+  if (activeView === 'BACKUP_CENTER') {
+    return <SecurityBackupSettings firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
+  }
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '24px' }}>
+    <div style={{ padding: '16px', backgroundColor: '#0f172a', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', color: '#fff' }}>
       
-      {/* 1. Executive Firm Badge */}
-      <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#ffffff', borderRadius: '16px', padding: '18px 20px', boxShadow: '0 10px 20px -5px rgba(15, 23, 42, 0.25)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+      {/* Top Header Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', backgroundColor: '#1e293b', padding: '14px 16px', borderRadius: '12px', border: '1px solid #334155' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '24px' }}>🏢</span>
-            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', letterSpacing: '0.3px' }}>{legalName}</h2>
-          </div>
-          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
-            GSTIN: <span style={{ color: '#e2e8f0', fontWeight: '600' }}>{gstin}</span> • Category: <span style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{categoryLabel}</span>
-          </div>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase' }}>Account Book Smart Manager ({selectedFY})</div>
+          <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '800' }}>{firm?.legal_name || firm?.name || 'Enterprise Firm'}</h3>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Financial Health</span>
-          <div style={{ fontSize: '13px', fontWeight: 'bold', color: cashAndBank >= 0 ? '#10b981' : '#f43f5e' }}>
-            {cashAndBank >= 0 ? '● Positive Solvency' : '● Overdrawn / Credit'}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Core Financial Liquidity HUD */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-        <div style={kpiCardStyle('#10b981')}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={kpiTitleStyle}>RECEIVABLES (देनदार)</span>
-            <span style={{ fontSize: '18px' }}>📥</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '800', color: '#059669', marginTop: '6px' }}>
-            ₹{receivables.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <span style={{ fontSize: '10px', color: '#64748b' }}>Total pending from customers</span>
-        </div>
-
-        <div style={kpiCardStyle('#ef4444')}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={kpiTitleStyle}>PAYABLES (लेनदार)</span>
-            <span style={{ fontSize: '18px' }}>📤</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '800', color: '#dc2626', marginTop: '6px' }}>
-            ₹{payables.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <span style={{ fontSize: '10px', color: '#64748b' }}>Total payable to suppliers/pumps</span>
-        </div>
-
-        <div style={kpiCardStyle('#0284c7')}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={kpiTitleStyle}>CASH & BANK BALANCE</span>
-            <span style={{ fontSize: '18px' }}>🏛️</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '800', color: '#0284c7', marginTop: '6px' }}>
-            ₹{cashAndBank.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <span style={{ fontSize: '10px', color: '#64748b' }}>Instant liquid operational funds</span>
-        </div>
-      </div>
-
-      {/* 3. Category-Specific Operational Inventory Cards */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <span style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>⚡</span> {categoryLabel} Operational Insights
-          </span>
-          <button onClick={() => onNavigate && onNavigate('inventory')} style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-            Manage Stock ➔
+        {onClose && (
+          <button onClick={onClose} style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+            ✕ Close
           </button>
-        </div>
+        )}
+      </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
-          {categorySpecifics.cards.map((card, idx) => (
-            <div key={idx} style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', borderLeft: `4px solid ${card.color}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>{card.label}</span>
-                <span style={{ fontSize: '16px' }}>{card.icon}</span>
-              </div>
-              <div style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
-                {card.value}
-              </div>
-            </div>
-          ))}
+      {/* Quick Summary Card */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Total Production Qty</div>
+          <div style={{ fontSize: '16px', fontWeight: '800', color: '#38bdf8', marginTop: '4px' }}>{summaryStats.totalProduction.toLocaleString('en-IN')} Units</div>
+        </div>
+        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Consumption Batches</div>
+          <div style={{ fontSize: '16px', fontWeight: '800', color: '#4ade80', marginTop: '4px' }}>{summaryStats.totalConsumption} Records</div>
         </div>
       </div>
 
-      {/* 4. Adaptive Quick Action Grid */}
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-        <span style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'block', marginBottom: '12px' }}>
-          ⚡ Quick Accounting Actions
-        </span>
+      {/* Accounting Workflow Menu List */}
+      <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.05em' }}>
+        Accounting Workflow Menu
+      </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
-          {categorySpecifics.actions.map((act, idx) => (
-            <button
-              key={idx}
-              onClick={() => onNavigate && onNavigate(act.key)}
-              style={{ backgroundColor: act.bg, color: '#ffffff', border: 'none', borderRadius: '10px', padding: '14px 10px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 10px -2px rgba(0,0,0,0.12)' }}
-            >
-              <span style={{ fontSize: '16px' }}>{act.icon}</span>
-              <span>{act.label}</span>
-            </button>
-          ))}
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        
+        <button onClick={() => setActiveView('DASHBOARD')} style={menuButtonStyle}>
+          <span>📊</span> Dashboard (डैशबोर्ड)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('ADD_ACCOUNT')} style={{ ...menuButtonStyle, backgroundColor: '#0f766e', borderColor: '#14b8a6' }}>
+          <span>➕</span> Add Account Head (नया खाता)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('SALES')} style={menuButtonStyle}>
+          <span>📄</span> Sales / Tax Invoice (बिक्री बिल)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('PURCHASE')} style={menuButtonStyle}>
+          <span>📦</span> Purchase & Inward Stock (खरीद बिल)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('VOUCHER')} style={menuButtonStyle}>
+          <span>📝</span> Voucher Entry (JV / PV / RV / Contra)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('FUEL')} style={{ ...menuButtonStyle, backgroundColor: '#064e3b', borderColor: '#059669' }}>
+          <span>🚜</span> Fuel & Material Consumption (डीजल/खपत)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('PRODUCTION')} style={{ ...menuButtonStyle, backgroundColor: '#0c4a6e', borderColor: '#0284c7' }}>
+          <span>🧱</span> Production & Cost Valuation (उत्पादन लागत)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('LABOUR')} style={menuButtonStyle}>
+          <span>👷</span> Labour, Wages & Tractor (मजदूरी/वेतन)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('SETTLEMENT')} style={menuButtonStyle}>
+          <span>⚖️</span> Bill Settlement / Khata Milan
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('INVENTORY')} style={menuButtonStyle}>
+          <span>📋</span> Inventory & Stock Count (स्टॉक रजिस्टर)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('LEDGER')} style={menuButtonStyle}>
+          <span>📖</span> Account Milan & Ledger (खाता बही)
+        </button>
+
+        <button onClick={() => setActiveView('JOURNAL_REGISTER')} style={menuButtonStyle}>
+          <span>📑</span> General Journal Register (रोज़नामचा)
+        </button>
+
+        <button onClick={() => setActiveView('FINANCIAL_REPORTS')} style={menuButtonStyle}>
+          <span>📈</span> Financial Reports (P&L / Balance Sheet)
+        </button>
+
+        <button onClick={() => setActiveView('CASH_FLOW')} style={{ ...menuButtonStyle, backgroundColor: '#0369a1', borderColor: '#38bdf8' }}>
+          <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('SETTINGS')} style={menuButtonStyle}>
+          <span>⚙️</span> Firm Profile & Settings (फर्म विवरण)
+        </button>
+
+        <button onClick={() => setActiveView('BACKUP_CENTER')} style={menuButtonStyle}>
+          <span>🔒</span> Backup & Restore Center (डाटा बैकअप)
+        </button>
+
+        <button onClick={() => onNavigate && onNavigate('RESET')} style={{ ...menuButtonStyle, borderColor: '#7f1d1d', color: '#fca5a5' }}>
+          <span>🗑️</span> Factory Reset / Clear Data (डेटा रीसेट)
+        </button>
+
       </div>
 
     </div>
   );
 }
 
-const kpiCardStyle = (borderColor) => ({
-  backgroundColor: '#ffffff',
-  borderRadius: '14px',
+const menuButtonStyle = {
+  width: '100%',
   padding: '14px 16px',
-  border: '1px solid #e2e8f0',
-  borderLeft: `5px solid ${borderColor}`,
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+  backgroundColor: '#1e293b',
+  color: '#ffffff',
+  border: '1px solid #334155',
+  borderRadius: '12px',
+  fontWeight: '700',
+  fontSize: '13px',
+  cursor: 'pointer',
   display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'space-between'
-});
-
-const kpiTitleStyle = {
-  fontSize: '11px',
-  fontWeight: '800',
-  color: '#64748b',
-  letterSpacing: '0.5px'
+  alignItems: 'center',
+  gap: '12px',
+  boxSizing: 'border-box',
+  textAlign: 'left'
 };
