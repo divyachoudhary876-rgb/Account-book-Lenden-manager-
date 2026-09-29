@@ -16,7 +16,7 @@ import MaterialConsumptionView from './components/MaterialConsumptionView.jsx';
 import BhattaProductionMasterView from './components/BhattaProductionMasterView.jsx';
 import PayrollManagementView from './components/PayrollManagementView.jsx';
 import BillSettlementView from './components/BillSettlementView.jsx';
-import AccountHeadManager from './components/AccountHeadManager.jsx';
+import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
 import InventoryStockView from './components/InventoryStockView.jsx';
 import AccountStatementView from './components/AccountStatementView.jsx';
 import JournalRegisterView from './components/JournalRegisterView.jsx';
@@ -300,11 +300,20 @@ export default function App() {
               />
             )}
             {currentView === 'ADD_ACCOUNT' && (
-              <AccountHeadManager 
-                firm={activeFirm} 
-                selectedFY={selectedFY} 
-                onClose={() => setCurrentView('dashboard')} 
-              />
+              <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', padding: '4px' }}>
+                <button 
+                  onClick={() => setCurrentView('dashboard')} 
+                  style={{ marginBottom: '14px', backgroundColor: '#334155', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+                >
+                  ← Back to Dashboard
+                </button>
+                <CreateAccountHeadModal 
+                  firm={activeFirm} 
+                  selectedFY={selectedFY} 
+                  isOpen={true}
+                  onClose={() => setCurrentView('dashboard')} 
+                />
+              </div>
             )}
             {currentView === 'firm_settings' && (
               <FirmProfileSettingsView 
