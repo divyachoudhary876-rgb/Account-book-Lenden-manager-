@@ -105,7 +105,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
               <span>📋</span> Inventory & Stock Count (स्टॉक रजिस्टर)
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('LEDGER'); }} style={menuButtonStyle}>
-              <span>📖</span> Account Milan & Ledger (खाता bही)
+              <span>📖</span> Account Milan & Ledger (खाता बही)
             </button>
             <button onClick={() => { setActiveView('JOURNAL_REGISTER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
               <span>📑</span> General Journal Register (रोज़नामचा)
