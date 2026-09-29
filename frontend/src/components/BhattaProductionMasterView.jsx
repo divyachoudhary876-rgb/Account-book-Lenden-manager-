@@ -10,15 +10,13 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
 
   const [batches, setBatches] = useState([]);
   const [productionDate, setProductionDate] = useState(new Date().toISOString().split('T')[0]);
-  const [batchRef, setBatchRef] = useState('');
+  const [usesFor, setUsesFor] = useState('');
   
-  // Inventory items for raw material & output selection
   const [stockItems, setStockItems] = useState([]);
   const [selectedMaterial, setSelectedMaterial] = useState('');
   const [materialQty, setMaterialQty] = useState('');
   const [consumedList, setConsumedList] = useState([]);
 
-  // Costs & Output
   const [directLabor, setDirectLabor] = useState('');
   const [machineryOverhead, setMachineryOverhead] = useState('');
   const [outputItem, setOutputItem] = useState('');
@@ -29,12 +27,15 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
       const savedBatches = StorageService.getItem ? StorageService.getItem(storageKey) : JSON.parse(localStorage.getItem(storageKey) || '[]');
       if (Array.isArray(savedBatches)) setBatches(savedBatches);
 
-      const savedCatalog = StorageService.getItem ? StorageService.getItem(stockStorageKey) : JSON.parse(localStorage.getItem(stockStorageKey) || '[]');
-      if (Array.isArray(savedCatalog)) setStockItems(savedCatalog);
+      let catalog = StorageService.getItem ? StorageService.getItem(stockStorageKey) : JSON.parse(localStorage.getItem(stockStorageKey) || '[]');
+      if (!catalog || catalog.length === 0) {
+        catalog = JSON.parse(localStorage.getItem(`trading_catalog_${firmId}`) || localStorage.getItem('inventory_catalog') || '[]');
+      }
+      if (Array.isArray(catalog)) setStockItems(catalog);
     } catch (e) {
       console.error("Error loading production data:", e);
     }
-  }, [storageKey, stockStorageKey]);
+  }, [storageKey, stockStorageKey, firmId]);
 
   const handleAddMaterial = () => {
     if (!selectedMaterial || !materialQty || Number(materialQty) <= 0) {
@@ -48,7 +49,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
       return;
     }
 
-    const itemName = itemObj.itemName;
+    const itemName = itemObj.itemName || itemObj.name;
     const unitCost = itemObj.purchasePrice || itemObj.sellingPrice || 0;
     const qty = Number(materialQty) || 0;
 
@@ -69,7 +70,6 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
     setConsumedList(consumedList.filter(m => m.id !== id));
   };
 
-  // Calculations
   const totalMaterialCost = consumedList.reduce((sum, m) => sum + m.totalCost, 0);
   const laborCostNum = Number(directLabor) || 0;
   const overheadNum = Number(machineryOverhead) || 0;
@@ -81,18 +81,18 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
 
   const handleSaveProduction = (e) => {
     e.preventDefault();
-    if (!batchRef || !outputItem || producedQtyNum <= 0) {
-      alert("Kripya Batch/Chamber Ref, Output Item aur Produced Qty sahi se bharein!");
+    if (!usesFor || !outputItem || producedQtyNum <= 0) {
+      alert("Kripya 'Uses For', Output Item aur Produced Qty sahi se bharein!");
       return;
     }
 
     const selectedOutputObj = stockItems.find(i => i.id === outputItem || i.itemName === outputItem);
-    const outputItemName = selectedOutputObj ? selectedOutputObj.itemName : outputItem;
+    const outputItemName = selectedOutputObj ? (selectedOutputObj.itemName || selectedOutputObj.name) : outputItem;
 
     const newBatch = {
       id: 'PROD-' + Date.now(),
       productionDate,
-      batchRef,
+      usesFor,
       consumedList,
       totalMaterialCost,
       directLabor: laborCostNum,
@@ -110,8 +110,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
     StorageService.setItem(storageKey, updated);
     window.dispatchEvent(new Event('app_storage_updated'));
 
-    // Reset Form
-    setBatchRef('');
+    setUsesFor('');
     setConsumedList([]);
     setDirectLabor('');
     setMachineryOverhead('');
@@ -137,19 +136,17 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
         </h3>
 
         <form onSubmit={handleSaveProduction}>
-          {/* Basic Info */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
             <div>
               <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Production Date *</label>
               <input type="date" value={productionDate} onChange={e => setProductionDate(e.target.value)} style={inputStyle} required />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Batch / Chamber Ref *</label>
-              <input type="text" value={batchRef} onChange={e => setBatchRef(e.target.value)} placeholder="e.g. CHAMBER-1254" style={inputStyle} required />
+              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Uses For (Kaha use hua h) *</label>
+              <input type="text" value={usesFor} onChange={e => setUsesFor(e.target.value)} placeholder="e.g. Chamber-1 / Batch-A" style={inputStyle} required />
             </div>
           </div>
 
-          {/* Step 1: Raw Materials from Inventory Only */}
           <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
             <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#b45309', display: 'block', marginBottom: '6px' }}>
               🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
@@ -157,9 +154,11 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '6px', alignItems: 'end' }}>
               <div>
                 <select value={selectedMaterial} onChange={e => setSelectedMaterial(e.target.value)} style={inputStyle}>
-                  <option value="">-- Select Inventory Item --</option>
+                  <option value="">-- Select Inventory Item ({stockItems.length}) --</option>
                   {stockItems.map(item => (
-                    <option key={item.id} value={item.id}>{item.itemName} (Stock: {item.stockQty} {item.unit})</option>
+                    <option key={item.id || item.itemName} value={item.id || item.itemName}>
+                      {item.itemName || item.name} (Stock: {item.stockQty ?? item.qty ?? 0} {item.unit || ''})
+                    </option>
                   ))}
                 </select>
               </div>
@@ -188,7 +187,6 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
             )}
           </div>
 
-          {/* Step 2: Labor & Overheads */}
           <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
             <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#15803d', display: 'block', marginBottom: '6px' }}>
               👷 Step 2: Direct Labor & Overheads
@@ -208,7 +206,6 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
             </div>
           </div>
 
-          {/* Step 3: Output Finished Product from Inventory */}
           <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', padding: '10px', borderRadius: '8px', marginBottom: '14px' }}>
             <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#0369a1', display: 'block', marginBottom: '6px' }}>
               📦 Step 3: Output Finished Product & Auto Valuation
@@ -219,7 +216,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
                 <select value={outputItem} onChange={e => setOutputItem(e.target.value)} style={inputStyle} required>
                   <option value="">-- Select Output Item --</option>
                   {stockItems.map(item => (
-                    <option key={item.id} value={item.id}>{item.itemName} ({item.unit})</option>
+                    <option key={item.id || item.itemName} value={item.id || item.itemName}>{item.itemName || item.name} ({item.unit || ''})</option>
                   ))}
                 </select>
               </div>
@@ -237,7 +234,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
                 </div>
                 <div style={{ width: '1px', height: '22px', backgroundColor: '#cbd5e1' }}></div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>Cost Per 1,000 Bricks</div>
+                  <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>Cost Per 1,000 Units</div>
                   <div style={{ fontSize: '15px', fontWeight: '800', color: '#0284c7' }}>₹{costPerThousand.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
                 </div>
               </div>
@@ -250,7 +247,6 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
         </form>
       </div>
 
-      {/* Production Batches Register */}
       <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#334155' }}>Production Batches Register ({selectedFY})</h4>
         {batches.length === 0 ? (
@@ -260,7 +256,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                  <th style={{ padding: '6px' }}>Date / Chamber</th>
+                  <th style={{ padding: '6px' }}>Date / Uses For</th>
                   <th style={{ padding: '6px' }}>Output Item & Qty</th>
                   <th style={{ padding: '6px' }}>Total Cost</th>
                   <th style={{ padding: '6px' }}>Cost / 1,000</th>
@@ -270,7 +266,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
               <tbody>
                 {batches.map(b => (
                   <tr key={b.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '6px' }}>{b.productionDate}<br /><strong>{b.batchRef}</strong></td>
+                    <td style={{ padding: '6px' }}>{b.productionDate}<br /><strong>{b.usesFor || b.batchRef}</strong></td>
                     <td style={{ padding: '6px' }}><strong>{b.outputItemName}</strong><br />{b.producedQty} Pcs</td>
                     <td style={{ padding: '6px', color: '#b45309' }}>₹{b.totalProductionCost}</td>
                     <td style={{ padding: '6px', fontWeight: 'bold', color: '#0284c7' }}>₹{b.costPerThousand?.toLocaleString('en-IN')}</td>
