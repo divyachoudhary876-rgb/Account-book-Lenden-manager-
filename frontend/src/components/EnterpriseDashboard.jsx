@@ -1,7 +1,6 @@
 // frontend/src/components/EnterpriseDashboard.jsx
 
 import React, { useState, useEffect } from 'react';
-import AccountingDashboard from './AccountingDashboard';
 import CashFlowStatementView from './CashFlowStatementView';
 import FinancialReportsView from './FinancialReportsView';
 import JournalRegisterView from './JournalRegisterView';
@@ -78,7 +77,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         </div>
       </div>
 
-      {/* Slide-out / Popover Menu Drawer */}
+      {/* Slide-out Menu Drawer */}
       {isMenuOpen && (
         <div style={{ position: 'absolute', top: '75px', left: '16px', right: '16px', backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '12px', padding: '14px', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', maxHeight: '75vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
@@ -156,9 +155,14 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
           </div>
         </div>
 
-        {/* Embedded Accounting Dashboard View */}
-        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '14px' }}>
-          <AccountingDashboard firm={firm} selectedFY={selectedFY} />
+        {/* Enterprise Welcome & Status Banner */}
+        <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '20px', textAlign: 'center' }}>
+          <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#f8fafc', marginBottom: '6px' }}>
+            Welcome to Enterprise Smart Manager
+          </div>
+          <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: '1.5' }}>
+            Aapka manufacturing aur accounting system poori tarah active hai. Naye accounts banane, purchase/sales enter karne ya reports dekhne ke liye upar diye gaye <strong style={{ color: '#38bdf8' }}>☰ Menu</strong> button ka use karein.
+          </div>
         </div>
       </div>
 
