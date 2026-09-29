@@ -145,7 +145,6 @@ export default function App() {
     }
   };
 
-  // Render Dynamic Sector-Specific View for Production/Operations Menu Key
   const renderProductionOrSectorView = () => {
     if (firmCat.includes('TRANSPORT') || firmCat.includes('LOGISTICS')) {
       return <TransportTripView firm={activeFirm} selectedFY={selectedFY} />;
