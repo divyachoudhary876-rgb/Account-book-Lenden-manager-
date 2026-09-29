@@ -6,7 +6,6 @@ import FinancialReportsView from './FinancialReportsView';
 import JournalRegisterView from './JournalRegisterView';
 import SecurityBackupSettings from './SecurityBackupSettings';
 import CreateAccountHeadModal from './CreateAccountHeadModal';
-import DashboardSummaryCards from './DashboardSummaryCards';
 import { StorageService } from '../utils/storageSync';
 
 export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onClose }) {
@@ -32,7 +31,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     }
   }, [firmId, selectedFY, prodStorageKey, consStorageKey]);
 
-  // Handle specific sub-views cleanly
+  // Handle specific sub-views cleanly inside EnterpriseDashboard
   if (activeView === 'ADD_ACCOUNT') {
     return (
       <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', padding: '16px', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
@@ -144,7 +143,17 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
       {/* Main Dashboard Content */}
       <div>
-        <DashboardSummaryCards firm={firm} />
+        {/* Quick Summary Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Total Production Qty</div>
+            <div style={{ fontSize: '18px', fontWeight: '800', color: '#38bdf8', marginTop: '4px' }}>{summaryStats.totalProduction.toLocaleString('en-IN')} Units</div>
+          </div>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Consumption Batches</div>
+            <div style={{ fontSize: '18px', fontWeight: '800', color: '#4ade80', marginTop: '4px' }}>{summaryStats.totalConsumption} Records</div>
+          </div>
+        </div>
 
         {/* Enterprise Welcome & Status Banner */}
         <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '20px', textAlign: 'center' }}>
