@@ -99,13 +99,13 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
               <span>👷</span> Labour, Wages & Tractor (मजदूरी/वेतन)
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SETTLEMENT'); }} style={menuButtonStyle}>
-              <span>⚖️️</span> Bill Settlement / Khata Milan
+              <span>⚖️</span> Bill Settlement / Khata Milan
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('INVENTORY'); }} style={menuButtonStyle}>
               <span>📋</span> Inventory & Stock Count (स्टॉक रजिस्टर)
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('LEDGER'); }} style={menuButtonStyle}>
-              <span>📖</span> Account Milan & Ledger (खाता बही)
+              <span>📖</span> Account Milan & Ledger (खाता bही)
             </button>
             <button onClick={() => { setActiveView('JOURNAL_REGISTER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
               <span>📑</span> General Journal Register (रोज़नामचा)
