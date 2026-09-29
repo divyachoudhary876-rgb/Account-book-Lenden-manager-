@@ -31,7 +31,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     }
   }, [firmId, selectedFY, prodStorageKey, consStorageKey]);
 
-  // Handle specific sub-views cleanly
+  // Handle specific sub-views cleanly & independently
   if (activeView === 'ADD_ACCOUNT') {
     return (
       <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', padding: '16px', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
@@ -92,31 +92,31 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
             <button onClick={() => { setActiveView('ADD_ACCOUNT'); setIsMenuOpen(false); }} style={{ ...menuButtonStyle, backgroundColor: '#0f766e' }}>
               <span>➕</span> Add Account Head (नया खाता)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('SALES'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SALES'); }} style={menuButtonStyle}>
               <span>📄</span> Sales / Tax Invoice (बिक्री बिल)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('PURCHASE'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('PURCHASE'); }} style={menuButtonStyle}>
               <span>📦</span> Purchase & Inward Stock (खरीद बिल)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('VOUCHER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('VOUCHER'); }} style={menuButtonStyle}>
               <span>📝</span> Voucher Entry (JV / PV / RV / Contra)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('FUEL'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('FUEL'); }} style={menuButtonStyle}>
               <span>🚜</span> Fuel & Material Consumption (डीजल/खपत)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('PRODUCTION'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('PRODUCTION'); }} style={menuButtonStyle}>
               <span>🧱</span> Production & Cost Valuation (उत्पादन लागत)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('LABOUR'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('LABOUR'); }} style={menuButtonStyle}>
               <span>👷</span> Labour, Wages & Tractor (मजदूरी/वेतन)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('SETTLEMENT'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SETTLEMENT'); }} style={menuButtonStyle}>
               <span>⚖️</span> Bill Settlement / Khata Milan
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('INVENTORY'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('INVENTORY'); }} style={menuButtonStyle}>
               <span>📋</span> Inventory & Stock Count (स्टॉक रजिस्टर)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('LEDGER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('LEDGER'); }} style={menuButtonStyle}>
               <span>📖</span> Account Milan & Ledger (खाता बही)
             </button>
             <button onClick={() => { setActiveView('JOURNAL_REGISTER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
@@ -128,13 +128,13 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
             <button onClick={() => { setActiveView('CASH_FLOW'); setIsMenuOpen(false); }} style={menuButtonStyle}>
               <span>📈</span> Cash Flow Statement (नकदी प्रवाह विवरण)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('SETTINGS'); setIsMenuOpen(false); }} style={menuButtonStyle}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SETTINGS'); }} style={menuButtonStyle}>
               <span>⚙️</span> Firm Profile & Settings (फर्म विवरण)
             </button>
             <button onClick={() => { setActiveView('BACKUP_CENTER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
               <span>🔒</span> Backup & Restore Center (डाटा बैकअप)
             </button>
-            <button onClick={() => { if(onNavigate) onNavigate('RESET'); setIsMenuOpen(false); }} style={{ ...menuButtonStyle, backgroundColor: '#7f1d1d' }}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('RESET'); }} style={{ ...menuButtonStyle, backgroundColor: '#7f1d1d' }}>
               <span>🗑️</span> Factory Reset / Clear Data (डेटा रीसेट)
             </button>
           </div>
