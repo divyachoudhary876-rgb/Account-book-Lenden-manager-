@@ -15,10 +15,10 @@ export default function AccountHeadManager({ firm, selectedFY }) {
   const [openingBalance, setOpeningBalance] = useState('');
   const [balanceType, setBalanceType] = useState('Dr');
 
-  // Dynamic Groups & Sub-Groups based on General Manufacturing & Business Categories
-  const getDynamicGroups = (type) => {
-    if (type === 'Expenses') {
-      if (businessCategory === 'MANUFACTURING' || businessCategory === 'BRICK_KILN' || businessCategory.includes('MANUF')) {
+  // Professional Accounting Standard Groups & Sub-Groups
+  const getProfessionalGroups = (type) => {
+    switch (type) {
+      case 'Expenses':
         return [
           'Direct Production & Factory Expenses',
           'Raw Material Consumed',
@@ -27,31 +27,10 @@ export default function AccountHeadManager({ firm, selectedFY }) {
           'Factory Machinery Repairs & Maintenance',
           'Freight & Cartage Inward (भाड़ा)',
           'Administrative & Office Expenses',
-          'Financial Charges & Bank Interest'
-        ];
-      } else if (businessCategory === 'TRANSPORT') {
-        return [
-          'Direct Trip & Route Expenses',
-          'Vehicle Diesel & Fuel Expenses',
-          'Vehicle Maintenance & Spare Parts',
-          'Driver Salary & Allowances',
-          'Toll & Permit Charges',
-          'Administrative & Office Expenses',
-          'Financial Charges & Bank Interest'
-        ];
-      } else {
-        // Trading / General
-        return [
-          'Direct Purchase & Trading Expenses',
-          'Freight & Cartage Inward',
           'Selling & Distribution Expenses',
-          'Administrative & Office Expenses',
-          'Salary & Staff Welfare',
           'Financial Charges & Bank Interest'
         ];
-      }
-    } else if (type === 'Fixed Assets') {
-      if (businessCategory === 'MANUFACTURING' || businessCategory === 'BRICK_KILN' || businessCategory.includes('MANUF')) {
+      case 'Fixed Assets':
         return [
           'Factory Building & Civil Construction',
           'Plant, Machinery & Equipment',
@@ -59,43 +38,41 @@ export default function AccountHeadManager({ firm, selectedFY }) {
           'Sheds & Infrastructure',
           'Tubewell & Boring Installation',
           'Electrical Installation & Transformers',
-          'Office Equipment & Computers'
+          'Office Equipment & Computers',
+          'Commercial Vehicles & Fleet'
         ];
-      } else if (businessCategory === 'TRANSPORT') {
+      case 'Liabilities':
         return [
-          'Commercial Vehicles / Trucks / Fleet',
-          'Garage & Workshop Equipment',
-          'Office Equipment & Computers'
+          'Bank Loans & Term Loans',
+          'Working Capital / CC Limit',
+          'Sundry Creditors (Suppliers / Vendors)',
+          'Secured / Unsecured Loans',
+          'Duties & Taxes (GST / TDS Payable)',
+          'Provisions & Outstanding Expenses'
         ];
-      } else {
+      case 'Assets':
         return [
-          'Building & Office Premises',
-          'Plant, Machinery & Equipment',
-          'Furniture & Fixtures',
-          'Computers & Technology'
+          'Sundry Debtors (Customers)',
+          'Bank Accounts',
+          'Cash-in-Hand',
+          'Raw Material Inventory',
+          'Finished Goods Inventory',
+          'Consumables & Fuel Stock',
+          'Security Deposits & Advances'
         ];
-      }
-    } else if (type === 'Liabilities') {
-      return [
-        'Bank Loans & Term Loans',
-        'Working Capital / CC Limit',
-        'Sundry Creditors (Suppliers)',
-        'Secured / Unsecured Loans',
-        'Duties & Taxes (GST / TDS Payable)'
-      ];
-    } else if (type === 'Assets') {
-      return [
-        'Sundry Debtors (Customers)',
-        'Bank Accounts',
-        'Cash-in-Hand',
-        'Security Deposits & Advances'
-      ];
-    } else {
-      return ['Income / Revenue Accounts', 'Capital / Equity'];
+      case 'Income':
+        return [
+          'Sales / Revenue Accounts',
+          'Direct Production Income',
+          'Indirect Incomes & Commission',
+          'Capital / Owner Equity'
+        ];
+      default:
+        return ['General Ledger Accounts'];
     }
   };
 
-  const currentSubGroups = getDynamicGroups(accountType);
+  const currentSubGroups = getProfessionalGroups(accountType);
 
   useEffect(() => {
     try {
@@ -106,11 +83,10 @@ export default function AccountHeadManager({ firm, selectedFY }) {
     }
   }, [storageKey]);
 
-  // Reset default group when account type changes
   useEffect(() => {
-    const groups = getDynamicGroups(accountType);
+    const groups = getProfessionalGroups(accountType);
     if (groups.length > 0) setSelectedGroup(groups[0]);
-  }, [accountType, businessCategory]);
+  }, [accountType]);
 
   const handleSaveAccount = (e) => {
     e.preventDefault();
@@ -135,10 +111,9 @@ export default function AccountHeadManager({ firm, selectedFY }) {
     StorageService.setItem(storageKey, updated);
     window.dispatchEvent(new Event('app_storage_updated'));
 
-    // Reset Form
     setAccountName('');
     setOpeningBalance('');
-    alert("✓ Account Head successfully created!");
+    alert("✓ Professional Account Head successfully created!");
   };
 
   const handleDelete = (id) => {
@@ -165,7 +140,7 @@ export default function AccountHeadManager({ firm, selectedFY }) {
                 type="text" 
                 value={accountName} 
                 onChange={e => setAccountName(e.target.value)} 
-                placeholder="e.g. Plant & Machinery A/c" 
+                placeholder="e.g. State Bank Loan A/c" 
                 style={inputStyle} 
                 required 
               />
@@ -177,11 +152,11 @@ export default function AccountHeadManager({ firm, selectedFY }) {
                 onChange={e => setAccountType(e.target.value)} 
                 style={inputStyle}
               >
-                <option value="Expenses">Expenses</option>
-                <option value="Fixed Assets">Fixed Assets</option>
-                <option value="Liabilities">Liabilities</option>
-                <option value="Assets">Assets</option>
-                <option value="Income">Income</option>
+                <option value="Expenses">Expenses (खर्चे)</option>
+                <option value="Fixed Assets">Fixed Assets (स्थाई संपत्ति)</option>
+                <option value="Liabilities">Liabilities (दायित्व/देनदारी)</option>
+                <option value="Assets">Assets (संपत्ति/स्टॉक)</option>
+                <option value="Income">Income (आय/राजस्व)</option>
               </select>
             </div>
           </div>
@@ -225,12 +200,11 @@ export default function AccountHeadManager({ firm, selectedFY }) {
           </div>
 
           <button type="submit" style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '12px' }}>
-            + Save Account Head
+            + Save Professional Account Head
           </button>
         </form>
       </div>
 
-      {/* Accounts List Register */}
       <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#334155' }}>Existing Account Heads ({selectedFY})</h4>
         {accounts.length === 0 ? (
