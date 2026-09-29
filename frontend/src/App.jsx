@@ -159,30 +159,17 @@ export default function App() {
       
       <AppUpdateBanner />
 
-      {/* Top Header Bar (Only shown when firm exists and not creating) */}
-      {!isCreatingFirm && activeFirm && (
-        <div style={{ backgroundColor: '#1e293b', borderBottom: '1px solid #334155', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ backgroundColor: '#0f766e', color: '#ffffff', width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px' }}>
+      {/* Single Clean Unified Header (Only when active firm exists) */}
+      {!isCreatingFirm && activeFirm && currentView === 'dashboard' && (
+        <div style={{ backgroundColor: '#1e293b', borderBottom: '1px solid #334155', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ backgroundColor: '#0f766e', color: '#fff', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '11px' }}>
               AB
             </div>
-            <div>
-              <div style={{ fontWeight: '800', fontSize: '13px', color: '#fff', lineHeight: '1.1' }}>Account Book</div>
-              <div style={{ fontSize: '8px', fontWeight: 'bold', color: '#38bdf8', letterSpacing: '0.4px' }}>SMART MANAGER</div>
-            </div>
           </div>
 
-          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>
-            {activeFirm.trade_name || activeFirm.legal_name}
-          </div>
-        </div>
-      )}
-
-      {/* Sub-Header: Firm Selector + FY Picker + Menu Button (Hidden inside sub-views to prevent double headers) */}
-      {!isCreatingFirm && activeFirm && currentView === 'dashboard' && (
-        <div style={{ backgroundColor: '#1e293b', borderBottom: '1px solid #334155', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-          
-          <div style={{ flex: 1.3, minWidth: '130px' }}>
+          <div style={{ flex: 1.2, minWidth: '120px' }}>
             <select
               value={activeFirm?.id || ''}
               onChange={(e) => {
@@ -196,35 +183,33 @@ export default function App() {
                   refreshState();
                 }
               }}
-              style={{ width: '100%', padding: '7px', borderRadius: '8px', border: '1px solid #475569', fontSize: '11px', fontWeight: '700', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #475569', fontSize: '11px', fontWeight: '700', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' }}
             >
               {firmsList.map(f => (
-                <option key={f.id} value={f.id}>
-                  🏢 {f.legal_name} ({f.category || 'TRADING'})
-                </option>
+                <option key={f.id} value={f.id}>🏢 {f.legal_name}</option>
               ))}
               <option value="CREATE_NEW">➕ Create New Firm...</option>
             </select>
           </div>
 
-          <div style={{ flex: 0.9, minWidth: '110px' }}>
+          <div style={{ flex: 0.9, minWidth: '100px' }}>
             <select
               value={selectedFY}
               onChange={handleFYSelectChange}
-              style={{ width: '100%', padding: '7px', borderRadius: '8px', border: '1px solid #475569', fontSize: '11px', fontWeight: '700', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #475569', fontSize: '11px', fontWeight: '700', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' }}
             >
               {fyList.map(fy => (
                 <option key={fy.id} value={fy.label}>{fy.label}</option>
               ))}
-              <option value="ADD_NEW_FY">➕ Add New FY...</option>
+              <option value="ADD_NEW_FY">➕ Add FY...</option>
             </select>
           </div>
 
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f766e', color: '#ffffff', border: 'none', padding: '7px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+            style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f766e', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
           >
-            {isMenuOpen ? '✕ Close' : '☰ Menu'}
+            {isMenuOpen ? '✕' : '☰ Menu'}
           </button>
         </div>
       )}
@@ -233,17 +218,17 @@ export default function App() {
       {isMenuOpen && currentView === 'dashboard' && (
         <div style={{
           backgroundColor: '#0c1322',
-          padding: '16px 14px 24px 14px',
+          padding: '14px',
           borderBottom: '3px solid #0284c7',
           boxShadow: '0 20px 30px rgba(0,0,0,0.5)',
           width: '100%',
           boxSizing: 'border-box'
         }}>
-          <div style={{ color: '#94a3b8', fontSize: '11px', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '12px', paddingLeft: '4px' }}>
+          <div style={{ color: '#94a3b8', fontSize: '10px', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>
             ACCOUNTING WORKFLOW MENU ({firmCat})
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {menuItems.map(item => (
               <button
                 key={item.key}
@@ -251,22 +236,21 @@ export default function App() {
                 style={{
                   backgroundColor: item.key === 'cash_flow' ? '#0284c7' : '#161f33',
                   color: item.isDanger ? '#f87171' : '#ffffff',
-                  border: item.key === 'cash_flow' ? '1px solid #38bdf8' : item.isDanger ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(255, 255, 255, 0.07)',
-                  borderRadius: '10px',
-                  padding: '12px 14px',
-                  fontSize: '13px',
+                  border: '1px solid rgba(255, 255, 255, 0.07)',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  fontSize: '12px',
                   fontWeight: '600',
                   cursor: 'pointer',
                   textAlign: 'left',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '12px',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                  gap: '10px',
                   width: '100%',
                   boxSizing: 'border-box'
                 }}
               >
-                <span style={{ fontSize: '16px' }}>{item.icon}</span>
+                <span>{item.icon}</span>
                 <span style={{ flex: 1 }}>{item.label}</span>
               </button>
             ))}
@@ -300,10 +284,10 @@ export default function App() {
               />
             )}
             {currentView === 'ADD_ACCOUNT' && (
-              <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', padding: '4px' }}>
+              <div>
                 <button 
                   onClick={() => setCurrentView('dashboard')} 
-                  style={{ marginBottom: '14px', backgroundColor: '#334155', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+                  style={{ marginBottom: '12px', backgroundColor: '#334155', color: '#fff', border: 'none', padding: '7px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}
                 >
                   ← Back to Dashboard
                 </button>
