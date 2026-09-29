@@ -16,7 +16,7 @@ import MaterialConsumptionView from './components/MaterialConsumptionView.jsx';
 import BhattaProductionMasterView from './components/BhattaProductionMasterView.jsx';
 import PayrollManagementView from './components/PayrollManagementView.jsx';
 import BillSettlementView from './components/BillSettlementView.jsx';
-import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
+import AccountHeadManager from './components/AccountHeadManager.jsx';
 import InventoryStockView from './components/InventoryStockView.jsx';
 import AccountStatementView from './components/AccountStatementView.jsx';
 import JournalRegisterView from './components/JournalRegisterView.jsx';
@@ -39,7 +39,6 @@ export default function App() {
   // Navigation & Drawer States
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCreatingFirm, setIsCreatingFirm] = useState(false);
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
 
   // Financial Year State
   const [fyList, setFyList] = useState([]);
@@ -100,7 +99,7 @@ export default function App() {
     setIsMenuOpen(false);
 
     if (item.key === 'create_account') {
-      setIsAccountModalOpen(true);
+      setCurrentView('ADD_ACCOUNT');
       return;
     }
 
@@ -156,89 +155,82 @@ export default function App() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
+    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#0f172a', color: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
       
       <AppUpdateBanner />
 
-      {/* Top Header Bar */}
-      <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {currentView !== 'dashboard' && !isCreatingFirm ? (
-            <button
-              onClick={() => setCurrentView('dashboard')}
-              style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-            >
-              ← Dashboard
-            </button>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ backgroundColor: '#0f172a', color: '#ffffff', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px' }}>
-                AB
-              </div>
-              <div>
-                <div style={{ fontWeight: '800', fontSize: '14px', color: '#0f172a', lineHeight: '1.1' }}>Account Book</div>
-                <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#0284c7', letterSpacing: '0.4px' }}>SMART MANAGER</div>
-              </div>
+      {/* Top Header Bar (Only shown when firm exists and not creating) */}
+      {!isCreatingFirm && activeFirm && (
+        <div style={{ backgroundColor: '#1e293b', borderBottom: '1px solid #334155', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ backgroundColor: '#0f766e', color: '#ffffff', width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px' }}>
+              AB
             </div>
-          )}
-        </div>
+            <div>
+              <div style={{ fontWeight: '800', fontSize: '13px', color: '#fff', lineHeight: '1.1' }}>Account Book</div>
+              <div style={{ fontSize: '8px', fontWeight: 'bold', color: '#38bdf8', letterSpacing: '0.4px' }}>SMART MANAGER</div>
+            </div>
+          </div>
 
-        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-          {activeFirm ? (activeFirm.trade_name || activeFirm.legal_name) : 'No Firm'}
+          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>
+            {activeFirm.trade_name || activeFirm.legal_name}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Sub-Header: Firm Selector + FY Picker + Menu Button */}
-      <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-        
-        <div style={{ flex: 1.3, minWidth: '130px' }}>
-          <select
-            value={isCreatingFirm ? 'CREATE_NEW' : (activeFirm?.id || '')}
-            onChange={(e) => {
-              if (e.target.value === 'CREATE_NEW') {
-                setIsCreatingFirm(true);
-                setIsMenuOpen(false);
-              } else {
-                setActiveFirmId(e.target.value);
-                setIsCreatingFirm(false);
-                setIsMenuOpen(false);
-                refreshState();
-              }
-            }}
-            style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
+      {/* Sub-Header: Firm Selector + FY Picker + Menu Button (Hidden inside sub-views to prevent double headers) */}
+      {!isCreatingFirm && activeFirm && currentView === 'dashboard' && (
+        <div style={{ backgroundColor: '#1e293b', borderBottom: '1px solid #334155', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+          
+          <div style={{ flex: 1.3, minWidth: '130px' }}>
+            <select
+              value={activeFirm?.id || ''}
+              onChange={(e) => {
+                if (e.target.value === 'CREATE_NEW') {
+                  setIsCreatingFirm(true);
+                  setIsMenuOpen(false);
+                } else {
+                  setActiveFirmId(e.target.value);
+                  setIsCreatingFirm(false);
+                  setIsMenuOpen(false);
+                  refreshState();
+                }
+              }}
+              style={{ width: '100%', padding: '7px', borderRadius: '8px', border: '1px solid #475569', fontSize: '11px', fontWeight: '700', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' }}
+            >
+              {firmsList.map(f => (
+                <option key={f.id} value={f.id}>
+                  🏢 {f.legal_name} ({f.category || 'TRADING'})
+                </option>
+              ))}
+              <option value="CREATE_NEW">➕ Create New Firm...</option>
+            </select>
+          </div>
+
+          <div style={{ flex: 0.9, minWidth: '110px' }}>
+            <select
+              value={selectedFY}
+              onChange={handleFYSelectChange}
+              style={{ width: '100%', padding: '7px', borderRadius: '8px', border: '1px solid #475569', fontSize: '11px', fontWeight: '700', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' }}
+            >
+              {fyList.map(fy => (
+                <option key={fy.id} value={fy.label}>{fy.label}</option>
+              ))}
+              <option value="ADD_NEW_FY">➕ Add New FY...</option>
+            </select>
+          </div>
+
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f766e', color: '#ffffff', border: 'none', padding: '7px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
           >
-            {firmsList.map(f => (
-              <option key={f.id} value={f.id}>
-                🏢 {f.legal_name} ({f.category || 'TRADING'})
-              </option>
-            ))}
-            <option value="CREATE_NEW">➕ Create New Firm...</option>
-          </select>
+            {isMenuOpen ? '✕ Close' : '☰ Menu'}
+          </button>
         </div>
-
-        <div style={{ flex: 0.9, minWidth: '110px' }}>
-          <select
-            value={selectedFY}
-            onChange={handleFYSelectChange}
-            style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box' }}
-          >
-            {fyList.map(fy => (
-              <option key={fy.id} value={fy.label}>{fy.label}</option>
-            ))}
-            <option value="ADD_NEW_FY">➕ Add New FY...</option>
-          </select>
-        </div>
-
-        <button
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
-          style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-        >
-          {isMenuOpen ? '✕ Close' : '☰ Menu'}
-        </button>
-      </div>
+      )}
 
       {/* Workflow Menu Drawer */}
-      {isMenuOpen && (
+      {isMenuOpen && currentView === 'dashboard' && (
         <div style={{
           backgroundColor: '#0c1322',
           padding: '16px 14px 24px 14px',
@@ -283,7 +275,7 @@ export default function App() {
       )}
 
       {/* Main Screen Routing View */}
-      <main style={{ width: '100%', maxWidth: '1000px', margin: '0 auto', padding: '14px', boxSizing: 'border-box' }}>
+      <main style={{ width: '100%', maxWidth: '650px', margin: '0 auto', padding: '16px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
             onFirmCreated={(newFirm) => {
@@ -305,6 +297,13 @@ export default function App() {
                   if (viewKey === 'firm_settings') setCurrentView('firm_settings');
                   else setCurrentView(viewKey);
                 }} 
+              />
+            )}
+            {currentView === 'ADD_ACCOUNT' && (
+              <AccountHeadManager 
+                firm={activeFirm} 
+                selectedFY={selectedFY} 
+                onClose={() => setCurrentView('dashboard')} 
               />
             )}
             {currentView === 'firm_settings' && (
@@ -337,16 +336,16 @@ export default function App() {
       {isAddFYModalOpen && (
         <div style={modalOverlayStyle}>
           <div style={modalCardStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '16px', fontWeight: 'bold' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '15px', fontWeight: 'bold' }}>
                 📅 Add New Financial Year
               </h3>
-              <button onClick={() => setIsAddFYModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+              <button onClick={() => setIsAddFYModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
             </div>
 
             <form onSubmit={handleCreateFYSubmit}>
               <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', marginBottom: '6px' }}>
                   Starting Year (1st April)
                 </label>
                 <input
@@ -355,12 +354,12 @@ export default function App() {
                   max="2040"
                   value={newFYStartYear}
                   onChange={(e) => setNewFYStartYear(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #475569', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#0f172a', color: '#fff' }}
                   required
                 />
               </div>
 
-              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '12px', color: '#166534' }}>
+              <div style={{ backgroundColor: '#064e3b', border: '1px solid #059669', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: '#ecfdf5' }}>
                 <strong>Generated Period:</strong><br />
                 01-Apr-{newFYStartYear} to 31-Mar-{parseInt(newFYStartYear || 0, 10) + 1} (FY {newFYStartYear}-{((parseInt(newFYStartYear || 0, 10) + 1) % 100).toString().padStart(2, '0')})
               </div>
@@ -369,13 +368,13 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsAddFYModalOpen(false)}
-                  style={{ flex: 1, backgroundColor: '#e2e8f0', color: '#475569', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                  style={{ flex: 1, backgroundColor: '#334155', color: '#cbd5e1', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  style={{ flex: 1.5, backgroundColor: '#0284c7', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                  style={{ flex: 1.5, backgroundColor: '#0f766e', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   💾 Create FY
                 </button>
@@ -384,12 +383,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      <CreateAccountHeadModal 
-        firm={activeFirm} 
-        isOpen={isAccountModalOpen} 
-        onClose={() => setIsAccountModalOpen(false)} 
-      />
 
     </div>
   );
@@ -401,7 +394,7 @@ const modalOverlayStyle = {
   left: 0,
   right: 0,
   bottom: 0,
-  backgroundColor: 'rgba(15, 23, 42, 0.6)',
+  backgroundColor: 'rgba(15, 23, 42, 0.8)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -411,11 +404,12 @@ const modalOverlayStyle = {
 };
 
 const modalCardStyle = {
-  backgroundColor: '#ffffff',
+  backgroundColor: '#1e293b',
   borderRadius: '16px',
   padding: '20px',
   width: '100%',
   maxWidth: '400px',
-  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+  border: '1px solid #334155',
+  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
   boxSizing: 'border-box'
 };
