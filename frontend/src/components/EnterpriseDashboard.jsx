@@ -5,7 +5,6 @@ import CashFlowStatementView from './CashFlowStatementView';
 import FinancialReportsView from './FinancialReportsView';
 import JournalRegisterView from './JournalRegisterView';
 import SecurityBackupSettings from './SecurityBackupSettings';
-import CreateAccountHeadModal from './CreateAccountHeadModal';
 import { StorageService } from '../utils/storageSync';
 
 export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onClose }) {
@@ -31,17 +30,6 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     }
   }, [firmId, selectedFY, prodStorageKey, consStorageKey]);
 
-  // Handle specific sub-views cleanly inside EnterpriseDashboard
-  if (activeView === 'ADD_ACCOUNT') {
-    return (
-      <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', padding: '16px', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
-        <button onClick={() => setActiveView('DASHBOARD')} style={{ marginBottom: '14px', backgroundColor: '#334155', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
-          ← Back to Dashboard
-        </button>
-        <CreateAccountHeadModal firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />
-      </div>
-    );
-  }
   if (activeView === 'CASH_FLOW') {
     return <CashFlowStatementView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
@@ -89,7 +77,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
             <button onClick={() => { setActiveView('DASHBOARD'); setIsMenuOpen(false); }} style={menuButtonStyle}>
               <span>📊</span> Dashboard (डैशबोर्ड)
             </button>
-            <button onClick={() => { setActiveView('ADD_ACCOUNT'); setIsMenuOpen(false); }} style={{ ...menuButtonStyle, backgroundColor: '#0f766e' }}>
+            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('ADD_ACCOUNT'); }} style={{ ...menuButtonStyle, backgroundColor: '#0f766e' }}>
               <span>➕</span> Add Account Head (नया खाता)
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SALES'); }} style={menuButtonStyle}>
@@ -111,7 +99,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
               <span>👷</span> Labour, Wages & Tractor (मजदूरी/वेतन)
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SETTLEMENT'); }} style={menuButtonStyle}>
-              <span>⚖️</span> Bill Settlement / Khata Milan
+              <span>⚖️️</span> Bill Settlement / Khata Milan
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('INVENTORY'); }} style={menuButtonStyle}>
               <span>📋</span> Inventory & Stock Count (स्टॉक रजिस्टर)
@@ -131,7 +119,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('SETTINGS'); }} style={menuButtonStyle}>
               <span>⚙️</span> Firm Profile & Settings (फर्म विवरण)
             </button>
-            <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('BACKUP_CENTER'); }} style={menuButtonStyle}>
+            <button onClick={() => { setActiveView('BACKUP_CENTER'); setIsMenuOpen(false); }} style={menuButtonStyle}>
               <span>🔒</span> Backup & Restore Center (डाटा बैकअप)
             </button>
             <button onClick={() => { setIsMenuOpen(false); if(onNavigate) onNavigate('RESET'); }} style={{ ...menuButtonStyle, backgroundColor: '#7f1d1d' }}>
@@ -143,7 +131,6 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
       {/* Main Dashboard Content */}
       <div>
-        {/* Quick Summary Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
           <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>Total Production Qty</div>
@@ -155,7 +142,6 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
           </div>
         </div>
 
-        {/* Enterprise Welcome & Status Banner */}
         <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '20px', textAlign: 'center' }}>
           <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#f8fafc', marginBottom: '6px' }}>
             Welcome to Enterprise Smart Manager
