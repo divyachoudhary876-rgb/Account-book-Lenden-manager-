@@ -68,10 +68,11 @@ export default function NavbarHeader({ firm, activeTab, onNavigate, onToggleMenu
             ))}
           </select>
 
+          {/* FY Truncation Fixed with whiteSpace and minWidth */}
           <select
             value={currentFY}
             onChange={(e) => handleFYChange(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', fontSize: '12px', fontWeight: 'bold', color: '#334155', outline: 'none' }}
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', fontSize: '12px', fontWeight: 'bold', color: '#334155', outline: 'none', whiteSpace: 'nowrap', flexShrink: 0, minWidth: '115px' }}
           >
             <option value="2025-2026">FY 2025-26</option>
             <option value="2026-2027">FY 2026-27</option>
