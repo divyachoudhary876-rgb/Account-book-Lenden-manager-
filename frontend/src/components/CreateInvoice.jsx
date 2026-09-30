@@ -1,21 +1,16 @@
 // frontend/src/components/CreateInvoice.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
-import { useItemMaster } from '../hooks/useItemMaster';
+import { loadFirmData } from '../utils/firmIsolationEngine';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
+import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function CreateInvoice({ firm, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
   
-  let allItems = [];
-  try {
-    allItems = useItemMaster() || [];
-  } catch (e) {
-    allItems = [];
-  }
-
+  const [allItems, setAllItems] = useState([]);
   const [accountsList, setAccountsList] = useState([]);
   const [invoiceList, setInvoiceList] = useState([]);
 
@@ -36,6 +31,11 @@ export default function CreateInvoice({ firm, onClose }) {
 
   const loadData = () => {
     try {
+      // Strict firm-isolated inventory loading
+      const rawInventory = loadFirmData('inventory_items', firm, []);
+      const validInventory = rawInventory.filter(i => i && (i.name || i.item_name));
+      setAllItems(validInventory);
+
       const accList = getFirmMasterAccounts(activeFirmId) || [];
       setAccountsList(accList);
 
@@ -55,7 +55,7 @@ export default function CreateInvoice({ firm, onClose }) {
       window.removeEventListener('app_state_updated', loadData);
       window.removeEventListener('app_storage_updated', loadData);
     };
-  }, [activeFirmId]);
+  }, [firm, activeFirmId]);
 
   const handleAddToCart = () => {
     if (!selectedItemId || !quantity || !rate) return alert('Kripya item, matra aur rate darj karein.');
@@ -102,7 +102,7 @@ export default function CreateInvoice({ firm, onClose }) {
     if (cart.length === 0) return alert('Kam se kam ek item bill mein jodein.');
 
     try {
-      const currentInventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+      const currentInventory = loadFirmData('inventory_items', firm, []);
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
 
       let workingInventory = [...currentInventory];
@@ -196,7 +196,7 @@ export default function CreateInvoice({ firm, onClose }) {
       const targetInv = vouchers.find(v => v && v.id === invId);
 
       if (targetInv && targetInv.items) {
-        const currentInventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+        const currentInventory = loadFirmData('inventory_items', firm, []);
         const restoredInventory = currentInventory.map(invItem => {
           const matchedCartItem = targetInv.items.find(c => c && String(c.itemId) === String(invItem.id));
           if (matchedCartItem && !matchedCartItem.isService) {
@@ -378,13 +378,13 @@ export default function CreateInvoice({ firm, onClose }) {
           <div style={{ backgroundColor: '#f1f5f9', padding: '14px', borderRadius: '10px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div>
-                <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase', display: 'block' }}>Select Stock Item</label>
-                <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ ...inputStyle, border: '2px solid #eab308' }}>
-                  <option value="">-- Choose Stock Item --</option>
-                  {allItems.map(item => (
-                    <option key={item.id} value={item.id}>{item.item_name || item.name} [Stock: {item.current_stock || item.stock || 0} {item.unit}]</option>
-                  ))}
-                </select>
+                <SearchableStockDropdown 
+                  firm={firm}
+                  label="Select Stock Item *"
+                  value={selectedItemId}
+                  onChange={val => setSelectedItemId(val)}
+                  placeholder="-- Choose Stock Item --"
+                />
               </div>
 
               <div style={{ display: 'flex', gap: '8px' }}>
