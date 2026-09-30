@@ -20,7 +20,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     
-    // Strict firm isolation: Load only current active firm's inventory items
     const rawInventory = loadFirmData('inventory_items', firm, []);
     const validInventory = rawInventory.filter(i => i && (i.name || i.item_name));
     setInventoryItems(validInventory);
@@ -91,7 +90,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       setSavedRecords(updatedRecords);
       saveFirmData('material_consumption_records', firm, updatedRecords);
 
-      // Inventory stock deduct karein active firm ke liye
       const updatedInventory = inventoryItems.map(inv => {
         const matched = consumptionList.find(c => String(c.itemId) === String(inv.id));
         if (matched) {
@@ -109,7 +107,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       setFeedback({ type: 'success', message: '✓ Consumption recorded & inventory stock updated successfully!' });
 
       setUsesFor('');
-      setConsumptionList('');
+      setConsumptionList([]);
 
     } catch (err) {
       alert('Error: ' + err.message);
@@ -173,39 +171,39 @@ export default function MaterialConsumptionView({ firm, onClose }) {
               Select Stock Item & Quantity
             </div>
 
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginBottom: '10px' }}>
-              <div style={{ flex: 2 }}>
-                <SearchableStockDropdown 
-                  firm={firm}
-                  label=""
-                  value={selectedStockId}
-                  onChange={val => setSelectedStockId(val)}
-                  placeholder="-- Search & Choose Fuel/Stock --"
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="Qty" 
-                  value={quantity} 
-                  onChange={e => setQuantity(e.target.value)} 
-                  style={inputStyle} 
-                />
-              </div>
-              <div>
+            {/* Fixed Layout: Dropdown on top, Qty and Add button neatly below */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+              <SearchableStockDropdown 
+                firm={firm}
+                label=""
+                value={selectedStockId}
+                onChange={val => setSelectedStockId(val)}
+                placeholder="-- Search & Choose Fuel/Stock --"
+              />
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ flex: 1 }}>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="Enter Qty" 
+                    value={quantity} 
+                    onChange={e => setQuantity(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
                 <button 
                   type="button" 
                   onClick={handleAddToList} 
-                  style={{ padding: '9px 14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+                  style={{ padding: '9px 20px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                 >
-                  + Add
+                  + Add Item
                 </button>
               </div>
             </div>
 
             {consumptionList.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
                 {consumptionList.map(c => (
                   <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px' }}>
                     <span><strong>{c.name}</strong> - {c.qty} {c.unit}</span>
