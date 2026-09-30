@@ -6,7 +6,9 @@ import { StorageService } from '../utils/storageSync';
 export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
   const firmId = firm?.id || 'FIRM-001';
   const businessCategory = firm?.businessCategory || firm?.firmType || 'MANUFACTURING';
-  const storageKey = `account_heads_${firmId}_${selectedFY}`;
+  
+  // FIX: Make Account Heads common across all financial years for this firm
+  const storageKey = `account_heads_${firmId}`;
 
   const [accounts, setAccounts] = useState([]);
   const [accountName, setAccountName] = useState('');
@@ -15,7 +17,6 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
   const [openingBalance, setOpeningBalance] = useState('');
   const [balanceType, setBalanceType] = useState('Dr');
 
-  // Professional Accounting Standard Groups & Sub-Groups
   const getProfessionalGroups = (type) => {
     switch (type) {
       case 'Expenses':
@@ -86,6 +87,12 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
   useEffect(() => {
     const groups = getProfessionalGroups(accountType);
     if (groups.length > 0) setSelectedGroup(groups[0]);
+
+    if (accountType === 'Liabilities' || accountType === 'Income') {
+      setBalanceType('Cr');
+    } else {
+      setBalanceType('Dr');
+    }
   }, [accountType]);
 
   const handleSaveAccount = (e) => {
@@ -103,7 +110,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
       openingBalance: Number(openingBalance) || 0,
       balanceType: openingBalance ? balanceType : '',
       businessCategory,
-      selectedFY
+      createdAtFY: selectedFY
     };
 
     const updated = [newAccount, ...accounts];
@@ -128,7 +135,6 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
   return (
     <div style={{ padding: '4px', maxWidth: '650px', margin: '0 auto', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', backgroundColor: '#f8fafc', color: '#0f172a' }}>
       
-      {/* Form Container */}
       <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', marginBottom: '16px', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
           📊 Create & Manage Account Heads ({businessCategory})
@@ -207,9 +213,8 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
         </form>
       </div>
 
-      {/* Existing List Container */}
       <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#0f172a', fontWeight: 'bold' }}>Existing Account Heads ({selectedFY})</h4>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#0f172a', fontWeight: 'bold' }}>All Firm Account Heads (Common Across FY)</h4>
         {accounts.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#64748b', padding: '16px', fontSize: '11px' }}>Koi account head create nahi kiya gaya hai.</div>
         ) : (
