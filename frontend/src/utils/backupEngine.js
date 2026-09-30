@@ -87,19 +87,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     let vouchersCount = 0;
     let accountsCount = 0;
 
-    // Detect active firm ID if present in localStorage to properly map restored global keys
-    let activeFirmId = 'default_firm_id';
-    try {
-      const firmsRaw = localStorage.getItem('firms_list') || localStorage.getItem('app_firms');
-      if (firmsRaw) {
-        const firms = JSON.parse(firmsRaw);
-        if (Array.isArray(firms) && firms.length > 0) {
-          const firstFirm = firms[0];
-          activeFirmId = String(firstFirm.firm_id || firstFirm.id || firstFirm.legal_name || 'default_firm').replace(/[^a-zA-Z0-9_-]/g, '_');
-        }
-      }
-    } catch (e) {}
-
+    // 1. Restore all raw keys from backup snapshot into localStorage first
     Object.keys(targetData).forEach(key => {
       const val = targetData[key];
       if (Array.isArray(val)) {
@@ -107,14 +95,55 @@ export const restoreUniversalBackup = async (rawInput) => {
         if (key.includes('account')) accountsCount += val.length;
       }
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
-
-      // Restore exact key
       localStorage.setItem(key, stringifiedVal);
+    });
 
-      // Smart Mapping: Agar backup me global keys hain (jinme underscore ya firm id nahi hai),
-      // toh unhe active firm ki scoped key par bhi automatically map kar dein taaki inventory/dropdown me data turant dikhe.
-      if (!key.includes('_') && ['inventory_items', 'app_vouchers', 'app_payroll_entries', 'production_batches', 'app_accounts'].includes(key)) {
-        localStorage.setItem(`${key}_${activeFirmId}`, stringifiedVal);
+    // 2. Discover all active/saved firm IDs from localStorage or restored snapshot
+    let firmIdsList = ['default_firm_id', 'default_firm'];
+    try {
+      const possibleFirmKeys = ['firms_list', 'app_firms', 'saved_firms'];
+      possibleFirmKeys.forEach(pk => {
+        const rawFirms = localStorage.getItem(pk) || targetData[pk];
+        if (rawFirms) {
+          const firmsArr = typeof rawFirms === 'string' ? JSON.parse(rawFirms) : rawFirms;
+          if (Array.isArray(firmsArr) && firmsArr.length > 0) {
+            firmsArr.forEach(f => {
+              const fId = String(f.firm_id || f.id || f.legal_name || f.name || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+              if (fId && !firmIdsList.includes(fId)) {
+                firmIdsList.push(fId);
+              }
+            });
+          }
+        }
+      });
+    } catch (e) {}
+
+    // Also scan restored keys for any existing firm-scoped keys
+    Object.keys(targetData).forEach(k => {
+      if (k.startsWith('inventory_items_') || k.startsWith('app_vouchers_') || k.startsWith('app_accounts_')) {
+        const parts = k.split('_');
+        const extractedId = parts.slice(parts.length > 2 ? 2 : 1).join('_');
+        if (extractedId && !firmIdsList.includes(extractedId)) {
+          firmIdsList.push(extractedId);
+        }
+      }
+    });
+
+    // 3. Universal Cross-Mapping: Distribute base keys to ALL discovered firm-scoped keys
+    const coreKeys = ['inventory_items', 'app_vouchers', 'app_payroll_entries', 'production_batches', 'app_accounts'];
+    coreKeys.forEach(baseKey => {
+      let rawPayload = targetData[baseKey] || localStorage.getItem(baseKey);
+      if (!rawPayload) {
+        const matchingKey = Object.keys(targetData).find(k => k.startsWith(baseKey));
+        if (matchingKey) rawPayload = targetData[matchingKey];
+      }
+
+      if (rawPayload) {
+        const stringifiedPayload = typeof rawPayload === 'object' ? JSON.stringify(rawPayload) : String(rawPayload);
+        localStorage.setItem(baseKey, stringifiedPayload);
+        firmIdsList.forEach(firmId => {
+          localStorage.setItem(`${baseKey}_${firmId}`, stringifiedPayload);
+        });
       }
     });
 
