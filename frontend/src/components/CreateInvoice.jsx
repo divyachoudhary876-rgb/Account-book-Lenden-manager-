@@ -225,24 +225,76 @@ export default function CreateInvoice({ firm, onClose }) {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return alert('Popup blocked! Please allow popups for printing.');
 
+    const hasTax = (Number(inv.total_cgst) > 0 || Number(inv.total_sgst) > 0);
+
     printWindow.document.write(`
       <html>
-        <head><title>Invoice #${inv.reference_no || ''}</title></head>
-        <body style="font-family:sans-serif; padding:20px;">
-          <h2 style="text-align:center;">${firm?.name || 'Neelkanth Groups'}</h2>
-          <p style="text-align:center; font-size:12px; color:#666;">TAX INVOICE (GST Compliant)</p>
-          <hr/>
-          <p><strong>Invoice No:</strong> ${inv.reference_no || ''} | <strong>Date:</strong> ${inv.voucher_date || ''}</p>
-          <p><strong>Customer:</strong> ${inv.dr_account || ''}</p>
-          <table border="1" cellspacing="0" cellpadding="8" style="width:100%; margin-top:15px; border-collapse:collapse;">
-            <tr style="background:#f1f5f9;"><th>Item</th><th>Qty</th><th>Rate</th><th>GST Slab</th><th>Total</th></tr>
-            ${(inv.items || []).map(i => `<tr><td>${i.itemName || ''}</td><td>${i.qty || 0} ${i.unit || ''}</td><td>${i.rate || 0}</td><td>${i.gstRate || 0}\%</td><td>${(i.total || 0).toFixed(2)}</td></tr>`).join('')}
+        <head>
+          <title>Invoice #${inv.reference_no || ''}</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 24px; color: #0f172a; background: #fff; }
+            .invoice-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 12px; }
+            .invoice-header h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
+            .invoice-header p { margin: 4px 0 0 0; font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+            .meta-box { display: flex; justify-content: space-between; margin-bottom: 16px; font-size: 12px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+            th { background: #f1f5f9; color: #334155; font-weight: 700; text-align: left; padding: 10px; border: 1px solid #cbd5e1; }
+            td { padding: 10px; border: 1px solid #cbd5e1; }
+            .text-right { text-align: right; }
+            .totals { margin-top: 20px; text-align: right; font-size: 13px; line-height: 1.6; }
+            .grand-total { font-size: 16px; font-weight: 800; color: #047857; border-top: 2px solid #0f172a; padding-top: 6px; display: inline-block; margin-top: 4px; }
+          </style>
+        </head>
+        <body>
+          <div class="invoice-header">
+            <h2>${firm?.name || 'Neelkanth Groups'}</h2>
+            <p>TAX INVOICE (GST Compliant)</p>
+          </div>
+          
+          <div class="meta-box">
+            <div>
+              <strong>Invoice No:</strong> ${inv.reference_no || ''}<br/>
+              <strong>Date:</strong> ${inv.voucher_date || ''}
+              ${inv.vehicle_no ? `<br/><strong>Vehicle:</strong> ${inv.vehicle_no}` : ''}
+            </div>
+            <div style="text-align: right;">
+              <strong>Customer / Party:</strong><br/>
+              <span style="font-size: 14px; font-weight: bold;">${inv.dr_account || ''}</span>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Item Description</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Rate (₹)</th>
+                <th class="text-right">GST Slab</th>
+                <th class="text-right">Total (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(inv.items || []).map(i => `
+                <tr>
+                  <td><strong>${i.itemName || ''}</strong></td>
+                  <td class="text-right">${i.qty \vert{}\vert{} 0}${i.unit || ''}</td>
+                  <td class="text-right">${Number(i.rate || 0).toFixed(2)}</td>
+                  <td class="text-right">${i.gstRate || 0}%</td>
+                  <td class="text-right"><strong>${Number(i.total || 0).toFixed(2)}</strong></td>
+                </tr>
+              `).join('')}
+            </tbody>
           </table>
-          <p style="text-align:right; margin-top:15px;">
-            Taxable: ₹${Number(inv.total_taxable || 0).toFixed(2)}<br/>
-            CGST: ₹${Number(inv.total_cgst || 0).toFixed(2)} | SGST: ₹${Number(inv.total_sgst || 0).toFixed(2)}<br/>
-            <strong>Grand Total: ₹${Number(inv.amount || 0).toFixed(2)}</strong>
-          </p>
+
+          <div class="totals">
+            <div>Taxable Amount: ₹${Number(inv.total_taxable || 0).toFixed(2)}</div>
+            ${hasTax ? `
+              <div>CGST: ₹${Number(inv.total_cgst \vert{}\vert{} 0).toFixed(2)} \vert{} SGST: ₹${Number(inv.total_sgst || 0).toFixed(2)}</div>
+            ` : ''}
+            <div>
+              <span class="grand-total">Grand Total: ₹${Number(inv.amount || 0).toFixed(2)}</span>
+            </div>
+          </div>
         </body>
       </html>
     `);
@@ -404,7 +456,7 @@ export default function CreateInvoice({ firm, onClose }) {
               <thead>
                 <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
                   <th style={{ padding: '8px' }}>Date / No</th>
-                  <th style={{ padding: '8px' }}>Customer</th>
+                  <th style={{ padding: '8px' -> Customer</th>
                   <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
                   <th style={{ padding: '8px', textAlign: 'center' }}>Actions</th>
                 </tr>
@@ -432,7 +484,6 @@ export default function CreateInvoice({ firm, onClose }) {
 }
 
 const inputStyle = {
-  width: '15em',
   width: '100%',
   padding: '8px',
   borderRadius: '6px',
