@@ -236,7 +236,7 @@ export default function CreateInvoice({ firm, onClose }) {
           <p><strong>Customer:</strong> ${inv.dr_account || ''}</p>
           <table border="1" cellspacing="0" cellpadding="8" style="width:100%; margin-top:15px; border-collapse:collapse;">
             <tr style="background:#f1f5f9;"><th>Item</th><th>Qty</th><th>Rate</th><th>GST Slab</th><th>Total</th></tr>
-            ${(inv.items || []).map(i => `<tr><td>${i.itemName \vert{}\vert{} ''}</td><td>${i.qty || 0} ${i.unit \vert{}\vert{} ''}</td><td>${i.rate || 0}</td><td>${i.gstRate \vert{}\vert{} 0}\%</td><td>${(i.total || 0).toFixed(2)}</td></tr>`).join('')}
+            ${(inv.items || []).map(i => `<tr><td>${i.itemName || ''}</td><td>${i.qty || 0} ${i.unit || ''}</td><td>${i.rate || 0}</td><td>${i.gstRate || 0}\%</td><td>${(i.total || 0).toFixed(2)}</td></tr>`).join('')}
           </table>
           <p style="text-align:right; margin-top:15px;">
             Taxable: ₹${Number(inv.total_taxable || 0).toFixed(2)}<br/>
