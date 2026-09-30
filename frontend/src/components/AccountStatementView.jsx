@@ -49,6 +49,27 @@ export default function AccountStatementView({ firm }) {
     }
 
     try {
+      const targetClean = String(selectedParty).trim().toLowerCase();
+
+      // 1. Fetch Master Opening Balance from Account Head profile
+      let masterOpeningAmt = 0;
+      let masterOpeningSign = 'Dr';
+      try {
+        const accHeadsKey = `account_heads_${activeFirmId}`;
+        const savedHeads = JSON.parse(localStorage.getItem(accHeadsKey) || '[]');
+        const foundHead = savedHeads.find(a => String(a.name).trim().toLowerCase() === targetClean);
+        if (foundHead) {
+          masterOpeningAmt = Number(foundHead.openingBalance || 0);
+          masterOpeningSign = foundHead.balanceType || 'Dr';
+        }
+      } catch (err) {
+        console.error("Error reading master opening balance:", err);
+      }
+
+      // Convert master opening to signed value (+ for Dr, - for Cr)
+      let initialOpeningSum = masterOpeningSign === 'Cr' ? -masterOpeningAmt : masterOpeningAmt;
+
+      // 2. Fetch all transactions
       let rawTx = [];
       const keysToScan = [
         'account_book_vouchers',
@@ -81,16 +102,10 @@ export default function AccountStatementView({ firm }) {
       });
 
       const uniqueVouchers = Array.from(uniqueVoucherMap.values());
-      const targetClean = String(selectedParty).trim().toLowerCase();
-      const matchedTransactions = [];
+      const allParsedTransactions = [];
 
       uniqueVouchers.forEach(v => {
         const vDate = v.voucher_date || v.date || '2026-04-01';
-        
-        // Date range filtering validation
-        if (fromDate && vDate < fromDate) return;
-        if (toDate && vDate > toDate) return;
-
         const vType = String(v.voucher_type || v.type || 'JV').toUpperCase();
         const vNum = v.reference_no || v.voucher_number || (v.id ? v.id.slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
@@ -98,7 +113,7 @@ export default function AccountStatementView({ firm }) {
         // Handle Direct Payroll/Wages Entry
         if (v.worker && v.expense_ledger && v.total_amount) {
           if (String(v.worker).trim().toLowerCase() === targetClean) {
-            matchedTransactions.push({
+            allParsedTransactions.push({
               date: vDate,
               voucher_type: 'PAY',
               voucher_number: vNum,
@@ -128,7 +143,7 @@ export default function AccountStatementView({ firm }) {
           });
 
           if (isMatch) {
-            matchedTransactions.push({
+            allParsedTransactions.push({
               date: vDate,
               voucher_type: vType,
               voucher_number: vNum,
@@ -146,7 +161,7 @@ export default function AccountStatementView({ firm }) {
           const cr = (v.cr_account || v.cr_party || v.credit_account || '').trim();
 
           if (dr.toLowerCase() === targetClean || cr.toLowerCase() === targetClean) {
-            matchedTransactions.push({
+            allParsedTransactions.push({
               date: vDate,
               voucher_type: vType,
               voucher_number: vNum,
@@ -158,10 +173,27 @@ export default function AccountStatementView({ firm }) {
         }
       });
 
-      matchedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+      // Sort chronologically
+      allParsedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      let runningBal = 0;
-      const processedTransactions = matchedTransactions.map(t => {
+      let runningBal = initialOpeningSum;
+      const filteredTransactions = [];
+
+      allParsedTransactions.forEach(t => {
+        if (fromDate && t.date < fromDate) {
+          // Accumulate transactions prior to fromDate into opening balance
+          runningBal += (t.debit - t.credit);
+        } else if (toDate && t.date > toDate) {
+          // Skip transactions after toDate
+        } else {
+          filteredTransactions.push(t);
+        }
+      });
+
+      const finalOpeningBalance = Math.abs(runningBal);
+      const finalOpeningType = runningBal >= 0 ? 'Dr' : 'Cr';
+
+      const processedTransactions = filteredTransactions.map(t => {
         runningBal += (t.debit - t.credit);
         return {
           ...t,
@@ -172,11 +204,11 @@ export default function AccountStatementView({ firm }) {
 
       const lastClosing = processedTransactions.length > 0 
         ? processedTransactions[processedTransactions.length - 1] 
-        : { runningBalance: 0, balanceType: 'Dr' };
+        : { runningBalance: finalOpeningBalance, balanceType: finalOpeningType };
 
       setStatementData({
-        openingBalance: 0,
-        openingType: 'Dr',
+        openingBalance: finalOpeningBalance,
+        openingType: finalOpeningType,
         closingBalance: lastClosing.runningBalance,
         closingType: lastClosing.balanceType,
         transactions: processedTransactions
@@ -189,7 +221,7 @@ export default function AccountStatementView({ firm }) {
 
   const handleExportPDF = async () => {
     if (!statementData || statementData.transactions.length === 0) {
-      alert("⚠️ No transactions found to export.");
+      alert("⚠ No transactions found to export.");
       return;
     }
 
@@ -210,13 +242,13 @@ export default function AccountStatementView({ firm }) {
   };
 
   return (
-    <div style={{ width: '100%', maxWidth: '750px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: 'sans-serif' }}>
+    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '0 4px 50px 4px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
       {/* Header Design */}
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
               📖 खाता मिलान (Account Statement)
             </h3>
             <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry General Ledger & Real-Time Balance</span>
@@ -226,7 +258,7 @@ export default function AccountStatementView({ firm }) {
             type="button"
             onClick={handleExportPDF}
             disabled={isExporting || !statementData || statementData.transactions.length === 0}
-            style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+            style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '7px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
           >
             <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
           </button>
@@ -259,7 +291,7 @@ export default function AccountStatementView({ firm }) {
               max={todayMaxDate}
               value={fromDate} 
               onChange={e => setFromDate(e.target.value)} 
-              style={{ width: '100%', padding: '9px 8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff' }} 
+              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff', color: '#0f172a' }} 
             />
           </div>
           <div>
@@ -269,7 +301,7 @@ export default function AccountStatementView({ firm }) {
               max={todayMaxDate}
               value={toDate} 
               onChange={e => setToDate(e.target.value)} 
-              style={{ width: '100%', padding: '9px 8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff' }} 
+              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff', color: '#0f172a' }} 
             />
           </div>
         </div>
@@ -280,20 +312,20 @@ export default function AccountStatementView({ firm }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div style={{ ...cardStyle, backgroundColor: '#f8fafc' }}>
             <div style={labelStyle}>OPENING BALANCE</div>
-            <strong style={{ fontSize: '16px', color: '#0f172a' }}>
+            <strong style={{ fontSize: '15px', color: '#0f172a' }}>
               ₹{statementData.openingBalance.toLocaleString('en-IN')} {statementData.openingType}
             </strong>
           </div>
           <div style={{ ...cardStyle, backgroundColor: statementData.closingType === 'Dr' ? '#eff6ff' : '#fef2f2' }}>
             <div style={labelStyle}>NET CLOSING BALANCE</div>
-            <strong style={{ fontSize: '16px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
+            <strong style={{ fontSize: '15px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
               ₹{statementData.closingBalance.toLocaleString('en-IN')} {statementData.closingType}
             </strong>
           </div>
         </div>
       )}
 
-      {/* Original Ledger Table */}
+      {/* Ledger Table */}
       <div style={{ ...cardStyle, padding: '12px', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
           <thead>
@@ -340,7 +372,7 @@ export default function AccountStatementView({ firm }) {
   );
 }
 
-const cardStyle = { backgroundColor: '#ffffff', borderRadius: '14px', padding: '16px', border: '1px solid #cbd5e1', boxSizing: 'border-box' };
+const cardStyle = { backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' };
 const labelStyle = { fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' };
-const thStyle = { padding: '10px 8px', fontWeight: 'bold' };
-const tdStyle = { padding: '10px 8px', verticalAlign: 'top' };
+const thStyle = { padding: '8px', fontWeight: 'bold' };
+const tdStyle = { padding: '8px', verticalAlign: 'top' };
