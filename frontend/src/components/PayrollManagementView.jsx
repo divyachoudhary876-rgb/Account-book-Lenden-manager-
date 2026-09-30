@@ -150,7 +150,7 @@ export default function PayrollManagementView({ firm, onClose }) {
       {errorMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
       {successMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', boxSizing: 'border-box', width: '100%' }}>{successMsg}</div>}
 
-      {/* Worker Selection & Summary (Fixed single asterisk label) */}
+      {/* Worker Selection & Summary */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
         <div>
           <SearchableAccountDropdown 
@@ -180,16 +180,16 @@ export default function PayrollManagementView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Entry Form (Fixed single asterisk and spacing) */}
+      {/* Entry Form (Fixed Layout: Vertical Stack for Date and Expense Account) */}
       <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
 
-        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+          <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Date of Work *</label>
             <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
-          <div style={{ flex: 1 }}>
+          <div>
             <SearchableAccountDropdown 
               firm={firm}
               label="Expense Account *"
