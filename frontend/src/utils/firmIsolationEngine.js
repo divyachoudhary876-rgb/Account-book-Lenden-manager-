@@ -21,38 +21,7 @@ export const loadFirmData = (baseKey, firm, fallbackValue = []) => {
       return JSON.parse(data);
     }
     
-    // Backup Migration Support: Agar backup restore hua hai aur data global key ya standard backup key me pada hai
-    const globalData = localStorage.getItem(baseKey);
-    if (globalData !== null && globalData !== undefined) {
-      try {
-        const parsed = JSON.parse(globalData);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Auto-migrate to scoped storage so subsequent loads are fast and isolated
-          localStorage.setItem(scopedKey, JSON.stringify(parsed));
-          return parsed;
-        }
-      } catch (err) {
-        // ignore parse error
-      }
-    }
-
-    // Check generic backup payload keys if any exist in localStorage
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.includes('backup') || key.includes('restore')) && key.includes(baseKey)) {
-        const backupVal = localStorage.getItem(key);
-        if (backupVal) {
-          try {
-            const parsedBackup = JSON.parse(backupVal);
-            if (Array.isArray(parsedBackup) && parsedBackup.length > 0) {
-              localStorage.setItem(scopedKey, JSON.stringify(parsedBackup));
-              return parsedBackup;
-            }
-          } catch (e) {}
-        }
-      }
-    }
-
+    // Strict Isolation: Doosri firm ya global data mix na ho, isliye koi cross global fallback nahi.
     return fallbackValue;
   } catch (e) {
     console.error(`Error loading scoped data for ${baseKey}:`, e);
@@ -64,10 +33,7 @@ export const saveFirmData = (baseKey, firm, dataValue) => {
   try {
     const scopedKey = getFirmScopedStorageKey(baseKey, firm);
     localStorage.setItem(scopedKey, JSON.stringify(dataValue));
-    // Also update global mirror for backup portability
-    localStorage.setItem(baseKey, JSON.stringify(dataValue));
   } catch (e) {
     console.error(`Error saving scoped data for ${baseKey}:`, e);
   }
 };
-
