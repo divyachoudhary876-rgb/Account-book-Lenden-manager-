@@ -87,6 +87,19 @@ export const restoreUniversalBackup = async (rawInput) => {
     let vouchersCount = 0;
     let accountsCount = 0;
 
+    // Detect active firm ID if present in localStorage to properly map restored global keys
+    let activeFirmId = 'default_firm_id';
+    try {
+      const firmsRaw = localStorage.getItem('firms_list') || localStorage.getItem('app_firms');
+      if (firmsRaw) {
+        const firms = JSON.parse(firmsRaw);
+        if (Array.isArray(firms) && firms.length > 0) {
+          const firstFirm = firms[0];
+          activeFirmId = String(firstFirm.firm_id || firstFirm.id || firstFirm.legal_name || 'default_firm').replace(/[^a-zA-Z0-9_-]/g, '_');
+        }
+      }
+    } catch (e) {}
+
     Object.keys(targetData).forEach(key => {
       const val = targetData[key];
       if (Array.isArray(val)) {
@@ -95,13 +108,13 @@ export const restoreUniversalBackup = async (rawInput) => {
       }
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
 
-      // Smart Restoration & Isolation: 
-      // Agar backup me purani global keys hain jo bina firm-scope ke hain, toh unhe default scoped key me convert karein
-      // taaki woh global level par doosri firm ko affect na karein.
+      // Restore exact key
+      localStorage.setItem(key, stringifiedVal);
+
+      // Smart Mapping: Agar backup me global keys hain (jinme underscore ya firm id nahi hai),
+      // toh unhe active firm ki scoped key par bhi automatically map kar dein taaki inventory/dropdown me data turant dikhe.
       if (!key.includes('_') && ['inventory_items', 'app_vouchers', 'app_payroll_entries', 'production_batches', 'app_accounts'].includes(key)) {
-        localStorage.setItem(`${key}_default_firm_id`, stringifiedVal);
-      } else {
-        localStorage.setItem(key, stringifiedVal);
+        localStorage.setItem(`${key}_${activeFirmId}`, stringifiedVal);
       }
     });
 
