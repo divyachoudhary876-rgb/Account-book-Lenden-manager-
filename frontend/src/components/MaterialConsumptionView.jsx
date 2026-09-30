@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
+import SearchableStockDropdown from './SearchableStockDropdown';
 
 export default function MaterialConsumptionView({ firm, onClose }) {
   const activeFY = getCurrentActiveFY();
@@ -19,9 +20,10 @@ export default function MaterialConsumptionView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     
-    // Sirf active firm ka live inventory data load karein bina kisi hardcoded ghost item ke
+    // Strict active firm data filtering
     const rawInventory = loadFirmData('inventory_items', firm, []);
-    setInventoryItems(rawInventory);
+    const validInventory = rawInventory.filter(i => i && (i.name || i.item_name));
+    setInventoryItems(validInventory);
 
     const records = loadFirmData('material_consumption_records', firm, []);
     setSavedRecords(records);
@@ -173,18 +175,13 @@ export default function MaterialConsumptionView({ firm, onClose }) {
 
             <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginBottom: '10px' }}>
               <div style={{ flex: 2 }}>
-                <select 
-                  value={selectedStockId} 
-                  onChange={e => setSelectedStockId(e.target.value)} 
-                  style={inputStyle}
-                >
-                  <option value="">-- Choose Stock Item ({inventoryItems.length} available) --</option>
-                  {inventoryItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name || item.item_name} (Stock: {item.current_stock || 0} {item.unit})
-                    </option>
-                  ))}
-                </select>
+                <SearchableStockDropdown 
+                  firm={firm}
+                  label=""
+                  value={selectedStockId}
+                  onChange={val => setSelectedStockId(val)}
+                  placeholder="-- Search & Choose Fuel/Stock --"
+                />
               </div>
               <div style={{ flex: 1 }}>
                 <input 
@@ -200,7 +197,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
                 <button 
                   type="button" 
                   onClick={handleAddToList} 
-                  style={{ padding: '8px 14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+                  style={{ padding: '9px 14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
                 >
                   + Add
                 </button>
