@@ -1,20 +1,32 @@
 // frontend/src/utils/ledgerEngine.js
 import { StorageService } from './storageSync';
+import { getFirmScopedStorageKey } from './firmIsolationEngine';
 
 /**
- * Robustly fetch all vouchers across all possible local storage keys and formats
+ * Robustly fetch all vouchers across firm-scoped keys, global keys, and backup snapshots
  */
 export const getAllFirmVouchers = (activeFirmId = 'FIRM-001') => {
   let rawTx = [];
-  const primaryKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'daybook', 'journal_entries'];
+  
+  // 1. Firm-Scoped & Primary Base Keys (Supports backup restoration & multi-firm isolation)
+  const baseKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'daybook', 'journal_entries', 'app_vouchers'];
+  
+  baseKeys.forEach(baseKey => {
+    // Check firm-scoped key
+    try {
+      const scopedKey = getFirmScopedStorageKey(baseKey, activeFirmId);
+      const scopedVal = JSON.parse(localStorage.getItem(scopedKey) || '[]');
+      if (Array.isArray(scopedVal)) rawTx.push(...scopedVal);
+    } catch (e) {}
 
-  // 1. Scan primary known keys
-  primaryKeys.forEach(k => {
-    const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
-    if (Array.isArray(val)) rawTx.push(...val);
+    // Check direct global base key (Backup restore fallback)
+    try {
+      const baseVal = JSON.parse(localStorage.getItem(baseKey) || '[]');
+      if (Array.isArray(baseVal)) rawTx.push(...baseVal);
+    } catch (e) {}
   });
 
-  // 2. Deep scan localStorage for any keys containing voucher or transaction patterns
+  // 2. Deep scan localStorage for any keys containing voucher or transaction patterns (including backup payloads)
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('entry') || key.includes('daybook') || key.includes('book'))) {
@@ -26,6 +38,10 @@ export const getAllFirmVouchers = (activeFirmId = 'FIRM-001') => {
           else if (parsed && typeof parsed === 'object') {
             if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
             if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
+            // If it's a backup data snapshot object holding multiple keys/arrays
+            Object.values(parsed).forEach(subVal => {
+              if (Array.isArray(subVal)) rawTx.push(...subVal);
+            });
           }
         } catch (err) {}
       }
@@ -37,7 +53,8 @@ export const getAllFirmVouchers = (activeFirmId = 'FIRM-001') => {
   rawTx.forEach(tx => {
     if (!tx) return;
 
-    if (tx.firm_id && activeFirmId && tx.firm_id !== activeFirmId && tx.firm_id !== 'FIRM-001' && activeFirmId !== 'FIRM-001') {
+    // Firm validation check if firm_id exists in transaction
+    if (tx.firm_id && activeFirmId && String(tx.firm_id) !== String(activeFirmId) && String(tx.firm_id) !== 'FIRM-001' && String(activeFirmId) !== 'FIRM-001') {
       return;
     }
 
@@ -82,7 +99,6 @@ export const getAccountLedgerStatement = (partyName, activeFirmId = 'FIRM-001') 
     const isCrMatch = crNames.some(name => name === targetClean || name.includes(targetClean) || targetClean.includes(name));
 
     if (isDrMatch || isCrMatch) {
-      // Determine effective debit and credit amounts for this party in this voucher
       let debitVal = 0;
       let creditVal = 0;
 
@@ -91,7 +107,6 @@ export const getAccountLedgerStatement = (partyName, activeFirmId = 'FIRM-001') 
       } else if (isCrMatch && !isDrMatch) {
         creditVal = amt;
       } else if (isDrMatch && isCrMatch) {
-        // Self-transfer or contra entry edge case
         debitVal = amt;
         creditVal = amt;
       }
