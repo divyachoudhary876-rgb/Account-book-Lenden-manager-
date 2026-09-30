@@ -1,7 +1,6 @@
 // frontend/src/components/SearchableStockDropdown.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { loadFirmData } from '../utils/firmIsolationEngine';
-import { StorageService } from '../utils/storageSync';
 
 export default function SearchableStockDropdown({
   firm,
@@ -19,17 +18,13 @@ export default function SearchableStockDropdown({
   const loadItems = () => {
     try {
       let items = [];
+      
+      // Strict firm isolation: Sirf current active firm ka data load hoga bina kisi global leakage ke
       if (firm) {
         items = loadFirmData('inventory_items', firm, []);
       }
-      
-      // Fallback: Agar firm isolation se data na mile toh direct StorageService se uthayein
-      if (!items || items.length === 0) {
-        items = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-      }
 
-      // Valid items filter karein jinka naam maujood ho
-      const validItems = items.filter(i => i && (i.name || i.item_name));
+      const validItems = (Array.isArray(items) ? items : []).filter(i => i && (i.name || i.item_name));
       setStockList(validItems);
     } catch (e) {
       console.error("Error loading stock items in dropdown:", e);
@@ -75,7 +70,7 @@ export default function SearchableStockDropdown({
 
       <div 
         onClick={() => {
-          loadItems(); // Open karte hi fresh items reload honge
+          loadItems(); 
           setIsOpen(!isOpen);
         }}
         style={{
