@@ -51,7 +51,7 @@ export default function AccountStatementView({ firm }) {
     try {
       const targetClean = String(selectedParty).trim().toLowerCase();
 
-      // 1. Fetch Master Opening Balance from Account Head profile with backup fallback
+      // 1. Fetch Master Opening Balance with deep backup scan
       let masterOpeningAmt = 0;
       let masterOpeningSign = 'Dr';
       try {
@@ -74,7 +74,6 @@ export default function AccountStatementView({ firm }) {
           }
         });
 
-        // Deep scan for backup account heads
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           if (key && (key.includes('account') || key.includes('ledger') || key.includes('party') || key.includes('backup'))) {
@@ -102,10 +101,9 @@ export default function AccountStatementView({ firm }) {
         console.error("Error reading master opening balance:", err);
       }
 
-      // Convert master opening to signed value (+ for Dr, - for Cr)
       let initialOpeningSum = masterOpeningSign === 'Cr' ? -masterOpeningAmt : masterOpeningAmt;
 
-      // 2. Fetch all transactions with backup restore & scoped keys support
+      // 2. Fetch all transactions with robust backup scan & scoped keys support
       let rawTx = [];
       const keysToScan = [
         'account_book_vouchers',
@@ -127,7 +125,6 @@ export default function AccountStatementView({ firm }) {
         } catch (e) {}
       });
 
-      // Deep scan localStorage for any backup restored payloads or voucher patterns
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('backup') || key.includes('journal') || key.includes('book'))) {
@@ -154,7 +151,6 @@ export default function AccountStatementView({ firm }) {
         }
       }
 
-      // Strict Deduplication Map
       const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
@@ -176,7 +172,6 @@ export default function AccountStatementView({ firm }) {
         const vNum = v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
 
-        // Handle Direct Payroll/Wages Entry
         if (v.worker && v.expense_ledger && v.total_amount) {
           if (String(v.worker).trim().toLowerCase() === targetClean) {
             allParsedTransactions.push({
@@ -191,7 +186,6 @@ export default function AccountStatementView({ firm }) {
           return;
         }
 
-        // Handle Structured Entries Array
         if (Array.isArray(v.entries) && v.entries.length > 0) {
           let partyDebit = 0;
           let partyCredit = 0;
@@ -218,9 +212,7 @@ export default function AccountStatementView({ firm }) {
               credit: partyCredit
             });
           }
-        } 
-        // Handle Flat Format
-        else {
+        } else {
           const amt = Number(v.amount || v.total_amount || 0);
           if (amt <= 0) return;
           const dr = (v.dr_account || v.dr_party || v.debit_account || '').trim();
@@ -239,7 +231,6 @@ export default function AccountStatementView({ firm }) {
         }
       });
 
-      // Sort chronologically
       allParsedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
       let runningBal = initialOpeningSum;
@@ -309,7 +300,6 @@ export default function AccountStatementView({ firm }) {
   return (
     <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '0 4px 50px 4px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* Header Design */}
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div>
@@ -336,7 +326,6 @@ export default function AccountStatementView({ firm }) {
         </div>
       )}
 
-      {/* Account Selector & Date Filters */}
       <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <SearchableAccountDropdown
           label="खाता चुनें (Select Party/Account) *"
@@ -372,7 +361,6 @@ export default function AccountStatementView({ firm }) {
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
       {statementData && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div style={{ ...cardStyle, backgroundColor: '#f8fafc' }}>
@@ -390,7 +378,6 @@ export default function AccountStatementView({ firm }) {
         </div>
       )}
 
-      {/* Ledger Table */}
       <div style={{ ...cardStyle, padding: '12px', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
           <thead>
