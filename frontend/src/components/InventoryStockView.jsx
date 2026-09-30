@@ -41,9 +41,11 @@ export default function InventoryStockView({ firm, onClose }) {
       const currentItems = loadFirmData('inventory_items', firm, []);
       const stockNum = Number(openingStock || 0);
       const rateNum = Number(purchaseRate || 0);
+      const firmKey = typeof firm === 'object' ? (firm.firm_id || firm.id || firm.legal_name || 'default_firm') : (firm || 'default_firm');
       
       const newItem = {
         id: `ITEM-${Date.now()}`,
+        firm_id: firmKey, // Explicit firm ID matching for strict cross-firm protection
         item_name: itemName.trim(),
         itemName: itemName.trim(),
         name: itemName.trim(),
