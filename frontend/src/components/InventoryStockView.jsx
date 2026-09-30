@@ -1,9 +1,8 @@
 // frontend/src/components/InventoryStockView.jsx
 import React, { useState, useEffect } from 'react';
-import { StorageService } from '../utils/storageSync';
+import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 
 export default function InventoryStockView({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const [inventoryList, setInventoryList] = useState([]);
   
   // Modal State for Adding Item
@@ -15,9 +14,10 @@ export default function InventoryStockView({ firm, onClose }) {
 
   const loadInventory = () => {
     try {
-      const items = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-      const firmItems = items.filter(item => !item.firm_id || item.firm_id === activeFirmId);
-      setInventoryList(firmItems);
+      if (!firm) return;
+      // Strict firm isolation: Sirf current active firm ka inventory data load hoga
+      const items = loadFirmData('inventory_items', firm, []);
+      setInventoryList(items);
     } catch (e) {
       console.error("Error loading inventory:", e);
     }
@@ -31,21 +31,19 @@ export default function InventoryStockView({ firm, onClose }) {
       window.removeEventListener('app_state_updated', loadInventory);
       window.removeEventListener('app_storage_updated', loadInventory);
     };
-  }, [activeFirmId]);
+  }, [firm]);
 
   const handleSaveItem = (e) => {
     e.preventDefault();
     if (!itemName.trim()) return alert('कृपया आइटम का नाम दर्ज करें।');
 
     try {
-      const currentItems = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+      const currentItems = loadFirmData('inventory_items', firm, []);
       const stockNum = Number(openingStock || 0);
       const rateNum = Number(purchaseRate || 0);
       
       const newItem = {
         id: `ITEM-${Date.now()}`,
-        firm_id: activeFirmId,
-        // Save with dual property naming for 100% cross-module compatibility
         item_name: itemName.trim(),
         itemName: itemName.trim(),
         name: itemName.trim(),
@@ -62,7 +60,7 @@ export default function InventoryStockView({ firm, onClose }) {
       };
 
       const updated = [newItem, ...currentItems];
-      StorageService.setItem('inventory_items', updated);
+      saveFirmData('inventory_items', firm, updated);
       window.dispatchEvent(new Event('app_storage_updated'));
 
       alert('✓ Item Created Successfully in Master!');
@@ -79,9 +77,9 @@ export default function InventoryStockView({ firm, onClose }) {
   const handleDeleteItem = (itemId, itemName) => {
     if (!window.confirm(`Are you sure you want to delete "${itemName}"?`)) return;
     try {
-      const allItems = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+      const allItems = loadFirmData('inventory_items', firm, []);
       const updated = allItems.filter(i => String(i.id) !== String(itemId));
-      StorageService.setItem('inventory_items', updated);
+      saveFirmData('inventory_items', firm, updated);
       window.dispatchEvent(new Event('app_storage_updated'));
       loadInventory();
     } catch (err) {
