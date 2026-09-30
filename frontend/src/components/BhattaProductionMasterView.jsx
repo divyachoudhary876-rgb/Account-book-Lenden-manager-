@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
+import SearchableStockDropdown from './SearchableStockDropdown';
 
 export default function SmartProductionView({ firm, onClose }) {
   const activeFY = getCurrentActiveFY();
@@ -24,12 +25,10 @@ export default function SmartProductionView({ firm, onClose }) {
 
   const loadData = () => {
     if (!firm) return;
-    const items = loadFirmData('inventory_items', firm, [
-      { id: 'inv_1', name: 'Coal (Primary Fuel)', current_stock: 5000, unit: 'Kg', cost_price: 6 },
-      { id: 'inv_2', name: 'Raw Clay / Soil', current_stock: 20000, unit: 'Cft', cost_price: 2 },
-      { id: 'inv_3', name: 'Wire-Cut Bricks (Finished)', current_stock: 0, unit: 'Pcs', cost_price: 0 }
-    ]);
-    setInventoryItems(items);
+    // Strict firm isolation: Load only current active firm's inventory
+    const rawItems = loadFirmData('inventory_items', firm, []);
+    const validItems = rawItems.filter(i => i && (i.name || i.item_name));
+    setInventoryItems(validItems);
 
     const savedBatches = loadFirmData('production_batches', firm, []);
     setBatchesList(savedBatches);
@@ -196,18 +195,13 @@ export default function SmartProductionView({ firm, onClose }) {
             
             <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginBottom: '8px' }}>
               <div style={{ flex: 2 }}>
-                <select 
-                  value={selectedMaterial} 
-                  onChange={e => setSelectedMaterial(e.target.value)} 
-                  style={inputStyle}
-                >
-                  <option value="">-- Select Inventory --</option>
-                  {inventoryItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name || item.item_name} [Stock: {item.current_stock || 0} {item.unit}]
-                    </option>
-                  ))}
-                </select>
+                <SearchableStockDropdown 
+                  firm={firm}
+                  label=""
+                  value={selectedMaterial}
+                  onChange={val => setSelectedMaterial(val)}
+                  placeholder="-- Select Inventory --"
+                />
               </div>
               <div style={{ flex: 1 }}>
                 <input 
@@ -223,7 +217,7 @@ export default function SmartProductionView({ firm, onClose }) {
                 <button 
                   type="button" 
                   onClick={handleAddMaterial} 
-                  style={{ padding: '8px 12px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+                  style={{ padding: '9px 12px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
                 >
                   + Add
                 </button>
@@ -289,19 +283,13 @@ export default function SmartProductionView({ firm, onClose }) {
 
             <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
               <div style={{ flex: 2 }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#1e40af' }}>Output Item (From Inventory) *</label>
-                <select 
-                  value={outputItem} 
-                  onChange={e => setOutputItem(e.target.value)} 
-                  style={inputStyle}
-                >
-                  <option value="">-- Select Output Item --</option>
-                  {inventoryItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name || item.item_name} ({item.unit})
-                    </option>
-                  ))}
-                </select>
+                <SearchableStockDropdown 
+                  firm={firm}
+                  label="Output Item (From Inventory) *"
+                  value={outputItem}
+                  onChange={val => setOutputItem(val)}
+                  placeholder="-- Select Output Item --"
+                />
               </div>
               <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#1e40af' }}>Produced Qty *</label>
