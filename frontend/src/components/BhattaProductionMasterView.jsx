@@ -183,13 +183,13 @@ export default function SmartProductionView({ firm, onClose }) {
             </div>
           </div>
 
-          {/* STEP 1: Consumed Raw Materials (Fixed Layout) */}
-          <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '12px', borderRadius: '10px', marginBottom: '12px' }}>
+          {/* STEP 1: Consumed Raw Materials (Balanced Layout) */}
+          <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
             <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '8px' }}>
               🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px', boxSizing: 'border-box' }}>
               <SearchableStockDropdown 
                 firm={firm}
                 label=""
@@ -198,8 +198,8 @@ export default function SmartProductionView({ firm, onClose }) {
                 placeholder="-- Select Inventory --"
               />
 
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <input 
                     type="number" 
                     step="0.01" 
@@ -212,7 +212,7 @@ export default function SmartProductionView({ firm, onClose }) {
                 <button 
                   type="button" 
                   onClick={handleAddMaterial} 
-                  style={{ padding: '9px 18px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  style={{ padding: '9px 16px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
                 >
                   + Add Item
                 </button>
@@ -270,7 +270,7 @@ export default function SmartProductionView({ firm, onClose }) {
             </div>
           </div>
 
-          {/* STEP 3: Output Finished Product & Auto Valuation (Fixed Layout) */}
+          {/* STEP 3: Output Finished Product & Auto Valuation */}
           <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px' }}>
             <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '8px' }}>
               📦 Step 3: Output Finished Product & Auto Valuation
