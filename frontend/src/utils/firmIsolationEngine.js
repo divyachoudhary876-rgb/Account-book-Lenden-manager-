@@ -2,7 +2,10 @@
 
 export const getActiveFirmId = (firm) => {
   if (!firm) return 'default_firm_id';
-  return String(firm.firm_id || firm.id || firm.legal_name || firm.name || 'default_firm').replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (typeof firm === 'string') return firm.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  
+  const resolved = firm.firm_id || firm.id || firm.firmId || firm.legal_name || firm.trade_name || firm.name || firm.firm_name || 'default_firm';
+  return String(resolved).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
 };
 
 export const getFirmScopedStorageKey = (baseKey, firm) => {
@@ -18,7 +21,15 @@ export const loadFirmData = (baseKey, firm, fallbackValue = []) => {
       return JSON.parse(data);
     }
     
-    // Strict isolation: Never fallback to global keys to prevent cross-firm leakage
+    // Smart Fallback: Agar scoped key khali hai, toh check karein ki kya global key me data pada hai
+    const globalData = localStorage.getItem(baseKey);
+    if (globalData !== null && globalData !== undefined) {
+      const parsed = JSON.parse(globalData);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+
     return fallbackValue;
   } catch (e) {
     console.error(`Error loading scoped data for ${baseKey}:`, e);
