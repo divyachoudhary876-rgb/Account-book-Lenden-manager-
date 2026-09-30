@@ -1,31 +1,92 @@
 // frontend/src/utils/statementEngine.js
+import { getFirmScopedStorageKey } from './firmIsolationEngine';
 
 /**
- * Retrieve all vouchers for a firm
+ * Retrieve all vouchers for a firm with robust fallback for backup restored data
  */
 export const getAllUniversalVouchers = (firmId = 'FIRM-001') => {
   try {
-    const raw = localStorage.getItem(`app_vouchers_${firmId}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
+    let rawTx = [];
+    const cleanFirmId = String(firmId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    // 1. Check Firm-Scoped Keys
+    const scopedKey = getFirmScopedStorageKey('app_vouchers', cleanFirmId);
+    const scopedRaw = localStorage.getItem(scopedKey) || localStorage.getItem(`account_book_vouchers_${cleanFirmId}`);
+    if (scopedRaw) {
+      const parsed = JSON.parse(scopedRaw);
+      if (Array.isArray(parsed)) rawTx.push(...parsed);
+    }
+
+    // 2. Check Global Base Keys (Backup restore fallbacks)
+    const globalKeys = ['app_vouchers', 'account_book_vouchers', 'vouchers', 'transactions', 'daybook', 'journal_entries'];
+    globalKeys.forEach(k => {
+      const val = localStorage.getItem(k);
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) rawTx.push(...parsed);
+          else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
+            if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
+            Object.values(parsed).forEach(sub => {
+              if (Array.isArray(sub)) rawTx.push(...sub);
+            });
+          }
+        } catch (e) {}
+      }
+    });
+
+    // 3. Deep scan localStorage for any backup or voucher keys
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook'))) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) rawTx.push(...parsed);
+          } catch (err) {}
+        }
+      }
+    }
+
+    // Deduplicate entries by unique ID or signature
+    const uniqueMap = new Map();
+    rawTx.forEach(tx => {
+      if (!tx) return;
+      const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount}-${tx.dr_account || tx.debit_account}-${tx.cr_account || tx.credit_account}`;
+      if (!uniqueMap.has(uId)) {
+        uniqueMap.set(uId, tx);
+      }
+    });
+
+    return Array.from(uniqueMap.values());
+  } catch (e) {
+    console.error("Error loading universal vouchers:", e);
     return [];
   }
 };
 
 /**
- * Retrieve account heads for a firm
+ * Retrieve account heads for a firm with backup fallback
  */
 export const getAccountHeads = (firmId = 'FIRM-001') => {
   try {
-    const raw = localStorage.getItem(`app_accounts_${firmId}`);
-    return raw ? JSON.parse(raw) : [];
+    const cleanFirmId = String(firmId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    const scopedKey = getFirmScopedStorageKey('app_accounts', cleanFirmId);
+    const raw = localStorage.getItem(scopedKey) || localStorage.getItem('app_accounts') || localStorage.getItem('account_heads');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    return [];
   } catch {
     return [];
   }
 };
 
 /**
- * Generate Double-Entry Account Milan Ledger Statement
+ * Generate Double-Entry Account Milan Ledger Statement adhering to strict accounting rules
  */
 export const getAccountLedgerStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
   if (!targetAccountName) {
@@ -59,16 +120,16 @@ export const getAccountLedgerStatement = (firmId = 'FIRM-001', targetAccountName
 
   const relevantVouchers = vouchers
     .filter(v => {
-      const dr = (v.dr_account || v.dr_party || '').trim().toLowerCase();
-      const cr = (v.cr_account || v.cr_party || '').trim().toLowerCase();
+      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
+      const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim().toLowerCase();
       return dr === targetLower || cr === targetLower;
     })
-    .sort((a, b) => new Date(a.voucher_date || a.date) - new Date(b.voucher_date || b.date));
+    .sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
 
   const ledgerEntries = relevantVouchers.map((v, index) => {
-    const drName = (v.dr_account || v.dr_party || '').trim();
-    const crName = (v.cr_account || v.cr_party || '').trim();
-    const amt = parseFloat(v.amount || 0);
+    const drName = (v.dr_account || v.debit_account || v.dr_party || '').trim();
+    const crName = (v.cr_account || v.credit_account || v.cr_party || '').trim();
+    const amt = parseFloat(v.amount || v.total_amount || 0);
 
     const isDebit = drName.toLowerCase() === targetLower;
     const isCredit = crName.toLowerCase() === targetLower;
@@ -81,18 +142,18 @@ export const getAccountLedgerStatement = (firmId = 'FIRM-001', targetAccountName
       debitAmount = amt;
       totalDebit += amt;
       runningBalance += amt;
-      counterParty = crName;
+      counterParty = crName || 'Various Account';
     } else if (isCredit) {
       creditAmount = amt;
       totalCredit += amt;
       runningBalance -= amt;
-      counterParty = drName;
+      counterParty = drName || 'Various Account';
     }
 
     return {
       index: index + 1,
       id: v.id,
-      date: v.voucher_date || v.date,
+      date: v.voucher_date || v.date || '2026-04-01',
       voucher_type: v.voucher_type || v.type || 'JOURNAL',
       voucher_no: v.voucher_number || v.reference_no || `REF-${index + 1}`,
       particulars: isDebit ? `To ${counterParty}` : `By ${counterParty}`,
@@ -101,7 +162,7 @@ export const getAccountLedgerStatement = (firmId = 'FIRM-001', targetAccountName
       credit: creditAmount,
       running_balance: Math.abs(runningBalance),
       balance_type: runningBalance >= 0 ? 'Dr' : 'Cr',
-      narration: v.narration || ''
+      narration: v.narration || v.notes || ''
     };
   });
 
