@@ -432,6 +432,7 @@ export default function CreateInvoice({ firm, onClose }) {
 }
 
 const inputStyle = {
+  width: '15em',
   width: '100%',
   padding: '8px',
   borderRadius: '6px',
