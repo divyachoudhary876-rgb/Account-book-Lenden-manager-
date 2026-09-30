@@ -27,8 +27,8 @@ export default function AppUpdateBanner() {
 
   return (
     <div style={{
-      backgroundColor: '#0f172a',
-      color: '#ffffff',
+      backgroundColor: '#f0fdf4',
+      color: '#0f172a',
       padding: '10px 16px',
       borderRadius: '8px',
       margin: '10px 16px',
@@ -37,16 +37,17 @@ export default function AppUpdateBanner() {
       justifyContent: 'space-between',
       flexWrap: 'wrap',
       gap: '10px',
+      border: '1px solid #bbf7d0',
       borderLeft: '4px solid #10b981',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.02)'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <span style={{ fontSize: '20px' }}>🚀</span>
+        <span style={{ fontSize: '18px' }}>🚀</span>
         <div>
-          <div style={{ fontWeight: 'bold', fontSize: '13px' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#065f46' }}>
             New Update Available: {updateInfo.latestVersion}
           </div>
-          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+          <div style={{ fontSize: '11px', color: '#475569' }}>
             Current version: v{CURRENT_APP_VERSION.versionName} • Direct in-place upgrade ready
           </div>
         </div>
@@ -75,8 +76,8 @@ export default function AppUpdateBanner() {
           onClick={() => setIsDismissed(true)}
           style={{
             backgroundColor: 'transparent',
-            color: '#94a3b8',
-            border: '1px solid #334155',
+            color: '#64748b',
+            border: '1px solid #cbd5e1',
             padding: '6px 10px',
             borderRadius: '6px',
             fontSize: '12px',
