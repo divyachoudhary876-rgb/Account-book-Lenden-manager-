@@ -21,15 +21,7 @@ export const loadFirmData = (baseKey, firm, fallbackValue = []) => {
       return JSON.parse(data);
     }
     
-    // Smart Fallback: Agar scoped key khali hai, toh check karein ki kya global key me data pada hai
-    const globalData = localStorage.getItem(baseKey);
-    if (globalData !== null && globalData !== undefined) {
-      const parsed = JSON.parse(globalData);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-
+    // Strict isolation: Never fallback to global keys to prevent cross-firm leakage
     return fallbackValue;
   } catch (e) {
     console.error(`Error loading scoped data for ${baseKey}:`, e);
