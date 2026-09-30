@@ -20,7 +20,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     
-    // Strict active firm data filtering
+    // Strict firm isolation: Load only current active firm's inventory items
     const rawInventory = loadFirmData('inventory_items', firm, []);
     const validInventory = rawInventory.filter(i => i && (i.name || i.item_name));
     setInventoryItems(validInventory);
@@ -109,7 +109,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       setFeedback({ type: 'success', message: '✓ Consumption recorded & inventory stock updated successfully!' });
 
       setUsesFor('');
-      setConsumptionList([]);
+      setConsumptionList('');
 
     } catch (err) {
       alert('Error: ' + err.message);
