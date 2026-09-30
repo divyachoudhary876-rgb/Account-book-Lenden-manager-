@@ -19,20 +19,9 @@ export default function SearchableStockDropdown({
     try {
       let items = [];
       
+      // Strict Firm Isolation: Sirf aur sirf active firm ka scoped data load hoga, global fallback bilkul nahi
       if (firm) {
         items = loadFirmData('inventory_items', firm, []);
-      }
-
-      // Agar phir bhi items nahi mile toh inventory_items ko direct localStorage se uthayein
-      if (!items || items.length === 0) {
-        const raw = localStorage.getItem('inventory_items');
-        if (raw) {
-          try {
-            items = JSON.parse(raw);
-          } catch (err) {
-            items = [];
-          }
-        }
       }
 
       const validItems = (Array.isArray(items) ? items : []).filter(i => i && (i.name || i.item_name));
