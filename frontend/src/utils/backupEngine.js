@@ -94,7 +94,15 @@ export const restoreUniversalBackup = async (rawInput) => {
         if (key.includes('account')) accountsCount += val.length;
       }
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
-      localStorage.setItem(key, stringifiedVal);
+
+      // Smart Restoration & Isolation: 
+      // Agar backup me purani global keys hain jo bina firm-scope ke hain, toh unhe default scoped key me convert karein
+      // taaki woh global level par doosri firm ko affect na karein.
+      if (!key.includes('_') && ['inventory_items', 'app_vouchers', 'app_payroll_entries', 'production_batches', 'app_accounts'].includes(key)) {
+        localStorage.setItem(`${key}_default_firm_id`, stringifiedVal);
+      } else {
+        localStorage.setItem(key, stringifiedVal);
+      }
     });
 
     window.dispatchEvent(new Event('app_storage_updated'));
