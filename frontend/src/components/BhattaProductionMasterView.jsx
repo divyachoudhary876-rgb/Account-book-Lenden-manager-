@@ -25,7 +25,6 @@ export default function SmartProductionView({ firm, onClose }) {
 
   const loadData = () => {
     if (!firm) return;
-    // Strict firm isolation: Load only current active firm's inventory
     const rawItems = loadFirmData('inventory_items', firm, []);
     const validItems = rawItems.filter(i => i && (i.name || i.item_name));
     setInventoryItems(validItems);
@@ -105,7 +104,6 @@ export default function SmartProductionView({ firm, onClose }) {
       setBatchesList(updatedBatches);
       saveFirmData('production_batches', firm, updatedBatches);
 
-      // Update inventory stock for output item
       const updatedInventory = inventoryItems.map(inv => {
         if (String(inv.id) === String(outputItem)) {
           return {
@@ -121,7 +119,6 @@ export default function SmartProductionView({ firm, onClose }) {
       window.dispatchEvent(new Event('app_storage_updated'));
       setFeedback({ type: 'success', message: '✓ Production batch saved & auto-valuation updated successfully!' });
 
-      // Reset form
       setUseForLocation('');
       setConsumedMaterials([]);
       setDirectLaborCost('');
@@ -158,7 +155,6 @@ export default function SmartProductionView({ firm, onClose }) {
 
         <form onSubmit={handleSaveProduction}>
           
-          {/* Top Row: Date & Use For */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
@@ -187,39 +183,38 @@ export default function SmartProductionView({ firm, onClose }) {
             </div>
           </div>
 
-          {/* STEP 1: Consumed Raw Materials */}
+          {/* STEP 1: Consumed Raw Materials (Fixed Layout) */}
           <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '12px', borderRadius: '10px', marginBottom: '12px' }}>
             <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '8px' }}>
               🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
             </div>
             
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginBottom: '8px' }}>
-              <div style={{ flex: 2 }}>
-                <SearchableStockDropdown 
-                  firm={firm}
-                  label=""
-                  value={selectedMaterial}
-                  onChange={val => setSelectedMaterial(val)}
-                  placeholder="-- Select Inventory --"
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="Qty" 
-                  value={materialQty} 
-                  onChange={e => setMaterialQty(e.target.value)} 
-                  style={inputStyle} 
-                />
-              </div>
-              <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+              <SearchableStockDropdown 
+                firm={firm}
+                label=""
+                value={selectedMaterial}
+                onChange={val => setSelectedMaterial(val)}
+                placeholder="-- Select Inventory --"
+              />
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ flex: 1 }}>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="Enter Qty" 
+                    value={materialQty} 
+                    onChange={e => setMaterialQty(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
                 <button 
                   type="button" 
                   onClick={handleAddMaterial} 
-                  style={{ padding: '9px 12px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+                  style={{ padding: '9px 18px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                 >
-                  + Add
+                  + Add Item
                 </button>
               </div>
             </div>
@@ -275,23 +270,21 @@ export default function SmartProductionView({ firm, onClose }) {
             </div>
           </div>
 
-          {/* STEP 3: Output Finished Product & Auto Valuation */}
+          {/* STEP 3: Output Finished Product & Auto Valuation (Fixed Layout) */}
           <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px' }}>
             <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '8px' }}>
               📦 Step 3: Output Finished Product & Auto Valuation
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
-              <div style={{ flex: 2 }}>
-                <SearchableStockDropdown 
-                  firm={firm}
-                  label="Output Item (From Inventory) *"
-                  value={outputItem}
-                  onChange={val => setOutputItem(val)}
-                  placeholder="-- Select Output Item --"
-                />
-              </div>
-              <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '6px' }}>
+              <SearchableStockDropdown 
+                firm={firm}
+                label="Output Item (From Inventory) *"
+                value={outputItem}
+                onChange={val => setOutputItem(val)}
+                placeholder="-- Select Output Item --"
+              />
+              <div>
                 <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#1e40af' }}>Produced Qty *</label>
                 <input 
                   type="number" 
@@ -321,7 +314,6 @@ export default function SmartProductionView({ firm, onClose }) {
         </form>
       </div>
 
-      {/* Production Batches Register */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
           Production Batches Register ({activeFY})
