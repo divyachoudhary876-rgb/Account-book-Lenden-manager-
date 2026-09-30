@@ -1,24 +1,40 @@
 // frontend/src/utils/statementEngine.js
-import { getFirmScopedStorageKey } from './firmIsolationEngine';
+import { getFirmScopedStorageKey, getActiveFirmId } from './firmIsolationEngine';
 
 /**
- * Retrieve all vouchers for a firm with robust fallback for backup restored data
+ * Universal voucher fetcher that scans ALL possible keys in localStorage (scoped, global, backup snapshots)
  */
-export const getAllUniversalVouchers = (firmId = 'FIRM-001') => {
+export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
   try {
     let rawTx = [];
-    const cleanFirmId = String(firmId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    const firmId = getActiveFirmId(firmInput);
 
-    // 1. Check Firm-Scoped Keys
-    const scopedKey = getFirmScopedStorageKey('app_vouchers', cleanFirmId);
-    const scopedRaw = localStorage.getItem(scopedKey) || localStorage.getItem(`account_book_vouchers_${cleanFirmId}`);
-    if (scopedRaw) {
-      const parsed = JSON.parse(scopedRaw);
-      if (Array.isArray(parsed)) rawTx.push(...parsed);
-    }
+    // 1. Check direct scoped keys for this firm
+    const scopedKeys = [
+      getFirmScopedStorageKey('app_vouchers', firmInput),
+      getFirmScopedStorageKey('account_book_vouchers', firmInput),
+      getFirmScopedStorageKey('vouchers', firmInput),
+      getFirmScopedStorageKey('transactions', firmInput),
+      `app_vouchers_${firmId}`,
+      `account_book_vouchers_${firmId}`
+    ];
 
-    // 2. Check Global Base Keys (Backup restore fallbacks)
-    const globalKeys = ['app_vouchers', 'account_book_vouchers', 'vouchers', 'transactions', 'daybook', 'journal_entries'];
+    scopedKeys.forEach(k => {
+      const val = localStorage.getItem(k);
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) rawTx.push(...parsed);
+        } catch (e) {}
+      }
+    });
+
+    // 2. Check global base keys and backup restore keys
+    const globalKeys = [
+      'app_vouchers', 'account_book_vouchers', 'vouchers', 
+      'transactions', 'daybook', 'journal_entries', 'account_book_vouchers_default_firm_id'
+    ];
+
     globalKeys.forEach(k => {
       const val = localStorage.getItem(k);
       if (val) {
@@ -36,15 +52,26 @@ export const getAllUniversalVouchers = (firmId = 'FIRM-001') => {
       }
     });
 
-    // 3. Deep scan localStorage for any backup or voucher keys
+    // 3. Deep scan ALL localStorage keys for any voucher/transaction/backup data
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook'))) {
+      if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('journal') || key.includes('backup'))) {
         const raw = localStorage.getItem(key);
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) rawTx.push(...parsed);
+            if (Array.isArray(parsed)) {
+              rawTx.push(...parsed);
+            } else if (parsed && typeof parsed === 'object') {
+              if (parsed.data && typeof parsed.data === 'object') {
+                Object.values(parsed.data).forEach(subVal => {
+                  if (Array.isArray(subVal)) rawTx.push(...subVal);
+                });
+              }
+              Object.values(parsed).forEach(subVal => {
+                if (Array.isArray(subVal)) rawTx.push(...subVal);
+              });
+            }
           } catch (err) {}
         }
       }
@@ -54,7 +81,7 @@ export const getAllUniversalVouchers = (firmId = 'FIRM-001') => {
     const uniqueMap = new Map();
     rawTx.forEach(tx => {
       if (!tx) return;
-      const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount}-${tx.dr_account || tx.debit_account}-${tx.cr_account || tx.credit_account}`;
+      const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount || tx.grand_total}-${tx.dr_account || tx.debit_account || ''}-${tx.cr_account || tx.credit_account || ''}`;
       if (!uniqueMap.has(uId)) {
         uniqueMap.set(uId, tx);
       }
@@ -68,18 +95,72 @@ export const getAllUniversalVouchers = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Retrieve account heads for a firm with backup fallback
+ * Retrieve account heads for a firm with backup fallback & deep scan
  */
-export const getAccountHeads = (firmId = 'FIRM-001') => {
+export const getAccountHeads = (firmInput = 'FIRM-001') => {
   try {
-    const cleanFirmId = String(firmId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-    const scopedKey = getFirmScopedStorageKey('app_accounts', cleanFirmId);
-    const raw = localStorage.getItem(scopedKey) || localStorage.getItem('app_accounts') || localStorage.getItem('account_heads');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+    const firmId = getActiveFirmId(firmInput);
+    let rawAccounts = [];
+
+    const scopedKeys = [
+      getFirmScopedStorageKey('app_accounts', firmInput),
+      getFirmScopedStorageKey('account_heads', firmInput),
+      `app_accounts_${firmId}`
+    ];
+    scopedKeys.forEach(k => {
+      const val = localStorage.getItem(k);
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) rawAccounts.push(...parsed);
+        } catch (e) {}
+      }
+    });
+
+    const globalKeys = ['app_accounts', 'account_heads', 'accounts_list', 'ledgers'];
+    globalKeys.forEach(k => {
+      const val = localStorage.getItem(k);
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) rawAccounts.push(...parsed);
+        } catch (e) {}
+      }
+    });
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('account') || key.includes('ledger') || key.includes('party') || key.includes('backup'))) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) rawAccounts.push(...parsed);
+            else if (parsed && typeof parsed === 'object') {
+              if (parsed.data && typeof parsed.data === 'object') {
+                Object.values(parsed.data).forEach(sub => {
+                  if (Array.isArray(sub)) rawAccounts.push(...sub);
+                });
+              }
+              Object.values(parsed).forEach(sub => {
+                if (Array.isArray(sub)) rawAccounts.push(...sub);
+              });
+            }
+          } catch (e) {}
+        }
+      }
     }
-    return [];
+
+    const uniqueMap = new Map();
+    rawAccounts.forEach(acc => {
+      if (!acc) return;
+      const name = (acc.account_name || acc.name || '').trim().toLowerCase();
+      if (name && !uniqueMap.has(name)) {
+        uniqueMap.set(name, acc);
+      }
+    });
+
+    return Array.from(uniqueMap.values());
   } catch {
     return [];
   }
