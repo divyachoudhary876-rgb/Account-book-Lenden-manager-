@@ -18,28 +18,18 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * 100% Corruption-Free True PDF Exporter (Blob & Base64 Stream)
+ * 100% Universal & Stable PDF Exporter using DataUri string
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fullFileName = `${cleanName}_${Date.now()}.pdf`;
 
   try {
-    // Standard and stable blob output method for jsPDF across all browsers & devices
-    const pdfBlob = doc.output('blob');
+    // Generate base64 data uri string directly from jsPDF (Stable across all platforms)
+    const dataUri = doc.output('datauristring');
+    const base64Data = dataUri.split(',')[1];
 
     if (Capacitor.isNativePlatform()) {
-      // Convert blob to base64 for Capacitor Filesystem
-      const reader = new FileReader();
-      const base64Data = await new Promise((resolve, reject) => {
-        reader.onloadend = () => {
-          const base64String = reader.result.split(',')[1];
-          resolve(base64String);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(pdfBlob);
-      });
-
       const writeResult = await Filesystem.writeFile({
         path: fullFileName,
         data: base64Data,
@@ -57,10 +47,9 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
-    // Web Browser Download
-    const blobUrl = URL.createObjectURL(pdfBlob);
+    // Web Browser Download using Base64 Data URI
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.href = blobUrl;
+    downloadAnchor.href = dataUri;
     downloadAnchor.setAttribute('download', fullFileName);
     downloadAnchor.style.display = 'none';
     document.body.appendChild(downloadAnchor);
@@ -68,14 +57,13 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 
     setTimeout(() => {
       document.body.removeChild(downloadAnchor);
-      URL.revokeObjectURL(blobUrl);
     }, 1500);
 
     return { success: true };
 
   } catch (err) {
-    console.error('True PDF Binary Export Error:', err);
-    throw new Error('Failed to generate uncorrupted PDF file.');
+    console.error('PDF Export Error:', err);
+    throw new Error('Failed to generate or download PDF file.');
   }
 };
 
