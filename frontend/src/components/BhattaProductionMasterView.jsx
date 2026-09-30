@@ -22,7 +22,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
   const [outputItem, setOutputItem] = useState('');
   const [producedQty, setProducedQty] = useState('');
 
-  useEffect(() => {
+  const loadData = () => {
     try {
       const savedBatches = StorageService.getItem ? StorageService.getItem(storageKey) : JSON.parse(localStorage.getItem(storageKey) || '[]');
       if (Array.isArray(savedBatches)) setBatches(savedBatches);
@@ -35,6 +35,16 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
     } catch (e) {
       console.error("Error loading production data:", e);
     }
+  };
+
+  useEffect(() => {
+    loadData();
+    window.addEventListener('app_storage_updated', loadData);
+    window.addEventListener('app_state_updated', loadData);
+    return () => {
+      window.removeEventListener('app_storage_updated', loadData);
+      window.removeEventListener('app_state_updated', loadData);
+    };
   }, [storageKey, stockStorageKey, firmId]);
 
   const handleAddMaterial = () => {
@@ -43,7 +53,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
       return;
     }
 
-    const itemObj = stockItems.find(i => i.id === selectedMaterial || i.itemName === selectedMaterial);
+    const itemObj = stockItems.find(i => String(i.id) === String(selectedMaterial) || String(i.itemName || i.name) === String(selectedMaterial));
     if (!itemObj) {
       alert("Chuna gaya item inventory catalog me nahi mila!");
       return;
@@ -54,7 +64,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
     const qty = Number(materialQty) || 0;
 
     const newItem = {
-      id: 'MAT-' + Date.now(),
+      id: itemObj.id || ('MAT-' + Date.now()),
       itemName,
       qty,
       unitCost,
@@ -86,7 +96,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
       return;
     }
 
-    const selectedOutputObj = stockItems.find(i => i.id === outputItem || i.itemName === outputItem);
+    const selectedOutputObj = stockItems.find(i => String(i.id) === String(outputItem) || String(i.itemName || i.name) === String(outputItem));
     const outputItemName = selectedOutputObj ? (selectedOutputObj.itemName || selectedOutputObj.name) : outputItem;
 
     const newBatch = {
@@ -105,6 +115,40 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
       selectedFY
     };
 
+    // Synchronize Inventory Stock (Deduct Consumed & Add Produced)
+    try {
+      let currentCatalog = [...stockItems];
+
+      // Deduct consumed raw materials
+      consumedList.forEach(c => {
+        const idx = currentCatalog.findIndex(i => String(i.id) === String(c.id) || String(i.itemName || i.name).toLowerCase() === String(c.itemName).toLowerCase());
+        if (idx !== -1) {
+          const curStock = Number(currentCatalog[idx].stockQty ?? currentCatalog[idx].qty ?? 0);
+          currentCatalog[idx] = {
+            ...currentCatalog[idx],
+            stockQty: Math.max(0, curStock - Number(c.qty)),
+            qty: Math.max(0, curStock - Number(c.qty))
+          };
+        }
+      });
+
+      // Add produced finished goods
+      const outIdx = currentCatalog.findIndex(i => String(i.id) === String(outputItem) || String(i.itemName || i.name).toLowerCase() === String(outputItemName).toLowerCase());
+      if (outIdx !== -1) {
+        const curStock = Number(currentCatalog[outIdx].stockQty ?? currentCatalog[outIdx].qty ?? 0);
+        currentCatalog[outIdx] = {
+          ...currentCatalog[outIdx],
+          stockQty: curStock + producedQtyNum,
+          qty: curStock + producedQtyNum,
+          purchasePrice: Number(costPerPiece.toFixed(4)) // Update valuation price
+        };
+      }
+
+      StorageService.setItem(stockStorageKey, currentCatalog);
+    } catch (err) {
+      console.error("Inventory sync error during production:", err);
+    }
+
     const updated = [newBatch, ...batches];
     setBatches(updated);
     StorageService.setItem(storageKey, updated);
@@ -116,11 +160,12 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
     setMachineryOverhead('');
     setOutputItem('');
     setProducedQty('');
-    alert("✓ Production batch & Cost Valuation successfully recorded!");
+    loadData();
+    alert("✓ Production batch recorded & Inventory stock synchronized successfully!");
   };
 
   const handleDelete = (id) => {
-    if (window.confirm("Kya aap is production record ko delete karna chahte hain?")) {
+    if (window.confirm("Kya aap is production record को delete karna chahte hain?")) {
       const updated = batches.filter(b => b.id !== id);
       setBatches(updated);
       StorageService.setItem(storageKey, updated);
@@ -129,9 +174,9 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
   };
 
   return (
-    <div style={{ padding: '8px', maxWidth: '900px', margin: '0 auto', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
-      <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
-        <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <div style={{ padding: '8px', maxWidth: '650px', margin: '0 auto', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
+      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
           ⚙️ Smart Production & Auto-Valuation ({selectedFY})
         </h3>
 
@@ -147,7 +192,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
             </div>
           </div>
 
-          <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
+          <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
             <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#b45309', display: 'block', marginBottom: '6px' }}>
               🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
             </label>
@@ -173,21 +218,21 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
             </div>
 
             {consumedList.length > 0 && (
-              <div style={{ marginTop: '8px', fontSize: '11px', backgroundColor: '#fff', padding: '6px', borderRadius: '6px', border: '1px solid #fde68a' }}>
+              <div style={{ marginTop: '8px', fontSize: '11px', backgroundColor: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #fde68a' }}>
                 {consumedList.map(m => (
                   <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid #fef3c7' }}>
                     <span>{m.itemName} (Qty: {m.qty})</span>
                     <span>₹{m.totalCost} <button type="button" onClick={() => handleRemoveMaterial(m.id)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer', fontWeight: 'bold' }}>✕</button></span>
                   </div>
                 ))}
-                <div style={{ textAlign: 'right', fontWeight: 'bold', marginTop: '4px', color: '#b45309' }}>
+                <div style={{ textAlign: 'right', fontWeight: 'bold', marginTop: '6px', color: '#b45309' }}>
                   Total Material Cost: ₹{totalMaterialCost}
                 </div>
               </div>
             )}
           </div>
 
-          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
+          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
             <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#15803d', display: 'block', marginBottom: '6px' }}>
               👷 Step 2: Direct Labor & Overheads
             </label>
@@ -206,7 +251,7 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
             </div>
           </div>
 
-          <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', padding: '10px', borderRadius: '8px', marginBottom: '14px' }}>
+          <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', padding: '12px', borderRadius: '8px', marginBottom: '14px' }}>
             <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#0369a1', display: 'block', marginBottom: '6px' }}>
               📦 Step 3: Output Finished Product & Auto Valuation
             </label>
@@ -241,37 +286,37 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
             )}
           </div>
 
-          <button type="submit" style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '12px' }}>
+          <button type="submit" style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '11px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '12px' }}>
             ⚡ Save Production & Update Cost Valuation
           </button>
         </form>
       </div>
 
-      <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#334155' }}>Production Batches Register ({selectedFY})</h4>
+      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#0f172a', fontWeight: 'bold' }}>Production Batches Register ({selectedFY})</h4>
         {batches.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#94a3b8', padding: '16px', fontSize: '11px' }}>Koi production record darj nahi hai.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                  <th style={{ padding: '6px' }}>Date / Uses For</th>
-                  <th style={{ padding: '6px' }}>Output Item & Qty</th>
-                  <th style={{ padding: '6px' }}>Total Cost</th>
-                  <th style={{ padding: '6px' }}>Cost / 1,000</th>
-                  <th style={{ padding: '6px', textAlign: 'center' }}>Action</th>
+                <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
+                  <th style={{ padding: '8px' }}>Date / Uses For</th>
+                  <th style={{ padding: '8px' }}>Output Item & Qty</th>
+                  <th style={{ padding: '8px' }}>Total Cost</th>
+                  <th style={{ padding: '8px' }}>Cost / 1,000</th>
+                  <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {batches.map(b => (
                   <tr key={b.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '6px' }}>{b.productionDate}<br /><strong>{b.usesFor || b.batchRef}</strong></td>
-                    <td style={{ padding: '6px' }}><strong>{b.outputItemName}</strong><br />{b.producedQty} Pcs</td>
-                    <td style={{ padding: '6px', color: '#b45309' }}>₹{b.totalProductionCost}</td>
-                    <td style={{ padding: '6px', fontWeight: 'bold', color: '#0284c7' }}>₹{b.costPerThousand?.toLocaleString('en-IN')}</td>
-                    <td style={{ padding: '6px', textAlign: 'center' }}>
-                      <button onClick={() => handleDelete(b.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
+                    <td style={{ padding: '8px' }}>{b.productionDate}<br /><strong>{b.usesFor || b.batchRef}</strong></td>
+                    <td style={{ padding: '8px' }}><strong>{b.outputItemName}</strong><br />{b.producedQty} Pcs</td>
+                    <td style={{ padding: '8px', color: '#b45309' }}>₹{b.totalProductionCost}</td>
+                    <td style={{ padding: '8px', fontWeight: 'bold', color: '#0284c7' }}>₹{b.costPerThousand?.toLocaleString('en-IN')}</td>
+                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                      <button onClick={() => handleDelete(b.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
                         Delete
                       </button>
                     </td>
@@ -288,11 +333,12 @@ export default function BhattaProductionMasterView({ firm, selectedFY }) {
 
 const inputStyle = {
   width: '100%',
-  padding: '7px',
+  padding: '8px',
   borderRadius: '6px',
   border: '1px solid #cbd5e1',
   fontSize: '11px',
   boxSizing: 'border-box',
-  marginTop: '3px',
-  backgroundColor: '#ffffff'
+  marginTop: '4px',
+  backgroundColor: '#ffffff',
+  color: '#0f172a'
 };
