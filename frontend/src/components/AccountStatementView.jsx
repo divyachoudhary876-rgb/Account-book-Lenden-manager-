@@ -51,16 +51,52 @@ export default function AccountStatementView({ firm }) {
     try {
       const targetClean = String(selectedParty).trim().toLowerCase();
 
-      // 1. Fetch Master Opening Balance from Account Head profile
+      // 1. Fetch Master Opening Balance from Account Head profile with backup fallback
       let masterOpeningAmt = 0;
       let masterOpeningSign = 'Dr';
       try {
-        const accHeadsKey = `account_heads_${activeFirmId}`;
-        const savedHeads = JSON.parse(localStorage.getItem(accHeadsKey) || '[]');
-        const foundHead = savedHeads.find(a => String(a.name).trim().toLowerCase() === targetClean);
+        const possibleAccountKeys = [
+          `account_heads_${activeFirmId}`,
+          'app_accounts',
+          'account_heads',
+          'accounts_list',
+          `app_accounts_${activeFirmId}`
+        ];
+        
+        let savedHeads = [];
+        possibleAccountKeys.forEach(pk => {
+          const val = localStorage.getItem(pk);
+          if (val) {
+            try {
+              const parsed = JSON.parse(val);
+              if (Array.isArray(parsed)) savedHeads.push(...parsed);
+            } catch (e) {}
+          }
+        });
+
+        // Deep scan for backup account heads
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('account') || key.includes('ledger') || key.includes('party') || key.includes('backup'))) {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) savedHeads.push(...parsed);
+                else if (parsed && typeof parsed === 'object') {
+                  Object.values(parsed).forEach(sub => {
+                    if (Array.isArray(sub)) savedHeads.push(...sub);
+                  });
+                }
+              } catch (e) {}
+            }
+          }
+        }
+
+        const foundHead = savedHeads.find(a => String(a.name || a.account_name || '').trim().toLowerCase() === targetClean);
         if (foundHead) {
-          masterOpeningAmt = Number(foundHead.openingBalance || 0);
-          masterOpeningSign = foundHead.balanceType || 'Dr';
+          masterOpeningAmt = Number(foundHead.openingBalance || foundHead.opening_balance || 0);
+          masterOpeningSign = foundHead.balanceType || foundHead.balance_type || 'Dr';
         }
       } catch (err) {
         console.error("Error reading master opening balance:", err);
@@ -69,16 +105,19 @@ export default function AccountStatementView({ firm }) {
       // Convert master opening to signed value (+ for Dr, - for Cr)
       let initialOpeningSum = masterOpeningSign === 'Cr' ? -masterOpeningAmt : masterOpeningAmt;
 
-      // 2. Fetch all transactions
+      // 2. Fetch all transactions with backup restore & scoped keys support
       let rawTx = [];
       const keysToScan = [
         'account_book_vouchers',
         'app_vouchers',
         'transactions',
         'app_payroll_entries',
+        'daybook',
+        'journal_entries',
         `account_book_vouchers_${activeFirmId}`,
         `app_vouchers_${activeFirmId}`,
-        `app_payroll_entries_${activeFirmId}`
+        `app_payroll_entries_${activeFirmId}`,
+        'account_book_vouchers_default_firm_id'
       ];
 
       keysToScan.forEach(k => {
@@ -88,6 +127,33 @@ export default function AccountStatementView({ firm }) {
         } catch (e) {}
       });
 
+      // Deep scan localStorage for any backup restored payloads or voucher patterns
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('backup') || key.includes('journal') || key.includes('book'))) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                rawTx.push(...parsed);
+              } else if (parsed && typeof parsed === 'object') {
+                if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
+                if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
+                if (parsed.data && typeof parsed.data === 'object') {
+                  Object.values(parsed.data).forEach(sub => {
+                    if (Array.isArray(sub)) rawTx.push(...sub);
+                  });
+                }
+                Object.values(parsed).forEach(sub => {
+                  if (Array.isArray(sub)) rawTx.push(...sub);
+                });
+              }
+            } catch (err) {}
+          }
+        }
+      }
+
       // Strict Deduplication Map
       const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
@@ -95,7 +161,7 @@ export default function AccountStatementView({ firm }) {
         const vFirm = v.firm_id || activeFirmId;
         if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
 
-        const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}`;
+        const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}-${v.dr_account || ''}-${v.cr_account || ''}`;
         if (!uniqueVoucherMap.has(uniqueId)) {
           uniqueVoucherMap.set(uniqueId, v);
         }
@@ -107,7 +173,7 @@ export default function AccountStatementView({ firm }) {
       uniqueVouchers.forEach(v => {
         const vDate = v.voucher_date || v.date || '2026-04-01';
         const vType = String(v.voucher_type || v.type || 'JV').toUpperCase();
-        const vNum = v.reference_no || v.voucher_number || (v.id ? v.id.slice(-6) : 'N/A');
+        const vNum = v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
 
         // Handle Direct Payroll/Wages Entry
@@ -181,10 +247,9 @@ export default function AccountStatementView({ firm }) {
 
       allParsedTransactions.forEach(t => {
         if (fromDate && t.date < fromDate) {
-          // Accumulate transactions prior to fromDate into opening balance
           runningBal += (t.debit - t.credit);
         } else if (toDate && t.date > toDate) {
-          // Skip transactions after toDate
+          // Skip
         } else {
           filteredTransactions.push(t);
         }
