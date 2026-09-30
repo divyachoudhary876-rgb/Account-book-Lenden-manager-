@@ -18,30 +18,27 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * Safely convert ArrayBuffer to Base64 without text encoding corruption
- */
-const arrayBufferToBase64 = (buffer) => {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return window.btoa(binary);
-};
-
-/**
- * 100% Corruption-Free True PDF Exporter (ArrayBuffer Binary Stream)
+ * 100% Corruption-Free True PDF Exporter (Blob & Base64 Stream)
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fullFileName = `${cleanName}_${Date.now()}.pdf`;
 
   try {
-    const pdfArrayBuffer = doc.output('arraybuffer');
+    // Standard and stable blob output method for jsPDF across all browsers & devices
+    const pdfBlob = doc.output('blob');
 
     if (Capacitor.isNativePlatform()) {
-      const base64Data = arrayBufferToBase64(pdfArrayBuffer);
+      // Convert blob to base64 for Capacitor Filesystem
+      const reader = new FileReader();
+      const base64Data = await new Promise((resolve, reject) => {
+        reader.onloadend = () => {
+          const base64String = reader.result.split(',')[1];
+          resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(pdfBlob);
+      });
 
       const writeResult = await Filesystem.writeFile({
         path: fullFileName,
@@ -60,8 +57,8 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
-    const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
-    const blobUrl = URL.createObjectURL(blob);
+    // Web Browser Download
+    const blobUrl = URL.createObjectURL(pdfBlob);
     const downloadAnchor = document.createElement('a');
     downloadAnchor.href = blobUrl;
     downloadAnchor.setAttribute('download', fullFileName);
