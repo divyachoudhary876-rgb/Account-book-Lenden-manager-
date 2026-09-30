@@ -58,9 +58,9 @@ export default function CreateInvoice({ firm, onClose }) {
   }, [activeFirmId]);
 
   const handleAddToCart = () => {
-    if (!selectedItemId || !quantity || !rate) return alert('कृपया आइटम, मात्रा और रेट दर्ज करें।');
+    if (!selectedItemId || !quantity || !rate) return alert('Kripya item, matra aur rate darj karein.');
     const itemObj = allItems.find(i => String(i.id) === String(selectedItemId));
-    if (!itemObj) return alert('चयनित आइटम नहीं मिला।');
+    if (!itemObj) return alert('Chayanit item nahi mila.');
 
     const qty = Number(quantity);
     const rt = Number(rate);
@@ -98,8 +98,8 @@ export default function CreateInvoice({ firm, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     setFeedback(null);
-    if (!customerParty) return alert('कृपया कस्टमर पार्टी चुनें!');
-    if (cart.length === 0) return alert('कम से कम एक आइटम बिल में जोड़ें।');
+    if (!customerParty) return alert('Kripya customer party chunein!');
+    if (cart.length === 0) return alert('Kam se kam ek item bill mein jodein.');
 
     try {
       const currentInventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
@@ -189,7 +189,7 @@ export default function CreateInvoice({ firm, onClose }) {
   };
 
   const handleDelete = (invId, invNo) => {
-    if (!window.confirm(`Invoice #${invNo} को डिलीट करने से इसका स्टॉक वापस जुड़ जाएगा। जारी रखें?`)) return;
+    if (!window.confirm(`Invoice #${invNo} ko delete karne se stock vapas jud jayega. Jari rakhein?`)) return;
 
     try {
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
