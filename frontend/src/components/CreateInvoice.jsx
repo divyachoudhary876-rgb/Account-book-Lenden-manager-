@@ -225,16 +225,41 @@ export default function CreateInvoice({ firm, onClose }) {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return alert('Popup blocked! Please allow popups for printing.');
 
-    const hasTax = (Number(inv.total_cgst) > 0 || Number(inv.total_sgst) > 0);
+    const firmName = (firm && (firm.name || firm.legal_name)) ? (firm.name || firm.legal_name) : 'Neelkanth Groups';
+    const refNo = inv.reference_no ? inv.reference_no : '';
+    const vDate = inv.voucher_date ? inv.voucher_date : '';
+    const customer = inv.dr_account ? inv.dr_account : '';
+    const vehicle = inv.vehicle_no ? inv.vehicle_no : '';
+    const totalTaxableVal = Number(inv.total_taxable ? inv.total_taxable : 0).toFixed(2);
+    const totalCgstVal = Number(inv.total_cgst ? inv.total_cgst : 0).toFixed(2);
+    const totalSgstVal = Number(inv.total_sgst ? inv.total_sgst : 0).toFixed(2);
+    const grandAmount = Number(inv.amount ? inv.amount : 0).toFixed(2);
+    const hasTax = (Number(inv.total_cgst ? inv.total_cgst : 0) > 0 || Number(inv.total_sgst ? inv.total_sgst : 0) > 0);
+
+    const itemsHtml = (inv.items ? inv.items : []).map(i => {
+      const name = i.itemName ? i.itemName : '';
+      const qty = i.qty ? i.qty : 0;
+      const unit = i.unit ? i.unit : '';
+      const rate = Number(i.rate ? i.rate : 0).toFixed(2);
+      const gst = i.gstRate ? i.gstRate : 0;
+      const total = Number(i.total ? i.total : 0).toFixed(2);
+      return `<tr>
+        <td><strong>${name}</strong></td>
+        <td class="text-right">${qty} ${unit}</td>
+        <td class="text-right">${rate}</td>
+        <td class="text-right">${gst}%</td>
+        <td class="text-right"><strong>${total}</strong></td>
+      </tr>`;
+    }).join('');
 
     printWindow.document.write(`
       <html>
         <head>
-          <title>Invoice #${inv.reference_no || ''}</title>
+          <title>Invoice #${refNo}</title>
           <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 24px; color: #0f172a; background: #fff; }
             .invoice-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 12px; }
-            .invoice-header h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
+            .invoice-header h2 { margin: 0; font-size: 22px; font-weight: 800; }
             .invoice-header p { margin: 4px 0 0 0; font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; }
             .meta-box { display: flex; justify-content: space-between; margin-bottom: 16px; font-size: 12px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; }
             table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
@@ -247,19 +272,19 @@ export default function CreateInvoice({ firm, onClose }) {
         </head>
         <body>
           <div class="invoice-header">
-            <h2>${firm?.name || 'Neelkanth Groups'}</h2>
+            <h2>${firmName}</h2>
             <p>TAX INVOICE (GST Compliant)</p>
           </div>
           
           <div class="meta-box">
             <div>
-              <strong>Invoice No:</strong> ${inv.reference_no || ''}<br/>
-              <strong>Date:</strong> ${inv.voucher_date || ''}
-              ${inv.vehicle_no ? `<br/><strong>Vehicle:</strong> ${inv.vehicle_no}` : ''}
+              <strong>Invoice No:</strong> ${refNo}<br/>
+              <strong>Date:</strong> ${vDate}
+              ${vehicle ? `<br/><strong>Vehicle:</strong> ${vehicle}` : ''}
             </div>
             <div style="text-align: right;">
               <strong>Customer / Party:</strong><br/>
-              <span style="font-size: 14px; font-weight: bold;">${inv.dr_account || ''}</span>
+              <span style="font-size: 14px; font-weight: bold;">${customer}</span>
             </div>
           </div>
 
@@ -274,25 +299,15 @@ export default function CreateInvoice({ firm, onClose }) {
               </tr>
             </thead>
             <tbody>
-              ${(inv.items || []).map(i => `
-                <tr>
-                  <td><strong>${i.itemName || ''}</strong></td>
-                  <td class="text-right">${i.qty \vert{}\vert{} 0}${i.unit || ''}</td>
-                  <td class="text-right">${Number(i.rate || 0).toFixed(2)}</td>
-                  <td class="text-right">${i.gstRate || 0}%</td>
-                  <td class="text-right"><strong>${Number(i.total || 0).toFixed(2)}</strong></td>
-                </tr>
-              `).join('')}
+              ${itemsHtml}
             </tbody>
           </table>
 
           <div class="totals">
-            <div>Taxable Amount: ₹${Number(inv.total_taxable || 0).toFixed(2)}</div>
-            ${hasTax ? `
-              <div>CGST: ₹${Number(inv.total_cgst \vert{}\vert{} 0).toFixed(2)} \vert{} SGST: ₹${Number(inv.total_sgst || 0).toFixed(2)}</div>
-            ` : ''}
+            <div>Taxable Amount: ₹${totalTaxableVal}</div>
+            ${hasTax ? `<div>CGST: ₹${totalCgstVal} \vert{} SGST: ₹${totalSgstVal}</div>` : ''}
             <div>
-              <span class="grand-total">Grand Total: ₹${Number(inv.amount || 0).toFixed(2)}</span>
+              <span class="grand-total">Grand Total: ₹${grandAmount}</span>
             </div>
           </div>
         </body>
@@ -456,7 +471,7 @@ export default function CreateInvoice({ firm, onClose }) {
               <thead>
                 <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
                   <th style={{ padding: '8px' }}>Date / No</th>
-                  <th style={{ padding: '8px' -> Customer</th>
+                  <th style={{ padding: '8px' }}>Customer</th>
                   <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
                   <th style={{ padding: '8px', textAlign: 'center' }}>Actions</th>
                 </tr>
