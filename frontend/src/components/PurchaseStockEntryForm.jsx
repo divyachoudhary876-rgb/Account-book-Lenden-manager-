@@ -1,15 +1,16 @@
 // frontend/src/components/PurchaseStockEntryForm.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
-import { useItemMaster } from '../hooks/useItemMaster';
+import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
+import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
-  const allItems = useItemMaster(); 
+  const [allItems, setAllItems] = useState([]);
   const [accountsList, setAccountsList] = useState([]);
   const [purchaseList, setPurchaseList] = useState([]);
 
@@ -26,6 +27,11 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
   const loadData = () => {
     try {
+      // Strict firm-isolated inventory loading
+      const rawInventory = loadFirmData('inventory_items', firm, []);
+      const validInventory = rawInventory.filter(i => i && (i.name || i.item_name) && i.item_type !== 'SERVICE' && !String(i.item_name || i.name || '').toLowerCase().includes('freight'));
+      setAllItems(validInventory);
+
       const accList = getFirmMasterAccounts(activeFirmId) || [];
       setAccountsList(accList);
 
@@ -45,7 +51,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       window.removeEventListener('app_state_updated', loadData);
       window.removeEventListener('app_storage_updated', loadData);
     };
-  }, [activeFirmId]);
+  }, [firm, activeFirmId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -56,7 +62,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
     setIsSubmitting(true);
     try {
-      const currentInventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+      const currentInventory = loadFirmData('inventory_items', firm, []);
       const parsedQty = Number(quantity);
       const parsedRate = Number(purchaseRate);
       const totalAmount = parsedQty * parsedRate;
@@ -86,7 +92,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         }
         return item;
       });
-      StorageService.setItem('inventory_items', updatedInventory);
+      saveFirmData('inventory_items', firm, updatedInventory);
 
       // 2. Save Purchase Voucher with structured entries
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
@@ -133,7 +139,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       const targetVoucher = vouchers.find(v => v && v.id === voucherId);
 
       if (targetVoucher && targetVoucher.itemId && targetVoucher.qty) {
-        const currentInventory = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+        const currentInventory = loadFirmData('inventory_items', firm, []);
         const restoredInventory = currentInventory.map(item => {
           if (String(item.id) === String(targetVoucher.itemId)) {
             const curStock = Number(item.current_stock || item.stock || item.stockQty || item.qty || 0);
@@ -148,7 +154,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           }
           return item;
         });
-        StorageService.setItem('inventory_items', restoredInventory);
+        saveFirmData('inventory_items', firm, restoredInventory);
       }
 
       const filtered = vouchers.filter(v => v && v.id !== voucherId);
@@ -215,17 +221,13 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           </div>
 
           <div style={{ marginBottom: '12px' }}>
-            <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase', display: 'block' }}>Stock Item (+IN) *</label>
-            <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)} style={{ ...inputStyle, border: '2px solid #eab308' }} required>
-              <option value="">-- Choose Stock Item --</option>
-              {allItems
-                .filter(item => item.item_type !== 'SERVICE' && !String(item.item_name || item.name || '').toLowerCase().includes('freight'))
-                .map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.item_name || item.name} (Current Stock: {item.current_stock || item.stock || item.stockQty || item.qty || 0} {item.unit})
-                </option>
-              ))}
-            </select>
+            <SearchableStockDropdown 
+              firm={firm}
+              label="Stock Item (+IN) *"
+              value={selectedItemId}
+              onChange={val => setSelectedItemId(val)}
+              placeholder="-- Choose Stock Item --"
+            />
           </div>
 
           <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
