@@ -1,293 +1,259 @@
 // frontend/src/components/MaterialConsumptionView.jsx
-
 import React, { useState, useEffect } from 'react';
-import { StorageService } from '../utils/storageSync';
+import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
+import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
 
-export default function MaterialConsumptionView({ firm, selectedFY }) {
-  const firmId = firm?.id || 'FIRM-001';
-  const storageKey = `fuel_consumption_${firmId}_${selectedFY}`;
-  const stockStorageKey = `trading_catalog_${firmId}_${selectedFY}`;
-  const accountsStorageKey = `account_heads_${firmId}`; // Firm-wide common account heads
-  const voucherStorageKey = `account_book_vouchers_${firmId}`;
-
-  const [consumptions, setConsumptions] = useState([]);
-  const [usageDate, setUsageDate] = useState(new Date().toISOString().split('T')[0]);
+export default function MaterialConsumptionView({ firm, onClose }) {
+  const activeFY = getCurrentActiveFY();
+  const [usageDate, setUsageDate] = useState(new Date().toISOString().slice(0, 10));
   const [usesFor, setUsesFor] = useState('');
-
-  const [stockItems, setStockItems] = useState([]);
-  const [expenseAccountsList, setExpenseAccountsList] = useState([]);
-  const [selectedItem, setSelectedItem] = useState('');
-  const [qty, setQty] = useState('');
-  const [expenseAccount, setExpenseAccount] = useState('');
-  const [cartItems, setCartItems] = useState([]);
+  
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [selectedStockId, setSelectedStockId] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [consumptionList, setConsumptionList] = useState([]);
+  
+  const [savedRecords, setSavedRecords] = useState([]);
+  const [feedback, setFeedback] = useState(null);
 
   const loadData = () => {
-    try {
-      const saved = StorageService.getItem ? StorageService.getItem(storageKey) : JSON.parse(localStorage.getItem(storageKey) || '[]');
-      if (Array.isArray(saved)) setConsumptions(saved);
+    if (!firm) return;
+    
+    // Sirf active firm ka live inventory data load karein bina kisi hardcoded ghost item ke
+    const rawInventory = loadFirmData('inventory_items', firm, []);
+    setInventoryItems(rawInventory);
 
-      // Fallback inventory loading across possible keys
-      let catalog = StorageService.getItem ? StorageService.getItem(stockStorageKey) : JSON.parse(localStorage.getItem(stockStorageKey) || '[]');
-      if (!catalog || catalog.length === 0) {
-        catalog = JSON.parse(localStorage.getItem(`trading_catalog_${firmId}`) || localStorage.getItem('inventory_items') || '[]');
-      }
-      if (Array.isArray(catalog)) setStockItems(catalog);
-
-      let accounts = StorageService.getItem ? StorageService.getItem(accountsStorageKey) : JSON.parse(localStorage.getItem(accountsStorageKey) || '[]');
-      if (!accounts || accounts.length === 0) {
-        accounts = JSON.parse(localStorage.getItem(`account_heads_${firmId}`) || localStorage.getItem('app_account_heads') || '[]');
-      }
-      if (Array.isArray(accounts)) setExpenseAccountsList(accounts);
-    } catch (e) {
-      console.error("Error loading consumption data:", e);
-    }
+    const records = loadFirmData('material_consumption_records', firm, []);
+    setSavedRecords(records);
   };
 
   useEffect(() => {
     loadData();
     window.addEventListener('app_storage_updated', loadData);
-    window.addEventListener('app_state_updated', loadData);
     return () => {
       window.removeEventListener('app_storage_updated', loadData);
-      window.removeEventListener('app_state_updated', loadData);
     };
-  }, [storageKey, stockStorageKey, accountsStorageKey, firmId]);
+  }, [firm]);
 
-  const handleAddToCart = () => {
-    if (!selectedItem || !qty || Number(qty) <= 0 || !expenseAccount) {
-      alert("Kripya inventory item, quantity aur debit expense account teeno chunein!");
-      return;
+  const handleAddToList = () => {
+    if (!selectedStockId || !quantity || Number(quantity) <= 0) {
+      return alert('Kripya item chunein aur valid quantity darj karein.');
     }
 
-    const itemObj = stockItems.find(i => String(i.id) === String(selectedItem) || String(i.itemName || i.name) === String(selectedItem));
-    const itemName = itemObj ? (itemObj.itemName || itemObj.name) : selectedItem;
-    const unitCost = Number(itemObj?.purchasePrice || itemObj?.unit_purchase_price || itemObj?.rate || 0);
+    const itemObj = inventoryItems.find(i => String(i.id) === String(selectedStockId));
+    if (!itemObj) return alert('Selected inventory item not found.');
 
-    const accObj = expenseAccountsList.find(a => String(a.id) === String(expenseAccount) || String(a.name || a.account_name) === String(expenseAccount));
-    const accountName = accObj ? (accObj.name || accObj.account_name) : expenseAccount;
+    const qty = Number(quantity);
+    if (qty > Number(itemObj.current_stock || 0)) {
+      return alert(`Available stock se zyada quantity darj nahi kar sakte! (Stock: ${itemObj.current_stock} ${itemObj.unit})`);
+    }
 
-    const newCartItem = {
-      id: 'CART-' + Date.now(),
-      itemId: itemObj?.id || selectedItem,
-      itemName,
-      qty: Number(qty) || 0,
-      unitCost,
-      totalCost: (Number(qty) || 0) * unitCost,
-      expenseAccount: accountName
-    };
+    setConsumptionList([
+      ...consumptionList,
+      {
+        id: Date.now(),
+        itemId: itemObj.id,
+        name: itemObj.name || itemObj.item_name,
+        unit: itemObj.unit || 'Units',
+        qty,
+        rate: Number(itemObj.cost_price || itemObj.rate || 0)
+      }
+    ]);
 
-    setCartItems([...cartItems, newCartItem]);
-    setSelectedItem('');
-    setQty('');
+    setSelectedStockId('');
+    setQuantity('');
   };
 
-  const handleRemoveCartItem = (id) => {
-    setCartItems(cartItems.filter(c => c.id !== id));
+  const removeItemFromList = (id) => {
+    setConsumptionList(consumptionList.filter(c => c.id !== id));
   };
 
-  const handlePostConsumptions = (e) => {
+  const handleSaveConsumption = (e) => {
     e.preventDefault();
-    if (!usesFor || cartItems.length === 0) {
-      alert("Kripya 'Uses For' (Kaha use hua h) bharein aur cart me items jodein!");
-      return;
-    }
+    setFeedback(null);
 
-    const recordId = 'CONS-' + Date.now();
-    const record = {
-      id: recordId,
-      usageDate,
-      usesFor,
-      items: cartItems,
-      selectedFY
-    };
+    if (!usesFor) return alert('Kripya usage location / purpose darj karein (e.g. Chamber-1 / Tractor).');
+    if (consumptionList.length === 0) return alert('Kam se kam ek item consumption list me jodein.');
 
     try {
-      // 1. Deduct Stock from Inventory Catalog
-      let currentCatalog = [...stockItems];
-      cartItems.forEach(c => {
-        const idx = currentCatalog.findIndex(i => String(i.id) === String(c.itemId) || String(i.itemName || i.name).toLowerCase() === String(c.itemName).toLowerCase());
-        if (idx !== -1) {
-          const curStock = Number(currentCatalog[idx].stockQty ?? currentCatalog[idx].current_stock ?? currentCatalog[idx].stock ?? currentCatalog[idx].qty ?? 0);
-          const newStock = Math.max(0, curStock - Number(c.qty));
-          currentCatalog[idx] = {
-            ...currentCatalog[idx],
-            stockQty: newStock,
-            current_stock: newStock,
-            stock: newStock,
-            qty: newStock
-          };
-        }
-      });
-      StorageService.setItem(stockStorageKey, currentCatalog);
-      StorageService.setItem('inventory_items', currentCatalog);
-
-      // 2. Post Double-Entry Journal Voucher (JV)
-      const totalConsumptionValue = cartItems.reduce((sum, c) => sum + c.totalCost, 0);
-      const voucherEntries = cartItems.map(c => ({
-        account_name: c.expenseAccount,
-        type: 'DR',
-        amount: c.totalCost > 0 ? c.totalCost : 1 // Fallback amount if unitCost was 0
-      }));
-
-      const newVoucher = {
-        id: 'JV-CONS-' + Date.now(),
-        voucher_type: 'JOURNAL',
-        voucher_date: usageDate,
-        reference_no: 'CONS-' + Math.floor(1000 + Math.random() * 9000),
-        firm_id: firmId,
-        selectedFY: selectedFY,
-        narration: `Material/Fuel Consumption for ${usesFor}`,
-        amount: totalConsumptionValue > 0 ? totalConsumptionValue : 0,
-        total_amount: totalConsumptionValue > 0 ? totalConsumptionValue : 0,
-        entries: [
-          ...voucherEntries,
-          { account_name: 'Raw Material Inventory', type: 'CR', amount: totalConsumptionValue > 0 ? totalConsumptionValue : 0 }
-        ]
+      const newRecord = {
+        id: 'CONS-' + Date.now(),
+        fiscal_year: activeFY,
+        date: usageDate,
+        uses_for: usesFor,
+        items: consumptionList,
+        created_at: new Date().toISOString()
       };
 
-      const existingVouchers = StorageService.getItem(voucherStorageKey) || StorageService.getItem('account_book_vouchers') || [];
-      const updatedVouchers = [newVoucher, ...(Array.isArray(existingVouchers) ? existingVouchers : [])];
-      StorageService.setItem(voucherStorageKey, updatedVouchers);
-      StorageService.setItem('account_book_vouchers', updatedVouchers);
+      const updatedRecords = [newRecord, ...savedRecords];
+      setSavedRecords(updatedRecords);
+      saveFirmData('material_consumption_records', firm, updatedRecords);
 
-      // 3. Save Consumption Record
-      const updatedConsumptions = [record, ...consumptions];
-      setConsumptions(updatedConsumptions);
-      StorageService.setItem(storageKey, updatedConsumptions);
+      // Inventory stock deduct karein active firm ke liye
+      const updatedInventory = inventoryItems.map(inv => {
+        const matched = consumptionList.find(c => String(c.itemId) === String(inv.id));
+        if (matched) {
+          return {
+            ...inv,
+            current_stock: Math.max(0, Number(inv.current_stock || 0) - Number(matched.qty))
+          };
+        }
+        return inv;
+      });
+      setInventoryItems(updatedInventory);
+      saveFirmData('inventory_items', firm, updatedInventory);
 
       window.dispatchEvent(new Event('app_storage_updated'));
-      window.dispatchEvent(new Event('app_state_updated'));
+      setFeedback({ type: 'success', message: '✓ Consumption recorded & inventory stock updated successfully!' });
 
       setUsesFor('');
-      setCartItems([]);
-      loadData();
-      alert("✓ Fuel & Material consumption posted, stock deducted & journal voucher created!");
-    } catch (err) {
-      alert("Error posting consumption: " + err.message);
-    }
-  };
+      setConsumptionList([]);
 
-  const handleDeleteRecord = (id) => {
-    if (window.confirm("Kya aap is consumption record ko delete karna chahte hain?")) {
-      const updated = consumptions.filter(c => c.id !== id);
-      setConsumptions(updated);
-      StorageService.setItem(storageKey, updated);
-      window.dispatchEvent(new Event('app_storage_updated'));
+    } catch (err) {
+      alert('Error: ' + err.message);
     }
   };
 
   return (
-    <div style={{ padding: '4px', maxWidth: '650px', margin: '0 auto', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
-      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          🚜 Multi-Item Fuel & Material Consumption ({selectedFY})
-        </h3>
+    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
+      
+      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+          <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+            🚜 Multi-Item Fuel & Material Consumption ({activeFY})
+          </h2>
+          {onClose && (
+            <button onClick={onClose} style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+              Close
+            </button>
+          )}
+        </div>
 
-        <form onSubmit={handlePostConsumptions}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Date of Usage *</label>
-              <input type="date" value={usageDate} onChange={e => setUsageDate(e.target.value)} style={inputStyle} required />
+        {feedback && (
+          <div style={{ padding: '10px', marginBottom: '12px', borderRadius: '8px', backgroundColor: '#f0fdf4', color: '#166534', fontWeight: 'bold', fontSize: '11px', border: '1px solid #bbf7d0' }}>
+            {feedback.message}
+          </div>
+        )}
+
+        <form onSubmit={handleSaveConsumption}>
+          
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
+                Date of Usage *
+              </label>
+              <input 
+                type="date" 
+                value={usageDate} 
+                onChange={e => setUsageDate(e.target.value)} 
+                style={inputStyle} 
+                required 
+              />
             </div>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Uses For (Kaha use hua h) *</label>
-              <input type="text" value={usesFor} onChange={e => setUsesFor(e.target.value)} placeholder="e.g. Chamber-1 / Tractor" style={inputStyle} required />
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
+                Uses For / Location *
+              </label>
+              <input 
+                type="text" 
+                placeholder="e.g. Chamber-1 / Tractor" 
+                value={usesFor} 
+                onChange={e => setUsesFor(e.target.value)} 
+                style={inputStyle} 
+                required 
+              />
             </div>
           </div>
 
-          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', marginBottom: '14px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#15803d', marginBottom: '8px' }}>
-              ➕ Add Items to Consumption Cart
+          <div style={{ backgroundColor: '#f1f5f9', padding: '12px', borderRadius: '10px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#334155', marginBottom: '8px' }}>
+              Select Stock Item & Quantity
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
-              <div>
-                <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#374155' }}>Select Stock Item / Fuel *</label>
-                <select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} style={inputStyle}>
-                  <option value="">-- Search & Choose Fuel/Stock ({stockItems.length} available) --</option>
-                  {stockItems.map(item => (
-                    <option key={item.id || item.itemName} value={item.id || item.itemName}>
-                      {item.itemName || item.item_name || item.name} (Stock: {item.stockQty ?? item.current_stock ?? item.stock ?? item.qty ?? 0} {item.unit || ''})
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginBottom: '10px' }}>
+              <div style={{ flex: 2 }}>
+                <select 
+                  value={selectedStockId} 
+                  onChange={e => setSelectedStockId(e.target.value)} 
+                  style={inputStyle}
+                >
+                  <option value="">-- Choose Stock Item ({inventoryItems.length} available) --</option>
+                  {inventoryItems.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name || item.item_name} (Stock: {item.current_stock || 0} {item.unit})
                     </option>
                   ))}
                 </select>
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '8px' }}>
-                <div>
-                  <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#374155' }}>Quantity *</label>
-                  <input type="number" step="0.01" value={qty} onChange={e => setQty(e.target.value)} placeholder="0.0" style={inputStyle} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#374155' }}>Debit Expense Account *</label>
-                  <select value={expenseAccount} onChange={e => setExpenseAccount(e.target.value)} style={inputStyle}>
-                    <option value="">-- Select Expense Account --</option>
-                    {expenseAccountsList.map(acc => (
-                      <option key={acc.id || acc.name} value={acc.name || acc.account_name}>{acc.name || acc.account_name}</option>
-                    ))}
-                  </select>
-                </div>
+              <div style={{ flex: 1 }}>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="Qty" 
+                  value={quantity} 
+                  onChange={e => setQuantity(e.target.value)} 
+                  style={inputStyle} 
+                />
+              </div>
+              <div>
+                <button 
+                  type="button" 
+                  onClick={handleAddToList} 
+                  style={{ padding: '8px 14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+                >
+                  + Add
+                </button>
               </div>
             </div>
 
-            <button type="button" onClick={handleAddToCart} style={{ backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '9px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '11px' }}>
-              + Add Item to Cart
-            </button>
-
-            {cartItems.length > 0 && (
-              <div style={{ marginTop: '10px', backgroundColor: '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #dcfce7' }}>
-                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>Items in Current Cart:</div>
-                {cartItems.map(c => (
-                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid #f0fdf4', fontSize: '11px' }}>
-                    <span><strong>{c.itemName}</strong> (Qty: {c.qty}) - <span style={{ color: '#64748b' }}>{c.expenseAccount}</span></span>
-                    <button type="button" onClick={() => handleRemoveCartItem(c.id)} style={{ color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>✕</button>
+            {consumptionList.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {consumptionList.map(c => (
+                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px' }}>
+                    <span><strong>{c.name}</strong> - {c.qty} {c.unit}</span>
+                    <button type="button" onClick={() => removeItemFromList(c.id)} style={{ color: '#dc2626', border: 'none', background: 'none', fontWeight: 'bold', cursor: 'pointer' }}>✕ Remove</button>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <button type="submit" style={{ backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '11px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '12px' }}>
-            🚀 Post All Consumptions & Deduct Stock
+          <button 
+            type="submit" 
+            style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+          >
+            ⚡ Post Material Consumption & Deduct Stock
           </button>
+
         </form>
       </div>
 
-      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#0f172a', fontWeight: 'bold' }}>Consumption Register ({selectedFY})</h4>
-        {consumptions.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '16px', fontSize: '11px' }}>Koi consumption record darj nahi hai.</div>
+      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
+          Consumption History Register ({activeFY})
+        </h3>
+
+        {savedRecords.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '11px' }}>
+            Koi consumption record darj nahi hai.
+          </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
-                  <th style={{ padding: '8px' }}>Date / Uses For</th>
-                  <th style={{ padding: '8px' }}>Consumed Items & Qty</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {consumptions.map(c => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '8px' }}>{c.usageDate}<br /><strong>{c.usesFor || c.vehicleRef}</strong></td>
-                    <td style={{ padding: '8px' }}>
-                      {c.items.map((it, idx) => (
-                        <div key={idx}>• {it.itemName}: <strong>{it.qty}</strong> ({it.expenseAccount})</div>
-                      ))}
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <button onClick={() => handleDeleteRecord(c.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {savedRecords.map(rec => (
+              <div key={rec.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                  {rec.date} | Location: {rec.uses_for}
+                </div>
+                <div style={{ color: '#64748b' }}>
+                  Items: {(rec.items || []).map(i => `${i.name} (${i.qty} ${i.unit})`).join(', ')}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
+
     </div>
   );
 }
@@ -299,7 +265,6 @@ const inputStyle = {
   border: '1px solid #cbd5e1',
   fontSize: '11px',
   boxSizing: 'border-box',
-  marginTop: '4px',
   backgroundColor: '#ffffff',
   color: '#0f172a'
 };
