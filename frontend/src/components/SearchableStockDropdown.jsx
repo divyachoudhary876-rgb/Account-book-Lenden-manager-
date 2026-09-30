@@ -1,68 +1,28 @@
 // frontend/src/components/SearchableStockDropdown.jsx
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StorageService } from '../utils/storageSync';
+import React, { useState, useEffect, useRef } from 'react';
+import { loadFirmData } from '../utils/firmIsolationEngine';
 
-export default function SearchableStockDropdown({ firm, label = 'Select Stock Item', items = [], value = '', onChange, placeholder = '-- Search or Select Stock --', required = false }) {
+export default function SearchableStockDropdown({
+  firm,
+  label = "Select Stock Item *",
+  value,
+  onChange,
+  placeholder = "-- Search & Choose Stock / Fuel --",
+  required = false
+}) {
   const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [liveItems, setLiveItems] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [stockList, setStockList] = useState([]);
   const dropdownRef = useRef(null);
-  const searchInputRef = useRef(null);
-
-  const firmId = String(firm?.firm_id || firm?.id || '').trim();
-  const firmName = String(firm?.legal_name || firm?.name || 'default').trim();
-  const activeFirmKey = firmId || firmName.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-  const fetchStock = () => {
-    try {
-      if (Array.isArray(items) && items.length > 0) {
-        const filteredProps = items.filter(item => {
-          const itemFirmId = String(item.firm_id || '').trim();
-          const itemFirmName = String(item.firm_name || item.firm || '').trim();
-          
-          if (firmId && itemFirmId && itemFirmId !== firmId) return false;
-          if (firmName && itemFirmName && itemFirmName.toLowerCase() !== firmName.toLowerCase()) return false;
-          return true;
-        });
-        setLiveItems(filteredProps);
-        return;
-      }
-      
-      const scopedKey = `inventory_items_${activeFirmKey}`;
-      const scopedStored = StorageService.getItem(scopedKey) || JSON.parse(localStorage.getItem(scopedKey) || '[]');
-      
-      if (Array.isArray(scopedStored) && scopedStored.length > 0) {
-        setLiveItems(scopedStored);
-        return;
-      }
-
-      const allStored = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
-      const firmStock = allStored.filter(item => {
-        const itemFirmId = String(item.firm_id || '').trim();
-        const itemFirmName = String(item.firm_name || item.firm || '').trim();
-
-        if (firmId && itemFirmId) return itemFirmId === firmId;
-        if (firmName && itemFirmName) return itemFirmName.toLowerCase() === firmName.toLowerCase();
-        
-        return !itemFirmId && !itemFirmName;
-      });
-
-      setLiveItems(firmStock);
-    } catch (e) {
-      console.error("Error fetching scoped stock:", e);
-      setLiveItems([]);
-    }
-  };
 
   useEffect(() => {
-    fetchStock();
-    window.addEventListener('app_storage_updated', fetchStock);
-    window.addEventListener('app_state_updated', fetchStock);
-    return () => {
-      window.removeEventListener('app_storage_updated', fetchStock);
-      window.removeEventListener('app_state_updated', fetchStock);
-    };
-  }, [firm, items]);
+    if (!firm) return;
+    // Strict firm isolation: Sirf active firm ke inventory items load honge
+    const items = loadFirmData('inventory_items', firm, []);
+    // Ghost data ya negative/zero stock wali aniyamit entries ko filter karein
+    const validItems = items.filter(i => i && (i.name || i.item_name));
+    setStockList(validItems);
+  }, [firm]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -74,53 +34,133 @@ export default function SearchableStockDropdown({ firm, label = 'Select Stock It
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredItems = useMemo(() => {
-    const list = [...liveItems].sort((a, b) => (a.item_name || a.name || '').localeCompare(b.item_name || b.name || ''));
-    const cleanSearch = searchTerm.trim().toLowerCase();
-    if (!cleanSearch) return list;
-    return list.filter(i => (i.item_name || i.name || '').toLowerCase().includes(cleanSearch));
-  }, [liveItems, searchTerm]);
+  const selectedItemObj = stockList.find(i => String(i.id) === String(value) || String(i.name || i.item_name) === String(value));
+  const displayText = selectedItemObj ? `${selectedItemObj.name || selectedItemObj.item_name} (Stock: ${selectedItemObj.current_stock || 0} ${selectedItemObj.unit || ''})` : '';
 
-  const selectedItem = liveItems.find(i => (i.item_name || i.name) === value);
+  const filteredItems = stockList.filter(item => {
+    const name = (item.name || item.item_name || '').toLowerCase();
+    return name.includes(searchQuery.toLowerCase());
+  });
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', boxSizing: 'border-box' }} ref={dropdownRef}>
       {label && (
-        <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>
-          {label} {required && <span style={{ color: '#dc2626' }}>*</span>}
+        <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
+          {label}
         </label>
       )}
 
-      <div onClick={() => setIsOpen(!isOpen)} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxSizing: 'border-box' }}>
-        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-          {selectedItem ? (
-            <strong>{selectedItem.item_name || selectedItem.name} [Stock: {Number(selectedItem.current_stock || selectedItem.stock || 0).toFixed(2)} {selectedItem.unit || ''}]</strong>
-          ) : (
-            <span style={{ color: '#94a3b8', fontSize: '12px' }}>{placeholder}</span>
-          )}
-        </div>
-        <span style={{ fontSize: '10px', color: '#64748b' }}>{isOpen ? '\u25b2' : '\u25bc'}</span>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: '100%',
+          padding: '10px',
+          borderRadius: '6px',
+          border: '1px solid #cbd5e1',
+          backgroundColor: '#ffffff',
+          fontSize: '11px',
+          color: displayText ? '#0f172a' : '#94a3b8',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          boxSizing: 'border-box'
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {displayText || placeholder}
+        </span>
+        <span style={{ fontSize: '10px', color: '#64748b' }}>▼</span>
       </div>
 
       {isOpen && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '6px', backgroundColor: '#ffffff', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.2)', border: '1px solid #cbd5e1', zIndex: 9999, overflow: 'hidden' }}>
-          <div style={{ padding: '8px 10px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-            <input ref={searchInputRef} autoFocus type="text" placeholder="Search stock item..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ width: '100%', padding: '7px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          zIndex: 9999,
+          backgroundColor: '#ffffff',
+          border: '1px solid #cbd5e1',
+          borderRadius: '8px',
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+          marginTop: '4px',
+          maxHeight: '220px',
+          overflowY: 'auto',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0, backgroundColor: '#fff' }}>
+            <input 
+              type="text" 
+              placeholder="Search item..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: '4px',
+                border: '1px solid #cbd5e1',
+                fontSize: '11px',
+                boxSizing: 'border-box',
+                outline: 'none'
+              }}
+            />
           </div>
 
-          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+          <div style={{ padding: '4px' }}>
+            <div 
+              onClick={() => {
+                onChange('');
+                setIsOpen(false);
+              }}
+              style={{
+                padding: '8px 10px',
+                fontSize: '11px',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                borderBottom: '1px solid #f1f5f9'
+              }}
+            >
+              -- Clear Selection --
+            </div>
+
             {filteredItems.length === 0 ? (
-              <div style={{ padding: '14px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
-                No stock items found for this firm. Please add items via Inventory Master.
+              <div style={{ padding: '12px', textAlign: 'center', color: '#94a3b8', fontSize: '11px' }}>
+                Koi stock item uplabdh nahi hai.
               </div>
             ) : (
-              filteredItems.map((item, idx) => {
-                const name = item.item_name || item.name;
-                const isSelected = name === value;
-                const stockVal = Number(item.current_stock || item.stock || 0);
+              filteredItems.map(item => {
+                const itemId = item.id;
+                const itemName = item.name || item.item_name;
+                const stockQty = item.current_stock || 0;
+                const unitName = item.unit || 'Units';
+
                 return (
-                  <div key={item.id || idx} onClick={() => { onChange(name); setIsOpen(false); }} style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', backgroundColor: isSelected ? '#eff6ff' : '#fff' }}>
-                    <b>{name}</b> <span style={{ fontSize: '11px', color: '#166534' }}>[Stock: {stockVal.toFixed(2)} {item.unit || ''}]</span>
+                  <div 
+                    key={itemId}
+                    onClick={() => {
+                      onChange(itemId);
+                      setIsOpen(false);
+                      setSearchQuery('');
+                    }}
+                    style={{
+                      padding: '8px 10px',
+                      fontSize: '11px',
+                      color: '#0f172a',
+                      cursor: 'pointer',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      borderBottom: '1px solid #f8fafc'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    <span style={{ fontWeight: 'bold' }}>{itemName}</span>
+                    <span style={{ color: '#166534', fontSize: '10px' }}>Stock: {stockQty} {unitName}</span>
                   </div>
                 );
               })
