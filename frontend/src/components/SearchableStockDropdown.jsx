@@ -1,6 +1,7 @@
 // frontend/src/components/SearchableStockDropdown.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { loadFirmData } from '../utils/firmIsolationEngine';
+import { StorageService } from '../utils/storageSync';
 
 export default function SearchableStockDropdown({
   firm,
@@ -15,13 +16,35 @@ export default function SearchableStockDropdown({
   const [stockList, setStockList] = useState([]);
   const dropdownRef = useRef(null);
 
+  const loadItems = () => {
+    try {
+      let items = [];
+      if (firm) {
+        items = loadFirmData('inventory_items', firm, []);
+      }
+      
+      // Fallback: Agar firm isolation se data na mile toh direct StorageService se uthayein
+      if (!items || items.length === 0) {
+        items = StorageService.getItem('inventory_items') || StorageService.getInventoryItems() || [];
+      }
+
+      // Valid items filter karein jinka naam maujood ho
+      const validItems = items.filter(i => i && (i.name || i.item_name));
+      setStockList(validItems);
+    } catch (e) {
+      console.error("Error loading stock items in dropdown:", e);
+      setStockList([]);
+    }
+  };
+
   useEffect(() => {
-    if (!firm) return;
-    // Strict firm isolation: Sirf active firm ke inventory items load honge
-    const items = loadFirmData('inventory_items', firm, []);
-    // Ghost data ya negative/zero stock wali aniyamit entries ko filter karein
-    const validItems = items.filter(i => i && (i.name || i.item_name));
-    setStockList(validItems);
+    loadItems();
+    window.addEventListener('app_storage_updated', loadItems);
+    window.addEventListener('app_state_updated', loadItems);
+    return () => {
+      window.removeEventListener('app_storage_updated', loadItems);
+      window.removeEventListener('app_state_updated', loadItems);
+    };
   }, [firm]);
 
   useEffect(() => {
@@ -35,7 +58,7 @@ export default function SearchableStockDropdown({
   }, []);
 
   const selectedItemObj = stockList.find(i => String(i.id) === String(value) || String(i.name || i.item_name) === String(value));
-  const displayText = selectedItemObj ? `${selectedItemObj.name || selectedItemObj.item_name} (Stock: ${selectedItemObj.current_stock || 0} ${selectedItemObj.unit || ''})` : '';
+  const displayText = selectedItemObj ? `${selectedItemObj.name || selectedItemObj.item_name} (Stock: ${selectedItemObj.current_stock || selectedItemObj.stock || 0} ${selectedItemObj.unit || ''})` : '';
 
   const filteredItems = stockList.filter(item => {
     const name = (item.name || item.item_name || '').toLowerCase();
@@ -51,7 +74,10 @@ export default function SearchableStockDropdown({
       )}
 
       <div 
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          loadItems(); // Open karte hi fresh items reload honge
+          setIsOpen(!isOpen);
+        }}
         style={{
           width: '100%',
           padding: '10px',
@@ -134,7 +160,7 @@ export default function SearchableStockDropdown({
               filteredItems.map(item => {
                 const itemId = item.id;
                 const itemName = item.name || item.item_name;
-                const stockQty = item.current_stock || 0;
+                const stockQty = item.current_stock || item.stock || 0;
                 const unitName = item.unit || 'Units';
 
                 return (
