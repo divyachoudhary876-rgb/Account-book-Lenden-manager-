@@ -63,7 +63,6 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
     setIsSubmitting(true);
     try {
-      // 1. Agar edit kar rahe hain, toh purana stock revert karein
       if (editingId) {
         revertPurchaseStockOnDeletion(editingId, activeFirmId);
       }
@@ -80,7 +79,6 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         narration: `Purchase Bill #${billNo} from ${supplierParty}`
       };
 
-      // 2. Naya purchase post karein
       processPurchaseStockPosting(purchasePayload, activeFirmId);
 
       window.dispatchEvent(new Event('app_storage_updated'));
@@ -117,7 +115,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       revertPurchaseStockOnDeletion(voucherId, activeFirmId);
 
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
-      const filtered = vouchers.filter(v => v && v.id !== voucherId && v.reference_no !== voucherId);
+      const filtered = vouchers.filter(v => v && v.id !== voucherId && v.reference_no !== refNo);
       StorageService.setItem('account_book_vouchers', filtered);
       StorageService.setItem(`account_book_vouchers_${activeFirmId}`, filtered);
 
@@ -144,6 +142,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     const refNo = inv.reference_no || '';
     const vDate = inv.voucher_date || '';
     const supplier = inv.cr_account || '';
+    const itemName = inv.itemName || inv.item_name || 'Stock Item';
     const qty = inv.qty || inv.quantity || 0;
     const rate = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
     const amount = Number(inv.amount || inv.total_amount || 0).toFixed(2);
@@ -183,7 +182,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           <table>
             <thead>
               <tr>
-                <th>Description</th>
+                <th>Item Description</th>
                 <th class="text-right">Quantity</th>
                 <th class="text-right">Rate (₹)</th>
                 <th class="text-right">Total (₹)</th>
@@ -191,7 +190,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
             </thead>
             <tbody>
               <tr>
-                <td>Purchase Inward Item</td>
+                <td><strong>${itemName}</strong></td>
                 <td class="text-right">${qty}</td>
                 <td class="text-right">${rate}</td>
                 <td class="text-right"><strong>${amount}</strong></td>
@@ -212,6 +211,8 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     return (
       (v.reference_no && v.reference_no.toLowerCase().includes(q)) ||
       (v.cr_account && v.cr_account.toLowerCase().includes(q)) ||
+      (v.itemName && v.itemName.toLowerCase().includes(q)) ||
+      (v.item_name && v.item_name.toLowerCase().includes(q)) ||
       (v.narration && v.narration.toLowerCase().includes(q))
     );
   });
@@ -305,7 +306,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
         <input
           type="text"
-          placeholder="🔍 Search bills by reference no, vendor..."
+          placeholder="🔍 Search bills by reference no, vendor, item..."
           value={searchFilter}
           onChange={e => setSearchFilter(e.target.value)}
           style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', marginBottom: '10px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }}
@@ -319,6 +320,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           ) : (
             filteredPurchases.map(inv => {
               const amt = Number(inv.amount || inv.total_amount || 0);
+              const itemName = inv.itemName || inv.item_name || 'Stock Item';
               const qVal = inv.qty || inv.quantity || 0;
               const rVal = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
               return (
@@ -329,10 +331,12 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
                       <strong style={{ fontSize: '12px', color: '#0f172a' }}>{inv.reference_no || ''}</strong>
                     </div>
                     <div style={{ fontSize: '12px', fontWeight: '700', color: '#dc2626' }}>{inv.cr_account || ''}</div>
-                    <div style={{ fontSize: '11px', color: '#475569', marginTop: '2px', fontWeight: '600' }}>
+                    <div style={{ fontSize: '11px', color: '#0284c7', marginTop: '2px', fontWeight: '800' }}>
+                      📦 {itemName}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#475569', marginTop: '1px', fontWeight: '600' }}>
                       Qty: <strong>{qVal}</strong> | Rate: <strong>₹{rVal}</strong>
                     </div>
-                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '1px' }}>{inv.narration || ''}</div>
                   </div>
                   
                   <div style={{ textAlign: 'right' }}>
