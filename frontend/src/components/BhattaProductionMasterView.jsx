@@ -49,7 +49,7 @@ export default function SmartProductionView({ firm, onClose }) {
     if (!itemObj) return alert('Selected inventory item not found.');
 
     const qty = Number(materialQty);
-    const costPrice = Number(itemObj.cost_price || itemObj.rate || 0);
+    const costPrice = Number(itemObj.cost_price || itemObj.rate || itemObj.unit_purchase_price || 0);
 
     setConsumedMaterials([
       ...consumedMaterials,
@@ -104,20 +104,35 @@ export default function SmartProductionView({ firm, onClose }) {
       setBatchesList(updatedBatches);
       saveFirmData('production_batches', firm, updatedBatches);
 
+      // Inventory Stock Update: Deduct consumed raw materials & Add produced output product
       const updatedInventory = inventoryItems.map(inv => {
-        if (String(inv.id) === String(outputItem)) {
-          return {
-            ...inv,
-            current_stock: Number(inv.current_stock || 0) + Number(producedQty),
-            cost_price: Number(unitValuation)
-          };
+        const invId = String(inv.id);
+        const consumedMatch = consumedMaterials.find(m => String(m.itemId) === invId);
+        let currentStock = Number(inv.current_stock || inv.stock || inv.qty || 0);
+
+        if (consumedMatch) {
+          currentStock = Math.max(0, currentStock - Number(consumedMatch.qty));
         }
-        return inv;
+
+        if (invId === String(outputItem)) {
+          currentStock += Number(producedQty);
+        }
+
+        return {
+          ...inv,
+          current_stock: currentStock,
+          stock: currentStock,
+          qty: currentStock,
+          ...(invId === String(outputItem) ? { cost_price: Number(unitValuation), unit_purchase_price: Number(unitValuation), rate: Number(unitValuation) } : {})
+        };
       });
+
+      setInventoryItems(updatedInventory);
       saveFirmData('inventory_items', firm, updatedInventory);
 
       window.dispatchEvent(new Event('app_storage_updated'));
-      setFeedback({ type: 'success', message: '✓ Production batch saved & auto-valuation updated successfully!' });
+      window.dispatchEvent(new Event('app_state_updated'));
+      setFeedback({ type: 'success', message: '✓ Production saved: Raw materials deducted & Output stock updated!' });
 
       setUseForLocation('');
       setConsumedMaterials([]);
@@ -183,7 +198,7 @@ export default function SmartProductionView({ firm, onClose }) {
             </div>
           </div>
 
-          {/* STEP 1: Consumed Raw Materials (Balanced Layout) */}
+          {/* STEP 1: Consumed Raw Materials */}
           <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
             <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '8px' }}>
               🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
