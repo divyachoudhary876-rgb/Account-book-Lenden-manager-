@@ -43,6 +43,7 @@ export const ACCOUNT_HIERARCHY = {
     label: 'EXPENSES (खर्च / लागत)',
     normalBalance: 'Dr',
     subGroups: [
+      'Direct Production & Factory Expenses',
       'Direct Production Expenses',
       'Operating Fuel Costs (Tractor / Generator Diesel)',
       'Kiln Burning Fuel (Coal / Briquette / Husk)',
@@ -67,17 +68,66 @@ export const ACCOUNT_HIERARCHY = {
 };
 
 /**
- * Retrieve master account heads for active firm
+ * Retrieve master account heads for active firm by unifying both system keys
  */
 export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
   try {
-    const raw = localStorage.getItem(`app_accounts_${firmId}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    let rawAccounts = [];
+
+    // 1. Check primary key used by account master / dropdowns
+    const primaryKey = `app_accounts_${firmId}`;
+    const primaryRaw = localStorage.getItem(primaryKey);
+    if (primaryRaw) {
+      const parsed = JSON.parse(primaryRaw);
+      if (Array.isArray(parsed)) rawAccounts.push(...parsed);
     }
 
-    // Default Baseline Chart of Accounts
+    // 2. Check modal creation key (`account_heads_${firmId}`) so newly created heads appear instantly
+    const modalKey = `account_heads_${firmId}`;
+    const modalRaw = localStorage.getItem(modalKey);
+    if (modalRaw) {
+      const parsed = JSON.parse(modalRaw);
+      if (Array.isArray(parsed)) rawAccounts.push(...parsed);
+    }
+
+    // 3. Deep scan localStorage for any backup or account keys
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('account') || key.includes('ledger') || key.includes('party') || key.includes('head'))) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) rawAccounts.push(...parsed);
+          } catch (e) {}
+        }
+      }
+    }
+
+    // Deduplicate and normalize keys so both `name` and `account_name` work seamlessly
+    const uniqueMap = new Map();
+    rawAccounts.forEach(acc => {
+      if (!acc) return;
+      const name = (acc.account_name || acc.name || '').trim();
+      if (name) {
+        const normalizedAcc = {
+          ...acc,
+          account_name: name,
+          name: name,
+          sub_group: acc.sub_group || acc.group || 'General Ledger',
+          primary_type: acc.primary_type || acc.type || 'Expenses',
+          opening_balance: Number(acc.opening_balance || acc.openingBalance || 0),
+          balance_type: acc.balance_type || acc.balanceType || 'Dr'
+        };
+        uniqueMap.set(name.toLowerCase(), normalizedAcc);
+      }
+    });
+
+    if (uniqueMap.size > 0) {
+      return Array.from(uniqueMap.values());
+    }
+
+    // Default Baseline Chart of Accounts if completely empty
     const defaultAccounts = [
       { id: 'ACC-001', account_name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', sub_group: 'Cash in Hand (रोकड़)', opening_balance: 0, balance_type: 'Dr', is_system_locked: true },
       { id: 'ACC-002', account_name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', sub_group: 'Bank Accounts (बैंक खाते)', opening_balance: 0, balance_type: 'Dr', is_system_locked: false },
@@ -91,7 +141,7 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       { id: 'ACC-010', account_name: 'Capital Account (स्वामी की पूंजी)', primary_type: 'EQUITY', sub_group: 'Proprietor / Partner Capital Account', opening_balance: 0, balance_type: 'Cr', is_system_locked: false }
     ];
 
-    localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(defaultAccounts));
+    localStorage.setItem(primaryKey, JSON.stringify(defaultAccounts));
     return defaultAccounts;
   } catch {
     return [];
@@ -129,7 +179,7 @@ export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
  */
 export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const accounts = getFirmMasterAccounts(firmId);
-  const cleanName = (accountData.account_name || '').trim();
+  const cleanName = (accountData.account_name || accountData.name || '').trim();
 
   if (!cleanName) throw new Error('Account name cannot be empty.');
 
@@ -140,10 +190,11 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const payload = {
     id: accountData.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     account_name: cleanName,
-    primary_type: accountData.primary_type || 'EXPENSES',
-    sub_group: accountData.sub_group || 'Direct Production Expenses',
-    opening_balance: parseFloat(accountData.opening_balance || 0),
-    balance_type: accountData.balance_type || (accountData.primary_type === 'EXPENSES' || accountData.primary_type === 'ASSETS' ? 'Dr' : 'Cr'),
+    name: cleanName,
+    primary_type: accountData.primary_type || accountData.type || 'EXPENSES',
+    sub_group: accountData.sub_group || accountData.group || 'Direct Production Expenses',
+    opening_balance: parseFloat(accountData.opening_balance || accountData.openingBalance || 0),
+    balance_type: accountData.balance_type || accountData.balanceType || 'Dr',
     phone: accountData.phone || '',
     gstin: accountData.gstin || '',
     is_system_locked: Boolean(accountData.is_system_locked),
@@ -151,7 +202,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   };
 
   if (existingIdx !== -1) {
-    // Retain locked status on existing default accounts
     if (accounts[existingIdx].is_system_locked && accounts[existingIdx].account_name !== payload.account_name) {
       throw new Error(`System core account "${accounts[existingIdx].account_name}" cannot be renamed.`);
     }
@@ -161,7 +211,9 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   }
 
   localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(accounts));
+  localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(accounts));
   window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('app_storage_updated'));
   return payload;
 };
 
@@ -180,6 +232,8 @@ export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
 
   const updated = accounts.filter(a => a.id !== accountId);
   localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(updated));
+  localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(updated));
   window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('app_storage_updated'));
   return true;
 };
