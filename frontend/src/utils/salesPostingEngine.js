@@ -3,7 +3,7 @@ import { StorageService } from './storageSync';
 
 export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') => {
   const activeFirmId = invoicePayload?.firmId || invoicePayload?.firm_id || firmId || 'FIRM-001';
-  const { customerId, customer_id, invoiceDate, date, taxableAmount, taxable_amount, gstRate, gst_amount, narration, items, line_items, cart, itemId, quantity } = invoicePayload;
+  const { customerId, customer_id, invoiceDate, date, taxableAmount, taxable_amount, gstRate, gst_amount, narration, items, line_items, cart, item, product, itemId, item_id, product_id, quantity, qty } = invoicePayload;
 
   const resolvedCustomerId = customerId || customer_id;
   const resolvedDate = invoiceDate || date || new Date().toISOString().slice(0, 10);
@@ -40,18 +40,24 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
   customerAcc.current_balance = currentBal + grandTotal;
   accounts[customerIndex] = customerAcc;
 
-  // 3. Robust Inventory Stock Deduction for Sold Items
-  const rawItemsList = items || line_items || cart || (itemId ? [{ itemId, quantity: quantity || 1 }] : []);
+  // 3. Universal Inventory Stock Deduction for Sold Items (Multi-property fallback)
+  const rawItemsList = items || line_items || cart || (item ? [item] : []) || (product ? [product] : []) || ((itemId || item_id || product_id) ? [{ itemId: itemId || item_id || product_id, quantity: quantity || qty || 1 }] : []);
   const processedItems = [];
 
   rawItemsList.forEach(soldItem => {
-    const targetItemId = soldItem.itemId || soldItem.id || soldItem.item_id;
-    const soldQty = parseFloat(soldItem.quantity || soldItem.qty || soldItem.stock || 1);
+    if (!soldItem) return;
+    const targetItemId = soldItem.itemId || soldItem.item_id || soldItem.product_id || soldItem.id || soldItem.name || soldItem.item_name;
+    const soldQty = parseFloat(soldItem.quantity || soldItem.qty || soldItem.stock || soldItem.count || 1);
     if (!targetItemId || soldQty <= 0) return;
 
     processedItems.push({ itemId: targetItemId, quantity: soldQty });
 
-    const itemIndex = inventory.findIndex(i => String(i.id) === String(targetItemId) || String(i.item_name || i.name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase());
+    const itemIndex = inventory.findIndex(i => 
+      String(i.id) === String(targetItemId) || 
+      String(i.item_name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase() ||
+      String(i.name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase()
+    );
+
     if (itemIndex !== -1) {
       const stockItem = { ...inventory[itemIndex] };
       const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || stockItem.current_qty || stockItem.qty || 0);
@@ -176,7 +182,7 @@ export const revertSalesStockOnDeletion = (voucherOrInvoiceId, firmId = 'FIRM-00
   try {
     let targetId = voucherOrInvoiceId;
     if (typeof voucherOrInvoiceId === 'object') {
-      targetId = voucherOrInvoiceId.id || voucherOrInvoiceId.invoice_number;
+      targetId = voucherOrInvoiceId.id || voucherOrInvoiceId.invoice_number || voucherOrInvoiceId.reference_no;
     }
     if (!targetId) return;
 
@@ -196,11 +202,16 @@ export const revertSalesStockOnDeletion = (voucherOrInvoiceId, firmId = 'FIRM-00
 
     if (Array.isArray(itemsToRestore) && itemsToRestore.length > 0) {
       itemsToRestore.forEach(soldItem => {
-        const targetItemId = soldItem.itemId || soldItem.id || soldItem.item_id;
+        const targetItemId = soldItem.itemId || soldItem.item_id || soldItem.product_id || soldItem.id;
         const soldQty = parseFloat(soldItem.quantity || soldItem.qty || 0);
         if (!targetItemId || soldQty <= 0) return;
 
-        const itemIndex = inventory.findIndex(i => String(i.id) === String(targetItemId) || String(i.item_name || i.name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase());
+        const itemIndex = inventory.findIndex(i => 
+          String(i.id) === String(targetItemId) || 
+          String(i.item_name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase() ||
+          String(i.name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase()
+        );
+
         if (itemIndex !== -1) {
           const stockItem = { ...inventory[itemIndex] };
           const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || stockItem.current_qty || stockItem.qty || 0);
