@@ -36,7 +36,7 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
   const vouchers = StorageService.getItem(vouchersKey) || StorageService.getItem('account_book_vouchers') || [];
 
   // 2. Find and Update Stock Item Master Quantity & Valuation
-  let itemIndex = inventory.findIndex(i => String(i.id) === String(resolvedItemId) || String(i.item_name || i.name || '').trim().toLowerCase() === String(resolvedItemId).trim().toLowerCase());
+  let itemIndex = inventory.findIndex(i => i && (String(i.id) === String(resolvedItemId) || String(i.item_name || i.name || '').trim().toLowerCase() === String(resolvedItemId).trim().toLowerCase()));
   
   if (itemIndex === -1) {
     throw new Error("Inventory Item Not Found: Kripya valid stock item select karein.");
@@ -62,7 +62,7 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
   inventory[itemIndex] = stockItem;
 
   // 3. Find Supplier & Update Creditor Balance
-  const supplierIndex = accounts.findIndex(a => String(a.id) === String(resolvedSupplier) || String(a.account_name || '').trim().toLowerCase() === String(resolvedSupplier).trim().toLowerCase());
+  const supplierIndex = accounts.findIndex(a => a && (String(a.id) === String(resolvedSupplier) || String(a.account_name || a.name || '').trim().toLowerCase() === String(resolvedSupplier).trim().toLowerCase()));
   let supplierName = 'Cash Supplier';
   if (supplierIndex !== -1) {
     const suppAcc = { ...accounts[supplierIndex] };
@@ -74,7 +74,7 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
     supplierName = resolvedSupplier.trim();
   }
 
-  // 4. Generate Double-Entry Voucher
+  // 4. Generate Double-Entry Voucher with explicit keys
   const voucherId = `PURCH-${Date.now()}`;
   const itemNameDisplay = stockItem.item_name || stockItem.name || 'Item';
   
@@ -91,8 +91,11 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
     amount: totalPurchaseValue,
     total_amount: totalPurchaseValue,
     itemId: String(stockItem.id),
+    item_id: String(stockItem.id),
     qty: numericQty,
+    quantity: numericQty,
     rate: numericRate,
+    unit_rate: numericRate,
     narration: narration || `Purchased ${numericQty} ${stockItem.unit || 'Units'} of ${itemNameDisplay} @ ₹${numericRate}`,
     entries: [
       { account_name: 'Purchase A/c', type: 'DR', debit: totalPurchaseValue, credit: 0, amount: totalPurchaseValue },
@@ -101,7 +104,7 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
     created_at: new Date().toISOString()
   };
 
-  // 5. Commit Atomic Changes
+  // 5. Commit Atomic Changes across all fallback storage buckets
   StorageService.setItem(inventoryKey, inventory);
   StorageService.setItem('inventory_items', inventory);
 
@@ -126,37 +129,79 @@ export const revertPurchaseStockOnDeletion = (voucherId, firmId = 'FIRM-001') =>
   try {
     if (!voucherId) return;
     const activeFirmId = firmId || 'FIRM-001';
-    const vouchersKey = `account_book_vouchers_${activeFirmId}`;
-    const inventoryKey = `inventory_items_${activeFirmId}`;
+    
+    // Scan all potential voucher storage buckets
+    const vouchersKeys = [
+      `account_book_vouchers_${activeFirmId}`,
+      'account_book_vouchers',
+      `app_vouchers_${activeFirmId}`
+    ];
+    
+    let targetVoucher = null;
+    let foundKey = null;
+    let allVouchers = [];
 
-    const vouchers = StorageService.getItem(vouchersKey) || StorageService.getItem('account_book_vouchers') || [];
-    const inventory = StorageService.getItem(inventoryKey) || StorageService.getItem('inventory_items') || [];
+    for (const key of vouchersKeys) {
+      const items = StorageService.getItem(key);
+      if (Array.isArray(items)) {
+        const found = items.find(v => v && (String(v.id) === String(voucherId) || String(v.reference_no) === String(voucherId)));
+        if (found) {
+          targetVoucher = found;
+          allVouchers = items;
+          foundKey = key;
+          break;
+        }
+      }
+    }
 
-    const targetVoucher = vouchers.find(v => String(v.id) === String(voucherId) || String(v.reference_no) === String(voucherId));
     if (!targetVoucher) return;
 
-    const targetItemId = targetVoucher.itemId || targetVoucher.item_id;
-    const purchasedQty = parseFloat(targetVoucher.qty || targetVoucher.quantity || 0);
+    const targetItemId = targetVoucher.itemId || targetVoucher.item_id || targetVoucher.item;
+    const purchasedQty = parseFloat(targetVoucher.qty || targetVoucher.quantity || targetVoucher.stock || 0);
 
     if (targetItemId && purchasedQty > 0) {
-      const itemIndex = inventory.findIndex(i => String(i.id) === String(targetItemId) || String(i.item_name || i.name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase());
-      if (itemIndex !== -1) {
-        const stockItem = { ...inventory[itemIndex] };
-        const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || stockItem.current_qty || stockItem.qty || 0);
-        const newQty = Math.max(0, currentQty - purchasedQty);
+      const inventoryKeys = [
+        `inventory_items_${activeFirmId}`,
+        'inventory_items'
+      ];
 
-        stockItem.current_stock = newQty;
-        stockItem.stock = newQty;
-        stockItem.current_qty = newQty;
-        stockItem.qty = newQty;
-        inventory[itemIndex] = stockItem;
+      for (const invKey of inventoryKeys) {
+        let inventory = StorageService.getItem(invKey);
+        if (Array.isArray(inventory) && inventory.length > 0) {
+          const itemIndex = inventory.findIndex(i => 
+            i && (
+              String(i.id) === String(targetItemId) || 
+              String(i.item_name || i.name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase()
+            )
+          );
 
-        StorageService.setItem(inventoryKey, inventory);
-        StorageService.setItem('inventory_items', inventory);
-        window.dispatchEvent(new Event('app_storage_updated'));
-        window.dispatchEvent(new Event('app_state_updated'));
-        window.dispatchEvent(new Event('storage'));
+          if (itemIndex !== -1) {
+            const stockItem = { ...inventory[itemIndex] };
+            const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || stockItem.current_qty || stockItem.qty || 0);
+            const newQty = Math.max(0, currentQty - purchasedQty);
+
+            stockItem.current_stock = newQty;
+            stockItem.stock = newQty;
+            stockItem.current_qty = newQty;
+            stockItem.qty = newQty;
+            inventory[itemIndex] = stockItem;
+
+            StorageService.setItem(invKey, inventory);
+          }
+        }
       }
+
+      // Remove the voucher from active storage lists
+      if (foundKey) {
+        const filteredVouchers = allVouchers.filter(v => v && String(v.id) !== String(voucherId) && String(v.reference_no) !== String(voucherId));
+        StorageService.setItem(foundKey, filteredVouchers);
+        StorageService.setItem('account_book_vouchers', filteredVouchers);
+        StorageService.setItem(`app_vouchers_${activeFirmId}`, filteredVouchers);
+      }
+
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
     }
   } catch (e) {
     console.error("Error reverting purchase stock on deletion:", e);
