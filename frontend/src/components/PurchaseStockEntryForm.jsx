@@ -1,7 +1,7 @@
 // frontend/src/components/PurchaseStockEntryForm.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
-import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
+import { loadFirmData } from '../utils/firmIsolationEngine';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
@@ -15,6 +15,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   const [accountsList, setAccountsList] = useState([]);
   const [purchaseList, setPurchaseList] = useState([]);
 
+  const [editingId, setEditingId] = useState(null);
   const [purchaseDate, setPurchaseDate] = useState(todayMaxDate);
   const [billNo, setBillNo] = useState(`PUR-${Math.floor(Date.now() / 1000)}`);
   const [supplierParty, setSupplierParty] = useState(''); 
@@ -62,7 +63,13 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
     setIsSubmitting(true);
     try {
+      // 1. Agar edit kar rahe hain, toh purana stock revert karein
+      if (editingId) {
+        revertPurchaseStockOnDeletion(editingId, activeFirmId);
+      }
+
       const purchasePayload = {
+        id: editingId || `PURCH-${Date.now()}`,
         firmId: activeFirmId,
         supplierId: supplierParty,
         invoiceNumber: billNo,
@@ -73,14 +80,15 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         narration: `Purchase Bill #${billNo} from ${supplierParty}`
       };
 
-      // Call central purchase posting engine (handles stock +IN & weighted avg pricing)
+      // 2. Naya purchase post karein
       processPurchaseStockPosting(purchasePayload, activeFirmId);
 
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
       loadData();
 
-      setFeedback({ type: 'success', message: '✓ Purchase Bill Saved & Stock Updated!' });
+      setFeedback({ type: 'success', message: editingId ? '✓ Purchase Bill Updated & Stock Adjusted!' : '✓ Purchase Bill Saved & Stock Updated!' });
+      setEditingId(null);
       setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty('');
       setBillNo(`PUR-${Math.floor(Date.now() / 1000)}`);
     } catch (err) {
@@ -90,11 +98,22 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     }
   };
 
+  const handleEdit = (inv) => {
+    if (!inv) return;
+    setEditingId(inv.id);
+    setPurchaseDate(inv.voucher_date || inv.date || todayMaxDate);
+    setBillNo(inv.reference_no || '');
+    setSupplierParty(inv.cr_account || '');
+    setSelectedItemId(inv.itemId || inv.item_id || '');
+    setQuantity(inv.qty || inv.quantity ? String(inv.qty || inv.quantity) : '');
+    setPurchaseRate(inv.rate || inv.unit_rate ? String(inv.rate || inv.unit_rate) : '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleDeletePurchase = (voucherId, refNo) => {
     if (!window.confirm(`Bill #${refNo} को हटाने से इसका स्टॉक वापस माइनस हो जाएगा। जारी रखें?`)) return;
 
     try {
-      // Revert purchase stock using centralized engine helper
       revertPurchaseStockOnDeletion(voucherId, activeFirmId);
 
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
@@ -105,10 +124,86 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
       loadData();
+
+      if (editingId === voucherId) {
+        setEditingId(null);
+        setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty('');
+      }
       alert('✓ Purchase entry deleted & stock adjusted.');
     } catch (err) {
       alert('Delete failed: ' + err.message);
     }
+  };
+
+  const handlePrint = (inv) => {
+    if (!inv) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return alert('Popup blocked! Please allow popups.');
+
+    const firmName = firm?.name || firm?.legal_name || 'Neelkanth Groups';
+    const refNo = inv.reference_no || '';
+    const vDate = inv.voucher_date || '';
+    const supplier = inv.cr_account || '';
+    const qty = inv.qty || inv.quantity || 0;
+    const rate = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
+    const amount = Number(inv.amount || inv.total_amount || 0).toFixed(2);
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Inward Slip #${refNo}</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 24px; color: #0f172a; }
+            .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
+            .header h2 { margin: 0; font-size: 20px; font-weight: 800; }
+            .header p { margin: 4px 0 0 0; font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+            .meta { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 12px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+            th { background: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; text-align: left; }
+            td { padding: 10px; border: 1px solid #cbd5e1; }
+            .text-right { text-align: right; }
+            .total { margin-top: 20px; text-align: right; font-size: 15px; font-weight: 900; color: #059669; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h2>${firmName}</h2>
+            <p>PURCHASE INWARD SLIP</p>
+          </div>
+          <div class="meta">
+            <div>
+              <strong>Bill / Ref No:</strong> ${refNo}<br/>
+              <strong>Date:</strong> ${vDate}
+            </div>
+            <div style="text-align: right;">
+              <strong>Supplier / Vendor:</strong><br/>
+              <span style="font-size: 14px; font-weight: bold;">${supplier}</span>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th class="text-right">Quantity</th>
+                <th class="text-right">Rate (₹)</th>
+                <th class="text-right">Total (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Purchase Inward Item</td>
+                <td class="text-right">${qty}</td>
+                <td class="text-right">${rate}</td>
+                <td class="text-right"><strong>${amount}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="total">Grand Total: ₹${amount}</div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   const filteredPurchases = purchaseList.filter(v => {
@@ -127,7 +222,9 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       {/* Form Card */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', boxSizing: 'border-box', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>📦 Purchase Inward & Stock Entry</h2>
+          <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
+            {editingId ? '✏️ Edit Purchase Bill' : '📦 Purchase Inward & Stock Entry'}
+          </h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
         </div>
         
@@ -185,9 +282,16 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
             </div>
           </div>
 
-          <button type="submit" disabled={isSubmitting} style={{ width: '100%', padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
-            📥 Post Purchase & Generate Inward Slip
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button type="submit" disabled={isSubmitting} style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
+              {editingId ? '✓ Update Purchase & Adjust Stock' : '📥 Post Purchase & Generate Inward Slip'}
+            </button>
+            {editingId && (
+              <button type="button" onClick={() => { setEditingId(null); setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty(''); }} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
@@ -215,6 +319,8 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           ) : (
             filteredPurchases.map(inv => {
               const amt = Number(inv.amount || inv.total_amount || 0);
+              const qVal = inv.qty || inv.quantity || 0;
+              const rVal = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
               return (
                 <div key={inv.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
                   <div>
@@ -223,17 +329,19 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
                       <strong style={{ fontSize: '12px', color: '#0f172a' }}>{inv.reference_no || ''}</strong>
                     </div>
                     <div style={{ fontSize: '12px', fontWeight: '700', color: '#dc2626' }}>{inv.cr_account || ''}</div>
-                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{inv.narration || ''}</div>
+                    <div style={{ fontSize: '11px', color: '#475569', marginTop: '2px', fontWeight: '600' }}>
+                      Qty: <strong>{qVal}</strong> | Rate: <strong>₹{rVal}</strong>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '1px' }}>{inv.narration || ''}</div>
                   </div>
                   
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '14px', fontWeight: '900', color: '#059669', marginBottom: '6px' }}>₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                    <button 
-                      onClick={() => handleDeletePurchase(inv.id, inv.reference_no)}
-                      style={{ padding: '5px 10px', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}
-                    >
-                      🗑️ Delete
-                    </button>
+                    <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                      <button onClick={() => handlePrint(inv)} style={{ padding: '5px 8px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}>Print</button>
+                      <button onClick={() => handleEdit(inv)} style={{ padding: '5px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}>Edit</button>
+                      <button onClick={() => handleDeletePurchase(inv.id, inv.reference_no)} style={{ padding: '5px 8px', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}>Delete</button>
+                    </div>
                   </div>
                 </div>
               );
