@@ -5,6 +5,7 @@ import { loadFirmData } from '../utils/firmIsolationEngine';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
+import { processSalesInvoicePosting, revertSalesStockOnDeletion } from '../utils/salesPostingEngine.js';
 
 export default function CreateInvoice({ firm, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
@@ -31,7 +32,6 @@ export default function CreateInvoice({ firm, onClose }) {
 
   const loadData = () => {
     try {
-      // Strict firm-isolated inventory loading
       const rawInventory = loadFirmData('inventory_items', firm, []);
       const validInventory = rawInventory.filter(i => i && (i.name || i.item_name));
       setAllItems(validInventory);
@@ -102,68 +102,33 @@ export default function CreateInvoice({ firm, onClose }) {
     if (cart.length === 0) return alert('Kam se kam ek item bill mein jodein.');
 
     try {
-      const currentInventory = loadFirmData('inventory_items', firm, []);
-      const vouchers = StorageService.getItem('account_book_vouchers') || [];
-
-      let workingInventory = [...currentInventory];
+      // 1. If editing, revert old invoice stock first
       if (editingId) {
-        const oldInv = vouchers.find(v => v && v.id === editingId);
-        if (oldInv && oldInv.items) {
-          workingInventory = workingInventory.map(invItem => {
-            const matched = oldInv.items.find(c => c && String(c.itemId) === String(invItem.id));
-            if (matched && !matched.isService) {
-              return { ...invItem, current_stock: Number(invItem.current_stock || 0) + Number(matched.qty || 0) };
-            }
-            return invItem;
-          });
-        }
+        revertSalesStockOnDeletion(editingId, activeFirmId);
       }
 
-      const updatedInventory = workingInventory.map(invItem => {
-        const cartItem = cart.find(c => c && String(c.itemId) === String(invItem.id));
-        if (cartItem && !cartItem.isService) {
-          return { ...invItem, current_stock: Number(invItem.current_stock || 0) - Number(cartItem.qty || 0) };
-        }
-        return invItem;
-      });
-      StorageService.setItem('inventory_items', updatedInventory);
-
-      const newVoucher = {
+      // 2. Build centralized payload for sales engine
+      const invoicePayload = {
         id: editingId || `INV-${Date.now()}`,
-        firm_id: activeFirmId,
-        voucher_date: invoiceDate,
-        voucher_type: 'SALES',
-        dr_account: customerParty,
-        cr_account: 'Sales & Revenue',
-        amount: grandTotal,
-        total_amount: grandTotal,
-        reference_no: invoiceNo,
+        firmId: activeFirmId,
+        customer_id: customerParty,
+        invoiceDate: invoiceDate,
+        taxable_amount: totalTaxable,
+        gstRate: Number(gstRate),
+        gst_amount: totalCgst + totalSgst,
         narration: `Sales Invoice ${invoiceNo} to ${customerParty} - Vehicle: ${vehicleNo}`,
-        vehicle_no: vehicleNo,
-        items: cart,
-        total_taxable: totalTaxable,
-        total_cgst: totalCgst,
-        total_sgst: totalSgst,
-        entries: [
-          { account_name: customerParty, type: 'DR', amount: grandTotal },
-          { account_name: 'Sales & Revenue', type: 'CR', amount: totalTaxable },
-          ...(totalCgst > 0 ? [{ account_name: 'CGST Output', type: 'CR', amount: totalCgst }] : []),
-          ...(totalSgst > 0 ? [{ account_name: 'SGST Output', type: 'CR', amount: totalSgst }] : [])
-        ],
-        created_at: new Date().toISOString()
+        items: cart.map(c => ({
+          itemId: c.itemId,
+          quantity: c.qty,
+          rate: c.rate,
+          total: c.total
+        }))
       };
 
-      let updatedVouchers;
-      if (editingId) {
-        updatedVouchers = vouchers.map(v => v && v.id === editingId ? newVoucher : v);
-        setFeedback({ type: 'success', message: '✓ Invoice Updated Successfully!' });
-      } else {
-        updatedVouchers = [newVoucher, ...vouchers];
-        setFeedback({ type: 'success', message: '✓ Invoice Generated & Saved to Register!' });
-      }
+      // 3. Process central sales posting (Automatically deducts inventory stock & logs ledger entries)
+      processSalesInvoicePosting(invoicePayload, activeFirmId);
 
-      StorageService.setItem('account_book_vouchers', updatedVouchers);
-      window.dispatchEvent(new Event('app_storage_updated'));
+      setFeedback({ type: 'success', message: editingId ? '✓ Invoice Updated Successfully & Stock Adjusted!' : '✓ Invoice Generated, Saved & Stock Deducted!' });
       loadData();
 
       setEditingId(null);
@@ -192,29 +157,27 @@ export default function CreateInvoice({ firm, onClose }) {
     if (!window.confirm(`Invoice #${invNo} ko delete karne se stock vapas jud jayega. Jari rakhein?`)) return;
 
     try {
+      // 1. Automatically restore stock via central engine helper
+      revertSalesStockOnDeletion(invId, activeFirmId);
+
+      // 2. Remove voucher from storage
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
-      const targetInv = vouchers.find(v => v && v.id === invId);
-
-      if (targetInv && targetInv.items) {
-        const currentInventory = loadFirmData('inventory_items', firm, []);
-        const restoredInventory = currentInventory.map(invItem => {
-          const matchedCartItem = targetInv.items.find(c => c && String(c.itemId) === String(invItem.id));
-          if (matchedCartItem && !matchedCartItem.isService) {
-            return { ...invItem, current_stock: Number(invItem.current_stock || 0) + Number(matchedCartItem.qty || 0) };
-          }
-          return invItem;
-        });
-        StorageService.setItem('inventory_items', restoredInventory);
-      }
-
-      const filteredVouchers = vouchers.filter(v => v && v.id !== invId);
+      const filteredVouchers = vouchers.filter(v => v && v.id !== invId && v.reference_no !== invId);
       StorageService.setItem('account_book_vouchers', filteredVouchers);
+
+      const invoices = StorageService.getItem(`app_invoices_${activeFirmId}`) || StorageService.getItem('app_invoices') || [];
+      const filteredInvoices = invoices.filter(i => i && i.id !== invId && i.invoice_number !== invId);
+      StorageService.setItem(`app_invoices_${activeFirmId}`, filteredInvoices);
+      StorageService.setItem('app_invoices', filteredInvoices);
+
       window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
       loadData();
+
       if (editingId === invId) {
         setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo('');
       }
-      alert('✓ Invoice deleted & stock restored.');
+      alert('✓ Invoice deleted & stock successfully restored.');
     } catch (err) {
       alert('Delete failed: ' + err.message);
     }
@@ -421,29 +384,27 @@ export default function CreateInvoice({ firm, onClose }) {
                       <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a' }}>{c.itemName} ({c.gstRate}% GST)</span>
                       <span style={{ fontSize: '10px', color: '#64748b' }}>Qty: {c.qty} {c.unit} @ ₹{c.rate}</span>
                     </div>
-                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a' }}>
-                      ₹{(c.total || 0).toFixed(2)} 
-                      <button type="button" onClick={() => removeCartItem(c.id)} style={{ color: '#ef4444', border: 'none', background: 'none', marginLeft: '10px', cursor: 'pointer', fontWeight: 'bold', padding: '2px' }}>✕</button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a' }}>₹{c.total.toFixed(2)}</span>
+                      <button type="button" onClick={() => removeCartItem(c.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}>✕</button>
                     </div>
                   </div>
                 ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', fontSize: '12px', backgroundColor: '#e2e8f0', padding: '10px', borderRadius: '8px' }}>
-                  <div>
-                    <div>Taxable: ₹{totalTaxable.toFixed(2)}</div>
-                    <div style={{ fontSize: '10px', color: '#475569' }}>CGST: ₹{totalCgst.toFixed(2)} | SGST: ₹{totalSgst.toFixed(2)}</div>
-                  </div>
-                  <div style={{ fontWeight: '900', fontSize: '15px', color: '#047857' }}>₹{grandTotal.toFixed(2)}</div>
-                </div>
               </div>
             )}
           </div>
 
+          <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', marginBottom: '14px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '13px', fontWeight: '800', color: '#475569' }}>Grand Total (Inc. Tax):</span>
+            <span style={{ fontSize: '16px', fontWeight: '900', color: '#059669' }}>₹{grandTotal.toFixed(2)}</span>
+          </div>
+
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: editingId ? '#0284c7' : '#1d4ed8', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
-              {editingId ? '✓ Update GST Invoice' : '📄 Post Multi-Item GST Sale'}
+            <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', fontSize: '12px' }}>
+              {editingId ? '✓ Update Invoice & Stock' : '💾 Save Invoice & Deduct Stock'}
             </button>
             {editingId && (
-              <button type="button" onClick={() => { setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo(''); }} style={{ padding: '11px 16px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
+              <button type="button" onClick={() => { setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo(); }} style={{ padding: '12px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                 Cancel
               </button>
             )}
@@ -451,46 +412,36 @@ export default function CreateInvoice({ firm, onClose }) {
         </form>
       </div>
 
+      {/* Saved Invoices Register */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-          <h3 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>Sales Invoices Register ({invoiceList.length})</h3>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>📜 Recent Sales Invoices</h3>
           <input 
             type="text" 
-            placeholder="Search invoices..." 
+            placeholder="Search invoice or party..." 
             value={searchFilter} 
             onChange={e => setSearchFilter(e.target.value)} 
-            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', width: '180px' }} 
           />
         </div>
 
         {filteredInvoices.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '11px' }}>No sales invoices found.</div>
+          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '11px' }}>No sales invoices found.</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
-                  <th style={{ padding: '8px' }}>Date / No</th>
-                  <th style={{ padding: '8px' }}>Customer</th>
-                  <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredInvoices.map(inv => (
-                  <tr key={inv.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '8px' }}>{inv.voucher_date}<br /><strong>{inv.reference_no}</strong></td>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>{inv.dr_account}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>₹{Number(inv.amount || inv.total_amount || 0).toFixed(2)}</td>
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <button onClick={() => handlePrint(inv)} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold', marginRight: '4px' }}>Print</button>
-                      <button onClick={() => handleEdit(inv)} style={{ backgroundColor: '#fef3c7', color: '#b45309', border: 'none', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold', marginRight: '4px' }}>Edit</button>
-                      <button onClick={() => handleDelete(inv.id, inv.reference_no)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {filteredInvoices.map(inv => (
+              <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>#{inv.reference_no} — {inv.dr_account}</div>
+                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date} | Amount: <strong style={{ color: '#059669' }}>₹{(inv.amount || 0).toFixed(2)}</strong></div>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={() => handlePrint(inv)} style={{ padding: '5px 8px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Print</button>
+                  <button onClick={() => handleEdit(inv)} style={{ padding: '5px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Edit</button>
+                  <button onClick={() => handleDelete(inv.id, inv.reference_no)} style={{ padding: '5px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Delete</button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -500,11 +451,12 @@ export default function CreateInvoice({ firm, onClose }) {
 
 const inputStyle = {
   width: '100%',
-  padding: '8px',
-  borderRadius: '6px',
+  padding: '9px',
+  borderRadius: '8px',
   border: '1px solid #cbd5e1',
-  fontSize: '11px',
+  fontSize: '12px',
   boxSizing: 'border-box',
-  backgroundColor: '#ffffff',
+  outline: 'none',
+  backgroundColor: '#fff',
   color: '#0f172a'
 };
