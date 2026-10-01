@@ -172,6 +172,20 @@ export default function AccountStatementView({ firm }) {
         const vNum = v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
 
+        // Extract item details if available (Purchase/Sales items)
+        let itemDisplayInfo = '';
+        if (Array.isArray(v.items) && v.items.length > 0) {
+          const itemStrs = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} @ ₹${it.rate || 0})`);
+          itemDisplayInfo = itemStrs.join(', ');
+        } else if (v.itemName || v.item_name || v.qty || v.quantity) {
+          const itName = v.itemName || v.item_name || 'Item';
+          const itQty = v.qty || v.quantity || 0;
+          const itRate = v.rate || v.unit_rate || 0;
+          itemDisplayInfo = `${itName} (Qty: ${itQty} @ ₹${itRate})`;
+        }
+
+        const combinedNarr = itemDisplayInfo ? `${itemDisplayInfo} | ${narration}` : narration;
+
         if (v.worker && v.expense_ledger && v.total_amount) {
           if (String(v.worker).trim().toLowerCase() === targetClean) {
             allParsedTransactions.push({
@@ -207,7 +221,7 @@ export default function AccountStatementView({ firm }) {
               date: vDate,
               voucher_type: vType,
               voucher_number: vNum,
-              narration: narration,
+              narration: combinedNarr,
               debit: partyDebit,
               credit: partyCredit
             });
@@ -223,7 +237,7 @@ export default function AccountStatementView({ firm }) {
               date: vDate,
               voucher_type: vType,
               voucher_number: vNum,
-              narration: narration,
+              narration: combinedNarr,
               debit: dr.toLowerCase() === targetClean ? amt : 0,
               credit: cr.toLowerCase() === targetClean ? amt : 0
             });
@@ -402,7 +416,7 @@ export default function AccountStatementView({ firm }) {
                   <td style={tdStyle}>{t.date}</td>
                   <td style={tdStyle}>
                     <strong>{t.voucher_type}</strong> #{t.voucher_number}
-                    {t.narration && <div style={{ color: '#64748b', fontSize: '10px' }}>{t.narration}</div>}
+                    {t.narration && <div style={{ color: '#0284c7', fontSize: '11px', fontWeight: '600', marginTop: '2px' }}>{t.narration}</div>}
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: t.debit > 0 ? '#059669' : '#94a3b8', fontWeight: t.debit > 0 ? 'bold' : 'normal' }}>
                     {t.debit > 0 ? t.debit.toFixed(2) : '-'}
