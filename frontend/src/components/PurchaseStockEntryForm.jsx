@@ -67,6 +67,15 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         revertPurchaseStockOnDeletion(editingId, activeFirmId);
       }
 
+      // Find selected item object to get its exact name and measurement unit
+      const selectedItemObj = allItems.find(i => 
+        String(i.id || i.item_id) === String(selectedItemId) || 
+        String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId).trim().toLowerCase()
+      );
+      
+      const itemUnit = selectedItemObj?.unit || 'Pcs';
+      const itemNameClean = selectedItemObj?.item_name || selectedItemObj?.name || 'Stock Item';
+
       const purchasePayload = {
         id: editingId || `PURCH-${Date.now()}`,
         firmId: activeFirmId,
@@ -74,8 +83,13 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         invoiceNumber: billNo,
         entryDate: purchaseDate,
         itemId: selectedItemId,
+        itemName: itemNameClean,
+        item_name: itemNameClean,
         quantity: quantity,
+        qty: quantity,
+        unit: itemUnit,
         purchaseRate: purchaseRate,
+        rate: purchaseRate,
         narration: `Purchase Bill #${billNo} from ${supplierParty}`
       };
 
@@ -144,6 +158,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     const supplier = inv.cr_account || '';
     const itemName = inv.itemName || inv.item_name || 'Stock Item';
     const qty = inv.qty || inv.quantity || 0;
+    const unit = inv.unit || 'Pcs';
     const rate = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
     const amount = Number(inv.amount || inv.total_amount || 0).toFixed(2);
 
@@ -191,7 +206,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
             <tbody>
               <tr>
                 <td><strong>${itemName}</strong></td>
-                <td class="text-right">${qty}</td>
+                <td class="text-right">${qty} ${unit}</td>
                 <td class="text-right">${rate}</td>
                 <td class="text-right"><strong>${amount}</strong></td>
               </tr>
@@ -322,6 +337,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
               const amt = Number(inv.amount || inv.total_amount || 0);
               const itemName = inv.itemName || inv.item_name || 'Stock Item';
               const qVal = inv.qty || inv.quantity || 0;
+              const uVal = inv.unit || 'Pcs';
               const rVal = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
               return (
                 <div key={inv.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
@@ -335,7 +351,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
                       📦 {itemName}
                     </div>
                     <div style={{ fontSize: '11px', color: '#475569', marginTop: '1px', fontWeight: '600' }}>
-                      Qty: <strong>{qVal}</strong> | Rate: <strong>₹{rVal}</strong>
+                      Qty: <strong>{qVal} {uVal}</strong> | Rate: <strong>₹{rVal}</strong>
                     </div>
                   </div>
                   
