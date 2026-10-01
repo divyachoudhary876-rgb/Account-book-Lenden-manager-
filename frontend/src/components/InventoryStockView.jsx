@@ -52,22 +52,16 @@ export default function InventoryStockView({ firm, onClose }) {
         let totalOutFlowQty = 0;
         let totalOutFlowAmt = 0;
 
-        // Think10x Strict Item Matching Helper
-        const isStrictItemMatch = (vId, vName, narration = '') => {
+        // Think10x Strict & Secure Item Matching (Eliminates cross-contamination)
+        const isStrictItemMatch = (vId, vName) => {
           const cleanVId = String(vId || '').trim();
           const cleanVName = String(vName || '').trim().toLowerCase();
-          const cleanNarration = String(narration || '').trim().toLowerCase();
 
-          // 1. Exact ID Match
+          // 1. Strict ID Match
           if (itemId && cleanVId && itemId === cleanVId) return true;
 
-          // 2. Exact Name Match
+          // 2. Strict Exact Name Match
           if (itemNameClean && cleanVName && itemNameClean === cleanVName) return true;
-
-          // 3. Narration Match (Only if item name is explicitly mentioned and unique)
-          if (itemNameClean && cleanNarration && cleanNarration.includes(itemNameClean)) {
-            return true;
-          }
 
           return false;
         };
@@ -78,10 +72,9 @@ export default function InventoryStockView({ firm, onClose }) {
           const vType = String(v.voucher_type || v.type || '').toUpperCase();
           const vId = v.itemId || v.item_id || '';
           const vName = v.itemName || v.item_name || v.name || '';
-          const narration = v.narration || '';
 
           if (vType === 'PURCHASE') {
-            if (isStrictItemMatch(vId, vName, narration)) {
+            if (isStrictItemMatch(vId, vName)) {
               const q = Number(v.qty || v.quantity || 0);
               const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
               totalPurQty += q;
@@ -94,7 +87,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 if (!ci) return;
                 const ciId = ci.itemId || ci.item_id || ci.id || '';
                 const ciName = ci.itemName || ci.name || ci.item_name || '';
-                if (isStrictItemMatch(ciId, ciName, narration)) {
+                if (isStrictItemMatch(ciId, ciName)) {
                   const q = Number(ci.quantity || ci.qty || 0);
                   const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
                   totalOutFlowQty += q;
@@ -102,7 +95,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 }
               });
             } else {
-              if (isStrictItemMatch(vId, vName, narration)) {
+              if (isStrictItemMatch(vId, vName)) {
                 const q = Number(v.qty || v.quantity || 0);
                 const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
                 totalOutFlowQty += q;
@@ -142,7 +135,7 @@ export default function InventoryStockView({ firm, onClose }) {
             if (!ri) return;
             const rId = ri.itemId || ri.id || '';
             const rName = ri.name || '';
-            if (isStrictItemMatch(rId, rName, rec.uses_for || '')) {
+            if (isStrictItemMatch(rId, rName)) {
               const q = Number(ri.qty || 0);
               totalOutFlowQty += q;
               totalOutFlowAmt += q * Number(ri.rate || item.unit_purchase_price || item.rate || 0);
@@ -436,7 +429,7 @@ export default function InventoryStockView({ firm, onClose }) {
                     step="0.01" 
                     value={openingStock} 
                     onChange={e => setOpeningStock(e.target.value)} 
-                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' >>} 
                   />
                 </div>
                 <div style={{ flex: 1 }}>
