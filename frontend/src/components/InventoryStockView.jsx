@@ -24,14 +24,12 @@ export default function InventoryStockView({ firm, onClose }) {
         items = StorageService.getItem(scopedKey) || StorageService.getItem('inventory_items') || [];
       }
 
-      // Fetch unique vouchers securely to avoid duplicate counting
       const rawVouchers = [
         ...(StorageService.getItem('account_book_vouchers') || []),
         ...(StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || []),
         ...(StorageService.getItem(`app_vouchers_${activeFirmId}`) || [])
       ];
 
-      // Deduplicate vouchers by id / reference_no
       const uniqueVouchersMap = new Map();
       rawVouchers.forEach(v => {
         if (v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001' || !v.firm_id)) {
@@ -54,14 +52,23 @@ export default function InventoryStockView({ firm, onClose }) {
         let totalOutFlowQty = 0;
         let totalOutFlowAmt = 0;
 
-        const isMatch = (vId, vName, vNarration = '') => {
-          const cleanId = String(vId || '').trim();
-          const cleanName = String(vName || '').trim().toLowerCase();
-          const cleanNarr = String(vNarration || '').trim().toLowerCase();
+        // Think10x Strict Item Matching Helper
+        const isStrictItemMatch = (vId, vName, narration = '') => {
+          const cleanVId = String(vId || '').trim();
+          const cleanVName = String(vName || '').trim().toLowerCase();
+          const cleanNarration = String(narration || '').trim().toLowerCase();
 
-          if (itemId && cleanId && itemId === cleanId) return true;
-          if (itemNameClean && cleanName && (itemNameClean === cleanName || cleanName.includes(cleanName) || cleanName.includes(itemNameClean))) return true;
-          if (itemNameClean && cleanNarr && cleanNarr.includes(itemNameClean)) return true;
+          // 1. Exact ID Match
+          if (itemId && cleanVId && itemId === cleanVId) return true;
+
+          // 2. Exact Name Match
+          if (itemNameClean && cleanVName && itemNameClean === cleanVName) return true;
+
+          // 3. Narration Match (Only if item name is explicitly mentioned and unique)
+          if (itemNameClean && cleanNarration && cleanNarration.includes(itemNameClean)) {
+            return true;
+          }
+
           return false;
         };
 
@@ -70,11 +77,11 @@ export default function InventoryStockView({ firm, onClose }) {
           if (!v) return;
           const vType = String(v.voucher_type || v.type || '').toUpperCase();
           const vId = v.itemId || v.item_id || '';
-          const vName = v.item_name || v.name || '';
+          const vName = v.itemName || v.item_name || v.name || '';
           const narration = v.narration || '';
 
           if (vType === 'PURCHASE') {
-            if (isMatch(vId, vName, narration)) {
+            if (isStrictItemMatch(vId, vName, narration)) {
               const q = Number(v.qty || v.quantity || 0);
               const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
               totalPurQty += q;
@@ -86,8 +93,8 @@ export default function InventoryStockView({ firm, onClose }) {
               vItems.forEach(ci => {
                 if (!ci) return;
                 const ciId = ci.itemId || ci.item_id || ci.id || '';
-                const ciName = ci.itemName || ci.name || '';
-                if (isMatch(ciId, ciName, narration)) {
+                const ciName = ci.itemName || ci.name || ci.item_name || '';
+                if (isStrictItemMatch(ciId, ciName, narration)) {
                   const q = Number(ci.quantity || ci.qty || 0);
                   const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
                   totalOutFlowQty += q;
@@ -95,7 +102,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 }
               });
             } else {
-              if (isMatch(vId, vName, narration)) {
+              if (isStrictItemMatch(vId, vName, narration)) {
                 const q = Number(v.qty || v.quantity || 0);
                 const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
                 totalOutFlowQty += q;
@@ -109,7 +116,7 @@ export default function InventoryStockView({ firm, onClose }) {
         productionBatches.forEach(batch => {
           if (!batch) return;
           const outId = batch.output_item_id || '';
-          if (isMatch(outId, '', '')) {
+          if (isStrictItemMatch(outId, '')) {
             totalPurQty += Number(batch.produced_qty || 0);
             totalPurAmt += Number(batch.total_cost || 0);
           }
@@ -119,7 +126,7 @@ export default function InventoryStockView({ firm, onClose }) {
             if (!mat) return;
             const mId = mat.itemId || mat.id || '';
             const mName = mat.name || '';
-            if (isMatch(mId, mName, '')) {
+            if (isStrictItemMatch(mId, mName)) {
               const q = Number(mat.qty || 0);
               totalOutFlowQty += q;
               totalOutFlowAmt += q * Number(item.unit_purchase_price || item.rate || 0);
@@ -135,7 +142,7 @@ export default function InventoryStockView({ firm, onClose }) {
             if (!ri) return;
             const rId = ri.itemId || ri.id || '';
             const rName = ri.name || '';
-            if (isMatch(rId, rName, rec.uses_for || '')) {
+            if (isStrictItemMatch(rId, rName, rec.uses_for || '')) {
               const q = Number(ri.qty || 0);
               totalOutFlowQty += q;
               totalOutFlowAmt += q * Number(ri.rate || item.unit_purchase_price || item.rate || 0);
@@ -146,7 +153,12 @@ export default function InventoryStockView({ firm, onClose }) {
         const opStock = Number(item.opening_stock ?? item.stock ?? item.current_stock ?? 0);
         const computedStock = opStock + totalPurQty - totalOutFlowQty;
         const finalStock = computedStock >= 0 ? computedStock : 0;
-        const rateVal = Number(item.unit_purchase_price ?? item.purchasePrice ?? item.rate ?? 0);
+        
+        // Weighted Average Rate Calculation with Fallback
+        let rateVal = Number(item.unit_purchase_price ?? item.purchasePrice ?? item.rate ?? 0);
+        if (totalPurQty > 0 && totalPurAmt > 0) {
+          rateVal = Number((totalPurAmt / totalPurQty).toFixed(2));
+        }
 
         return {
           ...item,
