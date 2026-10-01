@@ -85,7 +85,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (Updated with Item & Description Details)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
@@ -119,7 +119,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   doc.setFontSize(9);
   
   doc.text('Date', 18, y + 5.5);
-  doc.text('Particulars', 45, y + 5.5);
+  doc.text('Particulars & Description', 45, y + 5.5);
   doc.text('Dr (Rs)', 125, y + 5.5, { align: 'right' });
   doc.text('Cr (Rs)', 155, y + 5.5, { align: 'right' });
   doc.text('Balance', 192, y + 5.5, { align: 'right' });
@@ -130,23 +130,37 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   doc.setFont(undefined, 'normal');
 
   txs.forEach((t, index) => {
-    if (y > 275) {
+    if (y > 270) {
       doc.addPage();
       y = 20;
     }
 
-    // Alternating Row Background
     if (index % 2 === 0) {
       doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 4, 182, 7, 'F');
+      doc.rect(14, y - 4, 182, 9, 'F');
     }
 
+    doc.setFontSize(9);
     doc.text(String(t.date || '-'), 18, y);
     doc.text(String(`${t.voucher_type || 'TX'} #${t.voucher_number || ''}`), 45, y);
+    
     doc.text(t.debit > 0 ? t.debit.toFixed(2) : '-', 125, y, { align: 'right' });
     doc.text(t.credit > 0 ? t.credit.toFixed(2) : '-', 155, y, { align: 'right' });
     doc.text(`${(t.runningBalance || 0).toFixed(2)} ${t.balanceType || 'Dr'}`, 192, y, { align: 'right' });
-    y += 7;
+    
+    // Print description / narration / items below voucher type
+    if (t.narration) {
+      y += 4.5;
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      const splitNarration = doc.splitTextToSize(String(t.narration), 75);
+      doc.text(splitNarration, 45, y);
+      y += (splitNarration.length * 3.5);
+      doc.setTextColor(15, 23, 42);
+    } else {
+      y += 7;
+    }
+    y += 2;
   });
 
   return await exportTruePDF(doc, `Statement_${partyName}`);
@@ -240,7 +254,6 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     y += 7;
   });
 
-  // Grand Totals Footer Divider & Row
   y += 4;
   doc.setDrawColor(203, 213, 225);
   doc.line(14, y, 196, y);
@@ -255,14 +268,13 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   return await exportTruePDF(doc, reportTitle);
 };
 
-// Universal Aliases for Financial Reports compatibility
 export const downloadFinancialReportPDF = downloadFinancialStatementsReport;
 export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
   return downloadFinancialStatementsReport(firmInput, reportData, 'PNL');
 };
 
 /**
- * 3. JOURNAL REGISTER EXPORT PDF
+ * 3. JOURNAL REGISTER EXPORT PDF (Updated with Items & Descriptions)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -296,8 +308,8 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
 
   doc.text('#', 18, y + 5.5);
   doc.text('Date', 28, y + 5.5);
-  doc.text('Reference', 60, y + 5.5);
-  doc.text('Particulars (Dr / Cr)', 100, y + 5.5);
+  doc.text('Reference', 55, y + 5.5);
+  doc.text('Particulars, Accounts & Items', 90, y + 5.5);
   doc.text('Amount (Rs)', 192, y + 5.5, { align: 'right' });
   y += 10;
 
@@ -312,17 +324,34 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
 
     if (idx % 2 === 0) {
       doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 4, 182, 7, 'F');
+      doc.rect(14, y - 4, 182, 9, 'F');
     }
 
     const amt = parseFloat(vch.amount || 0);
+    const itemsList = Array.isArray(vch.items) ? vch.items : [];
+    let itemStr = itemsList.map(it => `${it.itemName} (Qty: ${it.qty} @ Rs ${it.rate})`).join(', ');
 
+    doc.setFontSize(9);
     doc.text(String(idx + 1), 18, y);
     doc.text(String(vch.voucher_date || vch.date || '-'), 28, y);
-    doc.text(String(vch.reference_no || vch.voucher_number || 'VCH'), 60, y);
-    doc.text(String(`Dr: ${vch.dr_account || ''} | Cr: ${vch.cr_account || ''}`), 100, y);
+    doc.text(String(vch.reference_no || vch.voucher_number || 'VCH'), 55, y);
+    doc.text(String(`[${vch.voucher_type || 'JV'}] Dr: ${vch.dr_account || ''} | Cr: ${vch.cr_account || ''}`), 90, y);
     doc.text(amt.toFixed(2), 192, y, { align: 'right' });
-    y += 7;
+
+    let hasExtra = itemStr || vch.narration;
+    if (hasExtra) {
+      y += 4.5;
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      const extraText = itemStr ? `${itemStr} - ${vch.narration || ''}` : (vch.narration || '');
+      const splitText = doc.splitTextToSize(extraText, 95);
+      doc.text(splitText, 90, y);
+      y += (splitText.length * 3.5);
+      doc.setTextColor(15, 23, 42);
+    } else {
+      y += 7;
+    }
+    y += 2;
   });
 
   return await exportTruePDF(doc, 'Journal_Register');
