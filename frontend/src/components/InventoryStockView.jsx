@@ -38,7 +38,6 @@ export default function InventoryStockView({ firm, onClose }) {
         let totalOutFlowQty = 0;
         let totalOutFlowAmt = 0;
 
-        // 1. Scan Vouchers (Purchase & Sales)
         allVouchers.forEach(v => {
           if (!v) return;
           const vType = String(v.voucher_type || v.type || '').toUpperCase();
@@ -76,7 +75,6 @@ export default function InventoryStockView({ firm, onClose }) {
           }
         });
 
-        // 2. Scan Production Batches (Adds to stock / Production)
         productionBatches.forEach(batch => {
           if (!batch) return;
           const outId = String(batch.output_item_id || '');
@@ -88,7 +86,6 @@ export default function InventoryStockView({ firm, onClose }) {
           }
         });
 
-        // 3. Scan Material Consumption Records (Reduces stock / Consumption)
         consumptionRecords.forEach(rec => {
           if (!rec) return;
           const recItems = Array.isArray(rec.items) ? rec.items : [];
@@ -405,7 +402,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                   {editingItemId ? '✓ Update Item' : '+ Save Item'}
                 </button>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' >>}>
+                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                   Cancel
                 </button>
               </div>
