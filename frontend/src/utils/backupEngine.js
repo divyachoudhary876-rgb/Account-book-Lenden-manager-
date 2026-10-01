@@ -26,7 +26,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
           storageSnapshot[key] = parsed;
           if (Array.isArray(parsed)) {
             if (key.includes('voucher') || key.includes('invoice')) vouchersCount += parsed.length;
-            if (key.includes('account')) accountsCount += parsed.length;
+            if (key.includes('account') || key.includes('inventory')) accountsCount += parsed.length;
           }
         } catch {
           storageSnapshot[key] = rawVal;
@@ -92,7 +92,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       const val = targetData[key];
       if (Array.isArray(val)) {
         if (key.includes('voucher') || key.includes('invoice')) vouchersCount += val.length;
-        if (key.includes('account')) accountsCount += val.length;
+        if (key.includes('account') || key.includes('inventory')) accountsCount += val.length;
       }
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
       localStorage.setItem(key, stringifiedVal);
