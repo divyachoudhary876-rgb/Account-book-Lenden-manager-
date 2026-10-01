@@ -172,10 +172,19 @@ export default function AccountStatementView({ firm }) {
         const vNum = v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
 
+        const drAcc = (v.dr_account || v.debit_account || '').trim();
+        const crAcc = (v.cr_account || v.credit_account || '').trim();
+        let opposingParty = '';
+        if (drAcc.toLowerCase() === targetClean) {
+          opposingParty = crAcc ? `By ${crAcc}` : '';
+        } else if (crAcc.toLowerCase() === targetClean) {
+          opposingParty = drAcc ? `To ${drAcc}` : '';
+        }
+
         // Extract item details if available (Purchase/Sales items)
         let itemDisplayInfo = '';
         if (Array.isArray(v.items) && v.items.length > 0) {
-          const itemStrs = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} @ ₹${it.rate || 0})`);
+          const itemStrs = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`);
           itemDisplayInfo = itemStrs.join(', ');
         } else if (v.itemName || v.item_name || v.qty || v.quantity) {
           const itName = v.itemName || v.item_name || 'Item';
@@ -184,7 +193,12 @@ export default function AccountStatementView({ firm }) {
           itemDisplayInfo = `${itName} (Qty: ${itQty} @ ₹${itRate})`;
         }
 
-        const combinedNarr = itemDisplayInfo ? `${itemDisplayInfo} | ${narration}` : narration;
+        let descParts = [];
+        if (opposingParty) descParts.push(opposingParty);
+        if (itemDisplayInfo) descParts.push(itemDisplayInfo);
+        if (narration && narration !== opposingParty) descParts.push(narration);
+
+        const combinedNarr = descParts.join(' | ');
 
         if (v.worker && v.expense_ledger && v.total_amount) {
           if (String(v.worker).trim().toLowerCase() === targetClean) {
@@ -204,6 +218,7 @@ export default function AccountStatementView({ firm }) {
           let partyDebit = 0;
           let partyCredit = 0;
           let isMatch = false;
+          let otherParties = [];
 
           v.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
@@ -213,15 +228,20 @@ export default function AccountStatementView({ firm }) {
               const type = (e.type || '').toUpperCase();
               if (type === 'DR' || Number(e.debit || 0) > 0) partyDebit += amt;
               if (type === 'CR' || Number(e.credit || 0) > 0) partyCredit += amt;
+            } else if (accName) {
+              otherParties.push(accName);
             }
           });
+
+          const contraName = otherParties.length > 0 ? `Account: ${otherParties.join(', ')}` : '';
+          const finalNarr = [contraName, itemDisplayInfo, narration].filter(Boolean).join(' | ');
 
           if (isMatch) {
             allParsedTransactions.push({
               date: vDate,
               voucher_type: vType,
               voucher_number: vNum,
-              narration: combinedNarr,
+              narration: finalNarr,
               debit: partyDebit,
               credit: partyCredit
             });
@@ -229,8 +249,6 @@ export default function AccountStatementView({ firm }) {
         } else {
           const amt = Number(v.amount || v.total_amount || 0);
           if (amt <= 0) return;
-          const dr = (v.dr_account || v.dr_party || v.debit_account || '').trim();
-          const cr = (v.cr_account || v.cr_party || v.credit_account || '').trim();
 
           if (dr.toLowerCase() === targetClean || cr.toLowerCase() === targetClean) {
             allParsedTransactions.push({
