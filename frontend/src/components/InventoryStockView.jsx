@@ -6,7 +6,6 @@ import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 export default function InventoryStockView({ firm, onClose }) {
   const [inventoryList, setInventoryList] = useState([]);
   
-  // Modal & Edit State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
   const [itemName, setItemName] = useState('');
@@ -25,7 +24,6 @@ export default function InventoryStockView({ firm, onClose }) {
         items = StorageService.getItem(scopedKey) || StorageService.getItem('inventory_items') || [];
       }
 
-      // Fetch all vouchers to compute accurate Total Purchase and Total Sale dynamically
       const allVouchers = StorageService.getItem('account_book_vouchers') || [];
 
       const normalized = items.map(item => {
@@ -38,7 +36,6 @@ export default function InventoryStockView({ firm, onClose }) {
         let totalSaleQty = 0;
         let totalSaleAmt = 0;
 
-        // Scan all vouchers for this specific item
         allVouchers.forEach(v => {
           if (!v) return;
           const vType = String(v.voucher_type || v.type || '').toUpperCase();
@@ -46,7 +43,14 @@ export default function InventoryStockView({ firm, onClose }) {
           if (vType === 'PURCHASE') {
             const vItemId = String(v.itemId || v.item_id || '');
             const vItemName = String(v.item_name || '').trim().toLowerCase();
-            if (vItemId === itemId || (itemNameClean && vItemName === itemNameClean)) {
+            const narrationText = String(v.narration || '').toLowerCase();
+
+            // Match strictly by ID or exact Item Name to avoid duplicates
+            const isMatch = (vItemId && vItemId === itemId) || 
+                            (itemNameClean && vItemName === itemNameClean) ||
+                            (itemNameClean && narrationText.includes(itemNameClean));
+
+            if (isMatch) {
               const q = Number(v.qty || v.quantity || 0);
               const a = Number(v.amount || v.total_amount || (q * Number(v.rate || 0)) || 0);
               totalPurQty += q;
@@ -58,7 +62,9 @@ export default function InventoryStockView({ firm, onClose }) {
               if (!ci) return;
               const ciId = String(ci.itemId || ci.id || '');
               const ciName = String(ci.itemName || ci.name || '').trim().toLowerCase();
-              if (ciId === itemId || (itemNameClean && ciName === itemNameClean)) {
+
+              const isCiMatch = (ciId && ciId === itemId) || (itemNameClean && ciName === itemNameClean);
+              if (isCiMatch) {
                 const q = Number(ci.quantity || ci.qty || 0);
                 const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
                 totalSaleQty += q;
@@ -69,10 +75,8 @@ export default function InventoryStockView({ firm, onClose }) {
         });
 
         const opStock = Number(item.opening_stock ?? item.stock ?? item.current_stock ?? 0);
-        // Computed current stock = Opening + Total Purchase - Total Sale
-        const computedStock = (Number(item.opening_stock || 0) > 0 ? Number(item.opening_stock) : (item.initial_stock || 0)) + totalPurQty - totalSaleQty;
-        const finalStock = computedStock >= 0 ? computedStock : (item.current_stock || 0);
-
+        const computedStock = opStock + totalPurQty - totalSaleQty;
+        const finalStock = computedStock >= 0 ? computedStock : 0;
         const rateVal = Number(item.unit_purchase_price ?? item.purchasePrice ?? item.rate ?? 0);
 
         return {
@@ -120,7 +124,7 @@ export default function InventoryStockView({ firm, onClose }) {
     setEditingItemId(item.id);
     setItemName(item.item_name || item.itemName || item.name || '');
     setUnit(item.unit || 'Quintal');
-    const stock = item.current_stock || item.stock || item.qty || 0;
+    const stock = item.opening_stock || item.current_stock || item.stock || 0;
     const rate = item.unit_purchase_price || item.purchasePrice || item.rate || 0;
     setOpeningStock(String(stock));
     setPurchaseRate(String(rate));
@@ -209,7 +213,6 @@ export default function InventoryStockView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
       
-      {/* Top Summary Header */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
@@ -240,7 +243,6 @@ export default function InventoryStockView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* INVENTORY ITEMS CARD LIST WITH TOTAL PURCHASE & SALE */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {inventoryList.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '30px 20px', borderRadius: '12px', color: '#94a3b8', fontSize: '11px', border: '1px solid #e2e8f0' }}>
@@ -278,7 +280,6 @@ export default function InventoryStockView({ firm, onClose }) {
                   </button>
                 </div>
 
-                {/* Total Purchase & Total Sale Summary Section */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: '#f8fafc', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
                   <div>
                     <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Purchase:</span>
@@ -303,7 +304,6 @@ export default function InventoryStockView({ firm, onClose }) {
         )}
       </div>
 
-      {/* ADD / EDIT ITEM POPUP MODAL */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px' }}>
           <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', boxSizing: 'border-box' }}>
@@ -370,7 +370,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' => {}}}>
                 <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                   {editingItemId ? '✓ Update Item' : '+ Save Item'}
                 </button>
