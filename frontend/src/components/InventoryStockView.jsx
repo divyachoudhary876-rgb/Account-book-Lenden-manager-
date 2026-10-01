@@ -1,5 +1,6 @@
 // frontend/src/components/InventoryStockView.jsx
 import React, { useState, useEffect } from 'react';
+import { StorageService } from '../utils/storageSync';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 
 export default function InventoryStockView({ firm, onClose }) {
@@ -16,8 +17,32 @@ export default function InventoryStockView({ firm, onClose }) {
   const loadInventory = () => {
     try {
       if (!firm) return;
-      const items = loadFirmData('inventory_items', firm, []);
-      setInventoryList(items);
+      const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+      
+      // Fetch both firm-scoped and global inventory storage for complete sync
+      const scopedKey = `inventory_items_${activeFirmId}`;
+      let items = loadFirmData('inventory_items', firm, []);
+      
+      if (!Array.isArray(items) || items.length === 0) {
+        items = StorageService.getItem(scopedKey) || StorageService.getItem('inventory_items') || [];
+      }
+
+      // Normalize all stock quantity variations to ensure live reflections
+      const normalized = items.map(item => {
+        if (!item) return null;
+        const stockQty = Number(item.current_stock ?? item.stock ?? item.stockQty ?? item.qty ?? 0);
+        const rateVal = Number(item.unit_purchase_price ?? item.purchasePrice ?? item.rate ?? 0);
+        return {
+          ...item,
+          current_stock: stockQty,
+          stock: stockQty,
+          qty: stockQty,
+          unit_purchase_price: rateVal,
+          rate: rateVal
+        };
+      }).filter(Boolean);
+
+      setInventoryList(normalized);
     } catch (e) {
       console.error("Error loading inventory:", e);
     }
@@ -27,9 +52,11 @@ export default function InventoryStockView({ firm, onClose }) {
     loadInventory();
     window.addEventListener('app_state_updated', loadInventory);
     window.addEventListener('app_storage_updated', loadInventory);
+    window.addEventListener('storage', loadInventory);
     return () => {
       window.removeEventListener('app_state_updated', loadInventory);
       window.removeEventListener('app_storage_updated', loadInventory);
+      window.removeEventListener('storage', loadInventory);
     };
   }, [firm]);
 
@@ -46,7 +73,7 @@ export default function InventoryStockView({ firm, onClose }) {
     setEditingItemId(item.id);
     setItemName(item.item_name || item.itemName || item.name || '');
     setUnit(item.unit || 'Quintal');
-    const stock = item.current_stock || item.stock || item.stockQty || item.qty || 0;
+    const stock = item.current_stock || item.stock || item.qty || 0;
     const rate = item.unit_purchase_price || item.purchasePrice || item.rate || 0;
     setOpeningStock(String(stock));
     setPurchaseRate(String(rate));
@@ -63,9 +90,10 @@ export default function InventoryStockView({ firm, onClose }) {
       const rateNum = Number(purchaseRate || 0);
       const firmKey = typeof firm === 'object' ? (firm.firm_id || firm.id || firm.legal_name || 'default_firm') : (firm || 'default_firm');
       
+      let updated = [];
       if (editingItemId) {
         // Update existing item
-        const updated = currentItems.map(i => {
+        updated = currentItems.map(i => {
           if (String(i.id) === String(editingItemId)) {
             return {
               ...i,
@@ -75,7 +103,6 @@ export default function InventoryStockView({ firm, onClose }) {
               unit: unit,
               current_stock: stockNum,
               stock: stockNum,
-              stockQty: stockNum,
               qty: stockNum,
               unit_purchase_price: rateNum,
               purchasePrice: rateNum,
@@ -85,8 +112,6 @@ export default function InventoryStockView({ firm, onClose }) {
           }
           return i;
         });
-        saveFirmData('inventory_items', firm, updated);
-        window.dispatchEvent(new Event('app_storage_updated'));
         alert('✓ Item Updated Successfully!');
       } else {
         // Create new item
@@ -100,7 +125,6 @@ export default function InventoryStockView({ firm, onClose }) {
           unit: unit,
           current_stock: stockNum,
           stock: stockNum,
-          stockQty: stockNum,
           qty: stockNum,
           unit_purchase_price: rateNum,
           purchasePrice: rateNum,
@@ -108,11 +132,16 @@ export default function InventoryStockView({ firm, onClose }) {
           created_at: new Date().toISOString()
         };
 
-        const updated = [newItem, ...currentItems];
-        saveFirmData('inventory_items', firm, updated);
-        window.dispatchEvent(new Event('app_storage_updated'));
+        updated = [newItem, ...currentItems];
         alert('✓ Item Created Successfully in Master!');
       }
+
+      saveFirmData('inventory_items', firm, updated);
+      StorageService.setItem('inventory_items', updated);
+      StorageService.setItem(`inventory_items_${firmKey}`, updated);
+
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
 
       setItemName('');
       setOpeningStock('0');
@@ -126,7 +155,7 @@ export default function InventoryStockView({ firm, onClose }) {
   };
 
   const totalValuation = inventoryList.reduce((sum, item) => {
-    const stock = Number(item.current_stock || item.stock || item.stockQty || item.qty || 0);
+    const stock = Number(item.current_stock || item.stock || item.qty || 0);
     const rate = Number(item.unit_purchase_price || item.purchasePrice || item.rate || 0);
     return sum + (stock * rate);
   }, 0);
@@ -175,7 +204,7 @@ export default function InventoryStockView({ firm, onClose }) {
           </div>
         ) : (
           inventoryList.map((item, idx) => {
-            const stock = Number(item.current_stock || item.stock || item.stockQty || item.qty || 0);
+            const stock = Number(item.current_stock || item.stock || item.qty || 0);
             const rate = Number(item.unit_purchase_price || item.purchasePrice || item.rate || 0);
             const val = stock * rate;
             const displayName = item.item_name || item.itemName || item.name || 'Item';
@@ -186,7 +215,7 @@ export default function InventoryStockView({ firm, onClose }) {
                   <div>
                     <div style={{ fontWeight: '800', fontSize: '14px', color: '#0f172a' }}>{displayName}</div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span>Stock: <strong style={{ color: '#059669' }}>{stock.toFixed(2)} {item.unit || 'Pcs'}</strong></span>
+                      <span>Stock: <strong style={{ color: stock < 0 ? '#dc2626' : '#059669' }}>{stock.toFixed(2)} {item.unit || 'Pcs'}</strong></span>
                       <span>•</span>
                       <span>Rate: ₹{rate.toFixed(2)}</span>
                     </div>
@@ -254,7 +283,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 </select>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Opening Stock</label>
                   <input 
@@ -265,7 +294,7 @@ export default function InventoryStockView({ firm, onClose }) {
                     style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
                   />
                 </div>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: '1' }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Purchase Rate (₹)</label>
                   <input 
                     type="number" 
