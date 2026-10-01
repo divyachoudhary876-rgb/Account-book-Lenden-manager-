@@ -21,6 +21,7 @@ export default function SmartProductionView({ firm, onClose }) {
   const [producedQty, setProducedQty] = useState('');
 
   const [batchesList, setBatchesList] = useState([]);
+  const [editingBatchId, setEditingBatchId] = useState(null);
   const [feedback, setFeedback] = useState(null);
 
   const loadData = () => {
@@ -85,8 +86,29 @@ export default function SmartProductionView({ firm, onClose }) {
     if (!producedQty || Number(producedQty) <= 0) return alert('Kripya valid produced quantity darj karein.');
 
     try {
+      const batchId = editingBatchId || ('PROD-' + Date.now());
+
+      // If editing, first revert old batch inventory impact
+      let workingInventory = [...inventoryItems];
+      if (editingBatchId) {
+        const oldBatch = batchesList.find(b => b.id === editingBatchId);
+        if (oldBatch) {
+          workingInventory = workingInventory.map(inv => {
+            const invId = String(inv.id);
+            const oldConsumed = (oldBatch.consumed_materials || []).find(m => String(m.itemId) === invId);
+            let currentStock = Number(inv.current_stock || inv.stock || inv.qty || 0);
+
+            if (oldConsumed) currentStock += Number(oldConsumed.qty);
+            if (invId === String(oldBatch.output_item_id)) {
+              currentStock = Math.max(0, currentStock - Number(oldBatch.produced_qty));
+            }
+            return { ...inv, current_stock: currentStock, stock: currentStock, qty: currentStock };
+          });
+        }
+      }
+
       const newBatch = {
-        id: 'PROD-' + Date.now(),
+        id: batchId,
         fiscal_year: activeFY,
         date: productionDate,
         location: useForLocation,
@@ -100,12 +122,13 @@ export default function SmartProductionView({ firm, onClose }) {
         created_at: new Date().toISOString()
       };
 
-      const updatedBatches = [newBatch, ...batchesList];
+      const filteredBatches = batchesList.filter(b => b.id !== batchId);
+      const updatedBatches = [newBatch, ...filteredBatches];
       setBatchesList(updatedBatches);
       saveFirmData('production_batches', firm, updatedBatches);
 
-      // Inventory Stock Update: Deduct consumed raw materials & Add produced output product
-      const updatedInventory = inventoryItems.map(inv => {
+      // Apply new batch inventory deduction & addition
+      const finalInventory = workingInventory.map(inv => {
         const invId = String(inv.id);
         const consumedMatch = consumedMaterials.find(m => String(m.itemId) === invId);
         let currentStock = Number(inv.current_stock || inv.stock || inv.qty || 0);
@@ -127,13 +150,14 @@ export default function SmartProductionView({ firm, onClose }) {
         };
       });
 
-      setInventoryItems(updatedInventory);
-      saveFirmData('inventory_items', firm, updatedInventory);
+      setInventoryItems(finalInventory);
+      saveFirmData('inventory_items', firm, finalInventory);
 
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
-      setFeedback({ type: 'success', message: '✓ Production saved: Raw materials deducted & Output stock updated!' });
+      setFeedback({ type: 'success', message: editingBatchId ? '✓ Production batch updated successfully!' : '✓ Production saved successfully!' });
 
+      setEditingBatchId(null);
       setUseForLocation('');
       setConsumedMaterials([]);
       setDirectLaborCost('');
@@ -146,6 +170,65 @@ export default function SmartProductionView({ firm, onClose }) {
     }
   };
 
+  const handleEditBatch = (batch) => {
+    if (!batch) return;
+    setEditingBatchId(batch.id);
+    setProductionDate(batch.date || new Date().toISOString().slice(0, 10));
+    setUseForLocation(batch.location || '');
+    setConsumedMaterials(batch.consumed_materials || []);
+    setDirectLaborCost(batch.direct_labor ? String(batch.direct_labor) : '');
+    setMachineryOverheads(batch.machinery_overheads ? String(batch.machinery_overheads) : '');
+    setOutputItem(batch.output_item_id || '');
+    setProducedQty(batch.produced_qty ? String(batch.produced_qty) : '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteBatch = (batchId) => {
+    if (!window.confirm('Is production batch ko delete karne se stock purani sthiti me vapas aa jayega. Jari rakhein?')) return;
+
+    try {
+      const batchToDelete = batchesList.find(b => b.id === batchId);
+      if (!batchToDelete) return;
+
+      // Revert inventory stock
+      const revertedInventory = inventoryItems.map(inv => {
+        const invId = String(inv.id);
+        const oldConsumed = (batchToDelete.consumed_materials || []).find(m => String(m.itemId) === invId);
+        let currentStock = Number(inv.current_stock || inv.stock || inv.qty || 0);
+
+        if (oldConsumed) currentStock += Number(oldConsumed.qty);
+        if (invId === String(batchToDelete.output_item_id)) {
+          currentStock = Math.max(0, currentStock - Number(batchToDelete.produced_qty));
+        }
+        return { ...inv, current_stock: currentStock, stock: currentStock, qty: currentStock };
+      });
+
+      setInventoryItems(revertedInventory);
+      saveFirmData('inventory_items', firm, revertedInventory);
+
+      const filteredBatches = batchesList.filter(b => b.id !== batchId);
+      setBatchesList(filteredBatches);
+      saveFirmData('production_batches', firm, filteredBatches);
+
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+
+      if (editingBatchId === batchId) {
+        setEditingBatchId(null);
+        setUseForLocation('');
+        setConsumedMaterials([]);
+        setDirectLaborCost('');
+        setMachineryOverheads('');
+        setOutputItem('');
+        setProducedQty('');
+      }
+
+      alert('✓ Production batch deleted & stock restored.');
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  };
+
   return (
     <div style={{ padding: '12px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
       
@@ -153,7 +236,7 @@ export default function SmartProductionView({ firm, onClose }) {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
-            ⚙️ Smart Production & Auto-Valuation ({activeFY})
+            {editingBatchId ? '✏️ Edit Production Batch' : `⚙️ Smart Production & Auto-Valuation (${activeFY})`}
           </h2>
           {onClose && (
             <button onClick={onClose} style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
@@ -249,10 +332,13 @@ export default function SmartProductionView({ firm, onClose }) {
             )}
           </div>
 
-          {/* STEP 2: Direct Labor & Overheads */}
+          {/* STEP 2: Direct Labor & Overheads (Optional) */}
           <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', marginBottom: '12px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534', marginBottom: '8px' }}>
-              👷 Step 2: Direct Labor & Overheads
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534', marginBottom: '2px' }}>
+              👷 Step 2: Direct Labor & Overheads (Optional)
+            </div>
+            <div style={{ fontSize: '10px', color: '#15803d', marginBottom: '8px' }}>
+              *(खर्चे अलग से जर्नल/वाउचर में दर्ज होने पर इसे **0** छोड़ सकते हैं)*
             </div>
 
             <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -319,12 +405,31 @@ export default function SmartProductionView({ firm, onClose }) {
             )}
           </div>
 
-          <button 
-            type="submit" 
-            style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-          >
-            ⚡ Save Production & Update Cost Valuation
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              type="submit" 
+              style={{ flex: 1, padding: '12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+            >
+              {editingBatchId ? '✓ Update Production Batch' : '⚡ Save Production & Update Cost Valuation'}
+            </button>
+            {editingBatchId && (
+              <button 
+                type="button" 
+                onClick={() => {
+                  setEditingBatchId(null);
+                  setUseForLocation('');
+                  setConsumedMaterials([]);
+                  setDirectLaborCost('');
+                  setMachineryOverheads('');
+                  setOutputItem('');
+                  setProducedQty('');
+                }}
+                style={{ padding: '12px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
 
         </form>
       </div>
@@ -341,13 +446,18 @@ export default function SmartProductionView({ firm, onClose }) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {batchesList.map(batch => (
-              <div key={batch.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '4px' }}>
-                  <span>{batch.date} | Location: {batch.location}</span>
-                  <span style={{ color: '#166534' }}>Cost: ₹{batch.total_cost.toFixed(2)}</span>
+              <div key={batch.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#0f172a' }}>
+                    {batch.date} | Location: {batch.location}
+                  </div>
+                  <div style={{ color: '#64748b' }}>
+                    Produced Qty: {batch.produced_qty} Units (Valued @ ₹{batch.unit_valuation}/unit) | <strong style={{ color: '#166534' }}>Cost: ₹{batch.total_cost.toFixed(2)}</strong>
+                  </div>
                 </div>
-                <div style={{ color: '#64748b' }}>
-                  Produced Qty: {batch.produced_qty} Units (Valued @ ₹{batch.unit_valuation}/unit)
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={() => handleEditBatch(batch)} style={{ padding: '5px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Edit</button>
+                  <button onClick={() => handleDeleteBatch(batch.id)} style={{ padding: '5px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Delete</button>
                 </div>
               </div>
             ))}
