@@ -24,7 +24,13 @@ export default function InventoryStockView({ firm, onClose }) {
         items = StorageService.getItem(scopedKey) || StorageService.getItem('inventory_items') || [];
       }
 
-      const allVouchers = StorageService.getItem('account_book_vouchers') || [];
+      // Fetch all possible voucher sources
+      const allVouchers = [
+        ...(StorageService.getItem('account_book_vouchers') || []),
+        ...(StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || []),
+        ...(StorageService.getItem(`app_vouchers_${activeFirmId}`) || [])
+      ];
+
       const productionBatches = loadFirmData('production_batches', firm, []);
       const consumptionRecords = loadFirmData('material_consumption_records', firm, []);
 
@@ -38,69 +44,78 @@ export default function InventoryStockView({ firm, onClose }) {
         let totalOutFlowQty = 0;
         let totalOutFlowAmt = 0;
 
-        // Universal check function for matching items across all formats
-        const isItemMatch = (vId, vName) => {
-          const cleanVId = String(vId || '').trim();
-          const cleanVName = String(vName || '').trim().toLowerCase();
-          if (itemId && cleanVId && itemId === cleanVId) return true;
-          if (itemNameClean && cleanVName && (itemNameClean === cleanVName || cleanVName.includes(itemNameClean) || itemNameClean.includes(cleanVName))) return true;
+        // Universal matching helper for IDs and Names
+        const isMatch = (vId, vName, vNarration = '') => {
+          const cleanId = String(vId || '').trim();
+          const cleanName = String(vName || '').trim().toLowerCase();
+          const cleanNarr = String(vNarration || '').trim().toLowerCase();
+
+          if (itemId && cleanId && itemId === cleanId) return true;
+          if (itemNameClean && cleanName && (itemNameClean === cleanName || cleanName.includes(itemNameClean) || itemNameClean.includes(cleanName))) return true;
+          if (itemNameClean && cleanNarr && cleanNarr.includes(itemNameClean)) return true;
           return false;
         };
 
-        // 1. Scan Account Book Vouchers (Purchase & Sales)
+        // 1. Scan All Vouchers (Purchase & Sales)
         allVouchers.forEach(v => {
           if (!v) return;
           const vType = String(v.voucher_type || v.type || '').toUpperCase();
+          const vId = v.itemId || v.item_id || '';
+          const vName = v.item_name || v.name || '';
+          const narration = v.narration || '';
 
           if (vType === 'PURCHASE') {
-            const vId = v.itemId || v.item_id || '';
-            const vName = v.item_name || v.name || '';
-            if (isItemMatch(vId, vName)) {
+            if (isMatch(vId, vName, narration)) {
               const q = Number(v.qty || v.quantity || 0);
-              const a = Number(v.amount || v.total_amount || (q * Number(v.rate || 0)) || 0);
+              const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
               totalPurQty += q;
               totalPurAmt += a;
             }
           } else if (vType === 'SALES') {
+            // Check items array if present
             const vItems = Array.isArray(v.items) ? v.items : [];
-            vItems.forEach(ci => {
-              if (!ci) return;
-              const ciId = ci.itemId || ci.id || '';
-              const ciName = ci.itemName || ci.name || '';
-              if (isItemMatch(ciId, ciName)) {
-                const q = Number(ci.quantity || ci.qty || 0);
-                const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
+            if (vItems.length > 0) {
+              vItems.forEach(ci => {
+                if (!ci) return;
+                const ciId = ci.itemId || ci.item_id || ci.id || '';
+                const ciName = ci.itemName || ci.name || '';
+                if (isMatch(ciId, ciName, narration)) {
+                  const q = Number(ci.quantity || ci.qty || 0);
+                  const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
+                  totalOutFlowQty += q;
+                  totalOutFlowAmt += a;
+                }
+              });
+            } else {
+              // Direct single-item sales voucher fallback (e.g. salesPostingEngine / invoicingEngine)
+              if (isMatch(vId, vName, narration)) {
+                const q = Number(v.qty || v.quantity || 0);
+                const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
                 totalOutFlowQty += q;
                 totalOutFlowAmt += a;
               }
-            });
+            }
           }
         });
 
-        // 2. Scan Production Batches (Output adds stock, Consumed materials subtract stock)
+        // 2. Scan Production Batches (+IN Output, -OUT Consumed)
         productionBatches.forEach(batch => {
           if (!batch) return;
-          
-          // Finished Output Product (+IN)
           const outId = batch.output_item_id || '';
-          if (isItemMatch(outId, '')) {
-            const q = Number(batch.produced_qty || 0);
-            const a = Number(batch.total_cost || 0);
-            totalPurQty += q;
-            totalPurAmt += a;
+          if (isMatch(outId, '', '')) {
+            totalPurQty += Number(batch.produced_qty || 0);
+            totalPurAmt += Number(batch.total_cost || 0);
           }
 
-          // Consumed Raw Materials inside Production (-OUT)
           const consumedMats = Array.isArray(batch.consumed_materials) ? batch.consumed_materials : [];
           consumedMats.forEach(mat => {
             if (!mat) return;
             const mId = mat.itemId || mat.id || '';
             const mName = mat.name || '';
-            if (isItemMatch(mId, mName)) {
+            if (isMatch(mId, mName, '')) {
               const q = Number(mat.qty || 0);
-              const a = Number(mat.estimatedCost || (q * Number(item.unit_purchase_price || item.rate || 0)) || 0);
               totalOutFlowQty += q;
-              totalOutFlowAmt += a;
+              totalOutFlowAmt += q * Number(item.unit_purchase_price || item.rate || 0);
             }
           });
         });
@@ -113,11 +128,10 @@ export default function InventoryStockView({ firm, onClose }) {
             if (!ri) return;
             const rId = ri.itemId || ri.id || '';
             const rName = ri.name || '';
-            if (isItemMatch(rId, rName)) {
+            if (isMatch(rId, rName, rec.uses_for || '')) {
               const q = Number(ri.qty || 0);
-              const a = q * Number(ri.rate || item.unit_purchase_price || item.rate || 0);
               totalOutFlowQty += q;
-              totalOutFlowAmt += a;
+              totalOutFlowAmt += q * Number(ri.rate || item.unit_purchase_price || item.rate || 0);
             }
           });
         });
