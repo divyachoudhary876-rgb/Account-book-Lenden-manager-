@@ -5,6 +5,7 @@ import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
+import { processPurchaseStockPosting, revertPurchaseStockOnDeletion } from '../utils/inventoryPostingEngine.js';
 
 export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
@@ -27,7 +28,6 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
   const loadData = () => {
     try {
-      // Strict firm-isolated inventory loading
       const rawInventory = loadFirmData('inventory_items', firm, []);
       const validInventory = rawInventory.filter(i => i && (i.name || i.item_name) && i.item_type !== 'SERVICE' && !String(i.item_name || i.name || '').toLowerCase().includes('freight'));
       setAllItems(validInventory);
@@ -62,63 +62,22 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
     setIsSubmitting(true);
     try {
-      const currentInventory = loadFirmData('inventory_items', firm, []);
-      const parsedQty = Number(quantity);
-      const parsedRate = Number(purchaseRate);
-      const totalAmount = parsedQty * parsedRate;
-      const selectedItemObj = allItems.find(i => String(i.id) === String(selectedItemId));
-      const itemName = selectedItemObj?.item_name || selectedItemObj?.name || 'Item';
-
-      // 1. Update Inventory Stock & Weighted Average Price (with dual keys)
-      const updatedInventory = currentInventory.map(item => {
-        if (String(item.id) === String(selectedItemId)) {
-          const oldStock = Number(item.current_stock || item.stock || item.stockQty || item.qty || 0);
-          const oldRate = Number(item.unit_purchase_price || item.purchasePrice || item.rate || 0);
-          const oldTotalValue = oldStock * oldRate;
-          const newTotalValue = oldTotalValue + totalAmount;
-          const newStock = oldStock + parsedQty;
-          const newAvgRate = newStock > 0 ? Number((newTotalValue / newStock).toFixed(2)) : parsedRate;
-          
-          return { 
-            ...item, 
-            current_stock: newStock, 
-            stock: newStock, 
-            stockQty: newStock, 
-            qty: newStock,
-            unit_purchase_price: newAvgRate,
-            purchasePrice: newAvgRate,
-            rate: newAvgRate
-          };
-        }
-        return item;
-      });
-      saveFirmData('inventory_items', firm, updatedInventory);
-
-      // 2. Save Purchase Voucher with structured entries
-      const vouchers = StorageService.getItem('account_book_vouchers') || [];
-      const newVoucher = {
-        id: `PUR-${Date.now()}`,
-        firm_id: activeFirmId,
-        voucher_date: purchaseDate,
-        voucher_type: 'PURCHASE',
-        dr_account: 'Purchase A/c',
-        cr_account: supplierParty,
-        amount: totalAmount,
-        total_amount: totalAmount,
-        reference_no: billNo,
+      const purchasePayload = {
+        firmId: activeFirmId,
+        supplierId: supplierParty,
+        invoiceNumber: billNo,
+        entryDate: purchaseDate,
         itemId: selectedItemId,
-        qty: parsedQty,
-        rate: parsedRate,
-        narration: `Purchased ${parsedQty} ${selectedItemObj?.unit || 'Units'} of ${itemName} @ ₹${parsedRate}`,
-        entries: [
-          { account_name: 'Purchase A/c', type: 'DR', amount: totalAmount },
-          { account_name: supplierParty, type: 'CR', amount: totalAmount }
-        ],
-        created_at: new Date().toISOString()
+        quantity: quantity,
+        purchaseRate: purchaseRate,
+        narration: `Purchase Bill #${billNo} from ${supplierParty}`
       };
-      StorageService.setItem('account_book_vouchers', [newVoucher, ...vouchers]);
+
+      // Call central purchase posting engine (handles stock +IN & weighted avg pricing)
+      processPurchaseStockPosting(purchasePayload, activeFirmId);
 
       window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
       loadData();
 
       setFeedback({ type: 'success', message: '✓ Purchase Bill Saved & Stock Updated!' });
@@ -135,31 +94,16 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     if (!window.confirm(`Bill #${refNo} को हटाने से इसका स्टॉक वापस माइनस हो जाएगा। जारी रखें?`)) return;
 
     try {
+      // Revert purchase stock using centralized engine helper
+      revertPurchaseStockOnDeletion(voucherId, activeFirmId);
+
       const vouchers = StorageService.getItem('account_book_vouchers') || [];
-      const targetVoucher = vouchers.find(v => v && v.id === voucherId);
-
-      if (targetVoucher && targetVoucher.itemId && targetVoucher.qty) {
-        const currentInventory = loadFirmData('inventory_items', firm, []);
-        const restoredInventory = currentInventory.map(item => {
-          if (String(item.id) === String(targetVoucher.itemId)) {
-            const curStock = Number(item.current_stock || item.stock || item.stockQty || item.qty || 0);
-            const newStock = Math.max(0, curStock - Number(targetVoucher.qty));
-            return { 
-              ...item, 
-              current_stock: newStock,
-              stock: newStock,
-              stockQty: newStock,
-              qty: newStock
-            };
-          }
-          return item;
-        });
-        saveFirmData('inventory_items', firm, restoredInventory);
-      }
-
-      const filtered = vouchers.filter(v => v && v.id !== voucherId);
+      const filtered = vouchers.filter(v => v && v.id !== voucherId && v.reference_no !== voucherId);
       StorageService.setItem('account_book_vouchers', filtered);
+      StorageService.setItem(`account_book_vouchers_${activeFirmId}`, filtered);
+
       window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
       loadData();
       alert('✓ Purchase entry deleted & stock adjusted.');
     } catch (err) {
