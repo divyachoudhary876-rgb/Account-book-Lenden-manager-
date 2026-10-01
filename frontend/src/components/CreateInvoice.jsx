@@ -145,11 +145,27 @@ export default function CreateInvoice({ firm, onClose }) {
   const handleEdit = (inv) => {
     if (!inv) return;
     setEditingId(inv.id);
-    setInvoiceDate(inv.voucher_date || todayMaxDate);
+    setInvoiceDate(inv.voucher_date || inv.date || todayMaxDate);
     setInvoiceNo(inv.reference_no || '');
     setCustomerParty(inv.dr_account || '');
     setVehicleNo(inv.vehicle_no || '');
-    setCart(inv.items || []);
+    
+    // Safely map existing items to prevent cart rendering crashes
+    const safeCart = (inv.items || []).map((ci, index) => ({
+      id: ci.id || (Date.now() + index),
+      itemId: ci.itemId || ci.item_id || ci.product_id || '',
+      itemName: ci.itemName || ci.name || ci.item_name || 'Item',
+      unit: ci.unit || 'Pcs',
+      qty: Number(ci.quantity || ci.qty || 0),
+      rate: Number(ci.rate || 0),
+      gstRate: Number(ci.gstRate || 5),
+      taxableAmount: Number(ci.taxableAmount || (Number(ci.quantity || ci.qty || 0) * Number(ci.rate || 0))),
+      cgst: Number(ci.cgst || 0),
+      sgst: Number(ci.sgst || 0),
+      total: Number(ci.total || (Number(ci.quantity || ci.qty || 0) * Number(ci.rate || 0)))
+    }));
+
+    setCart(safeCart);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -295,7 +311,7 @@ export default function CreateInvoice({ firm, onClose }) {
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', boxSizing: 'border-box', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
-            {editingId ? '✏️ Edit GST Sales Invoice' : '📄 Multi-Item GST Invoicing'}
+            {editingId ? '✏️️ Edit GST Sales Invoice' : '📄 Multi-Item GST Invoicing'}
           </h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
         </div>
@@ -404,7 +420,7 @@ export default function CreateInvoice({ firm, onClose }) {
               {editingId ? '✓ Update Invoice & Stock' : '💾 Save Invoice & Deduct Stock'}
             </button>
             {editingId && (
-              <button type="button" onClick={() => { setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo(); }} style={{ padding: '12px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
+              <button type="button" onClick={() => { setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo(''); }} style={{ padding: '12px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                 Cancel
               </button>
             )}
