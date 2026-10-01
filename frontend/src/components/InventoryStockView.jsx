@@ -45,7 +45,6 @@ export default function InventoryStockView({ firm, onClose }) {
             const vItemName = String(v.item_name || '').trim().toLowerCase();
             const narrationText = String(v.narration || '').toLowerCase();
 
-            // Match strictly by ID or exact Item Name to avoid duplicates
             const isMatch = (vItemId && vItemId === itemId) || 
                             (itemNameClean && vItemName === itemNameClean) ||
                             (itemNameClean && narrationText.includes(itemNameClean));
@@ -370,7 +369,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' => {}}}>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                 <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                   {editingItemId ? '✓ Update Item' : '+ Save Item'}
                 </button>
@@ -386,4 +385,4 @@ export default function InventoryStockView({ firm, onClose }) {
 
     </div>
   );
-}
+            }
