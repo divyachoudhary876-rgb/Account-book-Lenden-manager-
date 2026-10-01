@@ -5,8 +5,9 @@ import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 export default function InventoryStockView({ firm, onClose }) {
   const [inventoryList, setInventoryList] = useState([]);
   
-  // Modal State for Adding Item
+  // Modal & Edit State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItemId, setEditingItemId] = useState(null);
   const [itemName, setItemName] = useState('');
   const [unit, setUnit] = useState('Quintal'); // Default to Quintal for industrial/bhatta use
   const [openingStock, setOpeningStock] = useState('0');
@@ -15,7 +16,6 @@ export default function InventoryStockView({ firm, onClose }) {
   const loadInventory = () => {
     try {
       if (!firm) return;
-      // Strict firm isolation: Sirf current active firm ka inventory data load hoga
       const items = loadFirmData('inventory_items', firm, []);
       setInventoryList(items);
     } catch (e) {
@@ -33,6 +33,26 @@ export default function InventoryStockView({ firm, onClose }) {
     };
   }, [firm]);
 
+  const handleOpenAddModal = () => {
+    setEditingItemId(null);
+    setItemName('');
+    setUnit('Quintal');
+    setOpeningStock('0');
+    setPurchaseRate('0');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (item) => {
+    setEditingItemId(item.id);
+    setItemName(item.item_name || item.itemName || item.name || '');
+    setUnit(item.unit || 'Quintal');
+    const stock = item.current_stock || item.stock || item.stockQty || item.qty || 0;
+    const rate = item.unit_purchase_price || item.purchasePrice || item.rate || 0;
+    setOpeningStock(String(stock));
+    setPurchaseRate(String(rate));
+    setIsModalOpen(true);
+  };
+
   const handleSaveItem = (e) => {
     e.preventDefault();
     if (!itemName.trim()) return alert('कृपया आइटम का नाम दर्ज करें।');
@@ -43,49 +63,65 @@ export default function InventoryStockView({ firm, onClose }) {
       const rateNum = Number(purchaseRate || 0);
       const firmKey = typeof firm === 'object' ? (firm.firm_id || firm.id || firm.legal_name || 'default_firm') : (firm || 'default_firm');
       
-      const newItem = {
-        id: `ITEM-${Date.now()}`,
-        firm_id: firmKey, // Explicit firm ID matching for strict cross-firm protection
-        item_name: itemName.trim(),
-        itemName: itemName.trim(),
-        name: itemName.trim(),
-        item_type: 'PHYSICAL',
-        unit: unit,
-        current_stock: stockNum,
-        stock: stockNum,
-        stockQty: stockNum,
-        qty: stockNum,
-        unit_purchase_price: rateNum,
-        purchasePrice: rateNum,
-        rate: rateNum,
-        created_at: new Date().toISOString()
-      };
+      if (editingItemId) {
+        // Update existing item
+        const updated = currentItems.map(i => {
+          if (String(i.id) === String(editingItemId)) {
+            return {
+              ...i,
+              item_name: itemName.trim(),
+              itemName: itemName.trim(),
+              name: itemName.trim(),
+              unit: unit,
+              current_stock: stockNum,
+              stock: stockNum,
+              stockQty: stockNum,
+              qty: stockNum,
+              unit_purchase_price: rateNum,
+              purchasePrice: rateNum,
+              rate: rateNum,
+              updated_at: new Date().toISOString()
+            };
+          }
+          return i;
+        });
+        saveFirmData('inventory_items', firm, updated);
+        window.dispatchEvent(new Event('app_storage_updated'));
+        alert('✓ Item Updated Successfully!');
+      } else {
+        // Create new item
+        const newItem = {
+          id: `ITEM-${Date.now()}`,
+          firm_id: firmKey,
+          item_name: itemName.trim(),
+          itemName: itemName.trim(),
+          name: itemName.trim(),
+          item_type: 'PHYSICAL',
+          unit: unit,
+          current_stock: stockNum,
+          stock: stockNum,
+          stockQty: stockNum,
+          qty: stockNum,
+          unit_purchase_price: rateNum,
+          purchasePrice: rateNum,
+          rate: rateNum,
+          created_at: new Date().toISOString()
+        };
 
-      const updated = [newItem, ...currentItems];
-      saveFirmData('inventory_items', firm, updated);
-      window.dispatchEvent(new Event('app_storage_updated'));
+        const updated = [newItem, ...currentItems];
+        saveFirmData('inventory_items', firm, updated);
+        window.dispatchEvent(new Event('app_storage_updated'));
+        alert('✓ Item Created Successfully in Master!');
+      }
 
-      alert('✓ Item Created Successfully in Master!');
       setItemName('');
       setOpeningStock('0');
       setPurchaseRate('0');
+      setEditingItemId(null);
       setIsModalOpen(false);
       loadInventory();
     } catch (err) {
       alert('Error saving item: ' + err.message);
-    }
-  };
-
-  const handleDeleteItem = (itemId, itemName) => {
-    if (!window.confirm(`Are you sure you want to delete "${itemName}"?`)) return;
-    try {
-      const allItems = loadFirmData('inventory_items', firm, []);
-      const updated = allItems.filter(i => String(i.id) !== String(itemId));
-      saveFirmData('inventory_items', firm, updated);
-      window.dispatchEvent(new Event('app_storage_updated'));
-      loadInventory();
-    } catch (err) {
-      alert('Delete failed: ' + err.message);
     }
   };
 
@@ -112,7 +148,7 @@ export default function InventoryStockView({ firm, onClose }) {
         {/* Action Button */}
         <div style={{ marginBottom: '14px' }}>
           <button 
-            onClick={() => setIsModalOpen(true)} 
+            onClick={handleOpenAddModal} 
             style={{ width: '100%', padding: '11px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}
           >
             + Add New Item to Master
@@ -156,10 +192,10 @@ export default function InventoryStockView({ firm, onClose }) {
                     </div>
                   </div>
                   <button 
-                    onClick={() => handleDeleteItem(item.id, displayName)}
-                    style={{ padding: '5px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}
+                    onClick={() => handleOpenEditModal(item)}
+                    style={{ padding: '5px 12px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}
                   >
-                    Delete
+                    Edit
                   </button>
                 </div>
 
@@ -174,13 +210,15 @@ export default function InventoryStockView({ firm, onClose }) {
         )}
       </div>
 
-      {/* ADD ITEM POPUP MODAL WITH QUINTAL & OTHER UNITS */}
+      {/* ADD / EDIT ITEM POPUP MODAL */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px' }}>
           <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', boxSizing: 'border-box' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>📦 Create New Item</h3>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
+                {editingItemId ? '✏️ Edit Item' : '📦 Create New Item'}
+              </h3>
               <button onClick={() => setIsModalOpen(false)} style={{ background: '#f1f5f9', border: 'none', width: '28px', height: '28px', borderRadius: '50%', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', color: '#64748b' }}>✕</button>
             </div>
 
@@ -241,7 +279,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                 <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
-                  + Save Item
+                  {editingItemId ? '✓ Update Item' : '+ Save Item'}
                 </button>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                   Cancel
