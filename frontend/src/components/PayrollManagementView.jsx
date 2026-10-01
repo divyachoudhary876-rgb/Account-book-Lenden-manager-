@@ -2,9 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
+import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown';
 
 export default function PayrollManagementView({ firm, onClose }) {
+  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+
   const [workersList, setWorkersList] = useState([]);
   const [expenseAccountsList, setExpenseAccountsList] = useState([]);
   
@@ -22,21 +25,15 @@ export default function PayrollManagementView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     
-    const allAccounts = loadFirmData('app_accounts', firm, [
-      { id: 'w_1', account_name: 'Munshi Ji (Accountant)', sub_group: 'Employee' },
-      { id: 'w_2', account_name: 'Tractor Driver 1', sub_group: 'Driver' },
-      { id: 'w_3', account_name: 'Pathai & Labour Expense', sub_group: 'Direct Expenses' },
-      { id: 'w_4', account_name: 'Tractor Diesel & Maintenance', sub_group: 'Direct Expenses' },
-      { id: 'w_5', account_name: 'General Factory Wages', sub_group: 'Direct Expenses' }
-    ]);
-
+    // Fetch unified master accounts so newly created heads appear instantly in dropdowns
+    const allAccounts = getFirmMasterAccounts(activeFirmId);
     setWorkersList(allAccounts);
 
-    const expenseAccs = allAccounts.filter(acc => 
-      (acc.sub_group || acc.primary_type || '').toLowerCase().includes('expense') ||
-      (acc.sub_group || acc.primary_type || '').toLowerCase().includes('direct') ||
-      (acc.sub_group || '').toLowerCase().includes('indirect')
-    );
+    const expenseAccs = allAccounts.filter(acc => {
+      const type = (acc.primary_type || '').toLowerCase();
+      const group = (acc.sub_group || acc.group || '').toLowerCase();
+      return type.includes('expense') || group.includes('expense') || group.includes('direct') || group.includes('indirect');
+    });
     setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
     const entries = loadFirmData('app_payroll_entries', firm, []);
@@ -47,11 +44,13 @@ export default function PayrollManagementView({ firm, onClose }) {
     loadData();
     window.addEventListener('focus', loadData);
     window.addEventListener('app_storage_updated', loadData);
+    window.addEventListener('app_state_updated', loadData);
     return () => {
       window.removeEventListener('focus', loadData);
       window.removeEventListener('app_storage_updated', loadData);
+      window.removeEventListener('app_state_updated', loadData);
     };
-  }, [firm]);
+  }, [firm, activeFirmId]);
 
   const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
 
@@ -115,6 +114,7 @@ export default function PayrollManagementView({ firm, onClose }) {
     }
 
     window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('storage'));
 
     setSuccessMsg(`✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger!`);
@@ -155,6 +155,7 @@ export default function PayrollManagementView({ firm, onClose }) {
         <div>
           <SearchableAccountDropdown 
             firm={firm}
+            firmId={activeFirmId}
             label="Select Worker / Driver / Staff *"
             accounts={workersList}
             value={selectedWorker}
@@ -180,7 +181,7 @@ export default function PayrollManagementView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Entry Form (Fixed Layout: Vertical Stack for Date and Expense Account) */}
+      {/* Entry Form */}
       <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: 800 }}>📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)</h3>
 
@@ -192,6 +193,7 @@ export default function PayrollManagementView({ firm, onClose }) {
           <div>
             <SearchableAccountDropdown 
               firm={firm}
+              firmId={activeFirmId}
               label="Expense Account *"
               accounts={expenseAccountsList}
               value={expenseLedger}
