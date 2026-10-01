@@ -25,6 +25,8 @@ export default function InventoryStockView({ firm, onClose }) {
       }
 
       const allVouchers = StorageService.getItem('account_book_vouchers') || [];
+      const productionBatches = loadFirmData('production_batches', firm, []);
+      const consumptionRecords = loadFirmData('material_consumption_records', firm, []);
 
       const normalized = items.map(item => {
         if (!item) return null;
@@ -33,9 +35,10 @@ export default function InventoryStockView({ firm, onClose }) {
 
         let totalPurQty = 0;
         let totalPurAmt = 0;
-        let totalSaleQty = 0;
-        let totalSaleAmt = 0;
+        let totalOutFlowQty = 0;
+        let totalOutFlowAmt = 0;
 
+        // 1. Scan Vouchers (Purchase & Sales)
         allVouchers.forEach(v => {
           if (!v) return;
           const vType = String(v.voucher_type || v.type || '').toUpperCase();
@@ -66,15 +69,44 @@ export default function InventoryStockView({ firm, onClose }) {
               if (isCiMatch) {
                 const q = Number(ci.quantity || ci.qty || 0);
                 const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
-                totalSaleQty += q;
-                totalSaleAmt += a;
+                totalOutFlowQty += q;
+                totalOutFlowAmt += a;
               }
             });
           }
         });
 
+        // 2. Scan Production Batches (Adds to stock / Production)
+        productionBatches.forEach(batch => {
+          if (!batch) return;
+          const outId = String(batch.output_item_id || '');
+          if (outId === itemId) {
+            const q = Number(batch.produced_qty || 0);
+            const a = Number(batch.total_cost || 0);
+            totalPurQty += q;
+            totalPurAmt += a;
+          }
+        });
+
+        // 3. Scan Material Consumption Records (Reduces stock / Consumption)
+        consumptionRecords.forEach(rec => {
+          if (!rec) return;
+          const recItems = Array.isArray(rec.items) ? rec.items : [];
+          recItems.forEach(ri => {
+            if (!ri) return;
+            const rId = String(ri.itemId || ri.id || '');
+            const rName = String(ri.name || '').trim().toLowerCase();
+            if (rId === itemId || (itemNameClean && rName === itemNameClean)) {
+              const q = Number(ri.qty || 0);
+              const a = q * Number(ri.rate || item.unit_purchase_price || 0);
+              totalOutFlowQty += q;
+              totalOutFlowAmt += a;
+            }
+          });
+        });
+
         const opStock = Number(item.opening_stock ?? item.stock ?? item.current_stock ?? 0);
-        const computedStock = opStock + totalPurQty - totalSaleQty;
+        const computedStock = opStock + totalPurQty - totalOutFlowQty;
         const finalStock = computedStock >= 0 ? computedStock : 0;
         const rateVal = Number(item.unit_purchase_price ?? item.purchasePrice ?? item.rate ?? 0);
 
@@ -87,8 +119,8 @@ export default function InventoryStockView({ firm, onClose }) {
           rate: rateVal,
           totalPurchaseQty: totalPurQty,
           totalPurchaseAmount: totalPurAmt,
-          totalSaleQty: totalSaleQty,
-          totalSaleAmount: totalSaleAmt
+          totalSaleQty: totalOutFlowQty,
+          totalSaleAmount: totalOutFlowAmt
         };
       }).filter(Boolean);
 
@@ -286,7 +318,7 @@ export default function InventoryStockView({ firm, onClose }) {
                     <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{purAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
                   </div>
                   <div>
-                    <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Sale:</span>
+                    <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Sale / Consumption:</span>
                     <strong style={{ color: '#9333ea' }}>{saleQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
                     <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{saleAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
                   </div>
@@ -373,7 +405,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                   {editingItemId ? '✓ Update Item' : '+ Save Item'}
                 </button>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
+                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' >>}>
                   Cancel
                 </button>
               </div>
@@ -385,4 +417,4 @@ export default function InventoryStockView({ firm, onClose }) {
 
     </div>
   );
-            }
+}
