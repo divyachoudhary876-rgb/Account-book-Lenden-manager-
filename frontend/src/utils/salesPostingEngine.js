@@ -3,7 +3,7 @@ import { StorageService } from './storageSync';
 
 export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') => {
   const activeFirmId = invoicePayload?.firmId || firmId || 'FIRM-001';
-  const { customerId, invoiceDate, taxableAmount, gstRate, narration } = invoicePayload;
+  const { customerId, invoiceDate, taxableAmount, gstRate, narration, items } = invoicePayload;
 
   const numericTaxable = parseFloat(taxableAmount || 0);
   const numericGstRate = parseFloat(gstRate || 0);
@@ -19,11 +19,13 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
   const journalKey = `app_journal_entries_${activeFirmId}`;
   const vouchersKey = `account_book_vouchers_${activeFirmId}`;
   const invoicesKey = `app_invoices_${activeFirmId}`;
+  const inventoryKey = `inventory_items_${activeFirmId}`;
 
   const accounts = StorageService.getItem(accountsKey) || StorageService.getItem('app_account_heads') || [];
   const journalEntries = StorageService.getItem(journalKey) || StorageService.getItem('app_journal_entries') || [];
   const vouchers = StorageService.getItem(vouchersKey) || StorageService.getItem('account_book_vouchers') || [];
   const invoices = StorageService.getItem(invoicesKey) || StorageService.getItem('app_invoices') || [];
+  const inventory = StorageService.getItem(inventoryKey) || StorageService.getItem('inventory_items') || [];
 
   // 2. Find Customer Account
   const customerIndex = accounts.findIndex(a => String(a.id) === String(customerId) || a.account_name === customerId);
@@ -38,7 +40,25 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
   customerAcc.current_balance = currentBal + grandTotal;
   accounts[customerIndex] = customerAcc;
 
-  // 3. Generate Double-Entry Journal Lines
+  // 3. Process Inventory Stock Deduction for Sold Items
+  const processedItems = Array.isArray(items) ? items : (invoicePayload.itemId ? [{ itemId: invoicePayload.itemId, quantity: invoicePayload.quantity || 1 }] : []);
+  
+  processedItems.forEach(soldItem => {
+    const itemIndex = inventory.findIndex(i => String(i.id) === String(soldItem.itemId));
+    if (itemIndex !== -1) {
+      const stockItem = { ...inventory[itemIndex] };
+      const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || stockItem.current_qty || 0);
+      const soldQty = parseFloat(soldItem.quantity || 0);
+
+      const newQty = Math.max(0, currentQty - soldQty);
+      stockItem.current_stock = newQty;
+      stockItem.stock = newQty;
+      stockItem.current_qty = newQty;
+      inventory[itemIndex] = stockItem;
+    }
+  });
+
+  // 4. Generate Double-Entry Journal Lines
   const invoiceId = `INV-${Date.now()}`;
   
   // Debit Line: Customer
@@ -91,6 +111,7 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     taxable_amount: numericTaxable,
     gst_amount: gstAmount,
     total_amount: grandTotal,
+    items: processedItems,
     created_at: new Date().toISOString()
   };
 
@@ -115,9 +136,12 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     created_at: new Date().toISOString()
   };
 
-  // 4. Atomic Scoped Local Storage Commit
+  // 5. Atomic Scoped Local Storage Commit
   StorageService.setItem(accountsKey, accounts);
   StorageService.setItem('app_account_heads', accounts); // Global mirror
+
+  StorageService.setItem(inventoryKey, inventory);
+  StorageService.setItem('inventory_items', inventory); // Global mirror for inventory
 
   const updatedJournal = [...newJournalLines, ...journalEntries];
   StorageService.setItem(journalKey, updatedJournal);
@@ -131,7 +155,7 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
   StorageService.setItem(invoicesKey, updatedInvoices);
   StorageService.setItem('app_invoices', updatedInvoices);
 
-  // 5. Global Reactive Broadcast (Triggers instant updates across Ledger, Day Book & Dashboard)
+  // 6. Global Reactive Broadcast (Triggers instant updates across Ledger, Inventory & Dashboard)
   window.dispatchEvent(new CustomEvent('ACCOUNT_BOOK_VOUCHER_POSTED', { detail: invoiceRecord }));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('app_state_updated'));
