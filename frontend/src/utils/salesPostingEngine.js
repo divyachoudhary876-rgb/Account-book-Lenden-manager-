@@ -40,13 +40,13 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
   customerAcc.current_balance = currentBal + grandTotal;
   accounts[customerIndex] = customerAcc;
 
-  // 3. Universal Inventory Stock Deduction for Sold Items (Multi-property fallback)
+  // 3. Universal Inventory Stock Deduction for Sold Items
   const rawItemsList = items || line_items || cart || (item ? [item] : []) || (product ? [product] : []) || ((itemId || item_id || product_id) ? [{ itemId: itemId || item_id || product_id, quantity: quantity || qty || 1 }] : []);
   const processedItems = [];
 
   rawItemsList.forEach(soldItem => {
     if (!soldItem) return;
-    const targetItemId = soldItem.itemId || soldItem.item_id || soldItem.product_id || soldItem.id || soldItem.name || soldItem.item_name;
+    const targetItemId = soldItem.itemId || soldItem.item_id || soldItem.product_id || soldItem.id;
     const soldQty = parseFloat(soldItem.quantity || soldItem.qty || soldItem.stock || soldItem.count || 1);
     if (!targetItemId || soldQty <= 0) return;
 
@@ -71,60 +71,9 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     }
   });
 
-  // 4. Generate Double-Entry Journal Lines
+  // 4. Generate Double-Entry Vouchers
   const invoiceId = invoicePayload.id || `INV-${Date.now()}`;
   
-  const drCustomerLine = {
-    id: `JL-${Date.now()}-DR`,
-    voucher_id: invoiceId,
-    account_id: customerAcc.id || resolvedCustomerId,
-    account_name: customerAcc.account_name || customerAcc.name,
-    date: resolvedDate,
-    debit: grandTotal,
-    credit: 0,
-    narration: narration || `Sales Bill #${invoiceId}`
-  };
-
-  const crSalesLine = {
-    id: `JL-${Date.now()}-CR1`,
-    voucher_id: invoiceId,
-    account_id: 'ACC-SALES-MASTER',
-    account_name: 'Sales Revenue Account',
-    date: resolvedDate,
-    debit: 0,
-    credit: numericTaxable,
-    narration: `Sales Revenue for Bill #${invoiceId}`
-  };
-
-  const newJournalLines = [drCustomerLine, crSalesLine];
-
-  if (gstAmount > 0) {
-    newJournalLines.push({
-      id: `JL-${Date.now()}-CR2`,
-      voucher_id: invoiceId,
-      account_id: 'ACC-GST-OUTPUT',
-      account_name: 'GST Output Payable Account',
-      date: resolvedDate,
-      debit: 0,
-      credit: gstAmount,
-      narration: `GST Output @ ${numericGstRate}% for Bill #${invoiceId}`
-    });
-  }
-
-  const invoiceRecord = {
-    id: invoiceId,
-    firm_id: activeFirmId,
-    invoice_number: invoiceId,
-    customer_id: customerAcc.id || resolvedCustomerId,
-    customer_name: customerAcc.account_name || customerAcc.name,
-    date: resolvedDate,
-    taxable_amount: numericTaxable,
-    gst_amount: gstAmount,
-    total_amount: grandTotal,
-    items: processedItems,
-    created_at: new Date().toISOString()
-  };
-
   const newVoucher = {
     id: invoiceId,
     firm_id: activeFirmId,
@@ -132,52 +81,46 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     type: 'SALES',
     voucher_date: resolvedDate,
     date: resolvedDate,
-    reference_no: invoiceId,
+    reference_no: invoicePayload.reference_no || invoiceId,
     dr_account: customerAcc.account_name || customerAcc.name,
-    cr_account: 'Sales Revenue Account',
+    cr_account: 'Sales & Revenue',
     amount: grandTotal,
     total_amount: grandTotal,
     items: processedItems,
     narration: narration || `Sales Invoice #${invoiceId}`,
     entries: [
       { account_name: customerAcc.account_name || customerAcc.name, type: 'DR', debit: grandTotal, credit: 0, amount: grandTotal },
-      { account_name: 'Sales Revenue Account', type: 'CR', debit: 0, credit: numericTaxable, amount: numericTaxable },
-      ...(gstAmount > 0 ? [{ account_name: 'GST Output Payable Account', type: 'CR', debit: 0, credit: gstAmount, amount: gstAmount }] : [])
+      { account_name: 'Sales & Revenue', type: 'CR', debit: 0, credit: numericTaxable, amount: numericTaxable },
+      ...(gstAmount > 0 ? [{ account_name: 'GST Output', type: 'CR', debit: 0, credit: gstAmount, amount: gstAmount }] : [])
     ],
     created_at: new Date().toISOString()
   };
 
-  // 5. Atomic Scoped Local Storage Commit
+  // 5. Commit Atomic Changes
   StorageService.setItem(accountsKey, accounts);
   StorageService.setItem('app_account_heads', accounts);
 
   StorageService.setItem(inventoryKey, inventory);
   StorageService.setItem('inventory_items', inventory);
 
-  const updatedJournal = [...newJournalLines, ...journalEntries];
-  StorageService.setItem(journalKey, updatedJournal);
-  StorageService.setItem('app_journal_entries', updatedJournal);
-
-  const updatedVouchers = [newVoucher, ...(Array.isArray(vouchers) ? vouchers : [])];
+  const updatedVouchers = [newVoucher, ...(Array.isArray(vouchers) ? vouchers.filter(v => v && v.id !== invoiceId) : [])];
   StorageService.setItem(vouchersKey, updatedVouchers);
   StorageService.setItem('account_book_vouchers', updatedVouchers);
+  StorageService.setItem(`app_vouchers_${activeFirmId}`, updatedVouchers);
 
-  const updatedInvoices = [invoiceRecord, ...(Array.isArray(invoices) ? invoices : [])];
+  const updatedInvoices = [newVoucher, ...(Array.isArray(invoices) ? invoices.filter(i => i && i.id !== invoiceId) : [])];
   StorageService.setItem(invoicesKey, updatedInvoices);
   StorageService.setItem('app_invoices', updatedInvoices);
 
-  // 6. Global Reactive Broadcast
-  window.dispatchEvent(new CustomEvent('ACCOUNT_BOOK_VOUCHER_POSTED', { detail: invoiceRecord }));
+  // 6. Global Broadcast
+  window.dispatchEvent(new CustomEvent('ACCOUNT_BOOK_VOUCHER_POSTED', { detail: newVoucher }));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('storage'));
 
-  return invoiceRecord;
+  return newVoucher;
 };
 
-/**
- * Revert inventory stock when a sales entry is deleted
- */
 export const revertSalesStockOnDeletion = (voucherOrInvoiceId, firmId = 'FIRM-001') => {
   try {
     let targetId = voucherOrInvoiceId;
@@ -188,17 +131,13 @@ export const revertSalesStockOnDeletion = (voucherOrInvoiceId, firmId = 'FIRM-00
 
     const activeFirmId = firmId || 'FIRM-001';
     const vouchersKey = `account_book_vouchers_${activeFirmId}`;
-    const invoicesKey = `app_invoices_${activeFirmId}`;
     const inventoryKey = `inventory_items_${activeFirmId}`;
 
     const vouchers = StorageService.getItem(vouchersKey) || StorageService.getItem('account_book_vouchers') || [];
-    const invoices = StorageService.getItem(invoicesKey) || StorageService.getItem('app_invoices') || [];
     const inventory = StorageService.getItem(inventoryKey) || StorageService.getItem('inventory_items') || [];
 
     const targetVoucher = vouchers.find(v => String(v.id) === String(targetId) || String(v.reference_no) === String(targetId));
-    const targetInvoice = invoices.find(i => String(i.id) === String(targetId) || String(i.invoice_number) === String(targetId));
-
-    const itemsToRestore = targetVoucher?.items || targetInvoice?.items || [];
+    const itemsToRestore = targetVoucher?.items || [];
 
     if (Array.isArray(itemsToRestore) && itemsToRestore.length > 0) {
       itemsToRestore.forEach(soldItem => {
