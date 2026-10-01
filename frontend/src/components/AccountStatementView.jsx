@@ -127,7 +127,7 @@ export default function AccountStatementView({ firm }) {
 
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('backup') || key.includes('journal') || key.includes('book'))) {
+        if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('backup') || key.includes('journal') || key.includes('book') || key.includes('payroll'))) {
           const raw = localStorage.getItem(key);
           if (raw) {
             try {
@@ -172,48 +172,39 @@ export default function AccountStatementView({ firm }) {
         const vNum = v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
 
-        const drAcc = (v.dr_account || v.debit_account || '').trim();
-        const crAcc = (v.cr_account || v.credit_account || '').trim();
-        let opposingParty = '';
-        if (drAcc.toLowerCase() === targetClean) {
-          opposingParty = crAcc ? `By ${crAcc}` : '';
-        } else if (crAcc.toLowerCase() === targetClean) {
-          opposingParty = drAcc ? `To ${drAcc}` : '';
-        }
+        // A. Handle Worker / Payroll / Attendance Entries
+        const workerName = (v.worker || v.worker_name || '').trim();
+        const expenseLedger = (v.expense_ledger || '').trim();
+        const wageAmount = Number(v.total_amount || v.amount || 0);
 
-        // Extract item details if available (Purchase/Sales items)
-        let itemDisplayInfo = '';
-        if (Array.isArray(v.items) && v.items.length > 0) {
-          const itemStrs = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`);
-          itemDisplayInfo = itemStrs.join(', ');
-        } else if (v.itemName || v.item_name || v.qty || v.quantity) {
-          const itName = v.itemName || v.item_name || 'Item';
-          const itQty = v.qty || v.quantity || 0;
-          const itRate = v.rate || v.unit_rate || 0;
-          itemDisplayInfo = `${itName} (Qty: ${itQty} @ ₹${itRate})`;
-        }
+        if (workerName && wageAmount > 0) {
+          const isWorkerMatch = workerName.toLowerCase() === targetClean;
+          const isExpenseMatch = expenseLedger.toLowerCase() === targetClean;
+          const workInfo = `[Qty: ${v.quantity || 0} x Rate: ${v.rate || 0}]`;
 
-        let descParts = [];
-        if (opposingParty) descParts.push(opposingParty);
-        if (itemDisplayInfo) descParts.push(itemDisplayInfo);
-        if (narration && narration !== opposingParty) descParts.push(narration);
-
-        const combinedNarr = descParts.join(' | ');
-
-        if (v.worker && v.expense_ledger && v.total_amount) {
-          if (String(v.worker).trim().toLowerCase() === targetClean) {
+          if (isWorkerMatch) {
             allParsedTransactions.push({
               date: vDate,
-              voucher_type: 'PAY',
+              voucher_type: vType === 'PAY' ? 'PAY' : 'JV',
               voucher_number: vNum,
-              narration: `Wages via ${v.expense_ledger} [Qty: ${v.quantity} x Rate: ${v.rate}] - ${narration}`,
+              narration: `Work/Wages via ${expenseLedger || 'Expense'} ${workInfo}${narration ? ' - ' + narration : ''}`,
               debit: 0,
-              credit: Number(v.total_amount || 0)
+              credit: wageAmount
+            });
+          } else if (isExpenseMatch) {
+            allParsedTransactions.push({
+              date: vDate,
+              voucher_type: vType,
+              voucher_number: vNum,
+              narration: `Wages credited to worker ${workerName} ${workInfo}${narration ? ' - ' + narration : ''}`,
+              debit: wageAmount,
+              credit: 0
             });
           }
           return;
         }
 
+        // B. Handle Structured Double-Entry Vouchers (entries array)
         if (Array.isArray(v.entries) && v.entries.length > 0) {
           let partyDebit = 0;
           let partyCredit = 0;
@@ -222,10 +213,11 @@ export default function AccountStatementView({ firm }) {
 
           v.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
+            const amt = Number(e.amount || e.debit || e.credit || 0);
+            const type = (e.type || '').toUpperCase();
+            
             if (accName.toLowerCase() === targetClean) {
               isMatch = true;
-              const amt = Number(e.amount || e.debit || e.credit || 0);
-              const type = (e.type || '').toUpperCase();
               if (type === 'DR' || Number(e.debit || 0) > 0) partyDebit += amt;
               if (type === 'CR' || Number(e.credit || 0) > 0) partyCredit += amt;
             } else if (accName) {
@@ -233,10 +225,15 @@ export default function AccountStatementView({ firm }) {
             }
           });
 
-          const contraName = otherParties.length > 0 ? `Account: ${otherParties.join(', ')}` : '';
-          const finalNarr = [contraName, itemDisplayInfo, narration].filter(Boolean).join(' | ');
-
           if (isMatch) {
+            let itemDisplayInfo = '';
+            if (Array.isArray(v.items) && v.items.length > 0) {
+              itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
+            }
+
+            const contraName = otherParties.length > 0 ? `Contra: ${otherParties.join(', ')}` : '';
+            const finalNarr = [contraName, itemDisplayInfo, narration].filter(Boolean).join(' | ');
+
             allParsedTransactions.push({
               date: vDate,
               voucher_type: vType,
@@ -246,20 +243,47 @@ export default function AccountStatementView({ firm }) {
               credit: partyCredit
             });
           }
-        } else {
-          const amt = Number(v.amount || v.total_amount || 0);
-          if (amt <= 0) return;
+          return;
+        }
 
-          if (dr.toLowerCase() === targetClean || cr.toLowerCase() === targetClean) {
-            allParsedTransactions.push({
-              date: vDate,
-              voucher_type: vType,
-              voucher_number: vNum,
-              narration: combinedNarr,
-              debit: dr.toLowerCase() === targetClean ? amt : 0,
-              credit: cr.toLowerCase() === targetClean ? amt : 0
-            });
+        // C. Handle Standard Dr/Cr Vouchers (Purchase, Sales, Payment, Receipt)
+        const drAcc = (v.dr_account || v.debit_account || '').trim();
+        const crAcc = (v.cr_account || v.credit_account || '').trim();
+        const amt = Number(v.amount || v.total_amount || 0);
+        if (amt <= 0) return;
+
+        const isDrMatch = drAcc.toLowerCase() === targetClean;
+        const isCrMatch = crAcc.toLowerCase() === targetClean;
+
+        if (isDrMatch || isCrMatch) {
+          let opposingParty = isDrMatch ? (crAcc ? `To ${crAcc}` : '') : (drAcc ? `By ${drAcc}` : '');
+          
+          let itemDisplayInfo = '';
+          if (Array.isArray(v.items) && v.items.length > 0) {
+            itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
+          } else if (v.itemName || v.item_name || v.qty || v.quantity) {
+            const itName = v.itemName || v.item_name || 'Item';
+            const itQty = v.qty || v.quantity || 0;
+            const itUnit = v.unit || 'Pcs';
+            const itRate = v.rate || v.unit_rate || 0;
+            itemDisplayInfo = `${itName} (Qty: ${itQty} ${itUnit} @ ₹${itRate})`;
           }
+
+          let descParts = [];
+          if (opposingParty) descParts.push(opposingParty);
+          if (itemDisplayInfo) descParts.push(itemDisplayInfo);
+          if (narration && !narration.toLowerCase().includes(opposingParty.toLowerCase())) {
+            descParts.push(narration);
+          }
+
+          allParsedTransactions.push({
+            date: vDate,
+            voucher_type: vType,
+            voucher_number: vNum,
+            narration: descParts.join(' | '),
+            debit: isDrMatch ? amt : 0,
+            credit: isCrMatch ? amt : 0
+          });
         }
       });
 
