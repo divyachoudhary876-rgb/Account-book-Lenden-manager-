@@ -46,7 +46,6 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
   const currentStockQty = parseFloat(stockItem.current_stock || stockItem.stock || stockItem.current_qty || stockItem.qty || 0);
   const oldRate = parseFloat(stockItem.unit_purchase_price || stockItem.purchase_price || stockItem.rate || 0);
   
-  // Weighted Average Purchase Rate Calculation
   const oldTotalVal = currentStockQty * oldRate;
   const newTotalVal = oldTotalVal + totalPurchaseValue;
   const newStockQty = currentStockQty + numericQty;
@@ -74,8 +73,8 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
     supplierName = resolvedSupplier.trim();
   }
 
-  // 4. Generate Double-Entry Voucher with explicit keys
-  const voucherId = `PURCH-${Date.now()}`;
+  // 4. Generate Double-Entry Voucher with explicit Item Name & ID
+  const voucherId = purchasePayload.id || `PURCH-${Date.now()}`;
   const itemNameDisplay = stockItem.item_name || stockItem.name || 'Item';
   
   const newVoucher = {
@@ -92,6 +91,8 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
     total_amount: totalPurchaseValue,
     itemId: String(stockItem.id),
     item_id: String(stockItem.id),
+    itemName: itemNameDisplay,
+    item_name: itemNameDisplay,
     qty: numericQty,
     quantity: numericQty,
     rate: numericRate,
@@ -104,14 +105,14 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
     created_at: new Date().toISOString()
   };
 
-  // 5. Commit Atomic Changes across all fallback storage buckets
+  // 5. Commit Atomic Changes across all storage buckets
   StorageService.setItem(inventoryKey, inventory);
   StorageService.setItem('inventory_items', inventory);
 
   StorageService.setItem(accountsKey, accounts);
   StorageService.setItem('app_account_heads', accounts);
   
-  const updatedVouchers = [newVoucher, ...(Array.isArray(vouchers) ? vouchers.filter(v => v && v.id !== voucherId) : [])];
+  const updatedVouchers = [newVoucher, ...(Array.isArray(vouchers) ? vouchers.filter(v => v && v.id !== voucherId && v.reference_no !== resolvedInvoiceNo) : [])];
   StorageService.setItem(vouchersKey, updatedVouchers);
   StorageService.setItem('account_book_vouchers', updatedVouchers);
   StorageService.setItem(`app_vouchers_${activeFirmId}`, updatedVouchers);
@@ -130,7 +131,6 @@ export const revertPurchaseStockOnDeletion = (voucherId, firmId = 'FIRM-001') =>
     if (!voucherId) return;
     const activeFirmId = firmId || 'FIRM-001';
     
-    // Scan all potential voucher storage buckets
     const vouchersKeys = [
       `account_book_vouchers_${activeFirmId}`,
       'account_book_vouchers',
@@ -191,7 +191,6 @@ export const revertPurchaseStockOnDeletion = (voucherId, firmId = 'FIRM-001') =>
         }
       }
 
-      // Remove the voucher from active storage lists
       if (foundKey) {
         const filteredVouchers = allVouchers.filter(v => v && String(v.id) !== String(voucherId) && String(v.reference_no) !== String(voucherId));
         StorageService.setItem(foundKey, filteredVouchers);
