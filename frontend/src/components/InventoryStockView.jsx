@@ -10,7 +10,7 @@ export default function InventoryStockView({ firm, onClose }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
   const [itemName, setItemName] = useState('');
-  const [unit, setUnit] = useState('Quintal'); // Default to Quintal for industrial/bhatta use
+  const [unit, setUnit] = useState('Quintal');
   const [openingStock, setOpeningStock] = useState('0');
   const [purchaseRate, setPurchaseRate] = useState('0');
 
@@ -19,26 +19,73 @@ export default function InventoryStockView({ firm, onClose }) {
       if (!firm) return;
       const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
       
-      // Fetch both firm-scoped and global inventory storage for complete sync
       const scopedKey = `inventory_items_${activeFirmId}`;
       let items = loadFirmData('inventory_items', firm, []);
-      
       if (!Array.isArray(items) || items.length === 0) {
         items = StorageService.getItem(scopedKey) || StorageService.getItem('inventory_items') || [];
       }
 
-      // Normalize all stock quantity variations to ensure live reflections
+      // Fetch all vouchers to compute accurate Total Purchase and Total Sale dynamically
+      const allVouchers = StorageService.getItem('account_book_vouchers') || [];
+
       const normalized = items.map(item => {
         if (!item) return null;
-        const stockQty = Number(item.current_stock ?? item.stock ?? item.stockQty ?? item.qty ?? 0);
+        const itemId = String(item.id || '');
+        const itemNameClean = String(item.item_name || item.name || '').trim().toLowerCase();
+
+        let totalPurQty = 0;
+        let totalPurAmt = 0;
+        let totalSaleQty = 0;
+        let totalSaleAmt = 0;
+
+        // Scan all vouchers for this specific item
+        allVouchers.forEach(v => {
+          if (!v) return;
+          const vType = String(v.voucher_type || v.type || '').toUpperCase();
+
+          if (vType === 'PURCHASE') {
+            const vItemId = String(v.itemId || v.item_id || '');
+            const vItemName = String(v.item_name || '').trim().toLowerCase();
+            if (vItemId === itemId || (itemNameClean && vItemName === itemNameClean)) {
+              const q = Number(v.qty || v.quantity || 0);
+              const a = Number(v.amount || v.total_amount || (q * Number(v.rate || 0)) || 0);
+              totalPurQty += q;
+              totalPurAmt += a;
+            }
+          } else if (vType === 'SALES') {
+            const vItems = Array.isArray(v.items) ? v.items : [];
+            vItems.forEach(ci => {
+              if (!ci) return;
+              const ciId = String(ci.itemId || ci.id || '');
+              const ciName = String(ci.itemName || ci.name || '').trim().toLowerCase();
+              if (ciId === itemId || (itemNameClean && ciName === itemNameClean)) {
+                const q = Number(ci.quantity || ci.qty || 0);
+                const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
+                totalSaleQty += q;
+                totalSaleAmt += a;
+              }
+            });
+          }
+        });
+
+        const opStock = Number(item.opening_stock ?? item.stock ?? item.current_stock ?? 0);
+        // Computed current stock = Opening + Total Purchase - Total Sale
+        const computedStock = (Number(item.opening_stock || 0) > 0 ? Number(item.opening_stock) : (item.initial_stock || 0)) + totalPurQty - totalSaleQty;
+        const finalStock = computedStock >= 0 ? computedStock : (item.current_stock || 0);
+
         const rateVal = Number(item.unit_purchase_price ?? item.purchasePrice ?? item.rate ?? 0);
+
         return {
           ...item,
-          current_stock: stockQty,
-          stock: stockQty,
-          qty: stockQty,
+          current_stock: finalStock,
+          stock: finalStock,
+          qty: finalStock,
           unit_purchase_price: rateVal,
-          rate: rateVal
+          rate: rateVal,
+          totalPurchaseQty: totalPurQty,
+          totalPurchaseAmount: totalPurAmt,
+          totalSaleQty: totalSaleQty,
+          totalSaleAmount: totalSaleAmt
         };
       }).filter(Boolean);
 
@@ -92,7 +139,6 @@ export default function InventoryStockView({ firm, onClose }) {
       
       let updated = [];
       if (editingItemId) {
-        // Update existing item
         updated = currentItems.map(i => {
           if (String(i.id) === String(editingItemId)) {
             return {
@@ -101,6 +147,7 @@ export default function InventoryStockView({ firm, onClose }) {
               itemName: itemName.trim(),
               name: itemName.trim(),
               unit: unit,
+              opening_stock: stockNum,
               current_stock: stockNum,
               stock: stockNum,
               qty: stockNum,
@@ -114,7 +161,6 @@ export default function InventoryStockView({ firm, onClose }) {
         });
         alert('✓ Item Updated Successfully!');
       } else {
-        // Create new item
         const newItem = {
           id: `ITEM-${Date.now()}`,
           firm_id: firmKey,
@@ -123,6 +169,7 @@ export default function InventoryStockView({ firm, onClose }) {
           name: itemName.trim(),
           item_type: 'PHYSICAL',
           unit: unit,
+          opening_stock: stockNum,
           current_stock: stockNum,
           stock: stockNum,
           qty: stockNum,
@@ -131,7 +178,6 @@ export default function InventoryStockView({ firm, onClose }) {
           rate: rateNum,
           created_at: new Date().toISOString()
         };
-
         updated = [newItem, ...currentItems];
         alert('✓ Item Created Successfully in Master!');
       }
@@ -163,7 +209,7 @@ export default function InventoryStockView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
       
-      {/* Top Premium Header & Summary Card */}
+      {/* Top Summary Header */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
@@ -174,7 +220,6 @@ export default function InventoryStockView({ firm, onClose }) {
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
         </div>
 
-        {/* Action Button */}
         <div style={{ marginBottom: '14px' }}>
           <button 
             onClick={handleOpenAddModal} 
@@ -184,7 +229,6 @@ export default function InventoryStockView({ firm, onClose }) {
           </button>
         </div>
 
-        {/* Total Valuation Display Box */}
         <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
           <div>
             <div style={{ fontSize: '11px', fontWeight: '700', color: '#166534', textTransform: 'uppercase' }}>Total Portfolio Value</div>
@@ -196,7 +240,7 @@ export default function InventoryStockView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* REFINED MOBILE-FRIENDLY CARD LIST */}
+      {/* INVENTORY ITEMS CARD LIST WITH TOTAL PURCHASE & SALE */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {inventoryList.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '30px 20px', borderRadius: '12px', color: '#94a3b8', fontSize: '11px', border: '1px solid #e2e8f0' }}>
@@ -208,6 +252,12 @@ export default function InventoryStockView({ firm, onClose }) {
             const rate = Number(item.unit_purchase_price || item.purchasePrice || item.rate || 0);
             const val = stock * rate;
             const displayName = item.item_name || item.itemName || item.name || 'Item';
+
+            const purQty = Number(item.totalPurchaseQty || 0);
+            const purAmt = Number(item.totalPurchaseAmount || 0);
+            const saleQty = Number(item.totalSaleQty || 0);
+            const saleAmt = Number(item.totalSaleAmount || 0);
+
             return (
               <div key={item.id || idx} style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
                 
@@ -226,6 +276,20 @@ export default function InventoryStockView({ firm, onClose }) {
                   >
                     Edit
                   </button>
+                </div>
+
+                {/* Total Purchase & Total Sale Summary Section */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: '#f8fafc', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Purchase:</span>
+                    <strong style={{ color: '#0284c7' }}>{purQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
+                    <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{purAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Sale:</span>
+                    <strong style={{ color: '#9333ea' }}>{saleQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
+                    <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{saleAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
@@ -283,7 +347,7 @@ export default function InventoryStockView({ firm, onClose }) {
                 </select>
               </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Opening Stock</label>
                   <input 
@@ -294,7 +358,7 @@ export default function InventoryStockView({ firm, onClose }) {
                     style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
                   />
                 </div>
-                <div style={{ flex: '1' }}>
+                <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Purchase Rate (₹)</label>
                   <input 
                     type="number" 
