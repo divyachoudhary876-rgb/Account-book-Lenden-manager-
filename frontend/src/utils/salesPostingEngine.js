@@ -218,6 +218,7 @@ export const revertSalesStockOnDeletion = (voucherOrInvoiceId, firmId = 'FIRM-00
       StorageService.setItem('inventory_items', inventory);
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
     }
   } catch (e) {
     console.error("Error reverting sales stock on deletion:", e);
