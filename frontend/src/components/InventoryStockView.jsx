@@ -24,12 +24,22 @@ export default function InventoryStockView({ firm, onClose }) {
         items = StorageService.getItem(scopedKey) || StorageService.getItem('inventory_items') || [];
       }
 
-      // Fetch all possible voucher sources
-      const allVouchers = [
+      // Fetch unique vouchers securely to avoid duplicate counting
+      const rawVouchers = [
         ...(StorageService.getItem('account_book_vouchers') || []),
         ...(StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || []),
         ...(StorageService.getItem(`app_vouchers_${activeFirmId}`) || [])
       ];
+
+      // Deduplicate vouchers by id / reference_no
+      const uniqueVouchersMap = new Map();
+      rawVouchers.forEach(v => {
+        if (v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001' || !v.firm_id)) {
+          const key = v.id || v.reference_no || JSON.stringify(v);
+          uniqueVouchersMap.set(key, v);
+        }
+      });
+      const allVouchers = Array.from(uniqueVouchersMap.values());
 
       const productionBatches = loadFirmData('production_batches', firm, []);
       const consumptionRecords = loadFirmData('material_consumption_records', firm, []);
@@ -44,19 +54,18 @@ export default function InventoryStockView({ firm, onClose }) {
         let totalOutFlowQty = 0;
         let totalOutFlowAmt = 0;
 
-        // Universal matching helper for IDs and Names
         const isMatch = (vId, vName, vNarration = '') => {
           const cleanId = String(vId || '').trim();
           const cleanName = String(vName || '').trim().toLowerCase();
           const cleanNarr = String(vNarration || '').trim().toLowerCase();
 
           if (itemId && cleanId && itemId === cleanId) return true;
-          if (itemNameClean && cleanName && (itemNameClean === cleanName || cleanName.includes(itemNameClean) || itemNameClean.includes(cleanName))) return true;
+          if (itemNameClean && cleanName && (itemNameClean === cleanName || cleanName.includes(cleanName) || cleanName.includes(itemNameClean))) return true;
           if (itemNameClean && cleanNarr && cleanNarr.includes(itemNameClean)) return true;
           return false;
         };
 
-        // 1. Scan All Vouchers (Purchase & Sales)
+        // 1. Scan Unique Vouchers (Purchase & Sales)
         allVouchers.forEach(v => {
           if (!v) return;
           const vType = String(v.voucher_type || v.type || '').toUpperCase();
@@ -72,7 +81,6 @@ export default function InventoryStockView({ firm, onClose }) {
               totalPurAmt += a;
             }
           } else if (vType === 'SALES') {
-            // Check items array if present
             const vItems = Array.isArray(v.items) ? v.items : [];
             if (vItems.length > 0) {
               vItems.forEach(ci => {
@@ -87,7 +95,6 @@ export default function InventoryStockView({ firm, onClose }) {
                 }
               });
             } else {
-              // Direct single-item sales voucher fallback (e.g. salesPostingEngine / invoicingEngine)
               if (isMatch(vId, vName, narration)) {
                 const q = Number(v.qty || v.quantity || 0);
                 const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
@@ -98,7 +105,7 @@ export default function InventoryStockView({ firm, onClose }) {
           }
         });
 
-        // 2. Scan Production Batches (+IN Output, -OUT Consumed)
+        // 2. Scan Production Batches
         productionBatches.forEach(batch => {
           if (!batch) return;
           const outId = batch.output_item_id || '';
@@ -120,7 +127,7 @@ export default function InventoryStockView({ firm, onClose }) {
           });
         });
 
-        // 3. Scan Material Consumption Records (-OUT)
+        // 3. Scan Material Consumption Records
         consumptionRecords.forEach(rec => {
           if (!rec) return;
           const recItems = Array.isArray(rec.items) ? rec.items : [];
