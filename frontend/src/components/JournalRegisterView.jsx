@@ -57,6 +57,26 @@ export default function JournalRegisterView({ firm, onClose }) {
             crAcc = (tx.cr_account || tx.credit_account || tx.worker || 'Account').trim();
           }
 
+          // Extract item details for Purchase, Sales, or Consumption vouchers
+          let itemDetailsList = [];
+          if (Array.isArray(tx.items) && tx.items.length > 0) {
+            itemDetailsList = tx.items.map(it => ({
+              itemName: it.itemName || it.name || it.item_name || 'Item',
+              qty: Number(it.qty || it.quantity || 0),
+              rate: Number(it.rate || it.unit_rate || 0),
+              unit: it.unit || 'Pcs',
+              total: Number(it.total || (Number(it.qty || it.quantity || 0) * Number(it.rate || it.unit_rate || 0)))
+            }));
+          } else if (tx.itemName || tx.item_name || tx.qty || tx.quantity) {
+            itemDetailsList = [{
+              itemName: tx.itemName || tx.item_name || 'Item',
+              qty: Number(tx.qty || tx.quantity || 0),
+              rate: Number(tx.rate || tx.unit_rate || 0),
+              unit: tx.unit || 'Pcs',
+              total: totalAmt
+            }];
+          }
+
           uniqueMap.set(uId, {
             ...tx,
             voucher_date: tx.voucher_date || tx.date || todayMaxDate,
@@ -64,7 +84,8 @@ export default function JournalRegisterView({ firm, onClose }) {
             reference_no: tx.reference_no || tx.voucher_number || (tx.id ? tx.id.slice(-6) : '1001'),
             dr_account: drAcc,
             cr_account: crAcc,
-            amount: totalAmt
+            amount: totalAmt,
+            items: itemDetailsList
           });
         }
       });
@@ -120,7 +141,8 @@ export default function JournalRegisterView({ firm, onClose }) {
       (entry.reference_no && String(entry.reference_no).toLowerCase().includes(q)) ||
       (entry.dr_account && entry.dr_account.toLowerCase().includes(q)) ||
       (entry.cr_account && entry.cr_account.toLowerCase().includes(q)) ||
-      (entry.narration && entry.narration.toLowerCase().includes(q));
+      (entry.narration && entry.narration.toLowerCase().includes(q)) ||
+      (entry.items && entry.items.some(i => i.itemName.toLowerCase().includes(q)));
 
     return typeMatch && searchMatch;
   });
@@ -151,7 +173,6 @@ export default function JournalRegisterView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto', boxSizing: 'border-box' }}>
       
-      {/* Chronological Audit Book Header */}
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800', marginBottom: '2px' }}>CHRONOLOGICAL AUDIT BOOK</div>
         
@@ -177,17 +198,13 @@ export default function JournalRegisterView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* Status Notification Banner */}
         {statusNotification && (
           <div style={{ padding: '10px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', marginBottom: '12px', backgroundColor: statusNotification.type === 'error' ? '#fef2f2' : statusNotification.type === 'success' ? '#ecfdf5' : '#f0f9ff', color: statusNotification.type === 'error' ? '#991b1b' : statusNotification.type === 'success' ? '#065f46' : '#0369a1', border: `1px solid ${statusNotification.type === 'error' ? '#fecaca' : statusNotification.type === 'success' ? '#a7f3d0' : '#bae6fd'}` }}>
             {statusNotification.message}
           </div>
         )}
 
-        {/* Clean, Stacked Filter Layout (Dates on top, Voucher Type cleanly below) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
-          
-          {/* Row 1: From Date & To Date side-by-side */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>From Date (से)</label>
@@ -211,7 +228,6 @@ export default function JournalRegisterView({ firm, onClose }) {
             </div>
           </div>
 
-          {/* Row 2: Voucher Type Selector spanning full width */}
           <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Voucher Type</label>
             <select 
@@ -224,23 +240,22 @@ export default function JournalRegisterView({ firm, onClose }) {
               <option value="PAY">PAY - Payment (भुगतान)</option>
               <option value="REC">REC - Receipt (प्राप्ति)</option>
               <option value="CONTRA">CONTRA - Contra (कोंट्रा)</option>
+              <option value="PURCHASE">PURCHASE (खरीद)</option>
+              <option value="SALES">SALES (बिक्री)</option>
             </select>
           </div>
-
         </div>
 
-        {/* Search Input Bar */}
         <div style={{ marginBottom: '12px' }}>
           <input 
             type="text" 
-            placeholder="🔍 Search account, ref no, narration..." 
+            placeholder="🔍 Search account, ref no, narration, item..." 
             value={searchQuery} 
             onChange={e => setSearchQuery(e.target.value)}
             style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box', backgroundColor: '#f8fafc' }}
           />
         </div>
 
-        {/* Totals Summary Card */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px' }}>
           <div>
             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase' }}>TOTAL DEBIT (नामे)</div>
@@ -253,7 +268,6 @@ export default function JournalRegisterView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Journal Cards List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {filteredEntries.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
@@ -263,6 +277,7 @@ export default function JournalRegisterView({ firm, onClose }) {
           filteredEntries.map((entry, idx) => {
             const amt = Number(entry.amount || 0);
             const vType = String(entry.voucher_type || 'JV').toUpperCase();
+            const itemsList = Array.isArray(entry.items) ? entry.items : [];
 
             return (
               <div key={entry.id || idx} style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', boxSizing: 'border-box' }}>
@@ -279,6 +294,17 @@ export default function JournalRegisterView({ firm, onClose }) {
                   <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
                     Cr: <span style={{ color: '#dc2626' }}>{entry.cr_account}</span>
                   </div>
+
+                  {/* Render item name, quantity, and rate if present */}
+                  {itemsList.length > 0 && (
+                    <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', marginBottom: '6px', fontSize: '11px' }}>
+                      {itemsList.map((it, iIdx) => (
+                        <div key={iIdx} style={{ fontWeight: '700', color: '#0284c7' }}>
+                          📦 {it.itemName} — Qty: <strong style={{ color: '#0f172a' }}>{it.qty} {it.unit}</strong> @ ₹{Number(it.rate || 0).toFixed(2)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {entry.narration && (
                     <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>{entry.narration}</div>
