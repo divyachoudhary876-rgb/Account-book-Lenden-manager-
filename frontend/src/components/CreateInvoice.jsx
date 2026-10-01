@@ -59,7 +59,13 @@ export default function CreateInvoice({ firm, onClose }) {
 
   const handleAddToCart = () => {
     if (!selectedItemId || !quantity || !rate) return alert('Kripya item, matra aur rate darj karein.');
-    const itemObj = allItems.find(i => String(i.id) === String(selectedItemId));
+    
+    // Robust search for selected item in master inventory list
+    const itemObj = allItems.find(i => 
+      String(i.id || i.item_id) === String(selectedItemId) || 
+      String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId).trim().toLowerCase()
+    );
+    
     if (!itemObj) return alert('Chayanit item nahi mila.');
 
     const qty = Number(quantity);
@@ -69,12 +75,14 @@ export default function CreateInvoice({ firm, onClose }) {
     
     const taxAmount = baseAmount * (gRate / 100);
     const totalWithTax = baseAmount + taxAmount;
+    const cleanItemName = itemObj.item_name || itemObj.name || 'Stock Item';
+    const cleanUnit = itemObj.unit || 'Pcs';
 
     setCart([...cart, {
       id: Date.now(),
       itemId: selectedItemId,
-      itemName: itemObj.item_name || itemObj.name || 'Item',
-      unit: itemObj.unit || 'Pcs',
+      itemName: cleanItemName,
+      unit: cleanUnit,
       qty,
       rate: rt,
       gstRate: gRate,
@@ -82,7 +90,7 @@ export default function CreateInvoice({ firm, onClose }) {
       cgst: taxAmount / 2,
       sgst: taxAmount / 2,
       total: totalWithTax,
-      isService: itemObj.item_type === 'SERVICE' || String(itemObj.item_name || '').toLowerCase().includes('freight')
+      isService: itemObj.item_type === 'SERVICE' || String(cleanItemName).toLowerCase().includes('freight')
     }]);
 
     setSelectedItemId(''); setQuantity(''); setRate('');
