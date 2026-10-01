@@ -52,7 +52,7 @@ export default function InventoryStockView({ firm, onClose }) {
         let totalOutFlowQty = 0;
         let totalOutFlowAmt = 0;
 
-        // Think10x Strict & Secure Item Matching (Eliminates cross-contamination)
+        // Think10x Strict Item Matching (Zero Cross-Contamination)
         const isStrictItemMatch = (vId, vName) => {
           const cleanVId = String(vId || '').trim();
           const cleanVName = String(vName || '').trim().toLowerCase();
@@ -429,7 +429,7 @@ export default function InventoryStockView({ firm, onClose }) {
                     step="0.01" 
                     value={openingStock} 
                     onChange={e => setOpeningStock(e.target.value)} 
-                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' >>} 
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
                   />
                 </div>
                 <div style={{ flex: 1 }}>
