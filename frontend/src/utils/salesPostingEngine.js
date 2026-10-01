@@ -96,19 +96,19 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     created_at: new Date().toISOString()
   };
 
-  // 5. Commit Atomic Changes
+  // 5. Commit Atomic Changes (Safely keeping existing purchase vouchers)
   StorageService.setItem(accountsKey, accounts);
   StorageService.setItem('app_account_heads', accounts);
 
   StorageService.setItem(inventoryKey, inventory);
   StorageService.setItem('inventory_items', inventory);
 
-  const updatedVouchers = [newVoucher, ...(Array.isArray(vouchers) ? vouchers.filter(v => v && v.id !== invoiceId) : [])];
+  const updatedVouchers = [newVoucher, ...(Array.isArray(vouchers) ? vouchers.filter(v => v && v.id !== invoiceId && v.reference_no !== invoiceId) : [])];
   StorageService.setItem(vouchersKey, updatedVouchers);
   StorageService.setItem('account_book_vouchers', updatedVouchers);
   StorageService.setItem(`app_vouchers_${activeFirmId}`, updatedVouchers);
 
-  const updatedInvoices = [newVoucher, ...(Array.isArray(invoices) ? invoices.filter(i => i && i.id !== invoiceId) : [])];
+  const updatedInvoices = [newVoucher, ...(Array.isArray(invoices) ? invoices.filter(i => i && i.id !== invoiceId && i.invoice_number !== invoiceId) : [])];
   StorageService.setItem(invoicesKey, updatedInvoices);
   StorageService.setItem('app_invoices', updatedInvoices);
 
@@ -136,8 +136,12 @@ export const revertSalesStockOnDeletion = (voucherOrInvoiceId, firmId = 'FIRM-00
     const vouchers = StorageService.getItem(vouchersKey) || StorageService.getItem('account_book_vouchers') || [];
     const inventory = StorageService.getItem(inventoryKey) || StorageService.getItem('inventory_items') || [];
 
-    const targetVoucher = vouchers.find(v => String(v.id) === String(targetId) || String(v.reference_no) === String(targetId));
-    const itemsToRestore = targetVoucher?.items || [];
+    // Target only SALES vouchers securely
+    const targetVoucher = vouchers.find(v => v && (String(v.id) === String(targetId) || String(v.reference_no) === String(targetId)) && (v.voucher_type === 'SALES' || v.type === 'SALES'));
+    
+    if (!targetVoucher) return;
+
+    const itemsToRestore = targetVoucher.items || [];
 
     if (Array.isArray(itemsToRestore) && itemsToRestore.length > 0) {
       itemsToRestore.forEach(soldItem => {
