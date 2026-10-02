@@ -12,7 +12,7 @@ export default function JournalRegisterView({ firm, onClose }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [sortOrder, setSortOrder] = useState('ASC');
+  const [sortOrder, setSortOrder] = useState('DESC'); // Default to newest first
   const [isExporting, setIsExporting] = useState(false);
   const [statusNotification, setStatusNotification] = useState(null);
 
@@ -57,7 +57,6 @@ export default function JournalRegisterView({ firm, onClose }) {
             crAcc = (tx.cr_account || tx.credit_account || tx.worker || 'Account').trim();
           }
 
-          // Extract item details for Purchase, Sales, or Consumption vouchers
           let itemDetailsList = [];
           if (Array.isArray(tx.items) && tx.items.length > 0) {
             itemDetailsList = tx.items.map(it => ({
@@ -268,7 +267,8 @@ export default function JournalRegisterView({ firm, onClose }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Scrollable Journal Entries Container */}
+      <div style={{ maxHeight: '500px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
         {filteredEntries.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
             No journal entries found matching criteria.
@@ -295,7 +295,6 @@ export default function JournalRegisterView({ firm, onClose }) {
                     Cr: <span style={{ color: '#dc2626' }}>{entry.cr_account}</span>
                   </div>
 
-                  {/* Render item name, quantity, and rate if present */}
                   {itemsList.length > 0 && (
                     <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', marginBottom: '6px', fontSize: '11px' }}>
                       {itemsList.map((it, iIdx) => (
