@@ -49,20 +49,19 @@ export default function InventoryStockView({ firm, onClose }) {
 
         let totalPurQty = 0;
         let totalPurAmt = 0;
-        let totalOutFlowQty = 0;
-        let totalOutFlowAmt = 0;
+        let totalSaleQty = 0;
+        let totalSaleAmt = 0;
+        let totalProdQty = 0;
+        let totalProdAmt = 0;
+        let totalConsQty = 0;
+        let totalConsAmt = 0;
 
-        // Think10x Strict Item Matching (Zero Cross-Contamination)
+        // Strict Item Matching
         const isStrictItemMatch = (vId, vName) => {
           const cleanVId = String(vId || '').trim();
           const cleanVName = String(vName || '').trim().toLowerCase();
-
-          // 1. Strict ID Match
           if (itemId && cleanVId && itemId === cleanVId) return true;
-
-          // 2. Strict Exact Name Match
           if (itemNameClean && cleanVName && itemNameClean === cleanVName) return true;
-
           return false;
         };
 
@@ -90,16 +89,16 @@ export default function InventoryStockView({ firm, onClose }) {
                 if (isStrictItemMatch(ciId, ciName)) {
                   const q = Number(ci.quantity || ci.qty || 0);
                   const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
-                  totalOutFlowQty += q;
-                  totalOutFlowAmt += a;
+                  totalSaleQty += q;
+                  totalSaleAmt += a;
                 }
               });
             } else {
               if (isStrictItemMatch(vId, vName)) {
                 const q = Number(v.qty || v.quantity || 0);
                 const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
-                totalOutFlowQty += q;
-                totalOutFlowAmt += a;
+                totalSaleQty += q;
+                totalSaleAmt += a;
               }
             }
           }
@@ -110,8 +109,10 @@ export default function InventoryStockView({ firm, onClose }) {
           if (!batch) return;
           const outId = batch.output_item_id || '';
           if (isStrictItemMatch(outId, '')) {
-            totalPurQty += Number(batch.produced_qty || 0);
-            totalPurAmt += Number(batch.total_cost || 0);
+            const q = Number(batch.produced_qty || 0);
+            const a = Number(batch.total_cost || 0);
+            totalProdQty += q;
+            totalProdAmt += a;
           }
 
           const consumedMats = Array.isArray(batch.consumed_materials) ? batch.consumed_materials : [];
@@ -121,8 +122,8 @@ export default function InventoryStockView({ firm, onClose }) {
             const mName = mat.name || '';
             if (isStrictItemMatch(mId, mName)) {
               const q = Number(mat.qty || 0);
-              totalOutFlowQty += q;
-              totalOutFlowAmt += q * Number(item.unit_purchase_price || item.rate || 0);
+              totalConsQty += q;
+              totalConsAmt += q * Number(item.unit_purchase_price || item.rate || 0);
             }
           });
         });
@@ -137,20 +138,21 @@ export default function InventoryStockView({ firm, onClose }) {
             const rName = ri.name || '';
             if (isStrictItemMatch(rId, rName)) {
               const q = Number(ri.qty || 0);
-              totalOutFlowQty += q;
-              totalOutFlowAmt += q * Number(ri.rate || item.unit_purchase_price || item.rate || 0);
+              totalConsQty += q;
+              totalConsAmt += q * Number(ri.rate || item.unit_purchase_price || item.rate || 0);
             }
           });
         });
 
         const opStock = Number(item.opening_stock ?? item.stock ?? item.current_stock ?? 0);
-        const computedStock = opStock + totalPurQty - totalOutFlowQty;
+        const totalInflow = opStock + totalPurQty + totalProdQty;
+        const totalOutflow = totalSaleQty + totalConsQty;
+        const computedStock = totalInflow - totalOutflow;
         const finalStock = computedStock >= 0 ? computedStock : 0;
         
-        // Weighted Average Rate Calculation with Fallback
         let rateVal = Number(item.unit_purchase_price ?? item.purchasePrice ?? item.rate ?? 0);
-        if (totalPurQty > 0 && totalPurAmt > 0) {
-          rateVal = Number((totalPurAmt / totalPurQty).toFixed(2));
+        if ((totalPurQty + totalProdQty) > 0 && (totalPurAmt + totalProdAmt) > 0) {
+          rateVal = Number(((totalPurAmt + totalProdAmt) / (totalPurQty + totalProdQty)).toFixed(2));
         }
 
         return {
@@ -162,8 +164,12 @@ export default function InventoryStockView({ firm, onClose }) {
           rate: rateVal,
           totalPurchaseQty: totalPurQty,
           totalPurchaseAmount: totalPurAmt,
-          totalSaleQty: totalOutFlowQty,
-          totalSaleAmount: totalOutFlowAmt
+          totalSaleQty: totalSaleQty,
+          totalSaleAmount: totalSaleAmt,
+          totalProdQty: totalProdQty,
+          totalProdAmount: totalProdAmt,
+          totalConsQty: totalConsQty,
+          totalConsAmount: totalConsAmt
         };
       }).filter(Boolean);
 
@@ -333,6 +339,10 @@ export default function InventoryStockView({ firm, onClose }) {
             const purAmt = Number(item.totalPurchaseAmount || 0);
             const saleQty = Number(item.totalSaleQty || 0);
             const saleAmt = Number(item.totalSaleAmount || 0);
+            const prodQty = Number(item.totalProdQty || 0);
+            const prodAmt = Number(item.totalProdAmount || 0);
+            const consQty = Number(item.totalConsQty || 0);
+            const consAmt = Number(item.totalConsAmount || 0);
 
             return (
               <div key={item.id || idx} style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
@@ -355,16 +365,37 @@ export default function InventoryStockView({ firm, onClose }) {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: '#f8fafc', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
-                  <div>
-                    <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Purchase:</span>
-                    <strong style={{ color: '#0284c7' }}>{purQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
-                    <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{purAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
-                  </div>
-                  <div>
-                    <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Sale / Consumption:</span>
-                    <strong style={{ color: '#9333ea' }}>{saleQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
-                    <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{saleAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
-                  </div>
+                  {purQty > 0 && (
+                    <div>
+                      <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Purchase:</span>
+                      <strong style={{ color: '#0284c7' }}>{purQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
+                      <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{purAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
+                    </div>
+                  )}
+                  {prodQty > 0 && (
+                    <div>
+                      <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Production:</span>
+                      <strong style={{ color: '#059669' }}>{prodQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
+                      <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{prodAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
+                    </div>
+                  )}
+                  {saleQty > 0 && (
+                    <div>
+                      <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Sale:</span>
+                      <strong style={{ color: '#9333ea' }}>{saleQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
+                      <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{saleAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
+                    </div>
+                  )}
+                  {consQty > 0 && (
+                    <div>
+                      <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Consumption:</span>
+                      <strong style={{ color: '#dc2626' }}>{consQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
+                      <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{consAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
+                    </div>
+                  )}
+                  {purQty === 0 && prodQty === 0 && saleQty === 0 && consQty === 0 && (
+                    <div style={{ gridColumn: 'span 2', color: '#94a3b8', fontStyle: 'italic' }}>No movement recorded yet.</div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
@@ -445,7 +476,7 @@ export default function InventoryStockView({ firm, onClose }) {
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
+                <button type="submit" style={{ flex: '1', padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                   {editingItemId ? '✓ Update Item' : '+ Save Item'}
                 </button>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
