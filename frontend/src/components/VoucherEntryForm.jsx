@@ -108,7 +108,7 @@ export default function VoucherEntryForm({ firm }) {
       saveUniversalVoucher(activeFirmId, {
         id: editingId,
         voucher_type: voucherType,
-        voucher_date: voucherDate, // Keep selected date active
+        voucher_date: voucherDate, // Keep selected date active for quick next entry
         reference_no: referenceNo,
         dr_account: drAccount,
         cr_account: crAccount,
@@ -238,7 +238,7 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         {/* Debit Account Selector */}
-        <div style={{ width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+        <div style={{ width: '100%', boxSizing: 'border-box', position: 'relative', zIndex: 10 }}>
           <SearchableAccountDropdown
             label="Debit Account (Dr - नामे) *"
             accounts={accounts}
@@ -251,7 +251,7 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         {/* Credit Account Selector */}
-        <div style={{ width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+        <div style={{ width: '100%', boxSizing: 'border-box', position: 'relative', zIndex: 9 }}>
           <SearchableAccountDropdown
             label="Credit Account (Cr - जमा) *"
             accounts={accounts}
@@ -464,8 +464,7 @@ const cardStyle = {
   border: '1px solid #cbd5e1',
   boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
   boxSizing: 'border-box',
-  width: '100%',
-  overflow: 'hidden'
+  width: '100%'
 };
 
 const labelStyle = {
