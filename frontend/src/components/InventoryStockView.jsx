@@ -57,7 +57,6 @@ export default function InventoryStockView({ firm, onClose }) {
         let totalConsQty = 0;
         let totalConsAmt = 0;
 
-        // Strict Item Matching
         const isStrictItemMatch = (vId, vName) => {
           const cleanVId = String(vId || '').trim();
           const cleanVName = String(vName || '').trim().toLowerCase();
@@ -66,7 +65,6 @@ export default function InventoryStockView({ firm, onClose }) {
           return false;
         };
 
-        // 1. Scan Unique Vouchers (Purchase & Sales)
         allVouchers.forEach(v => {
           if (!v) return;
           const vType = String(v.voucher_type || v.type || '').toUpperCase();
@@ -105,7 +103,6 @@ export default function InventoryStockView({ firm, onClose }) {
           }
         });
 
-        // 2. Scan Production Batches
         productionBatches.forEach(batch => {
           if (!batch) return;
           const outId = batch.output_item_id || '';
@@ -129,7 +126,6 @@ export default function InventoryStockView({ firm, onClose }) {
           });
         });
 
-        // 3. Scan Material Consumption Records
         consumptionRecords.forEach(rec => {
           if (!rec) return;
           const recItems = Array.isArray(rec.items) ? rec.items : [];
@@ -192,7 +188,6 @@ export default function InventoryStockView({ firm, onClose }) {
     };
   }, [firm]);
 
-  // A to Z Ascending Order Sorting & Search Filtering
   const processedInventory = useMemo(() => {
     const sorted = [...inventoryList].sort((a, b) => {
       const nameA = (a.item_name || a.itemName || a.name || '').toLowerCase();
@@ -353,7 +348,8 @@ export default function InventoryStockView({ firm, onClose }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Scrollable Inventory Items List */}
+      <div style={{ maxHeight: '500px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
         {processedInventory.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '30px 20px', borderRadius: '12px', color: '#94a3b8', fontSize: '11px', border: '1px solid #e2e8f0' }}>
             No stock items found matching your search.
