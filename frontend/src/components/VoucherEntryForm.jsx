@@ -335,7 +335,8 @@ export default function VoucherEntryForm({ firm }) {
           style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '12px' }}
         />
 
-        <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+        {/* Scrollable Container with Non-Overlapping Card Layout */}
+        <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
           {filteredVouchers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '12px' }}>
               No recorded vouchers found for this firm.
@@ -351,36 +352,35 @@ export default function VoucherEntryForm({ firm }) {
                   style={{
                     backgroundColor: isSelected ? '#f0f9ff' : '#f8fafc',
                     border: `1px solid ${isSelected ? '#0284c7' : '#e2e8f0'}`,
-                    borderRadius: '8px',
-                    padding: '10px',
+                    borderRadius: '10px',
+                    padding: '12px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '6px',
+                    gap: '8px',
                     boxSizing: 'border-box',
-                    width: '100%',
-                    overflow: 'hidden'
+                    width: '100%'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '4px' }}>
-                    <div>
-                      <span style={{ fontSize: '10px', color: '#64748b', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', marginRight: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
                         {vch.voucher_date || vch.date}
                       </span>
                       <strong style={{ fontSize: '12px', color: '#0f172a' }}>
                         {vch.reference_no || vch.voucher_number}
                       </strong>
-                      <span style={{ marginLeft: '6px', fontSize: '9px', fontWeight: 'bold', padding: '2px 5px', borderRadius: '4px', backgroundColor: '#e0e7ff', color: '#3730a3' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e0e7ff', color: '#3730a3' }}>
                         {vch.voucher_type || vch.type}
                       </span>
                     </div>
-                    <strong style={{ fontSize: '13px', color: '#059669' }}>
+                    <strong style={{ fontSize: '13px', color: '#059669', whiteSpace: 'nowrap' }}>
                       ₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </strong>
                   </div>
 
-                  <div style={{ fontSize: '11px', lineHeight: '1.4', wordBreak: 'break-word' }}>
-                    <div style={{ color: '#059669', fontWeight: '600' }}>Dr: {vch.dr_account || vch.dr_party}</div>
-                    <div style={{ color: '#dc2626', fontWeight: '600' }}>Cr: {vch.cr_account || vch.cr_party}</div>
+                  <div style={{ fontSize: '11px', lineHeight: '1.5', wordBreak: 'break-word', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ color: '#059669', fontWeight: '700' }}>Dr: {vch.dr_account || vch.dr_party}</div>
+                    <div style={{ color: '#dc2626', fontWeight: '700' }}>Cr: {vch.cr_account || vch.cr_party}</div>
                     {vch.narration && (
                       <div style={{ color: '#64748b', fontSize: '10px', marginTop: '2px' }}>
                         Note: {vch.narration}
@@ -388,7 +388,7 @@ export default function VoucherEntryForm({ firm }) {
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', borderTop: '1px dashed #e2e8f0', paddingTop: '6px', marginTop: '2px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '2px' }}>
                     <button
                       type="button"
                       onClick={() => handleEditInit(vch)}
@@ -396,7 +396,7 @@ export default function VoucherEntryForm({ firm }) {
                         backgroundColor: '#0284c7',
                         color: '#ffffff',
                         border: 'none',
-                        padding: '4px 10px',
+                        padding: '5px 12px',
                         borderRadius: '6px',
                         fontSize: '11px',
                         fontWeight: 'bold',
@@ -412,7 +412,7 @@ export default function VoucherEntryForm({ firm }) {
                         backgroundColor: '#fee2e2',
                         color: '#991b1b',
                         border: '1px solid #fecaca',
-                        padding: '4px 8px',
+                        padding: '5px 10px',
                         borderRadius: '6px',
                         fontSize: '11px',
                         fontWeight: 'bold',
