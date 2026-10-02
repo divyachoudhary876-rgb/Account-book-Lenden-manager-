@@ -2,7 +2,6 @@
 
 /**
  * Standard Statutory Account Hierarchy (Ind AS / Indian GAAP Aligned)
- * Exported to satisfy CreateAccountHeadModal imports.
  */
 export const ACCOUNT_HIERARCHY = {
   ASSETS: {
@@ -68,13 +67,13 @@ export const ACCOUNT_HIERARCHY = {
 };
 
 /**
- * Retrieve master account heads for active firm by unifying both system keys
+ * Retrieve master account heads strictly isolated for active firm
  */
 export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
   try {
     let rawAccounts = [];
 
-    // 1. Check primary key used by account master / dropdowns
+    // 1. Check primary firm-scoped key
     const primaryKey = `app_accounts_${firmId}`;
     const primaryRaw = localStorage.getItem(primaryKey);
     if (primaryRaw) {
@@ -82,7 +81,7 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       if (Array.isArray(parsed)) rawAccounts.push(...parsed);
     }
 
-    // 2. Check modal creation key (`account_heads_${firmId}`) so newly created heads appear instantly
+    // 2. Check modal creation firm-scoped key
     const modalKey = `account_heads_${firmId}`;
     const modalRaw = localStorage.getItem(modalKey);
     if (modalRaw) {
@@ -90,21 +89,7 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       if (Array.isArray(parsed)) rawAccounts.push(...parsed);
     }
 
-    // 3. Deep scan localStorage for any backup or account keys
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.includes('account') || key.includes('ledger') || key.includes('party') || key.includes('head'))) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) rawAccounts.push(...parsed);
-          } catch (e) {}
-        }
-      }
-    }
-
-    // Deduplicate and normalize keys so both `name` and `account_name` work seamlessly
+    // Deduplicate and normalize keys strictly for this firm
     const uniqueMap = new Map();
     rawAccounts.forEach(acc => {
       if (!acc) return;
@@ -127,7 +112,7 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       return Array.from(uniqueMap.values());
     }
 
-    // Default Baseline Chart of Accounts if completely empty
+    // Default Baseline Chart of Accounts for new/empty firm profile
     const defaultAccounts = [
       { id: 'ACC-001', account_name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', sub_group: 'Cash in Hand (रोकड़)', opening_balance: 0, balance_type: 'Dr', is_system_locked: true },
       { id: 'ACC-002', account_name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', sub_group: 'Bank Accounts (बैंक खाते)', opening_balance: 0, balance_type: 'Dr', is_system_locked: false },
@@ -175,7 +160,7 @@ export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Save or Update an Account Head
+ * Save or Update an Account Head strictly for active firm
  */
 export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const accounts = getFirmMasterAccounts(firmId);
