@@ -335,7 +335,7 @@ export default function VoucherEntryForm({ firm }) {
           style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '12px' }}
         />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
           {filteredVouchers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '12px' }}>
               No recorded vouchers found for this firm.
@@ -357,10 +357,11 @@ export default function VoucherEntryForm({ firm }) {
                     flexDirection: 'column',
                     gap: '6px',
                     boxSizing: 'border-box',
-                    width: '100%'
+                    width: '100%',
+                    overflow: 'hidden'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '4px' }}>
                     <div>
                       <span style={{ fontSize: '10px', color: '#64748b', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', marginRight: '6px' }}>
                         {vch.voucher_date || vch.date}
