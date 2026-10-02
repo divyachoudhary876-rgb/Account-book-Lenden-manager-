@@ -1,289 +1,466 @@
-// frontend/src/utils/voucherPostingEngine.js
-import { StorageService } from './storageSync';
+// frontend/src/components/VoucherEntryForm.jsx
 
-/**
- * 1. RETRIEVE ALL VOUCHERS BY FIRM (Comprehensive Multi-Source Universal Scanner)
- * Scans Vouchers, Sales Invoices, Purchase Bills, Payroll, Consumption & Production
- */
-export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
-  const activeFirm = firmId || 'FIRM-001';
-  let rawTx = [];
+import React, { useState, useEffect } from 'react';
+import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
+import { StorageService } from '../utils/storageSync'; // <-- Corrected path
+import { 
+  saveUniversalVoucher, 
+  getUniversalVouchersByFirm, 
+  deleteUniversalVoucher 
+} from '../utils/voucherPostingEngine.js';
+import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
-  // All possible storage keys across different modules
-  const keysToScan = [
-    `app_vouchers_${activeFirm}`,
-    `account_book_vouchers_${activeFirm}`,
-    `app_invoices_${activeFirm}`,
-    `app_payroll_entries_${activeFirm}`,
-    `material_consumption_records_${activeFirm}`,
-    `production_batches_${activeFirm}`,
-    'app_vouchers',
-    'account_book_vouchers',
-    'app_invoices',
-    'app_payroll_entries',
-    'material_consumption_records',
-    'production_batches'
-  ];
+export default function VoucherEntryForm({ firm }) {
+  const activeFirmId = firm?.id || 'FIRM-001';
+  const todayMaxDate = new Date().toISOString().split('T')[0];
 
-  keysToScan.forEach(k => {
+  const [accounts, setAccounts] = useState([]);
+  const [voucherList, setVoucherList] = useState([]);
+  
+  const [editingId, setEditingId] = useState(null);
+
+  const [voucherType, setVoucherType] = useState('PAYMENT');
+  const [voucherDate, setVoucherDate] = useState(todayMaxDate);
+  const [referenceNo, setReferenceNo] = useState('');
+  const [drAccount, setDrAccount] = useState('');
+  const [crAccount, setCrAccount] = useState('');
+  const [amount, setAmount] = useState('');
+  const [narration, setNarration] = useState('');
+  const [status, setStatus] = useState(null);
+  const [searchFilter, setSearchFilter] = useState('');
+
+  const loadData = () => {
+    const accList = getFirmMasterAccounts(activeFirmId);
+    setAccounts(accList);
+    if (accList.length > 0 && !drAccount) {
+      setDrAccount(accList[0].account_name);
+      const cashAcc = accList.find(a => a.account_name.toLowerCase().includes('cash')) || accList[1] || accList[0];
+      setCrAccount(cashAcc.account_name);
+    }
+
+    const vchs = getUniversalVouchersByFirm(activeFirmId);
+    setVoucherList(vchs);
+  };
+
+  useEffect(() => {
+    loadData();
+    window.addEventListener('app_state_updated', loadData);
+    return () => window.removeEventListener('app_state_updated', loadData);
+  }, [activeFirmId]);
+
+  const handleEditInit = (voucher) => {
+    setEditingId(voucher.id);
+    setVoucherType(voucher.voucher_type || voucher.type || 'PAYMENT');
+    setVoucherDate(voucher.voucher_date || voucher.date || todayMaxDate);
+    setReferenceNo(voucher.reference_no || voucher.voucher_number || '');
+    setDrAccount(voucher.dr_account || voucher.dr_party || '');
+    setCrAccount(voucher.cr_account || voucher.cr_party || '');
+    setAmount(voucher.amount ? voucher.amount.toString() : '');
+    setNarration(voucher.narration || '');
+    setStatus({
+      type: 'info',
+      text: `✏️ Editing Voucher #${voucher.reference_no || voucher.voucher_number}. Modify details and click Update.`
+    });
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setAmount('');
+    setNarration('');
+    setReferenceNo('');
+    setStatus(null);
+  };
+
+  const handleDeleteVoucher = (vchId, vchNum) => {
+    const confirmed = window.confirm(`Voucher #${vchNum || ''} ko permanently delete karein? Yeh len-den khate se hat jayega.`);
+    if (!confirmed) return;
+
     try {
-      const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
-      if (Array.isArray(val)) {
-        rawTx.push(...val);
-      } else if (val && typeof val === 'object') {
-        Object.values(val).forEach(sub => {
-          if (Array.isArray(sub)) rawTx.push(...sub);
-        });
-      }
-    } catch (e) {}
-  });
-
-  // Deep scan localStorage for any backup or firm-scoped keys
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && (key.includes('voucher') || key.includes('invoice') || key.includes('payroll') || key.includes('consumption') || key.includes('production') || key.includes('book'))) {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) rawTx.push(...parsed);
-        } catch (e) {}
-      }
+      deleteUniversalVoucher(activeFirmId, vchId);
+      if (editingId === vchId) handleCancelEdit();
+      setStatus({ type: 'success', text: `✓ Voucher #${vchNum || ''} successfully deleted.` });
+      loadData();
+    } catch (err) {
+      setStatus({ type: 'error', text: `Delete failed: ${err.message}` });
     }
-  }
+  };
 
-  const uniqueMap = new Map();
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setStatus(null);
 
-  rawTx.forEach(tx => {
-    if (!tx) return;
-    const vFirm = tx.firm_id || tx.firmId || activeFirm;
-    if (vFirm !== activeFirm && vFirm !== 'FIRM-001' && activeFirm !== 'FIRM-001') return;
+    const cleanAmount = parseFloat(amount);
+    if (!cleanAmount || cleanAmount <= 0) {
+      setStatus({ type: 'error', text: 'Transaction amount zero se adhik hona chahiye.' });
+      return;
+    }
 
-    const uId = tx.id || tx.reference_no || tx.invoice_number || `${tx.voucher_date || tx.date || '2026-04-01'}-${tx.amount || tx.total_amount || 0}-${Math.random()}`;
-    
-    if (!uniqueMap.has(uId)) {
-      let vType = String(tx.voucher_type || tx.type || 'JV').toUpperCase();
-      if (tx.produced_qty) vType = 'PRODUCTION';
-      else if (tx.uses_for) vType = 'CONSUMPTION';
-      else if (tx.worker && tx.expense_ledger) vType = 'PAYROLL';
-
-      let drAcc = tx.dr_account || tx.debit_account || tx.customer_id || tx.dr_party || '';
-      let crAcc = tx.cr_account || tx.credit_account || tx.supplierId || tx.cr_party || '';
-      let amt = Number(tx.amount || tx.total_amount || tx.total_cost || 0);
-
-      if (vType === 'SALES') {
-        drAcc = tx.dr_account || tx.customer_id || 'Customer Party';
-        crAcc = 'Sales & Revenue';
-        amt = Number(amt || tx.taxable_amount || 0);
-      } else if (vType === 'PURCHASE') {
-        drAcc = tx.dr_account || 'Purchase Account';
-        crAcc = tx.cr_account || tx.supplierId || 'Supplier Vendor';
-        amt = Number(amt || 0);
-      } else if (vType === 'CONSUMPTION') {
-        drAcc = `Consumption (${tx.uses_for || 'General'})`;
-        crAcc = 'Inventory Stock';
-        amt = (tx.items || []).reduce((s, i) => s + (Number(i.qty || i.quantity || 0) * Number(i.rate || 0)), 0);
-      } else if (vType === 'PRODUCTION') {
-        drAcc = 'Finished Goods Inventory';
-        crAcc = `Production (${tx.location || 'Batch'})`;
-        amt = Number(tx.total_cost || 0);
-      } else if (vType === 'PAYROLL') {
-        drAcc = tx.expense_ledger || 'Wages Expense';
-        crAcc = tx.worker || 'Worker Account';
-        amt = Number(tx.total_amount || 0);
-      }
-
-      uniqueMap.set(uId, {
-        ...tx,
-        id: uId,
-        voucher_date: tx.voucher_date || tx.date || new Date().toISOString().split('T')[0],
-        voucher_type: vType,
-        type: vType,
-        reference_no: tx.reference_no || tx.voucher_number || tx.invoice_number || uId.slice(-6),
-        dr_account: drAcc || 'General Ledger',
-        cr_account: crAcc || 'General Ledger',
-        amount: amt
+    try {
+      saveUniversalVoucher(activeFirmId, {
+        id: editingId,
+        voucher_type: voucherType,
+        voucher_date: voucherDate,
+        reference_no: referenceNo,
+        dr_account: drAccount,
+        cr_account: crAccount,
+        amount: cleanAmount,
+        narration
       });
+
+      setStatus({
+        type: 'success',
+        text: editingId
+          ? `✓ Voucher Updated Successfully! Amount: ₹${cleanAmount.toLocaleString('en-IN')}`
+          : `✓ ${voucherType} Voucher Saved! Amount: ₹${cleanAmount.toLocaleString('en-IN')}`
+      });
+
+      setEditingId(null);
+      setAmount('');
+      setNarration('');
+      setReferenceNo('');
+      loadData();
+    } catch (err) {
+      setStatus({ type: 'error', text: err.message });
     }
+  };
+
+  const filteredVouchers = voucherList.filter(v => {
+    const q = searchFilter.toLowerCase();
+    return (
+      (v.reference_no && v.reference_no.toLowerCase().includes(q)) ||
+      (v.voucher_number && v.voucher_number.toLowerCase().includes(q)) ||
+      (v.dr_account && v.dr_account.toLowerCase().includes(q)) ||
+      (v.cr_account && v.cr_account.toLowerCase().includes(q)) ||
+      (v.narration && v.narration.toLowerCase().includes(q))
+    );
   });
 
-  const formattedList = Array.from(uniqueMap.values());
+  return (
+    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      
+      {/* Header Banner */}
+      <div style={cardStyle}>
+        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
+          Voucher Entry (रोज़नामचा प्रविष्टि)
+        </h3>
+        <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#64748b' }}>
+          Double-Entry General Ledger & Real-Time Postings
+        </p>
+      </div>
 
-  // Sort by date (newest first) and fallback to ID descending
-  formattedList.sort((a, b) => {
-    const dateA = new Date(a.voucher_date || a.date || 0);
-    const dateB = new Date(b.voucher_date || b.date || 0);
-    if (dateA.getTime() !== dateB.getTime()) {
-      return dateB - dateA; // Latest date first
-    }
-    return String(b.id || '').localeCompare(String(a.id || ''));
-  });
+      {status && (
+        <div style={{
+          backgroundColor: status.type === 'success' ? '#ecfdf5' : status.type === 'info' ? '#eff6ff' : '#fef2f2',
+          border: `1px solid ${status.type === 'success' ? '#a7f3d0' : status.type === 'info' ? '#bfdbfe' : '#fecaca'}`,
+          color: status.type === 'success' ? '#065f46' : status.type === 'info' ? '#1e40af' : '#991b1b',
+          padding: '10px 14px',
+          borderRadius: '10px',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          boxSizing: 'border-box',
+          width: '100%'
+        }}>
+          {status.text}
+        </div>
+      )}
 
-  return formattedList;
+      {/* Main Voucher Entry Form */}
+      <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        
+        {/* Voucher Type Selector */}
+        <div>
+          <label style={labelStyle}>Voucher Type *</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
+            {['PAYMENT', 'RECEIPT', 'CONTRA', 'JOURNAL'].map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setVoucherType(type)}
+                style={{
+                  padding: '9px 4px',
+                  borderRadius: '8px',
+                  border: '1px solid',
+                  borderColor: voucherType === type ? '#0f172a' : '#cbd5e1',
+                  backgroundColor: voucherType === type ? '#0f172a' : '#ffffff',
+                  color: voucherType === type ? '#ffffff' : '#334155',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  boxSizing: 'border-box'
+                }}
+              >
+                {type === 'PAYMENT' && '💳 Payment'}
+                {type === 'RECEIPT' && '📥 Receipt'}
+                {type === 'CONTRA' && '🏛️️ Contra'}
+                {type === 'JOURNAL' && '📝 Journal'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Date & Ref */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+          <div>
+            <label style={labelStyle}>Date *</label>
+            <input
+              type="date"
+              max={todayMaxDate}
+              value={voucherDate}
+              onChange={e => setVoucherDate(e.target.value)}
+              style={inputStyle}
+              required
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Reference No / Bill Ref</label>
+            <input
+              type="text"
+              placeholder="e.g. PV-104"
+              value={referenceNo}
+              onChange={e => setReferenceNo(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+        </div>
+
+        {/* Debit Account Selector */}
+        <div style={{ width: '100%', boxSizing: 'border-box', position: 'relative', zIndex: 10 }}>
+          <SearchableAccountDropdown
+            label="Debit Account (Dr - नामे) *"
+            accounts={accounts}
+            value={drAccount}
+            onChange={val => setDrAccount(val)}
+            placeholder="Search debit account..."
+            colorAccent="#059669"
+            required
+          />
+        </div>
+
+        {/* Credit Account Selector */}
+        <div style={{ width: '100%', boxSizing: 'border-box', position: 'relative', zIndex: 9 }}>
+          <SearchableAccountDropdown
+            label="Credit Account (Cr - जमा) *"
+            accounts={accounts}
+            value={crAccount}
+            onChange={val => setCrAccount(val)}
+            placeholder="Search credit account..."
+            colorAccent="#dc2626"
+            required
+          />
+        </div>
+
+        {/* Amount */}
+        <div style={{ width: '100%', boxSizing: 'border-box' }}>
+          <label style={labelStyle}>Transaction Amount (₹) *</label>
+          <input
+            type="number"
+            step="0.01"
+            placeholder="0.00"
+            value={amount}
+            onChange={e => setAmount(e.target.value)}
+            style={{ ...inputStyle, fontSize: '15px', fontWeight: 'bold' }}
+            required
+          />
+        </div>
+
+        {/* Narration */}
+        <div style={{ width: '100%', boxSizing: 'border-box' }}>
+          <label style={labelStyle}>Narration / Remarks</label>
+          <input
+            type="text"
+            placeholder="e.g. Paid cash for office expenses / diesel"
+            value={narration}
+            onChange={e => setNarration(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+
+        {/* Submit & Cancel Buttons */}
+        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box', marginTop: '4px' }}>
+          <button
+            type="submit"
+            style={{
+              flex: 1,
+              backgroundColor: editingId ? '#0284c7' : '#059669',
+              color: '#ffffff',
+              border: 'none',
+              padding: '12px',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            {editingId ? '✓ Update Modified Voucher' : '💾 Post Double-Entry Voucher'}
+          </button>
+
+          {editingId && (
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              style={{
+                backgroundColor: '#f1f5f9',
+                color: '#475569',
+                border: '1px solid #cbd5e1',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+
+      </form>
+
+      {/* Editable Voucher Register List */}
+      <div style={cardStyle}>
+        <div style={{ marginBottom: '10px' }}>
+          <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+            📋 Recent Daybook & Voucher Register ({filteredVouchers.length})
+          </strong>
+          <div style={{ fontSize: '10px', color: '#64748b' }}>Click Edit to modify or Delete to reverse</div>
+        </div>
+
+        <input
+          type="text"
+          placeholder="🔍 Search vouchers by party, ref no, narration..."
+          value={searchFilter}
+          onChange={e => setSearchFilter(e.target.value)}
+          style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '12px' }}
+        />
+
+        {/* Scrollable Container with Non-Overlapping Card Layout */}
+        <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+          {filteredVouchers.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '12px' }}>
+              No recorded vouchers found for this firm.
+            </div>
+          ) : (
+            filteredVouchers.map((vch) => {
+              const amt = parseFloat(vch.amount || 0);
+              const isSelected = editingId === vch.id;
+
+              return (
+                <div
+                  key={vch.id}
+                  style={{
+                    backgroundColor: isSelected ? '#f0f9ff' : '#f8fafc',
+                    border: `1px solid ${isSelected ? '#0284c7' : '#e2e8f0'}`,
+                    borderRadius: '10px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    boxSizing: 'border-box',
+                    width: '100%'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                        {vch.voucher_date || vch.date}
+                      </span>
+                      <strong style={{ fontSize: '12px', color: '#0f172a' }}>
+                        {vch.reference_no || vch.voucher_number}
+                      </strong>
+                      <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e0e7ff', color: '#3730a3' }}>
+                        {vch.voucher_type || vch.type}
+                      </span>
+                    </div>
+                    <strong style={{ fontSize: '13px', color: '#059669', whiteSpace: 'nowrap' }}>
+                      ₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+
+                  <div style={{ fontSize: '11px', lineHeight: '1.5', wordBreak: 'break-word', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ color: '#059669', fontWeight: '700' }}>Dr: {vch.dr_account || vch.dr_party}</div>
+                    <div style={{ color: '#dc2626', fontWeight: '700' }}>Cr: {vch.cr_account || vch.cr_party}</div>
+                    {vch.narration && (
+                      <div style={{ color: '#64748b', fontSize: '10px', marginTop: '2px' }}>
+                        Note: {vch.narration}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '2px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleEditInit(vch)}
+                      style={{
+                        backgroundColor: '#0284c7',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteVoucher(vch.id, vch.reference_no || vch.voucher_number)}
+                      style={{
+                        backgroundColor: '#fee2e2',
+                        color: '#991b1b',
+                        border: '1px solid #fecaca',
+                        padding: '5px 10px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
+
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+const cardStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '12px',
+  padding: '14px',
+  border: '1px solid #cbd5e1',
+  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
+  boxSizing: 'border-box',
+  width: '100%'
 };
 
-/**
- * 2. POST OR UPDATE UNIVERSAL DOUBLE-ENTRY VOUCHER
- */
-export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
-  const activeFirm = firmId || 'FIRM-001';
-  const vouchersKey = `app_vouchers_${activeFirm}`;
-  const legacyKey = 'account_book_vouchers';
-  
-  let existingVouchers = [];
-  try {
-    const primaryStored = localStorage.getItem(vouchersKey);
-    const legacyStored = localStorage.getItem(legacyKey);
-    const combined = [...JSON.parse(primaryStored || '[]'), ...JSON.parse(legacyStored || '[]')];
-    
-    const map = new Map();
-    combined.forEach(v => {
-      if (v && v.id) map.set(v.id, v);
-    });
-    existingVouchers = Array.from(map.values());
-  } catch (e) {
-    existingVouchers = [];
-  }
-
-  const {
-    id = null,
-    voucher_type = 'PAYMENT',
-    voucher_date = new Date().toISOString().split('T')[0],
-    reference_no = '',
-    narration = '',
-    dr_account = '',
-    cr_account = '',
-    amount = 0,
-    is_compound = false,
-    entries = []
-  } = voucherPayload;
-
-  const vchNumber = (reference_no || '').trim() || `${voucher_type.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-  let finalVoucher = null;
-
-  if (is_compound && Array.isArray(entries) && entries.length > 0) {
-    let totalDr = 0;
-    let totalCr = 0;
-
-    entries.forEach((entry) => {
-      const val = parseFloat(entry.amount || 0);
-      if (entry.type === 'Dr') totalDr += val;
-      if (entry.type === 'Cr') totalCr += val;
-    });
-
-    if (Math.abs(totalDr - totalCr) > 0.01) {
-      throw new Error(`⛔ Unbalanced Voucher! Total Debit (₹${totalDr.toFixed(2)}) does not equal Total Credit (₹${totalCr.toFixed(2)}).`);
-    }
-
-    finalVoucher = {
-      id: id || `VCH-${Date.now()}`,
-      firm_id: activeFirm,
-      firmId: activeFirm,
-      voucher_number: vchNumber,
-      voucher_date,
-      date: voucher_date,
-      voucher_type: voucher_type.toUpperCase(),
-      type: voucher_type.toUpperCase(),
-      reference_no: vchNumber,
-      narration: (narration || '').trim(),
-      amount: parseFloat(totalDr.toFixed(2)),
-      is_compound: true,
-      entries,
-      dr_account: entries.filter(e => e.type === 'Dr').map(e => e.account_name).join(', '),
-      cr_account: entries.filter(e => e.type === 'Cr').map(e => e.account_name).join(', '),
-      updated_at: new Date().toISOString()
-    };
-  } else {
-    const cleanAmt = parseFloat(amount || 0);
-    if (!cleanAmt || cleanAmt <= 0) {
-      throw new Error('Transaction amount must be greater than zero.');
-    }
-    if (!dr_account || !dr_account.trim()) {
-      throw new Error('Debit Account (नामे) is mandatory.');
-    }
-    if (!cr_account || !cr_account.trim()) {
-      throw new Error('Credit Account (जमा) is mandatory.');
-    }
-    if (dr_account.trim().toLowerCase() === cr_account.trim().toLowerCase()) {
-      throw new Error('Debit and Credit cannot be the same ledger account.');
-    }
-
-    finalVoucher = {
-      id: id || `VCH-${Date.now()}`,
-      firm_id: activeFirm,
-      firmId: activeFirm,
-      voucher_number: vchNumber,
-      voucher_date,
-      date: voucher_date,
-      voucher_type: voucher_type.toUpperCase(),
-      type: voucher_type.toUpperCase(),
-      reference_no: vchNumber,
-      narration: (narration || '').trim(),
-      amount: cleanAmt,
-      is_compound: false,
-      dr_account: dr_account.trim(),
-      cr_account: cr_account.trim(),
-      entries: [
-        { type: 'Dr', account_name: dr_account.trim(), amount: cleanAmt },
-        { type: 'Cr', account_name: cr_account.trim(), amount: cleanAmt }
-      ],
-      updated_at: new Date().toISOString()
-    };
-  }
-
-  const existingIdx = existingVouchers.findIndex(v => v.id === finalVoucher.id);
-  if (existingIdx !== -1) {
-    existingVouchers[existingIdx] = finalVoucher;
-  } else {
-    existingVouchers.push(finalVoucher);
-  }
-
-  localStorage.setItem(vouchersKey, JSON.stringify(existingVouchers));
-  localStorage.setItem(legacyKey, JSON.stringify(existingVouchers));
-  localStorage.setItem(`account_book_vouchers_${activeFirm}`, JSON.stringify(existingVouchers));
-
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  return finalVoucher;
+const labelStyle = {
+  display: 'block',
+  fontSize: '11px',
+  fontWeight: 'bold',
+  color: '#334155',
+  marginBottom: '4px'
 };
 
-/**
- * 3. ATOMIC VOUCHER DELETION
- */
-export const deleteUniversalVoucher = (firmId = 'FIRM-001', voucherId = '') => {
-  if (!voucherId) return false;
-
-  const activeFirm = firmId || 'FIRM-001';
-  const vouchersKey = `app_vouchers_${activeFirm}`;
-  const legacyKey = 'account_book_vouchers';
-  
-  let existingVouchers = [];
-  try {
-    const primaryStored = localStorage.getItem(vouchersKey);
-    const legacyStored = localStorage.getItem(legacyKey);
-    const combined = [...JSON.parse(primaryStored || '[]'), ...JSON.parse(legacyStored || '[]')];
-    
-    const map = new Map();
-    combined.forEach(v => {
-      if (v && v.id) map.set(v.id, v);
-    });
-    existingVouchers = Array.from(map.values());
-  } catch (e) {
-    existingVouchers = [];
-  }
-
-  const initialCount = existingVouchers.length;
-  const filtered = existingVouchers.filter(v => v.id !== voucherId && v.reference_no !== voucherId);
-
-  if (filtered.length === initialCount) {
-    throw new Error('Voucher ID not found for deletion.');
-  }
-
-  localStorage.setItem(vouchersKey, JSON.stringify(filtered));
-  localStorage.setItem(legacyKey, JSON.stringify(filtered));
-  localStorage.setItem(`account_book_vouchers_${activeFirm}`, JSON.stringify(filtered));
-
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  return true;
+const inputStyle = {
+  width: '100%',
+  padding: '9px 10px',
+  borderRadius: '8px',
+  border: '1px solid #cbd5e1',
+  fontSize: '12px',
+  boxSizing: 'border-box',
+  backgroundColor: '#ffffff',
+  color: '#0f172a',
+  outline: 'none'
 };
