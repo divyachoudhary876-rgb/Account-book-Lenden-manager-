@@ -16,10 +16,8 @@ export default function VoucherEntryForm({ firm }) {
   const [accounts, setAccounts] = useState([]);
   const [voucherList, setVoucherList] = useState([]);
   
-  // State for Editing
   const [editingId, setEditingId] = useState(null);
 
-  // Form Fields
   const [voucherType, setVoucherType] = useState('PAYMENT');
   const [voucherDate, setVoucherDate] = useState(todayMaxDate);
   const [referenceNo, setReferenceNo] = useState('');
@@ -31,7 +29,6 @@ export default function VoucherEntryForm({ firm }) {
   const [searchFilter, setSearchFilter] = useState('');
 
   const loadData = () => {
-    // 1. Load Chart of Accounts
     const accList = getFirmMasterAccounts(activeFirmId);
     setAccounts(accList);
     if (accList.length > 0 && !drAccount) {
@@ -40,7 +37,6 @@ export default function VoucherEntryForm({ firm }) {
       setCrAccount(cashAcc.account_name);
     }
 
-    // 2. Load Existing Vouchers
     const vchs = getUniversalVouchersByFirm(activeFirmId);
     setVoucherList(vchs);
   };
@@ -51,7 +47,6 @@ export default function VoucherEntryForm({ firm }) {
     return () => window.removeEventListener('app_state_updated', loadData);
   }, [activeFirmId]);
 
-  // Handle Edit Action
   const handleEditInit = (voucher) => {
     setEditingId(voucher.id);
     setVoucherType(voucher.voucher_type || voucher.type || 'PAYMENT');
@@ -69,7 +64,6 @@ export default function VoucherEntryForm({ firm }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Cancel Edit Mode (Preserving current selected voucherDate)
   const handleCancelEdit = () => {
     setEditingId(null);
     setAmount('');
@@ -78,7 +72,6 @@ export default function VoucherEntryForm({ firm }) {
     setStatus(null);
   };
 
-  // Handle Delete Action
   const handleDeleteVoucher = (vchId, vchNum) => {
     const confirmed = window.confirm(`Voucher #${vchNum || ''} ko permanently delete karein? Yeh len-den khate se hat jayega.`);
     if (!confirmed) return;
@@ -93,7 +86,6 @@ export default function VoucherEntryForm({ firm }) {
     }
   };
 
-  // Form Submit Handler (Create or Update)
   const handleSubmit = (e) => {
     e.preventDefault();
     setStatus(null);
@@ -108,7 +100,7 @@ export default function VoucherEntryForm({ firm }) {
       saveUniversalVoucher(activeFirmId, {
         id: editingId,
         voucher_type: voucherType,
-        voucher_date: voucherDate, // Keep selected date active for quick next entry
+        voucher_date: voucherDate,
         reference_no: referenceNo,
         dr_account: drAccount,
         cr_account: crAccount,
@@ -123,7 +115,6 @@ export default function VoucherEntryForm({ firm }) {
           : `✓ ${voucherType} Voucher Saved! Amount: ₹${cleanAmount.toLocaleString('en-IN')}`
       });
 
-      // Clear fields except voucherDate so user can quickly enter next transaction on same date
       setEditingId(null);
       setAmount('');
       setNarration('');
@@ -134,7 +125,6 @@ export default function VoucherEntryForm({ firm }) {
     }
   };
 
-  // Search Filter on Voucher List
   const filteredVouchers = voucherList.filter(v => {
     const q = searchFilter.toLowerCase();
     return (
@@ -147,11 +137,11 @@ export default function VoucherEntryForm({ firm }) {
   });
 
   return (
-    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px', overflowX: 'hidden' }}>
+    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
       
       {/* Header Banner */}
       <div style={cardStyle}>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
+        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
           Voucher Entry (रोज़नामचा प्रविष्टि)
         </h3>
         <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#64748b' }}>
@@ -176,19 +166,19 @@ export default function VoucherEntryForm({ firm }) {
       )}
 
       {/* Main Voucher Entry Form */}
-      <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'grid', gap: '14px' }}>
+      <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '14px' }}>
         
         {/* Voucher Type Selector */}
         <div>
           <label style={labelStyle}>Voucher Type *</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
             {['PAYMENT', 'RECEIPT', 'CONTRA', 'JOURNAL'].map((type) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => setVoucherType(type)}
                 style={{
-                  padding: '8px 4px',
+                  padding: '9px 4px',
                   borderRadius: '8px',
                   border: '1px solid',
                   borderColor: voucherType === type ? '#0f172a' : '#cbd5e1',
@@ -198,9 +188,7 @@ export default function VoucherEntryForm({ firm }) {
                   fontWeight: '700',
                   cursor: 'pointer',
                   textAlign: 'center',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
+                  boxSizing: 'border-box'
                 }}
               >
                 {type === 'PAYMENT' && '💳 Payment'}
@@ -213,7 +201,7 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         {/* Date & Ref */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
           <div>
             <label style={labelStyle}>Date *</label>
             <input
@@ -290,7 +278,7 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         {/* Submit & Cancel Buttons */}
-        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box', marginTop: '4px' }}>
           <button
             type="submit"
             style={{
@@ -298,12 +286,11 @@ export default function VoucherEntryForm({ firm }) {
               backgroundColor: editingId ? '#0284c7' : '#059669',
               color: '#ffffff',
               border: 'none',
-              padding: '13px',
-              borderRadius: '10px',
-              fontSize: '13px',
+              padding: '12px',
+              borderRadius: '8px',
+              fontSize: '12px',
               fontWeight: 'bold',
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+              cursor: 'pointer'
             }}
           >
             {editingId ? '✓ Update Modified Voucher' : '💾 Post Double-Entry Voucher'}
@@ -317,9 +304,9 @@ export default function VoucherEntryForm({ firm }) {
                 backgroundColor: '#f1f5f9',
                 color: '#475569',
                 border: '1px solid #cbd5e1',
-                padding: '13px 18px',
-                borderRadius: '10px',
-                fontSize: '13px',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                fontSize: '12px',
                 fontWeight: 'bold',
                 cursor: 'pointer'
               }}
@@ -333,16 +320,13 @@ export default function VoucherEntryForm({ firm }) {
 
       {/* Editable Voucher Register List */}
       <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <div>
-            <strong style={{ fontSize: '14px', color: '#0f172a' }}>
-              📋 Recent Daybook & Voucher Register ({filteredVouchers.length})
-            </strong>
-            <div style={{ fontSize: '10px', color: '#64748b' }}>Click Edit to modify or Delete to reverse</div>
-          </div>
+        <div style={{ marginBottom: '10px' }}>
+          <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+            📋 Recent Daybook & Voucher Register ({filteredVouchers.length})
+          </strong>
+          <div style={{ fontSize: '10px', color: '#64748b' }}>Click Edit to modify or Delete to reverse</div>
         </div>
 
-        {/* Filter Input */}
         <input
           type="text"
           placeholder="🔍 Search vouchers by party, ref no, narration..."
@@ -351,7 +335,6 @@ export default function VoucherEntryForm({ firm }) {
           style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '12px' }}
         />
 
-        {/* Voucher Cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
           {filteredVouchers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '12px' }}>
@@ -368,18 +351,16 @@ export default function VoucherEntryForm({ firm }) {
                   style={{
                     backgroundColor: isSelected ? '#f0f9ff' : '#f8fafc',
                     border: `1px solid ${isSelected ? '#0284c7' : '#e2e8f0'}`,
-                    borderRadius: '10px',
-                    padding: '12px',
+                    borderRadius: '8px',
+                    padding: '10px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '6px',
                     boxSizing: 'border-box',
-                    width: '100%',
-                    overflow: 'hidden'
+                    width: '100%'
                   }}
                 >
-                  {/* Top Line: Date, Ref, Voucher Type, Amount */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
                     <div>
                       <span style={{ fontSize: '10px', color: '#64748b', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', marginRight: '6px' }}>
                         {vch.voucher_date || vch.date}
@@ -391,12 +372,11 @@ export default function VoucherEntryForm({ firm }) {
                         {vch.voucher_type || vch.type}
                       </span>
                     </div>
-                    <strong style={{ fontSize: '14px', color: '#059669' }}>
+                    <strong style={{ fontSize: '13px', color: '#059669' }}>
                       ₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </strong>
                   </div>
 
-                  {/* Middle Line: Dr / Cr Particulars */}
                   <div style={{ fontSize: '11px', lineHeight: '1.4', wordBreak: 'break-word' }}>
                     <div style={{ color: '#059669', fontWeight: '600' }}>Dr: {vch.dr_account || vch.dr_party}</div>
                     <div style={{ color: '#dc2626', fontWeight: '600' }}>Cr: {vch.cr_account || vch.cr_party}</div>
@@ -407,8 +387,7 @@ export default function VoucherEntryForm({ firm }) {
                     )}
                   </div>
 
-                  {/* Actions: Edit & Delete Buttons */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px dashed #e2e8f0', paddingTop: '8px', marginTop: '2px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', borderTop: '1px dashed #e2e8f0', paddingTop: '6px', marginTop: '2px' }}>
                     <button
                       type="button"
                       onClick={() => handleEditInit(vch)}
@@ -416,14 +395,11 @@ export default function VoucherEntryForm({ firm }) {
                         backgroundColor: '#0284c7',
                         color: '#ffffff',
                         border: 'none',
-                        padding: '5px 12px',
+                        padding: '4px 10px',
                         borderRadius: '6px',
                         fontSize: '11px',
                         fontWeight: 'bold',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
+                        cursor: 'pointer'
                       }}
                     >
                       ✏️ Edit
@@ -435,7 +411,7 @@ export default function VoucherEntryForm({ firm }) {
                         backgroundColor: '#fee2e2',
                         color: '#991b1b',
                         border: '1px solid #fecaca',
-                        padding: '5px 10px',
+                        padding: '4px 8px',
                         borderRadius: '6px',
                         fontSize: '11px',
                         fontWeight: 'bold',
@@ -459,10 +435,10 @@ export default function VoucherEntryForm({ firm }) {
 
 const cardStyle = {
   backgroundColor: '#ffffff',
-  borderRadius: '16px',
-  padding: '16px',
+  borderRadius: '12px',
+  padding: '14px',
   border: '1px solid #cbd5e1',
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
   boxSizing: 'border-box',
   width: '100%'
 };
@@ -472,16 +448,17 @@ const labelStyle = {
   fontSize: '11px',
   fontWeight: 'bold',
   color: '#334155',
-  marginBottom: '5px'
+  marginBottom: '4px'
 };
 
 const inputStyle = {
   width: '100%',
-  padding: '10px 12px',
+  padding: '9px 10px',
   borderRadius: '8px',
   border: '1px solid #cbd5e1',
   fontSize: '12px',
   boxSizing: 'border-box',
   backgroundColor: '#ffffff',
-  color: '#0f172a'
+  color: '#0f172a',
+  outline: 'none'
 };
