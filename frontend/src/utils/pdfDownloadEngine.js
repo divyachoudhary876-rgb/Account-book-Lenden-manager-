@@ -85,7 +85,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (Updated with Item & Description Details)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
@@ -94,7 +94,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   const doc = new jsPDF();
   let y = 20;
 
-  // Header Section
   doc.setFontSize(18);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(15, 23, 42);
@@ -111,8 +110,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
   y += 12;
 
-  // Table Headers
-  doc.setFillColor(15, 23, 42); // Dark Slate #0f172a
+  doc.setFillColor(15, 23, 42);
   doc.rect(14, y, 182, 8, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont(undefined, 'bold');
@@ -125,7 +123,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   doc.text('Balance', 192, y + 5.5, { align: 'right' });
   y += 10;
 
-  // Table Rows
   doc.setTextColor(15, 23, 42);
   doc.setFont(undefined, 'normal');
 
@@ -148,7 +145,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.text(t.credit > 0 ? t.credit.toFixed(2) : '-', 155, y, { align: 'right' });
     doc.text(`${(t.runningBalance || 0).toFixed(2)} ${t.balanceType || 'Dr'}`, 192, y, { align: 'right' });
     
-    // Print description / narration / items below voucher type
     if (t.narration) {
       y += 4.5;
       doc.setFontSize(7.5);
@@ -167,22 +163,27 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L) - Clean Alignment
+ * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L, Balance Sheet, GST) - Fixed Active Tab Routing
  */
 export const downloadFinancialStatementsReport = async (param1, param2, param3) => {
   let firmInput = 'Neelkanth Groups';
   let reportData = {};
-  let activeTab = 'TB';
+  let activeTab = 'TRIAL_BALANCE';
 
-  [param1, param2, param3].forEach(arg => {
+  // Flexible argument resolver
+  const args = [param1, param2, param3];
+  args.forEach(arg => {
     if (!arg) return;
-    if (typeof arg === 'object' && (arg.legal_name || arg.trade_name || arg.name || arg.id)) {
-      firmInput = arg;
-    } else if (typeof arg === 'object' && (arg.trialBalance || arg.totalDebit !== undefined || arg.trading)) {
-      reportData = arg;
+    if (typeof arg === 'object') {
+      if (arg.legal_name || arg.trade_name || arg.name || arg.id) {
+        firmInput = arg;
+      }
+      if (arg.trialBalance || arg.trading || arg.balanceSheet || arg.gstSummary) {
+        reportData = arg;
+      }
     } else if (typeof arg === 'string') {
       const upper = arg.toUpperCase();
-      if (['TB', 'TRADING', 'PNL', 'TRIAL_BALANCE', '1', '2', '3'].includes(upper)) {
+      if (['TRIAL_BALANCE', 'TRADING', 'PNL', 'BALANCE_SHEET', 'GST_SUMMARY', 'TB'].includes(upper)) {
         activeTab = upper;
       } else {
         firmInput = arg;
@@ -191,12 +192,6 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   });
 
   const firmName = getCleanFirmName(firmInput);
-  const rows = (reportData.trialBalance && Array.isArray(reportData.trialBalance)) ? reportData.trialBalance : [];
-
-  let reportTitle = 'Trial Balance Report';
-  if (activeTab === 'TRADING' || activeTab === '2') reportTitle = 'Trading Account';
-  if (activeTab === 'PNL' || activeTab === '3') reportTitle = 'Profit & Loss Statement';
-
   const doc = new jsPDF();
   let y = 20;
 
@@ -206,6 +201,12 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   doc.setTextColor(15, 23, 42);
   doc.text(firmName.toUpperCase(), 14, y);
   y += 8;
+
+  let reportTitle = 'Trial Balance Report';
+  if (activeTab === 'TRADING') reportTitle = 'Trading Account Report';
+  else if (activeTab === 'PNL') reportTitle = 'Profit & Loss Statement';
+  else if (activeTab === 'BALANCE_SHEET') reportTitle = 'Balance Sheet (Assets & Liabilities)';
+  else if (activeTab === 'GST_SUMMARY') reportTitle = 'GSTR Tax Summary Report';
 
   doc.setFontSize(12);
   doc.setFont(undefined, 'normal');
@@ -217,53 +218,113 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
   y += 12;
 
-  // Table Header
-  doc.setFillColor(15, 23, 42);
-  doc.rect(14, y, 182, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont(undefined, 'bold');
-  doc.setFontSize(9);
+  // Render based on Active Tab Data
+  if (activeTab === 'BALANCE_SHEET' && reportData.balanceSheet) {
+    const assets = reportData.balanceSheet.assets || [];
+    const liabilities = reportData.balanceSheet.liabilities || [];
 
-  doc.text('Account Name', 18, y + 5.5);
-  doc.text('Category', 95, y + 5.5);
-  doc.text('Debit (Rs)', 145, y + 5.5, { align: 'right' });
-  doc.text('Credit (Rs)', 192, y + 5.5, { align: 'right' });
-  y += 10;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 182, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont(undefined, 'bold');
+    doc.text('Assets (संपत्ति)', 18, y + 5.5);
+    doc.text('Amount (Rs)', 192, y + 5.5, { align: 'right' });
+    y += 10;
 
-  doc.setTextColor(15, 23, 42);
-  doc.setFont(undefined, 'normal');
+    doc.setTextColor(15, 23, 42);
+    doc.setFont(undefined, 'normal');
+    assets.forEach((a, idx) => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      if (idx % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 4, 182, 7, 'F'); }
+      doc.text(String(a.name || ''), 18, y);
+      doc.text(Number(a.amount || 0).toFixed(2), 192, y, { align: 'right' });
+      y += 7;
+    });
 
-  rows.forEach((row, index) => {
-    if (y > 270) {
-      doc.addPage();
-      y = 20;
-    }
+    y += 6;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 182, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont(undefined, 'bold');
+    doc.text('Liabilities & Capital (दायित्व)', 18, y + 5.5);
+    doc.text('Amount (Rs)', 192, y + 5.5, { align: 'right' });
+    y += 10;
 
-    if (index % 2 === 0) {
-      doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 4, 182, 7, 'F');
-    }
+    doc.setTextColor(15, 23, 42);
+    doc.setFont(undefined, 'normal');
+    liabilities.forEach((l, idx) => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      if (idx % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 4, 182, 7, 'F'); }
+      doc.text(String(l.name || ''), 18, y);
+      doc.text(Number(l.amount || 0).toFixed(2), 192, y, { align: 'right' });
+      y += 7;
+    });
 
-    const deb = row.dr || row.debit || 0;
-    const cr = row.cr || row.credit || 0;
+  } else if (activeTab === 'TRADING' && reportData.trading) {
+    doc.setFontSize(11);
+    doc.text(`Total Sales (बिक्री): Rs ${(reportData.trading.sales || 0).toFixed(2)}`, 18, y); y += 10;
+    doc.text(`Purchases & Direct Expenses: Rs ${(reportData.trading.directExpenses || 0).toFixed(2)}`, 18, y); y += 10;
+    doc.text(`Gross Profit / Loss: Rs ${(reportData.trading.grossResult || 0).toFixed(2)}`, 18, y);
 
-    doc.text(String(row.name || row.account_name || 'Account'), 18, y);
-    doc.text(String(row.category || row.primary_type || 'General'), 95, y);
-    doc.text(deb > 0 ? deb.toFixed(2) : '-', 145, y, { align: 'right' });
-    doc.text(cr > 0 ? cr.toFixed(2) : '-', 192, y, { align: 'right' });
-    y += 7;
-  });
+  } else if (activeTab === 'PNL' && reportData.pnl) {
+    doc.setFontSize(11);
+    doc.text(`Net Profit / Loss: Rs ${(reportData.pnl.netResult || 0).toFixed(2)}`, 18, y);
 
-  y += 4;
-  doc.setDrawColor(203, 213, 225);
-  doc.line(14, y, 196, y);
-  y += 6;
+  } else if (activeTab === 'GST_SUMMARY' && reportData.gstSummary) {
+    doc.setFontSize(11);
+    doc.text(`Taxable Outward Sales: Rs ${(reportData.gstSummary.taxableSales || 0).toFixed(2)}`, 18, y); y += 8;
+    doc.text(`Output GST Collected: Rs ${(reportData.gstSummary.outputTax || 0).toFixed(2)}`, 18, y); y += 8;
+    doc.text(`Taxable Inward Purchases: Rs ${(reportData.gstSummary.taxablePurchases || 0).toFixed(2)}`, 18, y); y += 8;
+    doc.text(`Input Tax Credit (ITC): Rs ${(reportData.gstSummary.inputTax || 0).toFixed(2)}`, 18, y); y += 10;
+    doc.text(`Net Tax Payable: Rs ${(reportData.gstSummary.netTaxPayable || 0).toFixed(2)}`, 18, y);
 
-  doc.setFont(undefined, 'bold');
-  doc.setFontSize(10);
-  doc.text('Grand Total:', 95, y);
-  doc.text(`Rs ${(reportData?.totalDebit || 0).toFixed(2)}`, 145, y, { align: 'right' });
-  doc.text(`Rs ${(reportData?.totalCredit || 0).toFixed(2)}`, 192, y, { align: 'right' });
+  } else {
+    // Default Trial Balance Table
+    const rows = (reportData.trialBalance && Array.isArray(reportData.trialBalance)) ? reportData.trialBalance : [];
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 182, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(9);
+
+    doc.text('Account Name', 18, y + 5.5);
+    doc.text('Category', 95, y + 5.5);
+    doc.text('Debit (Rs)', 145, y + 5.5, { align: 'right' });
+    doc.text('Credit (Rs)', 192, y + 5.5, { align: 'right' });
+    y += 10;
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont(undefined, 'normal');
+
+    rows.forEach((row, index) => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      if (index % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 4, 182, 7, 'F');
+      }
+
+      const deb = row.dr || row.debit || 0;
+      const cr = row.cr || row.credit || 0;
+
+      doc.text(String(row.name || row.account_name || 'Account'), 18, y);
+      doc.text(String(row.category || row.primary_type || 'General'), 95, y);
+      doc.text(deb > 0 ? deb.toFixed(2) : '-', 145, y, { align: 'right' });
+      doc.text(cr > 0 ? cr.toFixed(2) : '-', 192, y, { align: 'right' });
+      y += 7;
+    });
+
+    y += 4;
+    doc.setDrawColor(203, 213, 225);
+    doc.line(14, y, 196, y);
+    y += 6;
+
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(10);
+    doc.text('Grand Total:', 95, y);
+    doc.text(`Rs ${(reportData?.totalDebit || 0).toFixed(2)}`, 145, y, { align: 'right' });
+    doc.text(`Rs ${(reportData?.totalCredit || 0).toFixed(2)}`, 192, y, { align: 'right' });
+  }
 
   return await exportTruePDF(doc, reportTitle);
 };
@@ -274,7 +335,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL REGISTER EXPORT PDF (Updated with Items & Descriptions)
+ * 3. JOURNAL REGISTER EXPORT PDF
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -299,7 +360,6 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
   y += 12;
 
-  // Table Header
   doc.setFillColor(15, 23, 42);
   doc.rect(14, y, 182, 8, 'F');
   doc.setTextColor(255, 255, 255);
@@ -317,11 +377,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   doc.setFont(undefined, 'normal');
 
   rows.forEach((vch, idx) => {
-    if (y > 270) {
-      doc.addPage();
-      y = 20;
-    }
-
+    if (y > 270) { doc.addPage(); y = 20; }
     if (idx % 2 === 0) {
       doc.setFillColor(248, 250, 252);
       doc.rect(14, y - 4, 182, 9, 'F');
