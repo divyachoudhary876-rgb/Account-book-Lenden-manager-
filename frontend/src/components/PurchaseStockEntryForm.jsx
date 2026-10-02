@@ -17,7 +17,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
   const [editingId, setEditingId] = useState(null);
   const [purchaseDate, setPurchaseDate] = useState(todayMaxDate);
-  const [billNo, setBillNo] = useState(`PUR-${Math.floor(Date.now() / 1000)}`);
+  const [billNo, setBillNo] = useState('1');
   const [supplierParty, setSupplierParty] = useState(''); 
   const [selectedItemId, setSelectedItemId] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -38,7 +38,16 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
 
       const allVouchers = StorageService.getItem('account_book_vouchers') || [];
       const purchases = allVouchers.filter(v => v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001') && (v.voucher_type === 'PURCHASE' || v.type === 'PURCHASE'));
+      
+      // Date-wise sorting (newest/latest first)
+      purchases.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
       setPurchaseList(purchases);
+
+      // Auto-increment bill number starting from 1 sequentially
+      if (!editingId) {
+        const nextNum = purchases.length + 1;
+        setBillNo(String(nextNum));
+      }
     } catch (e) {
       console.error("Error loading purchase data:", e);
     }
@@ -67,7 +76,6 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         revertPurchaseStockOnDeletion(editingId, activeFirmId);
       }
 
-      // Find selected item object to get its exact name and measurement unit
       const selectedItemObj = allItems.find(i => 
         String(i.id || i.item_id) === String(selectedItemId) || 
         String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId).trim().toLowerCase()
@@ -102,7 +110,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       setFeedback({ type: 'success', message: editingId ? '✓ Purchase Bill Updated & Stock Adjusted!' : '✓ Purchase Bill Saved & Stock Updated!' });
       setEditingId(null);
       setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty('');
-      setBillNo(`PUR-${Math.floor(Date.now() / 1000)}`);
+      setBillNo(String(purchaseList.length + 2));
     } catch (err) {
       setFeedback({ type: 'error', message: 'Error: ' + err.message });
     } finally {
