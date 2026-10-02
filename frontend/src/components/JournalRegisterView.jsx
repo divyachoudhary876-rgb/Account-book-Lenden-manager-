@@ -1,6 +1,7 @@
 // frontend/src/components/JournalRegisterView.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
+import { loadFirmData } from '../utils/firmIsolationEngine';
 import { downloadJournalRegisterPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function JournalRegisterView({ firm, onClose }) {
@@ -12,12 +13,24 @@ export default function JournalRegisterView({ firm, onClose }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [sortOrder, setSortOrder] = useState('DESC'); // Default to newest first
+  const [sortOrder, setSortOrder] = useState('DESC'); // Default newest first
   const [isExporting, setIsExporting] = useState(false);
   const [statusNotification, setStatusNotification] = useState(null);
 
   const loadJournal = () => {
     try {
+      // 1. Load Master Inventory Items to resolve correct units dynamically
+      const rawInventory = loadFirmData('inventory_items', firm, []);
+      const inventoryMap = new Map();
+      rawInventory.forEach(inv => {
+        if (!inv) return;
+        const id = String(inv.id || '').trim();
+        const name = String(inv.item_name || inv.itemName || inv.name || '').trim().toLowerCase();
+        const unit = inv.unit || 'Pcs';
+        if (id) inventoryMap.set(id, unit);
+        if (name) inventoryMap.set(name, unit);
+      });
+
       let rawTx = [];
       const keysToScan = [
         'account_book_vouchers',
@@ -59,19 +72,41 @@ export default function JournalRegisterView({ firm, onClose }) {
 
           let itemDetailsList = [];
           if (Array.isArray(tx.items) && tx.items.length > 0) {
-            itemDetailsList = tx.items.map(it => ({
-              itemName: it.itemName || it.name || it.item_name || 'Item',
-              qty: Number(it.qty || it.quantity || 0),
-              rate: Number(it.rate || it.unit_rate || 0),
-              unit: it.unit || 'Pcs',
-              total: Number(it.total || (Number(it.qty || it.quantity || 0) * Number(it.rate || it.unit_rate || 0)))
-            }));
+            itemDetailsList = tx.items.map(it => {
+              const itName = it.itemName || it.name || it.item_name || 'Item';
+              const itId = String(it.itemId || it.item_id || it.id || '').trim();
+              
+              let resolvedUnit = it.unit || 'Pcs';
+              if (itId && inventoryMap.has(itId)) {
+                resolvedUnit = inventoryMap.get(itId);
+              } else if (itName && inventoryMap.has(itName.trim().toLowerCase())) {
+                resolvedUnit = inventoryMap.get(itName.trim().toLowerCase());
+              }
+
+              return {
+                itemName: itName,
+                qty: Number(it.qty || it.quantity || 0),
+                rate: Number(it.rate || it.unit_rate || 0),
+                unit: resolvedUnit,
+                total: Number(it.total || (Number(it.qty || it.quantity || 0) * Number(it.rate || it.unit_rate || 0)))
+              };
+            });
           } else if (tx.itemName || tx.item_name || tx.qty || tx.quantity) {
+            const itName = tx.itemName || tx.item_name || 'Item';
+            const itId = String(tx.itemId || tx.item_id || '').trim();
+            
+            let resolvedUnit = tx.unit || 'Pcs';
+            if (itId && inventoryMap.has(itId)) {
+              resolvedUnit = inventoryMap.get(itId);
+            } else if (itName && inventoryMap.has(itName.trim().toLowerCase())) {
+              resolvedUnit = inventoryMap.get(itName.trim().toLowerCase());
+            }
+
             itemDetailsList = [{
-              itemName: tx.itemName || tx.item_name || 'Item',
+              itemName: itName,
               qty: Number(tx.qty || tx.quantity || 0),
               rate: Number(tx.rate || tx.unit_rate || 0),
-              unit: tx.unit || 'Pcs',
+              unit: resolvedUnit,
               total: totalAmt
             }];
           }
@@ -109,7 +144,7 @@ export default function JournalRegisterView({ firm, onClose }) {
       window.removeEventListener('app_storage_updated', loadJournal);
       window.removeEventListener('storage', loadJournal);
     };
-  }, [activeFirmId, sortOrder]);
+  }, [activeFirmId, sortOrder, firm]);
 
   const filteredEntries = journalEntries.filter(entry => {
     if (!entry) return false;
