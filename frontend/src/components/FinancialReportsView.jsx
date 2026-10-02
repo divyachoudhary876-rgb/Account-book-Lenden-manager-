@@ -146,7 +146,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         };
       }).filter(r => r.dr > 0 || r.cr > 0);
 
-      // Sort A to Z (Ascending) by Account Name
       tbRows.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 
       const tDr = tbRows.reduce((s, r) => s + r.dr, 0);
@@ -181,7 +180,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         }
       });
 
-      // Sort Balance Sheet Assets & Liabilities A to Z as well
       assets.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
       liabilities.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 
@@ -216,10 +214,10 @@ export default function FinancialReportsView({ firm, onClose }) {
 
   const handleExportPDF = async () => {
     setIsExporting(true);
-    setStatusNotification({ type: 'info', message: '⏳ Generating PDF for active report...' });
+    setStatusNotification({ type: 'info', message: `⏳ Generating PDF for ${activeTab.replace('_', ' ')}...` });
 
     try {
-      // Pass activeTab so pdfDownloadEngine exports the correct active report
+      // Explicitly pass activeTab so pdfDownloadEngine downloads the currently active report
       await downloadFinancialReportPDF(firm, reportData, activeTab);
       setStatusNotification({ type: 'success', message: '✓ Report PDF downloaded successfully!' });
     } catch (e) {
@@ -247,7 +245,7 @@ export default function FinancialReportsView({ firm, onClose }) {
               disabled={isExporting}
               style={{ backgroundColor: '#059669', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
             >
-              <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
+              <span>📄</span> {isExporting ? 'Saving...' : `Save ${activeTab.replace('_', ' ')} PDF`}
             </button>
             {onClose && <button onClick={onClose} style={{ padding: '8px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>Close</button>}
           </div>
@@ -276,7 +274,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Trial Balance (Scrollable Container) */}
+      {/* Trial Balance */}
       {activeTab === 'TRIAL_BALANCE' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>तलपट विवरण (Trial Balance) - A to Z Sorted</h3>
@@ -336,38 +334,44 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       )}
 
-      {/* Balance Sheet (Scrollable Columns) */}
+      {/* Balance Sheet (Clean Responsive Stacking Layout - No Overlap) */}
       {activeTab === 'BALANCE_SHEET' && (
-        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>🏛️ बैलेंस शीट (Balance Sheet - Assets & Liabilities) - A to Z Sorted</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', boxSizing: 'border-box' }}>
             
             {/* Assets */}
-            <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+            <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0', width: '100%', boxSizing: 'border-box' }}>
               <h4 style={{ margin: '0 0 8px 0', color: '#1d4ed8' }}>Assets (संपत्ति)</h4>
-              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              <div style={{ maxHeight: '350px', overflowY: 'auto', width: '100%', boxSizing: 'border-box' }}>
                 {reportData.balanceSheet.assets.map((a, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>
-                    <span>{a.name}</span>
-                    <strong>₹{a.amount.toFixed(2)}</strong>
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', padding: '6px 0', borderBottom: '1px solid #e2e8f0', gap: '8px' }}>
+                    <span style={{ wordBreak: 'break-word', flex: 1 }}>{a.name}</span>
+                    <strong style={{ whiteSpace: 'nowrap' }}>₹{a.amount.toFixed(2)}</strong>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px', borderTop: '2px solid #cbd5e1', paddingTop: '8px' }}>Total Assets: ₹{reportData.balanceSheet.totalAssets.toFixed(2)}</div>
+              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px', borderTop: '2px solid #cbd5e1', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Assets:</span>
+                <span>₹{reportData.balanceSheet.totalAssets.toFixed(2)}</span>
+              </div>
             </div>
 
             {/* Liabilities */}
-            <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+            <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0', width: '100%', boxSizing: 'border-box' }}>
               <h4 style={{ margin: '0 0 8px 0', color: '#b91c1c' }}>Liabilities & Capital (दायित्व)</h4>
-              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              <div style={{ maxHeight: '350px', overflowY: 'auto', width: '100%', boxSizing: 'border-box' }}>
                 {reportData.balanceSheet.liabilities.map((l, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>
-                    <span>{l.name}</span>
-                    <strong>₹{l.amount.toFixed(2)}</strong>
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', padding: '6px 0', borderBottom: '1px solid #e2e8f0', gap: '8px' }}>
+                    <span style={{ wordBreak: 'break-word', flex: 1 }}>{l.name}</span>
+                    <strong style={{ whiteSpace: 'nowrap' }}>₹{l.amount.toFixed(2)}</strong>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px', borderTop: '2px solid #cbd5e1', paddingTop: '8px' }}>Total Liabilities: ₹{reportData.balanceSheet.totalLiabilities.toFixed(2)}</div>
+              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px', borderTop: '2px solid #cbd5e1', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Liabilities:</span>
+                <span>₹{reportData.balanceSheet.totalLiabilities.toFixed(2)}</span>
+              </div>
             </div>
 
           </div>
