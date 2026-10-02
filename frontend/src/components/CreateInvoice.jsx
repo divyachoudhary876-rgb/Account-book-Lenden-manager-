@@ -42,11 +42,9 @@ export default function CreateInvoice({ firm, onClose }) {
       const allVouchers = StorageService.getItem('account_book_vouchers') || [];
       const salesInvoices = allVouchers.filter(v => v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001') && (v.voucher_type === 'SALES' || v.type === 'SALES'));
       
-      // Date-wise sorting (newest/latest first)
       salesInvoices.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
       setInvoiceList(salesInvoices);
 
-      // Auto-increment invoice number starting from 1 sequentially
       if (!editingId) {
         const nextNum = salesInvoices.length + 1;
         setInvoiceNo(String(nextNum));
@@ -443,10 +441,10 @@ export default function CreateInvoice({ firm, onClose }) {
         </form>
       </div>
 
-      {/* Saved Invoices Register */}
+      {/* Saved Invoices Register with Scrollable Container */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>📜 Recent Sales Invoices</h3>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>📜 Recent Sales Invoices ({filteredInvoices.length})</h3>
           <input 
             type="text" 
             placeholder="Search invoice or party..." 
@@ -459,7 +457,7 @@ export default function CreateInvoice({ firm, onClose }) {
         {filteredInvoices.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '11px' }}>No sales invoices found.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {filteredInvoices.map(inv => {
               const itemsList = inv.items || [];
               return (
@@ -468,7 +466,6 @@ export default function CreateInvoice({ firm, onClose }) {
                     <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>#{inv.reference_no} — {inv.dr_account}</div>
                     <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date}</div>
                     
-                    {/* Items, Qty, Rate display with actual item name */}
                     <div style={{ marginTop: '4px', fontSize: '11px', color: '#334155' }}>
                       {itemsList.map((it, idx) => (
                         <div key={idx} style={{ fontWeight: '600' }}>
