@@ -23,16 +23,36 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
   const invoicesKey = `app_invoices_${activeFirmId}`;
   const inventoryKey = `inventory_items_${activeFirmId}`;
 
-  const accounts = StorageService.getItem(accountsKey) || StorageService.getItem('app_account_heads') || [];
+  let accounts = StorageService.getItem(accountsKey) || StorageService.getItem('app_account_heads') || [];
   const journalEntries = StorageService.getItem(journalKey) || StorageService.getItem('app_journal_entries') || [];
   const vouchers = StorageService.getItem(vouchersKey) || StorageService.getItem('account_book_vouchers') || [];
   const invoices = StorageService.getItem(invoicesKey) || StorageService.getItem('app_invoices') || [];
   const inventory = StorageService.getItem(inventoryKey) || StorageService.getItem('inventory_items') || [];
 
-  // 2. Find Customer Account
-  const customerIndex = accounts.findIndex(a => String(a.id) === String(resolvedCustomerId) || String(a.account_name || '').trim().toLowerCase() === String(resolvedCustomerId).trim().toLowerCase());
+  // 2. Find or Auto-Create Customer Account (Flexible Fallback)
+  let customerIndex = accounts.findIndex(a => 
+    String(a.id) === String(resolvedCustomerId) || 
+    String(a.account_name || '').trim().toLowerCase() === String(resolvedCustomerId).trim().toLowerCase() ||
+    String(a.name || '').trim().toLowerCase() === String(resolvedCustomerId).trim().toLowerCase()
+  );
+
+  if (customerIndex === -1 && resolvedCustomerId) {
+    // Auto-create account if not found to prevent blocking user entry
+    const newAccountObj = {
+      id: `ACC-${Date.now()}`,
+      firm_id: activeFirmId,
+      account_name: String(resolvedCustomerId).trim(),
+      primary_type: 'ASSETS',
+      sub_group: 'Sundry Debtors (Customer / देनदार)',
+      current_balance: 0,
+      opening_balance: 0
+    };
+    accounts.push(newAccountObj);
+    customerIndex = accounts.length - 1;
+  }
+
   if (customerIndex === -1) {
-    throw new Error("Party Not Found: Kripya valid Customer Party select karein.");
+    throw new Error("Party Not Found: Kripya valid Customer / Supplier Party select karein.");
   }
 
   const customerAcc = { ...accounts[customerIndex] };
@@ -50,7 +70,18 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     const soldQty = parseFloat(soldItem.quantity || soldItem.qty || soldItem.stock || soldItem.count || 1);
     if (!targetItemId || soldQty <= 0) return;
 
-    processedItems.push({ itemId: targetItemId, quantity: soldQty });
+    processedItems.push({ 
+      itemId: targetItemId, 
+      itemName: soldItem.itemName || soldItem.name || soldItem.item_name || 'Item',
+      unit: soldItem.unit || 'Pcs',
+      quantity: soldQty,
+      rate: soldItem.rate || 0,
+      gstRate: soldItem.gstRate || 0,
+      taxableAmount: soldItem.taxableAmount || (soldQty * Number(soldItem.rate || 0)),
+      cgst: soldItem.cgst || 0,
+      sgst: soldItem.sgst || 0,
+      total: soldItem.total || (soldQty * Number(soldItem.rate || 0))
+    });
 
     const itemIndex = inventory.findIndex(i => 
       String(i.id) === String(targetItemId) || 
@@ -86,7 +117,9 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     cr_account: 'Sales & Revenue',
     amount: grandTotal,
     total_amount: grandTotal,
+    total_taxable: numericTaxable,
     items: processedItems,
+    vehicle_no: invoicePayload.vehicle_no || '',
     narration: narration || `Sales Invoice #${invoiceId}`,
     entries: [
       { account_name: customerAcc.account_name || customerAcc.name, type: 'DR', debit: grandTotal, credit: 0, amount: grandTotal },
@@ -96,7 +129,7 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     created_at: new Date().toISOString()
   };
 
-  // 5. Commit Atomic Changes (Safely keeping existing purchase vouchers)
+  // 5. Commit Atomic Changes (Safely keeping existing purchase vouchers & syncing all keys)
   StorageService.setItem(accountsKey, accounts);
   StorageService.setItem('app_account_heads', accounts);
 
@@ -136,7 +169,6 @@ export const revertSalesStockOnDeletion = (voucherOrInvoiceId, firmId = 'FIRM-00
     const vouchers = StorageService.getItem(vouchersKey) || StorageService.getItem('account_book_vouchers') || [];
     const inventory = StorageService.getItem(inventoryKey) || StorageService.getItem('inventory_items') || [];
 
-    // Target only SALES vouchers securely
     const targetVoucher = vouchers.find(v => v && (String(v.id) === String(targetId) || String(v.reference_no) === String(targetId)) && (v.voucher_type === 'SALES' || v.type === 'SALES'));
     
     if (!targetVoucher) return;
