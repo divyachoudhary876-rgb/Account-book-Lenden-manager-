@@ -17,7 +17,7 @@ export default function CreateInvoice({ firm, onClose }) {
 
   const [editingId, setEditingId] = useState(null);
   const [invoiceDate, setInvoiceDate] = useState(todayMaxDate);
-  const [invoiceNo, setInvoiceNo] = useState(`INV-${Math.floor(Date.now() / 1000)}`);
+  const [invoiceNo, setInvoiceNo] = useState('1');
   const [customerParty, setCustomerParty] = useState(''); 
   const [vehicleNo, setVehicleNo] = useState('');
   
@@ -25,7 +25,7 @@ export default function CreateInvoice({ firm, onClose }) {
   const [selectedItemId, setSelectedItemId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [rate, setRate] = useState('');
-  const [gstRate, setGstRate] = useState('5');
+  const [gstRate, setGstRate] = useState('0');
 
   const [searchFilter, setSearchFilter] = useState('');
   const [feedback, setFeedback] = useState(null);
@@ -41,7 +41,16 @@ export default function CreateInvoice({ firm, onClose }) {
 
       const allVouchers = StorageService.getItem('account_book_vouchers') || [];
       const salesInvoices = allVouchers.filter(v => v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001') && (v.voucher_type === 'SALES' || v.type === 'SALES'));
+      
+      // Date-wise sorting (newest/latest first or chronological)
+      salesInvoices.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
       setInvoiceList(salesInvoices);
+
+      // Auto-increment invoice number starting from 1 sequentially
+      if (!editingId) {
+        const nextNum = salesInvoices.length + 1;
+        setInvoiceNo(String(nextNum));
+      }
     } catch (err) {
       console.error("Error loading invoice data:", err);
     }
@@ -60,7 +69,6 @@ export default function CreateInvoice({ firm, onClose }) {
   const handleAddToCart = () => {
     if (!selectedItemId || !quantity || !rate) return alert('Kripya item, matra aur rate darj karein.');
     
-    // Robust search for selected item in master inventory list
     const itemObj = allItems.find(i => 
       String(i.id || i.item_id) === String(selectedItemId) || 
       String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId).trim().toLowerCase()
@@ -106,7 +114,7 @@ export default function CreateInvoice({ firm, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     setFeedback(null);
-    if (!customerParty) return alert('Kripya customer party chunein!');
+    if (!customerParty) return alert('Kripya customer ya supplier party chunein!');
     if (cart.length === 0) return alert('Kam se kam ek item bill mein jodein.');
 
     try {
@@ -148,7 +156,7 @@ export default function CreateInvoice({ firm, onClose }) {
       setCart([]);
       setCustomerParty('');
       setVehicleNo('');
-      setInvoiceNo(`INV-${Math.floor(Date.now() / 1000)}`);
+      setInvoiceNo(String(invoiceList.length + 2));
 
     } catch (err) {
       alert('Error: ' + err.message);
@@ -170,7 +178,7 @@ export default function CreateInvoice({ firm, onClose }) {
       unit: ci.unit || 'Pcs',
       qty: Number(ci.quantity || ci.qty || 0),
       rate: Number(ci.rate || 0),
-      gstRate: Number(ci.gstRate || 5),
+      gstRate: Number(ci.gstRate || 0),
       taxableAmount: Number(ci.taxableAmount || (Number(ci.quantity || ci.qty || 0) * Number(ci.rate || 0))),
       cgst: Number(ci.cgst || 0),
       sgst: Number(ci.sgst || 0),
@@ -346,11 +354,11 @@ export default function CreateInvoice({ firm, onClose }) {
 
           <div style={{ marginBottom: '12px' }}>
             <SearchableAccountDropdown
-              label="Customer / Debtor Party *"
+              label="Customer / Supplier Party *"
               accounts={accountsList}
               value={customerParty}
               onChange={val => setCustomerParty(val)}
-              placeholder="Search customer account..."
+              placeholder="Search customer or supplier account..."
               colorAccent="#0284c7"
               required
             />
@@ -460,7 +468,6 @@ export default function CreateInvoice({ firm, onClose }) {
                     <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>#{inv.reference_no} — {inv.dr_account}</div>
                     <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date}</div>
                     
-                    {/* Items, Qty, Rate display */}
                     <div style={{ marginTop: '4px', fontSize: '11px', color: '#334155' }}>
                       {itemsList.map((it, idx) => (
                         <div key={idx} style={{ fontWeight: '600' }}>
