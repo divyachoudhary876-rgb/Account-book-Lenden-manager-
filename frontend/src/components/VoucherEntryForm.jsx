@@ -66,17 +66,15 @@ export default function VoucherEntryForm({ firm }) {
       text: `✏️ Editing Voucher #${voucher.reference_no || voucher.voucher_number}. Modify details and click Update.`
     });
 
-    // Scroll smoothly to form top
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Cancel Edit Mode
+  // Cancel Edit Mode (Preserving current selected voucherDate)
   const handleCancelEdit = () => {
     setEditingId(null);
     setAmount('');
     setNarration('');
     setReferenceNo('');
-    setVoucherDate(todayMaxDate);
     setStatus(null);
   };
 
@@ -108,9 +106,9 @@ export default function VoucherEntryForm({ firm }) {
 
     try {
       saveUniversalVoucher(activeFirmId, {
-        id: editingId, // Passing existing ID updates the voucher in-place
+        id: editingId,
         voucher_type: voucherType,
-        voucher_date: voucherDate,
+        voucher_date: voucherDate, // Keep selected date active
         reference_no: referenceNo,
         dr_account: drAccount,
         cr_account: crAccount,
@@ -125,7 +123,11 @@ export default function VoucherEntryForm({ firm }) {
           : `✓ ${voucherType} Voucher Saved! Amount: ₹${cleanAmount.toLocaleString('en-IN')}`
       });
 
-      handleCancelEdit();
+      // Clear fields except voucherDate so user can quickly enter next transaction on same date
+      setEditingId(null);
+      setAmount('');
+      setNarration('');
+      setReferenceNo('');
       loadData();
     } catch (err) {
       setStatus({ type: 'error', text: err.message });
@@ -145,7 +147,7 @@ export default function VoucherEntryForm({ firm }) {
   });
 
   return (
-    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '0 8px 50px 8px', display: 'flex', flexDirection: 'column', gap: '14px', overflowX: 'hidden' }}>
       
       {/* Header Banner */}
       <div style={cardStyle}>
@@ -165,7 +167,9 @@ export default function VoucherEntryForm({ firm }) {
           padding: '10px 14px',
           borderRadius: '10px',
           fontSize: '12px',
-          fontWeight: 'bold'
+          fontWeight: 'bold',
+          boxSizing: 'border-box',
+          width: '100%'
         }}>
           {status.text}
         </div>
@@ -177,7 +181,7 @@ export default function VoucherEntryForm({ firm }) {
         {/* Voucher Type Selector */}
         <div>
           <label style={labelStyle}>Voucher Type *</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', width: '100%' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
             {['PAYMENT', 'RECEIPT', 'CONTRA', 'JOURNAL'].map((type) => (
               <button
                 key={type}
@@ -209,7 +213,7 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         {/* Date & Ref */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
           <div>
             <label style={labelStyle}>Date *</label>
             <input
@@ -234,29 +238,33 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         {/* Debit Account Selector */}
-        <SearchableAccountDropdown
-          label="Debit Account (Dr - नामे) *"
-          accounts={accounts}
-          value={drAccount}
-          onChange={val => setDrAccount(val)}
-          placeholder="Search debit account..."
-          colorAccent="#059669"
-          required
-        />
+        <div style={{ width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+          <SearchableAccountDropdown
+            label="Debit Account (Dr - नामे) *"
+            accounts={accounts}
+            value={drAccount}
+            onChange={val => setDrAccount(val)}
+            placeholder="Search debit account..."
+            colorAccent="#059669"
+            required
+          />
+        </div>
 
         {/* Credit Account Selector */}
-        <SearchableAccountDropdown
-          label="Credit Account (Cr - जमा) *"
-          accounts={accounts}
-          value={crAccount}
-          onChange={val => setCrAccount(val)}
-          placeholder="Search credit account..."
-          colorAccent="#dc2626"
-          required
-        />
+        <div style={{ width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+          <SearchableAccountDropdown
+            label="Credit Account (Cr - जमा) *"
+            accounts={accounts}
+            value={crAccount}
+            onChange={val => setCrAccount(val)}
+            placeholder="Search credit account..."
+            colorAccent="#dc2626"
+            required
+          />
+        </div>
 
         {/* Amount */}
-        <div>
+        <div style={{ width: '100%', boxSizing: 'border-box' }}>
           <label style={labelStyle}>Transaction Amount (₹) *</label>
           <input
             type="number"
@@ -270,7 +278,7 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         {/* Narration */}
-        <div>
+        <div style={{ width: '100%', boxSizing: 'border-box' }}>
           <label style={labelStyle}>Narration / Remarks</label>
           <input
             type="text"
@@ -282,7 +290,7 @@ export default function VoucherEntryForm({ firm }) {
         </div>
 
         {/* Submit & Cancel Buttons */}
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
           <button
             type="submit"
             style={{
@@ -344,7 +352,7 @@ export default function VoucherEntryForm({ firm }) {
         />
 
         {/* Voucher Cards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
           {filteredVouchers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '12px' }}>
               No recorded vouchers found for this firm.
@@ -364,11 +372,14 @@ export default function VoucherEntryForm({ firm }) {
                     padding: '12px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '6px'
+                    gap: '6px',
+                    boxSizing: 'border-box',
+                    width: '100%',
+                    overflow: 'hidden'
                   }}
                 >
                   {/* Top Line: Date, Ref, Voucher Type, Amount */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '4px' }}>
                     <div>
                       <span style={{ fontSize: '10px', color: '#64748b', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', marginRight: '6px' }}>
                         {vch.voucher_date || vch.date}
@@ -386,7 +397,7 @@ export default function VoucherEntryForm({ firm }) {
                   </div>
 
                   {/* Middle Line: Dr / Cr Particulars */}
-                  <div style={{ fontSize: '11px', lineHeight: '1.4' }}>
+                  <div style={{ fontSize: '11px', lineHeight: '1.4', wordBreak: 'break-word' }}>
                     <div style={{ color: '#059669', fontWeight: '600' }}>Dr: {vch.dr_account || vch.dr_party}</div>
                     <div style={{ color: '#dc2626', fontWeight: '600' }}>Cr: {vch.cr_account || vch.cr_party}</div>
                     {vch.narration && (
