@@ -1,7 +1,7 @@
 // frontend/src/utils/voucherPostingEngine.js
 
 /**
- * 1. RETRIEVE VOUCHERS BY FIRM (Chronological & Backward-Compatible)
+ * 1. RETRIEVE VOUCHERS BY FIRM (Chronological & Sorted Newest First)
  */
 export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
   const vouchersKey = `app_vouchers_${firmId}`;
@@ -12,7 +12,19 @@ export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const firmFiltered = parsed.filter(v => v && (v.firm_id === firmId || v.firm_id === 'FIRM-001' || !v.firm_id));
-        return [...firmFiltered].reverse();
+        
+        // Sort by date (newest first) and fallback to ID/timestamp descending
+        firmFiltered.sort((a, b) => {
+          const dateA = new Date(a.voucher_date || a.date || 0);
+          const dateB = new Date(b.voucher_date || b.date || 0);
+          if (dateA.getTime() !== dateB.getTime()) {
+            return dateB - dateA; // Latest date first
+          }
+          // If dates are same, sort by creation/ID descending
+          return String(b.id || '').localeCompare(String(a.id || ''));
+        });
+
+        return firmFiltered;
       }
     }
   } catch (e) {
@@ -137,7 +149,6 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     existingVouchers.push(finalVoucher);
   }
 
-  // Save to all required synchronized keys to prevent data loss across modules
   localStorage.setItem(vouchersKey, JSON.stringify(existingVouchers));
   localStorage.setItem(legacyKey, JSON.stringify(existingVouchers));
   localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify(existingVouchers));
