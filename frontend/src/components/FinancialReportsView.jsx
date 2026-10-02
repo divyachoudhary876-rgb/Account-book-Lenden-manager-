@@ -26,7 +26,6 @@ export default function FinancialReportsView({ firm, onClose }) {
       const masterAccounts = getFirmMasterAccounts(activeFirmId) || [];
       const ledgerMap = {};
 
-      // 1. Master Accounts se Opening Balances load karein
       masterAccounts.forEach(acc => {
         const name = (acc.name || acc.account_name || '').trim();
         if (name) {
@@ -40,7 +39,6 @@ export default function FinancialReportsView({ firm, onClose }) {
         }
       });
 
-      // 2. Sabhi possible storage keys se vouchers & transactions scan karein
       let rawTx = [];
       const keysToScan = [
         'account_book_vouchers',
@@ -77,7 +75,6 @@ export default function FinancialReportsView({ firm, onClose }) {
       let gstTaxablePurchases = 0;
       let gstInputTax = 0;
 
-      // 3. Vouchers aur entries ko parse karke Ledger map me Debit/Credit update karein
       uniqueVouchers.forEach(v => {
         const vType = String(v.voucher_type || v.type || '').toUpperCase();
         
@@ -89,7 +86,6 @@ export default function FinancialReportsView({ firm, onClose }) {
           gstInputTax += Number(v.total_cgst || 0) + Number(v.total_sgst || 0);
         }
 
-        // Labour / Wages Entries
         if (v.worker && v.expense_ledger && v.total_amount) {
           const workerName = String(v.worker).trim();
           const expenseName = String(v.expense_ledger).trim();
@@ -105,7 +101,6 @@ export default function FinancialReportsView({ firm, onClose }) {
           return;
         }
 
-        // Standard Voucher Entries (Sales, Purchase, JV, RV, PV)
         if (Array.isArray(v.entries) && v.entries.length > 0) {
           v.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
@@ -141,7 +136,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         }
       });
 
-      const tbRows = Object.values(ledgerMap).map(l => {
+      let tbRows = Object.values(ledgerMap).map(l => {
         const net = l.debit - l.credit;
         return {
           name: l.name,
@@ -150,6 +145,9 @@ export default function FinancialReportsView({ firm, onClose }) {
           cr: net < 0 ? Math.abs(net) : 0
         };
       }).filter(r => r.dr > 0 || r.cr > 0);
+
+      // Sort A to Z (Ascending) by Account Name
+      tbRows.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 
       const tDr = tbRows.reduce((s, r) => s + r.dr, 0);
       const tCr = tbRows.reduce((s, r) => s + r.cr, 0);
@@ -183,6 +181,10 @@ export default function FinancialReportsView({ firm, onClose }) {
         }
       });
 
+      // Sort Balance Sheet Assets & Liabilities A to Z as well
+      assets.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+      liabilities.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+
       const grossResult = totalSales - totalPurchasesOrWages;
       const netResult = grossResult + indirectIncomes - indirectExpenses;
 
@@ -214,11 +216,12 @@ export default function FinancialReportsView({ firm, onClose }) {
 
   const handleExportPDF = async () => {
     setIsExporting(true);
-    setStatusNotification({ type: 'info', message: '⏳ Generating PDF...' });
+    setStatusNotification({ type: 'info', message: '⏳ Generating PDF for active report...' });
 
     try {
+      // Pass activeTab so pdfDownloadEngine exports the correct active report
       await downloadFinancialReportPDF(firm, reportData, activeTab);
-      setStatusNotification({ type: 'success', message: '✓ PDF downloaded successfully!' });
+      setStatusNotification({ type: 'success', message: '✓ Report PDF downloaded successfully!' });
     } catch (e) {
       setStatusNotification({ type: 'error', message: `❌ Export Failed: ${e.message}` });
     } finally {
@@ -273,35 +276,37 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Trial Balance */}
+      {/* Trial Balance (Scrollable Container) */}
       {activeTab === 'TRIAL_BALANCE' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>तलपट विवरण (Trial Balance)</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#0f172a', color: '#fff' }}>
-                <th style={{ padding: '10px', textAlign: 'left' }}>Account Name</th>
-                <th style={{ padding: '10px', textAlign: 'right' }}>Dr (₹)</th>
-                <th style={{ padding: '10px', textAlign: 'right' }}>Cr (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reportData.trialBalance.map((r, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '10px', fontWeight: 'bold' }}>{r.name}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#059669' }}>{r.dr > 0 ? r.dr.toFixed(2) : '-'}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#dc2626' }}>{r.cr > 0 ? r.cr.toFixed(2) : '-'}</td>
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>तलपट विवरण (Trial Balance) - A to Z Sorted</h3>
+          <div style={{ maxHeight: '450px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#0f172a', color: '#fff', position: 'sticky', top: 0, zIndex: 1 }}>
+                  <th style={{ padding: '10px', textAlign: 'left' }}>Account Name</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>Dr (₹)</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>Cr (₹)</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ backgroundColor: '#f1f5f9', fontWeight: 'bold' }}>
-                <td style={{ padding: '10px' }}>Total</td>
-                <td style={{ padding: '10px', textAlign: 'right', color: '#059669' }}>₹{reportData.totalDebit.toFixed(2)}</td>
-                <td style={{ padding: '10px', textAlign: 'right', color: '#dc2626' }}>₹{reportData.totalCredit.toFixed(2)}</td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody>
+                {reportData.trialBalance.map((r, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{r.name}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', color: '#059669' }}>{r.dr > 0 ? r.dr.toFixed(2) : '-'}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', color: '#dc2626' }}>{r.cr > 0 ? r.cr.toFixed(2) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#f1f5f9', padding: '12px', marginTop: '10px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
+            <span>Total</span>
+            <div>
+              <span style={{ color: '#059669', marginRight: '20px' }}>Dr: ₹{reportData.totalDebit.toFixed(2)}</span>
+              <span style={{ color: '#dc2626' }}>Cr: ₹{reportData.totalCredit.toFixed(2)}</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -331,31 +336,40 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       )}
 
-      {/* Balance Sheet */}
+      {/* Balance Sheet (Scrollable Columns) */}
       {activeTab === 'BALANCE_SHEET' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>🏛️ बैलेंस शीट (Balance Sheet - Assets & Liabilities)</h3>
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>🏛️ बैलेंस शीट (Balance Sheet - Assets & Liabilities) - A to Z Sorted</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            
+            {/* Assets */}
             <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
               <h4 style={{ margin: '0 0 8px 0', color: '#1d4ed8' }}>Assets (संपत्ति)</h4>
-              {reportData.balanceSheet.assets.map((a, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid #e2e8f0' }}>
-                  <span>{a.name}</span>
-                  <strong>₹{a.amount.toFixed(2)}</strong>
-                </div>
-              ))}
-              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px' }}>Total Assets: ₹{reportData.balanceSheet.totalAssets.toFixed(2)}</div>
+              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {reportData.balanceSheet.assets.map((a, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>
+                    <span>{a.name}</span>
+                    <strong>₹{a.amount.toFixed(2)}</strong>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px', borderTop: '2px solid #cbd5e1', paddingTop: '8px' }}>Total Assets: ₹{reportData.balanceSheet.totalAssets.toFixed(2)}</div>
             </div>
+
+            {/* Liabilities */}
             <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
               <h4 style={{ margin: '0 0 8px 0', color: '#b91c1c' }}>Liabilities & Capital (दायित्व)</h4>
-              {reportData.balanceSheet.liabilities.map((l, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid #e2e8f0' }}>
-                  <span>{l.name}</span>
-                  <strong>₹{l.amount.toFixed(2)}</strong>
-                </div>
-              ))}
-              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px' }}>Total Liabilities: ₹{reportData.balanceSheet.totalLiabilities.toFixed(2)}</div>
+              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {reportData.balanceSheet.liabilities.map((l, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>
+                    <span>{l.name}</span>
+                    <strong>₹{l.amount.toFixed(2)}</strong>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: '10px', fontWeight: '900', fontSize: '13px', borderTop: '2px solid #cbd5e1', paddingTop: '8px' }}>Total Liabilities: ₹{reportData.balanceSheet.totalLiabilities.toFixed(2)}</div>
             </div>
+
           </div>
         </div>
       )}
