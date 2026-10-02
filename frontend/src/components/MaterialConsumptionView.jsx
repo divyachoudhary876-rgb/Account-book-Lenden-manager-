@@ -25,6 +25,8 @@ export default function MaterialConsumptionView({ firm, onClose }) {
     setInventoryItems(validInventory);
 
     const records = loadFirmData('material_consumption_records', firm, []);
+    // Sort newest first
+    records.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     setSavedRecords(records);
   };
 
@@ -171,7 +173,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
               Select Stock Item & Quantity
             </div>
 
-            {/* Fixed Layout: Dropdown on top, Qty and Add button neatly below */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
               <SearchableStockDropdown 
                 firm={firm}
@@ -224,9 +225,10 @@ export default function MaterialConsumptionView({ firm, onClose }) {
         </form>
       </div>
 
+      {/* Scrollable Consumption History Register */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
-          Consumption History Register ({activeFY})
+          Consumption History Register ({activeFY}) - ({savedRecords.length})
         </h3>
 
         {savedRecords.length === 0 ? (
@@ -234,10 +236,10 @@ export default function MaterialConsumptionView({ firm, onClose }) {
             Koi consumption record darj nahi hai.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {savedRecords.map(rec => (
-              <div key={rec.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
-                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+              <div key={rec.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', boxSizing: 'border-box' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#0f172a' }}>
                   {rec.date} | Location: {rec.uses_for}
                 </div>
                 <div style={{ color: '#64748b' }}>
