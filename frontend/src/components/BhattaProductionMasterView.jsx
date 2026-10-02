@@ -31,6 +31,8 @@ export default function SmartProductionView({ firm, onClose }) {
     setInventoryItems(validItems);
 
     const savedBatches = loadFirmData('production_batches', firm, []);
+    // Sort newest first
+    savedBatches.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     setBatchesList(savedBatches);
   };
 
@@ -88,7 +90,6 @@ export default function SmartProductionView({ firm, onClose }) {
     try {
       const batchId = editingBatchId || ('PROD-' + Date.now());
 
-      // If editing, first revert old batch inventory impact
       let workingInventory = [...inventoryItems];
       if (editingBatchId) {
         const oldBatch = batchesList.find(b => b.id === editingBatchId);
@@ -127,7 +128,6 @@ export default function SmartProductionView({ firm, onClose }) {
       setBatchesList(updatedBatches);
       saveFirmData('production_batches', firm, updatedBatches);
 
-      // Apply new batch inventory deduction & addition
       const finalInventory = workingInventory.map(inv => {
         const invId = String(inv.id);
         const consumedMatch = consumedMaterials.find(m => String(m.itemId) === invId);
@@ -190,7 +190,6 @@ export default function SmartProductionView({ firm, onClose }) {
       const batchToDelete = batchesList.find(b => b.id === batchId);
       if (!batchToDelete) return;
 
-      // Revert inventory stock
       const revertedInventory = inventoryItems.map(inv => {
         const invId = String(inv.id);
         const oldConsumed = (batchToDelete.consumed_materials || []).find(m => String(m.itemId) === invId);
@@ -434,9 +433,10 @@ export default function SmartProductionView({ firm, onClose }) {
         </form>
       </div>
 
+      {/* Scrollable Production Batches Register */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
-          Production Batches Register ({activeFY})
+          Production Batches Register ({activeFY}) - ({batchesList.length})
         </h3>
 
         {batchesList.length === 0 ? (
@@ -444,9 +444,9 @@ export default function SmartProductionView({ firm, onClose }) {
             Koi production record darj nahi hai.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {batchesList.map(batch => (
-              <div key={batch.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={batch.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
                 <div>
                   <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#0f172a' }}>
                     {batch.date} | Location: {batch.location}
