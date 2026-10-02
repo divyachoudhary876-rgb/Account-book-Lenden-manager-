@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
-import { StorageService } from '../utils/storageSync'; // <-- Corrected path
+import { StorageService } from '../utils/storageSync';
 import { 
   saveUniversalVoucher, 
   getUniversalVouchersByFirm, 
@@ -11,7 +11,7 @@ import {
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 export default function VoucherEntryForm({ firm }) {
-  const activeFirmId = firm?.id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
   const [accounts, setAccounts] = useState([]);
@@ -30,22 +30,43 @@ export default function VoucherEntryForm({ firm }) {
   const [searchFilter, setSearchFilter] = useState('');
 
   const loadData = () => {
-    const accList = getFirmMasterAccounts(activeFirmId);
-    setAccounts(accList);
-    if (accList.length > 0 && !drAccount) {
-      setDrAccount(accList[0].account_name);
-      const cashAcc = accList.find(a => a.account_name.toLowerCase().includes('cash')) || accList[1] || accList[0];
-      setCrAccount(cashAcc.account_name);
-    }
+    try {
+      const accList = getFirmMasterAccounts(activeFirmId);
+      setAccounts(accList);
+      if (accList.length > 0 && !drAccount) {
+        setDrAccount(accList[0].account_name);
+        const cashAcc = accList.find(a => a.account_name.toLowerCase().includes('cash')) || accList[1] || accList[0];
+        setCrAccount(cashAcc.account_name);
+      }
 
-    const vchs = getUniversalVouchersByFirm(activeFirmId);
-    setVoucherList(vchs);
+      // Load using original robust method with fallbacks
+      let vchs = getUniversalVouchersByFirm(activeFirmId);
+      if (!Array.isArray(vchs) || vchs.length === 0) {
+        vchs = [
+          ...(StorageService.getItem('account_book_vouchers') || []),
+          ...(StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || []),
+          ...(StorageService.getItem(`app_vouchers_${activeFirmId}`) || [])
+        ];
+      }
+
+      // Sort newest first
+      vchs.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
+      setVoucherList(vchs);
+    } catch (e) {
+      console.error("Error loading vouchers:", e);
+    }
   };
 
   useEffect(() => {
     loadData();
     window.addEventListener('app_state_updated', loadData);
-    return () => window.removeEventListener('app_state_updated', loadData);
+    window.addEventListener('app_storage_updated', loadData);
+    window.addEventListener('storage', loadData);
+    return () => {
+      window.removeEventListener('app_state_updated', loadData);
+      window.removeEventListener('app_storage_updated', loadData);
+      window.removeEventListener('storage', loadData);
+    };
   }, [activeFirmId]);
 
   const handleEditInit = (voucher) => {
@@ -127,13 +148,14 @@ export default function VoucherEntryForm({ firm }) {
   };
 
   const filteredVouchers = voucherList.filter(v => {
+    if (!v) return false;
     const q = searchFilter.toLowerCase();
     return (
-      (v.reference_no && v.reference_no.toLowerCase().includes(q)) ||
-      (v.voucher_number && v.voucher_number.toLowerCase().includes(q)) ||
-      (v.dr_account && v.dr_account.toLowerCase().includes(q)) ||
-      (v.cr_account && v.cr_account.toLowerCase().includes(q)) ||
-      (v.narration && v.narration.toLowerCase().includes(q))
+      (v.reference_no && String(v.reference_no).toLowerCase().includes(q)) ||
+      (v.voucher_number && String(v.voucher_number).toLowerCase().includes(q)) ||
+      (v.dr_account && String(v.dr_account).toLowerCase().includes(q)) ||
+      (v.cr_account && String(v.cr_account).toLowerCase().includes(q)) ||
+      (v.narration && String(v.narration).toLowerCase().includes(q))
     );
   });
 
