@@ -5,13 +5,14 @@
  */
 export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
   const vouchersKey = `app_vouchers_${firmId}`;
+  const legacyKey = 'account_book_vouchers';
   try {
-    const raw = localStorage.getItem(vouchersKey);
+    const raw = localStorage.getItem(vouchersKey) || localStorage.getItem(legacyKey);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        // Return cloned array in reverse chronological order (newest first)
-        return [...parsed].reverse();
+        const firmFiltered = parsed.filter(v => v && (v.firm_id === firmId || v.firm_id === 'FIRM-001' || !v.firm_id));
+        return [...firmFiltered].reverse();
       }
     }
   } catch (e) {
@@ -22,13 +23,23 @@ export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
 
 /**
  * 2. POST OR UPDATE UNIVERSAL DOUBLE-ENTRY VOUCHER
- * Supports simple (1 Dr : 1 Cr) and compound entries with mathematical balance enforcement
  */
 export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
   const vouchersKey = `app_vouchers_${firmId}`;
+  const legacyKey = 'account_book_vouchers';
+  
   let existingVouchers = [];
   try {
-    existingVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
+    const primaryStored = localStorage.getItem(vouchersKey);
+    const legacyStored = localStorage.getItem(legacyKey);
+    const combined = [...JSON.parse(primaryStored || '[]'), ...JSON.parse(legacyStored || '[]')];
+    
+    // Deduplicate by ID
+    const map = new Map();
+    combined.forEach(v => {
+      if (v && v.id) map.set(v.id, v);
+    });
+    existingVouchers = Array.from(map.values());
   } catch (e) {
     existingVouchers = [];
   }
@@ -49,7 +60,6 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
   const vchNumber = (reference_no || '').trim() || `${voucher_type.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
   let finalVoucher = null;
 
-  // Compound Entry Processing
   if (is_compound && Array.isArray(entries) && entries.length > 0) {
     let totalDr = 0;
     let totalCr = 0;
@@ -67,6 +77,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     finalVoucher = {
       id: id || `VCH-${Date.now()}`,
       firm_id: firmId,
+      firmId: firmId,
       voucher_number: vchNumber,
       voucher_date,
       date: voucher_date,
@@ -82,7 +93,6 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
       updated_at: new Date().toISOString()
     };
   } else {
-    // Simple 1 Dr : 1 Cr Processing
     const cleanAmt = parseFloat(amount || 0);
     if (!cleanAmt || cleanAmt <= 0) {
       throw new Error('Transaction amount must be greater than zero.');
@@ -100,6 +110,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     finalVoucher = {
       id: id || `VCH-${Date.now()}`,
       firm_id: firmId,
+      firmId: firmId,
       voucher_number: vchNumber,
       voucher_date,
       date: voucher_date,
@@ -119,7 +130,6 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     };
   }
 
-  // Check if updating an existing voucher or inserting a new one
   const existingIdx = existingVouchers.findIndex(v => v.id === finalVoucher.id);
   if (existingIdx !== -1) {
     existingVouchers[existingIdx] = finalVoucher;
@@ -127,36 +137,52 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     existingVouchers.push(finalVoucher);
   }
 
+  // Save to all required synchronized keys to prevent data loss across modules
   localStorage.setItem(vouchersKey, JSON.stringify(existingVouchers));
+  localStorage.setItem(legacyKey, JSON.stringify(existingVouchers));
+  localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify(existingVouchers));
 
-  // Dispatch global state change event for real-time reactivity
   window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('app_storage_updated'));
   return finalVoucher;
 };
 
 /**
  * 3. ATOMIC VOUCHER DELETION
- * Safely removes transaction and triggers global ledger re-indexing
  */
 export const deleteUniversalVoucher = (firmId = 'FIRM-001', voucherId = '') => {
   if (!voucherId) return false;
 
   const vouchersKey = `app_vouchers_${firmId}`;
+  const legacyKey = 'account_book_vouchers';
+  
   let existingVouchers = [];
   try {
-    existingVouchers = JSON.parse(localStorage.getItem(vouchersKey) || '[]');
+    const primaryStored = localStorage.getItem(vouchersKey);
+    const legacyStored = localStorage.getItem(legacyKey);
+    const combined = [...JSON.parse(primaryStored || '[]'), ...JSON.parse(legacyStored || '[]')];
+    
+    const map = new Map();
+    combined.forEach(v => {
+      if (v && v.id) map.set(v.id, v);
+    });
+    existingVouchers = Array.from(map.values());
   } catch (e) {
     existingVouchers = [];
   }
 
   const initialCount = existingVouchers.length;
-  const filtered = existingVouchers.filter(v => v.id !== voucherId);
+  const filtered = existingVouchers.filter(v => v.id !== voucherId && v.reference_no !== voucherId);
 
   if (filtered.length === initialCount) {
     throw new Error('Voucher ID not found for deletion.');
   }
 
   localStorage.setItem(vouchersKey, JSON.stringify(filtered));
+  localStorage.setItem(legacyKey, JSON.stringify(filtered));
+  localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify(filtered));
+
   window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('app_storage_updated'));
   return true;
 };
