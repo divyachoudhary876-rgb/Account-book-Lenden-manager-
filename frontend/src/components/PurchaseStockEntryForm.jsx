@@ -39,11 +39,9 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       const allVouchers = StorageService.getItem('account_book_vouchers') || [];
       const purchases = allVouchers.filter(v => v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001') && (v.voucher_type === 'PURCHASE' || v.type === 'PURCHASE'));
       
-      // Date-wise sorting (newest/latest first)
       purchases.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
       setPurchaseList(purchases);
 
-      // Auto-increment bill number starting from 1 sequentially
       if (!editingId) {
         const nextNum = purchases.length + 1;
         setBillNo(String(nextNum));
@@ -319,7 +317,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         </form>
       </div>
 
-      {/* PURCHASE REGISTER LIST */}
+      {/* PURCHASE REGISTER LIST WITH SCROLLBAR */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           <strong style={{ fontSize: '13px', color: '#0f172a', fontWeight: '800' }}>
@@ -335,7 +333,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
           style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', marginBottom: '10px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }}
         />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {filteredPurchases.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '11px' }}>
               No purchase bills recorded yet.
