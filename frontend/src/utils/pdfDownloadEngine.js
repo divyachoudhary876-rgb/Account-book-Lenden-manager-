@@ -40,6 +40,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   try {
     const pdfArrayBuffer = doc.output('arraybuffer');
 
+    // 1. Mobile Capacitor Native Environment (Android/iOS)
     if (Capacitor.isNativePlatform()) {
       const base64Data = arrayBufferToBase64(pdfArrayBuffer);
       const writeResult = await Filesystem.writeFile({
@@ -59,6 +60,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
+    // 2. Standard Web Browser Download via Blob
     const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
     const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
@@ -82,7 +84,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (Updated with Item & Description Details)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
@@ -91,6 +93,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   const doc = new jsPDF();
   let y = 20;
 
+  // Header Section
   doc.setFontSize(18);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(15, 23, 42);
@@ -107,7 +110,8 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
   y += 12;
 
-  doc.setFillColor(15, 23, 42);
+  // Table Headers
+  doc.setFillColor(15, 23, 42); // Dark Slate #0f172a
   doc.rect(14, y, 182, 8, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont(undefined, 'bold');
@@ -120,46 +124,49 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   doc.text('Balance', 192, y + 5.5, { align: 'right' });
   y += 10;
 
+  // Table Rows
   doc.setTextColor(15, 23, 42);
   doc.setFont(undefined, 'normal');
 
   txs.forEach((t, index) => {
-    if (y > 265) { doc.addPage(); y = 20; }
-
-    const narrationStr = t.narration ? String(t.narration) : '';
-    const splitNarration = narrationStr ? doc.splitTextToSize(narrationStr, 75) : [];
-    const rowHeight = 8 + (splitNarration.length * 4);
+    if (y > 270) {
+      doc.addPage();
+      y = 20;
+    }
 
     if (index % 2 === 0) {
       doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 4, 182, rowHeight, 'F');
+      doc.rect(14, y - 4, 182, 9, 'F');
     }
 
     doc.setFontSize(9);
     doc.text(String(t.date || '-'), 18, y);
     doc.text(String(`${t.voucher_type || 'TX'} #${t.voucher_number || ''}`), 45, y);
+    
     doc.text(t.debit > 0 ? t.debit.toFixed(2) : '-', 125, y, { align: 'right' });
     doc.text(t.credit > 0 ? t.credit.toFixed(2) : '-', 155, y, { align: 'right' });
     doc.text(`${(t.runningBalance || 0).toFixed(2)} ${t.balanceType || 'Dr'}`, 192, y, { align: 'right' });
     
-    if (splitNarration.length > 0) {
+    // Print description / narration / items below voucher type
+    if (t.narration) {
       y += 4.5;
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
+      const splitNarration = doc.splitTextToSize(String(t.narration), 75);
       doc.text(splitNarration, 45, y);
-      doc.setTextColor(15, 23, 42);
       y += (splitNarration.length * 3.5);
+      doc.setTextColor(15, 23, 42);
     } else {
-      y += 6;
+      y += 7;
     }
-    y += 3;
+    y += 2;
   });
 
   return await exportTruePDF(doc, `Statement_${partyName}`);
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L, Balance Sheet, GST)
+ * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Trading, P&L, Balance Sheet, GST) - Fully Corrected
  */
 export const downloadFinancialStatementsReport = async (param1, param2, param3) => {
   let firmInput = 'Neelkanth Groups';
@@ -191,20 +198,21 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   });
 
   const firmName = getCleanFirmName(firmInput);
-  const doc = new jsPDF();
-  let y = 20;
-
-  doc.setFontSize(18);
-  doc.setFont(undefined, 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(firmName.toUpperCase(), 14, y);
-  y += 8;
-
   let reportTitle = 'Trial Balance Report';
   if (activeTab === 'TRADING' || activeTab === '2') reportTitle = 'Trading Account Report';
   else if (activeTab === 'PNL' || activeTab === '3') reportTitle = 'Profit & Loss Statement';
   else if (activeTab === 'BALANCE_SHEET' || activeTab === '4') reportTitle = 'Balance Sheet (Assets & Liabilities)';
   else if (activeTab === 'GST_SUMMARY' || activeTab === '5') reportTitle = 'GSTR Tax Summary Report';
+
+  const doc = new jsPDF();
+  let y = 20;
+
+  // Header Section
+  doc.setFontSize(18);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(firmName.toUpperCase(), 14, y);
+  y += 8;
 
   doc.setFontSize(12);
   doc.setFont(undefined, 'normal');
@@ -216,7 +224,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
   y += 12;
 
-  // BALANCE SHEET EXPORT
+  // 1. BALANCE SHEET EXPORT
   if (activeTab === 'BALANCE_SHEET' || activeTab === '4') {
     const assets = (reportData.balanceSheet && Array.isArray(reportData.balanceSheet.assets)) ? reportData.balanceSheet.assets : [];
     const liabilities = (reportData.balanceSheet && Array.isArray(reportData.balanceSheet.liabilities)) ? reportData.balanceSheet.liabilities : [];
@@ -277,7 +285,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.setFont(undefined, 'bold');
     doc.text(`Total Liabilities: Rs ${(reportData.balanceSheet?.totalLiabilities || 0).toFixed(2)}`, 192, y, { align: 'right' });
 
-  // TRADING ACCOUNT
+  // 2. TRADING ACCOUNT EXPORT
   } else if (activeTab === 'TRADING' || activeTab === '2') {
     const trading = reportData.trading || { sales: 0, directExpenses: 0, grossResult: 0 };
     doc.setFontSize(11);
@@ -288,14 +296,14 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     y += 10;
     doc.text(`Gross Profit / Loss: Rs ${(trading.grossResult || 0).toFixed(2)}`, 18, y);
 
-  // P&L STATEMENT
+  // 3. P&L STATEMENT EXPORT
   } else if (activeTab === 'PNL' || activeTab === '3') {
     const pnl = reportData.pnl || { netResult: 0 };
     doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
     doc.text(`Net Profit / Loss: Rs ${(pnl.netResult || 0).toFixed(2)}`, 18, y);
 
-  // GST SUMMARY
+  // 4. GST SUMMARY EXPORT
   } else if (activeTab === 'GST_SUMMARY' || activeTab === '5') {
     const gst = reportData.gstSummary || { taxableSales: 0, outputTax: 0, taxablePurchases: 0, inputTax: 0, netTaxPayable: 0 };
     doc.setFontSize(11);
@@ -306,7 +314,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.text(`Input Tax Credit (ITC): Rs ${(gst.inputTax || 0).toFixed(2)}`, 18, y); y += 10;
     doc.text(`Net Tax Payable: Rs ${(gst.netTaxPayable || 0).toFixed(2)}`, 18, y);
 
-  // TRIAL BALANCE (Default)
+  // 5. DEFAULT TRIAL BALANCE EXPORT
   } else {
     const rows = (reportData.trialBalance && Array.isArray(reportData.trialBalance)) ? reportData.trialBalance : [];
 
@@ -326,7 +334,11 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.setFont(undefined, 'normal');
 
     rows.forEach((row, index) => {
-      if (y > 270) { doc.addPage(); y = 20; }
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+
       if (index % 2 === 0) {
         doc.setFillColor(248, 250, 252);
         doc.rect(14, y - 4, 182, 7, 'F');
@@ -363,7 +375,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL REGISTER EXPORT PDF (Fixed Row Overlap & Spacing)
+ * 3. JOURNAL REGISTER EXPORT PDF (Fixed Text & Amount Overlap with Strict Column Limits)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -398,7 +410,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   doc.text('#', 18, y + 5.5);
   doc.text('Date', 28, y + 5.5);
   doc.text('Reference', 55, y + 5.5);
-  doc.text('Particulars, Accounts & Items', 90, y + 5.5);
+  doc.text('Particulars, Accounts & Items', 85, y + 5.5);
   doc.text('Amount (Rs)', 192, y + 5.5, { align: 'right' });
   y += 10;
 
@@ -409,9 +421,9 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     const itemsList = Array.isArray(vch.items) ? vch.items : [];
     let itemStr = itemsList.map(it => `${it.itemName} (Qty: ${it.qty} @ Rs ${it.rate})`).join(', ');
     const extraText = itemStr ? `${itemStr} - ${vch.narration || ''}` : (vch.narration || '');
-    const splitText = extraText ? doc.splitTextToSize(extraText, 95) : [];
     
-    // Dynamic row height calculation to completely eliminate text overlap
+    // Restrict Particulars text width to 65mm so it never touches the amount column at x=192
+    const splitText = extraText ? doc.splitTextToSize(extraText, 65) : [];
     const rowHeight = 9 + (splitText.length > 0 ? (splitText.length * 4) : 0);
 
     if (y + rowHeight > 275) {
@@ -426,18 +438,26 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
 
     const amt = parseFloat(vch.amount || 0);
 
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.text(String(idx + 1), 18, y);
     doc.text(String(vch.voucher_date || vch.date || '-'), 28, y);
     doc.text(String(vch.reference_no || vch.voucher_number || 'VCH'), 55, y);
-    doc.text(String(`[${vch.voucher_type || 'JV'}] Dr: ${vch.dr_account || ''} | Cr: ${vch.cr_account || ''}`), 90, y);
+    
+    // Main line truncated strictly to 65mm width
+    const mainLine = `[${vch.voucher_type || 'JV'}] Dr: ${vch.dr_account || ''} | Cr: ${vch.cr_account || ''}`;
+    const truncatedMainLine = doc.splitTextToSize(mainLine, 65)[0] || mainLine;
+    doc.text(truncatedMainLine, 85, y);
+
+    // Amount printed safely on the right margin with zero overlap
+    doc.setFont(undefined, 'bold');
     doc.text(amt.toFixed(2), 192, y, { align: 'right' });
+    doc.setFont(undefined, 'normal');
 
     if (splitText.length > 0) {
       y += 4.5;
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
-      doc.text(splitText, 90, y);
+      doc.text(splitText, 85, y);
       doc.setTextColor(15, 23, 42);
       y += (splitText.length * 3.5);
     } else {
