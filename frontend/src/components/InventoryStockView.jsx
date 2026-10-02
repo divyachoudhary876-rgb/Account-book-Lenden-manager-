@@ -1,10 +1,11 @@
 // frontend/src/components/InventoryStockView.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 
 export default function InventoryStockView({ firm, onClose }) {
   const [inventoryList, setInventoryList] = useState([]);
+  const [searchFilter, setSearchFilter] = useState('');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
@@ -191,6 +192,24 @@ export default function InventoryStockView({ firm, onClose }) {
     };
   }, [firm]);
 
+  // A to Z Ascending Order Sorting & Search Filtering
+  const processedInventory = useMemo(() => {
+    const sorted = [...inventoryList].sort((a, b) => {
+      const nameA = (a.item_name || a.itemName || a.name || '').toLowerCase();
+      const nameB = (b.item_name || b.itemName || b.name || '').toLowerCase();
+      return nameA.localeCompare(nameB, 'en', { sensitivity: 'base' });
+    });
+
+    const cleanSearch = searchFilter.trim().toLowerCase();
+    if (!cleanSearch) return sorted;
+
+    return sorted.filter(item => {
+      const name = (item.item_name || item.itemName || item.name || '').toLowerCase();
+      const unitStr = (item.unit || '').toLowerCase();
+      return name.includes(cleanSearch) || unitStr.includes(cleanSearch);
+    });
+  }, [inventoryList, searchFilter]);
+
   const handleOpenAddModal = () => {
     setEditingItemId(null);
     setItemName('');
@@ -312,6 +331,17 @@ export default function InventoryStockView({ firm, onClose }) {
           </button>
         </div>
 
+        {/* Search Filter Bar */}
+        <div style={{ marginBottom: '14px' }}>
+          <input
+            type="text"
+            placeholder="🔍 Search stock items by name..."
+            value={searchFilter}
+            onChange={e => setSearchFilter(e.target.value)}
+            style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', outline: 'none', backgroundColor: '#f8fafc', color: '#0f172a' }}
+          />
+        </div>
+
         <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
           <div>
             <div style={{ fontSize: '11px', fontWeight: '700', color: '#166534', textTransform: 'uppercase' }}>Total Portfolio Value</div>
@@ -324,12 +354,12 @@ export default function InventoryStockView({ firm, onClose }) {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {inventoryList.length === 0 ? (
+        {processedInventory.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '30px 20px', borderRadius: '12px', color: '#94a3b8', fontSize: '11px', border: '1px solid #e2e8f0' }}>
-            No items found. Click '+ Add New Item to Master' above to create one.
+            No stock items found matching your search.
           </div>
         ) : (
-          inventoryList.map((item, idx) => {
+          processedInventory.map((item, idx) => {
             const stock = Number(item.current_stock || item.stock || item.qty || 0);
             const rate = Number(item.unit_purchase_price || item.purchasePrice || item.rate || 0);
             const val = stock * rate;
@@ -460,7 +490,7 @@ export default function InventoryStockView({ firm, onClose }) {
                     step="0.01" 
                     value={openingStock} 
                     onChange={e => setOpeningStock(e.target.value)} 
-                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box',fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
                   />
                 </div>
                 <div style={{ flex: 1 }}>
@@ -476,7 +506,7 @@ export default function InventoryStockView({ firm, onClose }) {
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button type="submit" style={{ flex: '1', padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
+                <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
                   {editingItemId ? '✓ Update Item' : '+ Save Item'}
                 </button>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
