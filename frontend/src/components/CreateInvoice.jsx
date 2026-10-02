@@ -42,7 +42,7 @@ export default function CreateInvoice({ firm, onClose }) {
       const allVouchers = StorageService.getItem('account_book_vouchers') || [];
       const salesInvoices = allVouchers.filter(v => v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001') && (v.voucher_type === 'SALES' || v.type === 'SALES'));
       
-      // Date-wise sorting (newest/latest first or chronological)
+      // Date-wise sorting (newest/latest first)
       salesInvoices.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
       setInvoiceList(salesInvoices);
 
@@ -468,10 +468,11 @@ export default function CreateInvoice({ firm, onClose }) {
                     <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>#{inv.reference_no} — {inv.dr_account}</div>
                     <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date}</div>
                     
+                    {/* Items, Qty, Rate display with actual item name */}
                     <div style={{ marginTop: '4px', fontSize: '11px', color: '#334155' }}>
                       {itemsList.map((it, idx) => (
                         <div key={idx} style={{ fontWeight: '600' }}>
-                          • {it.itemName || it.name || 'Item'} — Qty: <span style={{ color: '#0284c7' }}>{it.qty || it.quantity} {it.unit || 'Pcs'}</span> @ ₹{Number(it.rate || 0).toFixed(2)}
+                          • {it.itemName || it.name || it.item_name || 'Item'} — Qty: <span style={{ color: '#0284c7' }}>{it.qty || it.quantity} {it.unit || 'Pcs'}</span> @ ₹{Number(it.rate || 0).toFixed(2)}
                         </div>
                       ))}
                     </div>
