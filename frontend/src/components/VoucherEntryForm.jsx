@@ -11,7 +11,7 @@ import {
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 export default function VoucherEntryForm({ firm }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-1790909076433';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
   const [accounts, setAccounts] = useState([]);
@@ -35,25 +35,79 @@ export default function VoucherEntryForm({ firm }) {
       setAccounts(accList);
       if (accList.length > 0 && !drAccount) {
         setDrAccount(accList[0].account_name);
-        const cashAcc = accList.find(a => a.account_name.toLowerCase().includes('cash')) || accList[1] || accList[0];
-        setCrAccount(cashAcc.account_name);
+        const cashAcc = accList.find(a => (a.account_name || '').toLowerCase().includes('cash')) || accList[1] || accList[0];
+        setCrAccount(cashAcc?.account_name || accList[0].account_name);
       }
 
-      // Load using original robust method with fallbacks
-      let vchs = getUniversalVouchersByFirm(activeFirmId);
-      if (!Array.isArray(vchs) || vchs.length === 0) {
-        vchs = [
-          ...(StorageService.getItem('account_book_vouchers') || []),
-          ...(StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || []),
-          ...(StorageService.getItem(`app_vouchers_${activeFirmId}`) || [])
-        ];
-      }
+      // Universal Deep Scan across all storage keys so NO entry ever gets missed
+      let rawTxs = [];
+      const keysToScan = [
+        `app_vouchers_${activeFirmId}`,
+        `account_book_vouchers_${activeFirmId}`,
+        `app_sales_invoices_${activeFirmId}`,
+        `app_invoices_${activeFirmId}`,
+        `purchase_bills_${activeFirmId}`,
+        'app_vouchers',
+        'account_book_vouchers',
+        'app_sales_invoices',
+        'app_invoices',
+        'purchase_bills'
+      ];
 
+      keysToScan.forEach(k => {
+        try {
+          const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
+          if (Array.isArray(val)) {
+            rawTxs.push(...val);
+          } else if (val && typeof val === 'object') {
+            Object.values(val).forEach(sub => {
+              if (Array.isArray(sub)) rawTxs.push(...sub);
+            });
+          }
+        } catch (e) {}
+      });
+
+      // Fallback to unified engine if needed
+      const engineVchs = getUniversalVouchersByFirm(activeFirmId);
+      if (Array.isArray(engineVchs)) rawTxs.push(...engineVchs);
+
+      // Deduplicate by ID or Reference
+      const uniqueMap = new Map();
+      rawTxs.forEach(v => {
+        if (!v) return;
+        const vFirm = v.firm_id || v.firmId || activeFirmId;
+        if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
+
+        const uId = v.id || v.reference_no || v.invoice_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount || 0}-${Math.random()}`;
+        if (!uniqueMap.has(uId)) {
+          let vType = String(v.voucher_type || v.type || 'JV').toUpperCase();
+          if (v.invoice_number && !v.voucher_type) vType = 'SALES';
+          if (v.bill_number && !v.voucher_type) vType = 'PURCHASE';
+
+          let drAcc = v.dr_account || v.debit_account || v.customer_name || 'Account';
+          let crAcc = v.cr_account || v.credit_account || v.supplier_name || 'Account';
+          let amt = Number(v.amount || v.total_amount || v.grand_total || 0);
+
+          uniqueMap.set(uId, {
+            ...v,
+            id: uId,
+            voucher_date: v.voucher_date || v.date || v.invoice_date || todayMaxDate,
+            voucher_type: vType,
+            reference_no: v.reference_no || v.voucher_number || v.invoice_number || v.bill_number || '1001',
+            dr_account: drAcc,
+            cr_account: crAcc,
+            amount: amt
+          });
+        }
+      });
+
+      const finalVchs = Array.from(uniqueMap.values());
       // Sort newest first
-      vchs.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
-      setVoucherList(vchs);
+      finalVchs.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
+
+      setVoucherList(finalVchs);
     } catch (e) {
-      console.error("Error loading vouchers:", e);
+      console.error("Error loading daybook vouchers:", e);
     }
   };
 
@@ -216,7 +270,7 @@ export default function VoucherEntryForm({ firm }) {
               >
                 {type === 'PAYMENT' && '💳 Payment'}
                 {type === 'RECEIPT' && '📥 Receipt'}
-                {type === 'CONTRA' && '🏛️️ Contra'}
+                {type === 'CONTRA' && '🏛 Contra'}
                 {type === 'JOURNAL' && '📝 Journal'}
               </button>
             ))}
