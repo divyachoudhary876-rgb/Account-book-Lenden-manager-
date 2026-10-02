@@ -1,21 +1,33 @@
 // frontend/src/components/CreateAccountHeadModal.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { StorageService } from '../utils/storageSync';
 
 export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
   const firmId = firm?.id || 'FIRM-001';
   const businessCategory = firm?.businessCategory || firm?.firmType || 'MANUFACTURING';
   
-  // FIX: Make Account Heads common across all financial years for this firm
   const storageKey = `account_heads_${firmId}`;
 
+  // Pre-defined Professional Baseline Accounts
+  const defaultBaselineAccounts = [
+    { id: 'ACC-BASE-01', name: 'Cash in Hand (रोकड़)', type: 'Assets', group: 'Cash-in-Hand', openingBalance: 0, balanceType: 'Dr', isSystemLocked: true },
+    { id: 'ACC-BASE-02', name: 'State Bank of India (बैंक खाता)', type: 'Assets', group: 'Bank Accounts', openingBalance: 0, balanceType: 'Dr', isSystemLocked: false },
+    { id: 'ACC-BASE-03', name: 'Sales / Revenue Account', type: 'Income', group: 'Sales / Revenue Accounts', openingBalance: 0, balanceType: 'Cr', isSystemLocked: true },
+    { id: 'ACC-BASE-04', name: 'Purchase Raw Material Account', type: 'Expenses', group: 'Raw Material Consumed', openingBalance: 0, balanceType: 'Dr', isSystemLocked: true },
+    { id: 'ACC-BASE-05', name: 'Tractor Diesel & Running Expense', type: 'Expenses', group: 'Operating Fuel & Power (Diesel / Electricity)', openingBalance: 0, balanceType: 'Dr', isSystemLocked: false },
+    { id: 'ACC-BASE-06', name: 'Pathai & Labour Expenses (मजदूरी)', type: 'Expenses', group: 'Direct Labor & Wages (मज़दूर)', openingBalance: 0, balanceType: 'Dr', isSystemLocked: false },
+    { id: 'ACC-BASE-07', name: 'Proprietor Capital Account', type: 'Income', group: 'Capital / Owner Equity', openingBalance: 0, balanceType: 'Cr', isSystemLocked: false }
+  ];
+
   const [accounts, setAccounts] = useState([]);
+  const [editingId, setEditingId] = useState(null);
   const [accountName, setAccountName] = useState('');
   const [accountType, setAccountType] = useState('Expenses');
   const [selectedGroup, setSelectedGroup] = useState('');
   const [openingBalance, setOpeningBalance] = useState('');
   const [balanceType, setBalanceType] = useState('Dr');
+  const [searchFilter, setSearchFilter] = useState('');
 
   const getProfessionalGroups = (type) => {
     switch (type) {
@@ -78,15 +90,27 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
   useEffect(() => {
     try {
       const saved = StorageService.getItem ? StorageService.getItem(storageKey) : JSON.parse(localStorage.getItem(storageKey) || '[]');
-      if (Array.isArray(saved)) setAccounts(saved);
+      if (Array.isArray(saved) && saved.length > 0) {
+        // Ensure baseline accounts are merged if missing
+        const existingNames = new Set(saved.map(a => String(a.name || '').trim().toLowerCase()));
+        const missingBaseline = defaultBaselineAccounts.filter(b => !existingNames.has(b.name.trim().toLowerCase()));
+        const merged = [...saved, ...missingBaseline];
+        setAccounts(merged);
+      } else {
+        setAccounts(defaultBaselineAccounts);
+        StorageService.setItem(storageKey, defaultBaselineAccounts);
+      }
     } catch (e) {
       console.error("Error loading account heads:", e);
+      setAccounts(defaultBaselineAccounts);
     }
   }, [storageKey]);
 
   useEffect(() => {
     const groups = getProfessionalGroups(accountType);
-    if (groups.length > 0) setSelectedGroup(groups[0]);
+    if (groups.length > 0 && !groups.includes(selectedGroup)) {
+      setSelectedGroup(groups[0]);
+    }
 
     if (accountType === 'Liabilities' || accountType === 'Income') {
       setBalanceType('Cr');
@@ -102,42 +126,128 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
       return;
     }
 
-    const newAccount = {
-      id: 'ACC-' + Date.now(),
-      name: accountName.trim(),
-      type: accountType,
-      group: selectedGroup,
-      openingBalance: Number(openingBalance) || 0,
-      balanceType: openingBalance ? balanceType : '',
-      businessCategory,
-      createdAtFY: selectedFY
-    };
+    const cleanName = accountName.trim();
 
-    const updated = [newAccount, ...accounts];
-    setAccounts(updated);
-    StorageService.setItem(storageKey, updated);
-    window.dispatchEvent(new Event('app_storage_updated'));
+    if (editingId) {
+      // Update existing account
+      const updated = accounts.map(acc => {
+        if (acc.id === editingId) {
+          return {
+            ...acc,
+            name: cleanName,
+            account_name: cleanName,
+            type: accountType,
+            primary_type: accountType,
+            group: selectedGroup,
+            sub_group: selectedGroup,
+            openingBalance: Number(openingBalance) || 0,
+            opening_balance: Number(openingBalance) || 0,
+            balanceType: openingBalance ? balanceType : '',
+            balance_type: openingBalance ? balanceType : ''
+          };
+        }
+        return acc;
+      });
 
-    setAccountName('');
-    setOpeningBalance('');
-    alert("✓ Professional Account Head successfully created!");
+      setAccounts(updated);
+      StorageService.setItem(storageKey, updated);
+      StorageService.setItem(`app_accounts_${firmId}`, updated);
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+
+      setEditingId(null);
+      setAccountName('');
+      setOpeningBalance('');
+      alert("✓ Account Head successfully updated!");
+    } else {
+      // Create new account
+      const newAccount = {
+        id: 'ACC-' + Date.now(),
+        name: cleanName,
+        account_name: cleanName,
+        type: accountType,
+        primary_type: accountType,
+        group: selectedGroup,
+        sub_group: selectedGroup,
+        openingBalance: Number(openingBalance) || 0,
+        opening_balance: Number(openingBalance) || 0,
+        balanceType: openingBalance ? balanceType : '',
+        balance_type: openingBalance ? balanceType : 'Dr',
+        businessCategory,
+        createdAtFY: selectedFY,
+        isSystemLocked: false
+      };
+
+      const updated = [newAccount, ...accounts];
+      setAccounts(updated);
+      StorageService.setItem(storageKey, updated);
+      StorageService.setItem(`app_accounts_${firmId}`, updated);
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+
+      setAccountName('');
+      setOpeningBalance('');
+      alert("✓ Professional Account Head successfully created!");
+    }
   };
 
-  const handleDelete = (id) => {
+  const handleEdit = (acc) => {
+    setEditingId(acc.id);
+    setAccountName(acc.name || acc.account_name || '');
+    setAccountType(acc.type || acc.primary_type || 'Expenses');
+    setSelectedGroup(acc.group || acc.sub_group || '');
+    setOpeningBalance(acc.openingBalance !== undefined ? acc.openingBalance : (acc.opening_balance || ''));
+    setBalanceType(acc.balanceType || acc.balance_type || 'Dr');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDelete = (id, isLocked) => {
+    if (isLocked) {
+      alert("⚠️ System core baseline accounts ko delete nahi kiya ja sakta.");
+      return;
+    }
     if (window.confirm("Kya aap is account head ko delete karna chahte hain?")) {
       const updated = accounts.filter(a => a.id !== id);
       setAccounts(updated);
       StorageService.setItem(storageKey, updated);
+      StorageService.setItem(`app_accounts_${firmId}`, updated);
       window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      
+      if (editingId === id) {
+        setEditingId(null);
+        setAccountName('');
+        setOpeningBalance('');
+      }
     }
   };
+
+  // A to Z Ascending Order Sorting & Search Filtering
+  const processedAccounts = useMemo(() => {
+    const sorted = [...accounts].sort((a, b) => {
+      const nameA = (a.name || a.account_name || '').toLowerCase();
+      const nameB = (b.name || b.account_name || '').toLowerCase();
+      return nameA.localeCompare(nameB, 'en', { sensitivity: 'base' });
+    });
+
+    const cleanSearch = searchFilter.trim().toLowerCase();
+    if (!cleanSearch) return sorted;
+
+    return sorted.filter(acc => {
+      const name = (acc.name || acc.account_name || '').toLowerCase();
+      const type = (acc.type || acc.primary_type || '').toLowerCase();
+      const group = (acc.group || acc.sub_group || '').toLowerCase();
+      return name.includes(cleanSearch) || type.includes(cleanSearch) || group.includes(cleanSearch);
+    });
+  }, [accounts, searchFilter]);
 
   return (
     <div style={{ padding: '4px', maxWidth: '650px', margin: '0 auto', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', backgroundColor: '#f8fafc', color: '#0f172a' }}>
       
+      {/* Create / Edit Form Card */}
       <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', marginBottom: '16px', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          📊 Create & Manage Account Heads ({businessCategory})
+          {editingId ? '✏️ Edit Account Head' : `📊 Create & Manage Account Heads (${businessCategory})`}
         </h3>
 
         <form onSubmit={handleSaveAccount}>
@@ -207,16 +317,34 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
             </div>
           </div>
 
-          <button type="submit" style={{ backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '11px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '12px' }}>
-            + Save Professional Account Head
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button type="submit" style={{ flex: 1, backgroundColor: editingId ? '#059669' : '#0284c7', color: '#fff', border: 'none', padding: '11px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+              {editingId ? '✓ Update Account Head' : '+ Save Professional Account Head'}
+            </button>
+            {editingId && (
+              <button type="button" onClick={() => { setEditingId(null); setAccountName(''); setOpeningBalance(''); }} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
+      {/* Account Heads Register & Search Table */}
       <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#0f172a', fontWeight: 'bold' }}>All Firm Account Heads (Common Across FY)</h4>
-        {accounts.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#64748b', padding: '16px', fontSize: '11px' }}>Koi account head create nahi kiya gaya hai.</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+          <h4 style={{ margin: 0, fontSize: '12px', color: '#0f172a', fontWeight: 'bold' }}>All Firm Account Heads ({processedAccounts.length})</h4>
+          <input
+            type="text"
+            placeholder="🔍 Search account name, type..."
+            value={searchFilter}
+            onChange={e => setSearchFilter(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', width: '180px', backgroundColor: '#fff', color: '#0f172a' }}
+          />
+        </div>
+
+        {processedAccounts.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#64748b', padding: '16px', fontSize: '11px' }}>Koi account head nahi mila.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
@@ -229,21 +357,34 @@ export default function CreateAccountHeadModal({ firm, selectedFY, onClose }) {
                 </tr>
               </thead>
               <tbody>
-                {accounts.map(acc => (
-                  <tr key={acc.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{acc.name}</td>
-                    <td style={{ padding: '8px' }}>
-                      <span style={{ color: '#0284c7', fontWeight: 'bold' }}>{acc.type}</span>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>{acc.group}</div>
-                    </td>
-                    <td style={{ padding: '8px', color: '#334155' }}>{acc.openingBalance ? `₹${acc.openingBalance} ${acc.balanceType}` : '-'}</td>
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <button onClick={() => handleDelete(acc.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {processedAccounts.map(acc => {
+                  const aName = acc.name || acc.account_name || '';
+                  const aType = acc.type || acc.primary_type || '';
+                  const aGroup = acc.group || acc.sub_group || '';
+                  const aBal = acc.openingBalance !== undefined ? acc.openingBalance : (acc.opening_balance || 0);
+                  const aBalType = acc.balanceType || acc.balance_type || 'Dr';
+
+                  return (
+                    <tr key={acc.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{aName}</td>
+                      <td style={{ padding: '8px' }}>
+                        <span style={{ color: '#0284c7', fontWeight: 'bold' }}>{aType}</span>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>{aGroup}</div>
+                      </td>
+                      <td style={{ padding: '8px', color: '#334155' }}>{aBal ? `₹${Number(aBal).toLocaleString('en-IN')} ${aBalType}` : '-'}</td>
+                      <td style={{ padding: '8px', textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button onClick={() => handleEdit(acc)} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
+                          Edit
+                        </button>
+                        {!acc.isSystemLocked && (
+                          <button onClick={() => handleDelete(acc.id, acc.isSystemLocked)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
