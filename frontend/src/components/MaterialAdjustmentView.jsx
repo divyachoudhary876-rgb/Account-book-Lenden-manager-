@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
-import { saveUniversalVoucher } from '../utils/voucherPostingEngine.js';
+import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 
@@ -15,12 +15,15 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
   const activeFY = getCurrentActiveFY();
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
+  const [editingId, setEditingId] = useState(null);
+  const [editingOriginalItem, setEditingOriginalItem] = useState(null);
+
   const [date, setDate] = useState(todayMaxDate);
   const [targetAccount, setTargetAccount] = useState('');
   const [selectedStockId, setSelectedStockId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [ratePerUnit, setRatePerUnit] = useState('');
-  const [itemUnit, setItemUnit] = useState('Units');
+  const [itemUnit, setItemUnit] = useState('Liters');
   const [referenceDetail, setReferenceDetail] = useState('');
   const [remarks, setRemarks] = useState('');
 
@@ -59,9 +62,9 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
 
   const handleStockChange = (stockId) => {
     setSelectedStockId(stockId);
-    const itemObj = inventoryList.find(i => String(i.id) === String(stockId));
+    const itemObj = inventoryList.find(i => String(i.id) === String(stockId) || String(i.name || i.item_name) === String(stockId));
     if (itemObj) {
-      setItemUnit(itemObj.unit || 'Units');
+      setItemUnit(itemObj.unit || 'Liters');
       const pRate = parseFloat(
         itemObj.unit_purchase_price || 
         itemObj.purchase_price || 
@@ -70,13 +73,111 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
         itemObj.rate || 
         0
       );
-      if (pRate > 0) {
+      if (pRate > 0 && !ratePerUnit) {
         setRatePerUnit(String(pRate));
       }
     }
   };
 
   const calculatedTotal = round2((Number(quantity) || 0) * (Number(ratePerUnit) || 0));
+
+  // Edit Button Click Handler
+  const handleEditInit = (item) => {
+    setEditingId(item.id);
+    setEditingOriginalItem(item);
+    setDate(item.date || todayMaxDate);
+    setTargetAccount(item.party || '');
+    setReferenceDetail(item.reference || '');
+    setQuantity(String(item.quantity || ''));
+    setRatePerUnit(String(item.rate || ''));
+    setItemUnit(item.unit || 'Liters');
+    setRemarks(item.remarks || '');
+
+    // Match stock item by id or name
+    const matchedStock = inventoryList.find(i => 
+      String(i.id) === String(item.stock_id) || 
+      String(i.name || i.item_name || '').trim().toLowerCase() === String(item.item_name || '').trim().toLowerCase()
+    );
+    if (matchedStock) {
+      setSelectedStockId(matchedStock.id);
+    } else {
+      setSelectedStockId(item.item_name || '');
+    }
+
+    setFeedback({
+      type: 'info',
+      message: `✏️ Editing adjustment for "${item.party}". Details badal kar update karein.`
+    });
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingOriginalItem(null);
+    setQuantity('');
+    setRatePerUnit('');
+    setReferenceDetail('');
+    setRemarks('');
+    setFeedback(null);
+  };
+
+  // Delete Adjustment Handler
+  const handleDeleteAdjustment = (item) => {
+    const isConfirm = window.confirm(`Kya aap "${item.party}" ke liye ki gayi yeh adjustment delete karna chahte hain? Isse stock wapas inventory mein add ho jayega.`);
+    if (!isConfirm) return;
+
+    try {
+      // 1. Stock wapas inventory mein add (revert) karein
+      let currentStock = [...inventoryList];
+      const revertQty = parseFloat(item.quantity || 0);
+
+      currentStock = currentStock.map(inv => {
+        const isMatch = String(inv.id) === String(item.stock_id) || 
+          String(inv.name || inv.item_name || '').trim().toLowerCase() === String(item.item_name || '').trim().toLowerCase();
+        if (isMatch) {
+          const oldQty = parseFloat(inv.current_stock || inv.stock || 0);
+          const restoredQty = round2(oldQty + revertQty);
+          return {
+            ...inv,
+            current_stock: restoredQty,
+            stock: restoredQty,
+            qty: restoredQty,
+            updated_at: new Date().toISOString()
+          };
+        }
+        return inv;
+      });
+
+      saveFirmData('inventory_items', firm, currentStock);
+      setInventoryList(currentStock);
+
+      // 2. Universal Voucher Delete karein
+      try {
+        deleteUniversalVoucher(activeFirmId, `JV-${item.id}`);
+        deleteUniversalVoucher(activeFirmId, item.id);
+      } catch (e) {}
+
+      // 3. Adjustment list se remove karein
+      const updatedLogs = recentAdjustments.filter(x => x.id !== item.id);
+      saveFirmData('universal_material_adjustments', firm, updatedLogs);
+      setRecentAdjustments(updatedLogs);
+
+      // Trigger UI updates
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
+
+      if (editingId === item.id) {
+        handleCancelEdit();
+      }
+
+      setFeedback({ type: 'success', message: '✓ Adjustment record deleted & stock wapas restore ho gaya.' });
+      loadData();
+    } catch (err) {
+      setFeedback({ type: 'error', message: `Delete failed: ${err.message}` });
+    }
+  };
 
   const handlePostAdjustment = (e) => {
     e.preventDefault();
@@ -109,27 +210,41 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
       return;
     }
 
-    const itemObj = inventoryList.find(i => String(i.id) === String(selectedStockId));
+    const itemObj = inventoryList.find(i => 
+      String(i.id) === String(selectedStockId) || 
+      String(i.name || i.item_name || '').trim().toLowerCase() === String(selectedStockId).trim().toLowerCase()
+    );
+
     if (!itemObj) {
       setFeedback({ type: 'error', message: 'Selected stock item inventory me nahi mila!' });
       return;
     }
 
-    const currentAvail = parseFloat(itemObj.current_stock || itemObj.stock || 0);
-    if (qty > currentAvail && !itemObj.is_service && itemObj.item_type !== 'SERVICE') {
+    // Edit case me stock availability check karne se pehle purani qty consider karein
+    let effectiveAvailable = parseFloat(itemObj.current_stock || itemObj.stock || 0);
+    if (editingOriginalItem) {
+      const origQty = parseFloat(editingOriginalItem.quantity || 0);
+      const isSameItem = String(itemObj.id) === String(editingOriginalItem.stock_id) || 
+        String(itemObj.name || itemObj.item_name).trim().toLowerCase() === String(editingOriginalItem.item_name).trim().toLowerCase();
+      if (isSameItem) {
+        effectiveAvailable += origQty;
+      }
+    }
+
+    if (qty > effectiveAvailable && !itemObj.is_service && itemObj.item_type !== 'SERVICE') {
       setFeedback({ 
         type: 'error', 
-        message: `Available stock se zyada quantity nahi nikaal sakte! (Uplabdh: ${currentAvail} ${itemObj.unit || 'Units'})` 
+        message: `Available stock se zyada quantity nahi nikaal sakte! (Uplabdh: ${effectiveAvailable} ${itemObj.unit || 'Liters'})` 
       });
       return;
     }
 
     try {
-      const recordId = 'MAT-ADJ-' + Date.now();
+      const recordId = editingId || ('MAT-ADJ-' + Date.now());
       const cleanItemName = (itemObj.name || itemObj.item_name || 'Material').trim();
       const stockAssetAccount = `${cleanItemName} Stock Account`;
 
-      // 1. Ensure Stock Asset Head exists in Master
+      // Master ledger head verify karein
       const masterAccounts = getFirmMasterAccounts(activeFirmId);
       if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === stockAssetAccount.toLowerCase())) {
         saveMasterAccount(activeFirmId, {
@@ -141,9 +256,30 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
         });
       }
 
-      // 2. DEDUCT PHYSICAL STOCK ITEM FROM INVENTORY
-      const updatedStockList = inventoryList.map(inv => {
-        if (String(inv.id) === String(selectedStockId)) {
+      // 1. STOCK ADJUSTMENT (Atomic Rollback + New Deduction)
+      let updatedStockList = [...inventoryList];
+
+      // Agar edit ho raha hai, pehle purani item ki stock wapas add karein
+      if (editingOriginalItem) {
+        const origQty = parseFloat(editingOriginalItem.quantity || 0);
+        updatedStockList = updatedStockList.map(inv => {
+          const isOrig = String(inv.id) === String(editingOriginalItem.stock_id) || 
+            String(inv.name || inv.item_name).trim().toLowerCase() === String(editingOriginalItem.item_name).trim().toLowerCase();
+          if (isOrig) {
+            const cur = parseFloat(inv.current_stock || inv.stock || 0);
+            return {
+              ...inv,
+              current_stock: round2(cur + origQty),
+              stock: round2(cur + origQty)
+            };
+          }
+          return inv;
+        });
+      }
+
+      // Ab nayi quantity minus karein
+      updatedStockList = updatedStockList.map(inv => {
+        if (String(inv.id) === String(itemObj.id)) {
           const oldStock = parseFloat(inv.current_stock || inv.stock || 0);
           const newStock = round2(Math.max(0, oldStock - qty));
           return {
@@ -161,7 +297,7 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
       saveFirmData('inventory_items', firm, updatedStockList);
       setInventoryList(updatedStockList);
 
-      // 3. POST BALANCED JOURNAL VOUCHER (Enhanced Narration for Statement Clarity)
+      // 2. DOUBLE-ENTRY JOURNAL VOUCHER POST KAREIN
       const refPart = referenceDetail ? ` | Ref: ${referenceDetail}` : '';
       const remPart = remarks ? ` - ${remarks}` : '';
       const detailedNarration = `Material Issue: ${qty} ${itemObj.unit || 'Units'} ${cleanItemName} @ ₹${rate}${refPart}${remPart}`;
@@ -190,37 +326,40 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
         ]
       });
 
-      // 4. SAVE LOG RECORD
+      // 3. LOG RECORD SAVE / UPDATE KAREIN
       const newLog = {
         id: recordId,
         date,
         party: partyName,
         reference: referenceDetail,
+        stock_id: itemObj.id,
         item_name: cleanItemName,
         quantity: qty,
-        unit: itemObj.unit || 'Units',
+        unit: itemObj.unit || 'Liters',
         rate,
         total_amount: calculatedTotal,
         remarks
       };
 
-      const updatedLogs = [newLog, ...recentAdjustments];
+      const filteredLogs = recentAdjustments.filter(x => x.id !== recordId);
+      const updatedLogs = [newLog, ...filteredLogs];
+
       setRecentAdjustments(updatedLogs);
       saveFirmData('universal_material_adjustments', firm, updatedLogs);
 
-      // Universal reactivity broadcast
+      // Reactivity events
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
 
       setFeedback({
         type: 'success',
-        message: `✓ ${qty} ${itemObj.unit || 'Units'} ${cleanItemName} stock se minus hua aur ₹${calculatedTotal.toLocaleString('en-IN')} "${partyName}" ke khate me darj ho gaye!`
+        message: editingId
+          ? `✓ Adjustment updated! ₹${calculatedTotal.toLocaleString('en-IN')} "${partyName}" ke khate me update ho gaye.`
+          : `✓ ${qty} ${itemObj.unit || 'Units'} ${cleanItemName} deduct hua aur ₹${calculatedTotal.toLocaleString('en-IN')} "${partyName}" ke khate me darj ho gaye!`
       });
 
-      setQuantity('');
-      setReferenceDetail('');
-      setRemarks('');
+      handleCancelEdit();
       loadData();
 
     } catch (err) {
@@ -231,6 +370,7 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: '720px', margin: '0 auto', boxSizing: 'border-box', color: '#0f172a' }}>
       
+      {/* Top Banner */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -238,7 +378,7 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
               DIRECT STOCK OUT & LEDGER KNOCK-OFF • {activeFY}
             </div>
             <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
-              📦 Material Issue & Adjustment (सामग्री निकासी व कटौती)
+              {editingId ? '✏️ Edit Material Adjustment' : '📦 Material Issue & Adjustment (सामग्री निकासी व कटौती)'}
             </h2>
           </div>
           {onClose && (
@@ -254,16 +394,17 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
           padding: '10px 14px',
           marginBottom: '14px',
           borderRadius: '8px',
-          backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#f0fdf4',
-          color: feedback.type === 'error' ? '#991b1b' : '#166534',
+          backgroundColor: feedback.type === 'error' ? '#fef2f2' : feedback.type === 'info' ? '#eff6ff' : '#f0fdf4',
+          color: feedback.type === 'error' ? '#991b1b' : feedback.type === 'info' ? '#1e40af' : '#166534',
           fontWeight: 'bold',
           fontSize: '12px',
-          border: `1px solid ${feedback.type === 'error' ? '#fecaca' : '#bbf7d0'}`
+          border: `1px solid ${feedback.type === 'error' ? '#fecaca' : feedback.type === 'info' ? '#bfdbfe' : '#bbf7d0'}`
         }}>
           {feedback.message}
         </div>
       )}
 
+      {/* Main Entry Form */}
       <form onSubmit={handlePostAdjustment} style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -359,25 +500,48 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
           />
         </div>
 
-        <button 
-          type="submit" 
-          style={{ 
-            backgroundColor: '#0f172a', 
-            color: '#ffffff', 
-            border: 'none', 
-            padding: '12px', 
-            borderRadius: '8px', 
-            fontWeight: 'bold', 
-            fontSize: '12px', 
-            cursor: 'pointer',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-          }}
-        >
-          ⚡ Deduct Stock & Adjust in Selected Khata
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            type="submit" 
+            style={{ 
+              flex: 1,
+              backgroundColor: editingId ? '#0284c7' : '#0f172a', 
+              color: '#ffffff', 
+              border: 'none', 
+              padding: '12px', 
+              borderRadius: '8px', 
+              fontWeight: 'bold', 
+              fontSize: '12px', 
+              cursor: 'pointer',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            }}
+          >
+            {editingId ? '✓ Update Material Adjustment' : '⚡ Deduct Stock & Adjust in Selected Khata'}
+          </button>
+
+          {editingId && (
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              style={{
+                backgroundColor: '#f1f5f9',
+                color: '#475569',
+                border: '1px solid #cbd5e1',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                fontWeight: 'bold',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
 
       </form>
 
+      {/* Adjustments History Register with Edit & Delete */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
           📋 Recent Material Deductions & Adjustments ({recentAdjustments.length})
@@ -388,22 +552,82 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
             Abhi koi material deduction record nahi hai.
           </div>
         ) : (
-          <div style={{ maxHeight: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {recentAdjustments.map((item) => (
-              <div key={item.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 'bold', color: '#0f172a' }}>
-                    {item.date} | <span style={{ color: '#dc2626' }}>{item.party}</span> {item.reference ? `(${item.reference})` : ''}
+          <div style={{ maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {recentAdjustments.map((item) => {
+              const isSelected = editingId === item.id;
+              return (
+                <div 
+                  key={item.id} 
+                  style={{ 
+                    padding: '12px', 
+                    backgroundColor: isSelected ? '#eff6ff' : '#f8fafc', 
+                    borderRadius: '8px', 
+                    border: `1px solid ${isSelected ? '#0284c7' : '#e2e8f0'}`, 
+                    fontSize: '11px', 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 'bold', color: '#0f172a' }}>
+                      {item.date} | <span style={{ color: '#dc2626' }}>{item.party}</span> {item.reference ? `(${item.reference})` : ''}
+                    </div>
+                    <div style={{ color: '#475569', marginTop: '3px' }}>
+                      📦 {item.item_name}: <strong>{item.quantity} {item.unit}</strong> @ ₹{item.rate}
+                    </div>
+                    {item.remarks && (
+                      <div style={{ color: '#64748b', fontSize: '10px', marginTop: '2px' }}>
+                        Note: {item.remarks}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ color: '#64748b', marginTop: '2px' }}>
-                    📦 {item.item_name}: {item.quantity} {item.unit} @ ₹{item.rate} | {item.remarks || 'Adjustment'}
+
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                    <div style={{ fontWeight: '900', color: '#b45309', fontSize: '14px' }}>
+                      ₹{Number(item.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleEditInit(item)}
+                        style={{
+                          backgroundColor: '#e0f2fe',
+                          color: '#0369a1',
+                          border: 'none',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAdjustment(item)}
+                        style={{
+                          backgroundColor: '#fee2e2',
+                          color: '#dc2626',
+                          border: 'none',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🗑️ Delete
+                      </button>
+                    </div>
                   </div>
+
                 </div>
-                <div style={{ fontWeight: '900', color: '#b45309', fontSize: '13px' }}>
-                  ₹{Number(item.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
