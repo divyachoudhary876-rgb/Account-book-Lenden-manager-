@@ -1,31 +1,35 @@
 // frontend/src/utils/voucherPostingEngine.js
 
 /**
- * 1. RETRIEVE VOUCHERS BY FIRM (Chronological & Sorted Newest First)
+ * 1. RETRIEVE VOUCHERS BY FIRM (Chronological & Sorted Newest First - Strictly Isolated)
  */
 export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
   const vouchersKey = `app_vouchers_${firmId}`;
-  const legacyKey = 'account_book_vouchers';
+  const scopedBookKey = `account_book_vouchers_${firmId}`;
   try {
-    const raw = localStorage.getItem(vouchersKey) || localStorage.getItem(legacyKey);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const firmFiltered = parsed.filter(v => v && (v.firm_id === firmId || v.firm_id === 'FIRM-001' || !v.firm_id));
-        
-        // Sort by date (newest first) and fallback to ID/timestamp descending
-        firmFiltered.sort((a, b) => {
-          const dateA = new Date(a.voucher_date || a.date || 0);
-          const dateB = new Date(b.voucher_date || b.date || 0);
-          if (dateA.getTime() !== dateB.getTime()) {
-            return dateB - dateA; // Latest date first
-          }
-          // If dates are same, sort by creation/ID descending
-          return String(b.id || '').localeCompare(String(a.id || ''));
-        });
+    const rawPrimary = localStorage.getItem(vouchersKey);
+    const rawScoped = localStorage.getItem(scopedBookKey);
+    
+    const combined = [...JSON.parse(rawPrimary || '[]'), ...JSON.parse(rawScoped || '[]')];
+    if (combined.length > 0) {
+      // Deduplicate by ID
+      const map = new Map();
+      combined.forEach(v => {
+        if (v && v.id) map.set(v.id, v);
+      });
+      const firmFiltered = Array.from(map.values()).filter(v => v && (String(v.firm_id || v.firmId) === String(firmId) || !v.firm_id));
+      
+      // Sort by date (newest first) and fallback to ID/timestamp descending
+      firmFiltered.sort((a, b) => {
+        const dateA = new Date(a.voucher_date || a.date || 0);
+        const dateB = new Date(b.voucher_date || b.date || 0);
+        if (dateA.getTime() !== dateB.getTime()) {
+          return dateB - dateA;
+        }
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
 
-        return firmFiltered;
-      }
+      return firmFiltered;
     }
   } catch (e) {
     console.error('Error fetching vouchers for firm:', firmId, e);
@@ -34,19 +38,19 @@ export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
 };
 
 /**
- * 2. POST OR UPDATE UNIVERSAL DOUBLE-ENTRY VOUCHER
+ * 2. POST OR UPDATE UNIVERSAL DOUBLE-ENTRY VOUCHER (Firm-Scoped & Cascade Safe)
  */
 export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
-  const vouchersKey = `app_vouchers_${firmId}`;
-  const legacyKey = 'account_book_vouchers';
+  const activeFirmId = firmId || 'FIRM-001';
+  const vouchersKey = `app_vouchers_${activeFirmId}`;
+  const scopedBookKey = `account_book_vouchers_${activeFirmId}`;
   
   let existingVouchers = [];
   try {
     const primaryStored = localStorage.getItem(vouchersKey);
-    const legacyStored = localStorage.getItem(legacyKey);
-    const combined = [...JSON.parse(primaryStored || '[]'), ...JSON.parse(legacyStored || '[]')];
+    const scopedStored = localStorage.getItem(scopedBookKey);
+    const combined = [...JSON.parse(primaryStored || '[]'), ...JSON.parse(scopedStored || '[]')];
     
-    // Deduplicate by ID
     const map = new Map();
     combined.forEach(v => {
       if (v && v.id) map.set(v.id, v);
@@ -78,8 +82,8 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 
     entries.forEach((entry) => {
       const val = parseFloat(entry.amount || 0);
-      if (entry.type === 'Dr') totalDr += val;
-      if (entry.type === 'Cr') totalCr += val;
+      if (entry.type === 'Dr' || entry.type === 'DR') totalDr += val;
+      if (entry.type === 'Cr' || entry.type === 'CR') totalCr += val;
     });
 
     if (Math.abs(totalDr - totalCr) > 0.01) {
@@ -88,8 +92,8 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 
     finalVoucher = {
       id: id || `VCH-${Date.now()}`,
-      firm_id: firmId,
-      firmId: firmId,
+      firm_id: activeFirmId,
+      firmId: activeFirmId,
       voucher_number: vchNumber,
       voucher_date,
       date: voucher_date,
@@ -100,8 +104,8 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
       amount: parseFloat(totalDr.toFixed(2)),
       is_compound: true,
       entries,
-      dr_account: entries.filter(e => e.type === 'Dr').map(e => e.account_name).join(', '),
-      cr_account: entries.filter(e => e.type === 'Cr').map(e => e.account_name).join(', '),
+      dr_account: entries.filter(e => e.type === 'Dr' || e.type === 'DR').map(e => e.account_name || e.party).join(', '),
+      cr_account: entries.filter(e => e.type === 'Cr' || e.type === 'CR').map(e => e.account_name || e.party).join(', '),
       updated_at: new Date().toISOString()
     };
   } else {
@@ -121,8 +125,8 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 
     finalVoucher = {
       id: id || `VCH-${Date.now()}`,
-      firm_id: firmId,
-      firmId: firmId,
+      firm_id: activeFirmId,
+      firmId: activeFirmId,
       voucher_number: vchNumber,
       voucher_date,
       date: voucher_date,
@@ -135,26 +139,27 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
       dr_account: dr_account.trim(),
       cr_account: cr_account.trim(),
       entries: [
-        { type: 'Dr', account_name: dr_account.trim(), amount: cleanAmt },
-        { type: 'Cr', account_name: cr_account.trim(), amount: cleanAmt }
+        { type: 'Dr', account_name: dr_account.trim(), amount: cleanAmt, debit: cleanAmt, credit: 0 },
+        { type: 'Cr', account_name: cr_account.trim(), amount: cleanAmt, debit: 0, credit: cleanAmt }
       ],
       updated_at: new Date().toISOString()
     };
   }
 
-  const existingIdx = existingVouchers.findIndex(v => v.id === finalVoucher.id);
+  const existingIdx = existingVouchers.findIndex(v => v && String(v.id) === String(finalVoucher.id));
   if (existingIdx !== -1) {
     existingVouchers[existingIdx] = finalVoucher;
   } else {
     existingVouchers.push(finalVoucher);
   }
 
+  // Save strictly to firm-scoped storage keys (Ensuring zero cross-firm data pollution)
   localStorage.setItem(vouchersKey, JSON.stringify(existingVouchers));
-  localStorage.setItem(legacyKey, JSON.stringify(existingVouchers));
-  localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify(existingVouchers));
+  localStorage.setItem(scopedBookKey, JSON.stringify(existingVouchers));
 
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('storage'));
   return finalVoucher;
 };
 
@@ -164,14 +169,15 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 export const deleteUniversalVoucher = (firmId = 'FIRM-001', voucherId = '') => {
   if (!voucherId) return false;
 
-  const vouchersKey = `app_vouchers_${firmId}`;
-  const legacyKey = 'account_book_vouchers';
+  const activeFirmId = firmId || 'FIRM-001';
+  const vouchersKey = `app_vouchers_${activeFirmId}`;
+  const scopedBookKey = `account_book_vouchers_${activeFirmId}`;
   
   let existingVouchers = [];
   try {
     const primaryStored = localStorage.getItem(vouchersKey);
-    const legacyStored = localStorage.getItem(legacyKey);
-    const combined = [...JSON.parse(primaryStored || '[]'), ...JSON.parse(legacyStored || '[]')];
+    const scopedStored = localStorage.getItem(scopedBookKey);
+    const combined = [...JSON.parse(primaryStored || '[]'), ...JSON.parse(scopedStored || '[]')];
     
     const map = new Map();
     combined.forEach(v => {
@@ -183,17 +189,17 @@ export const deleteUniversalVoucher = (firmId = 'FIRM-001', voucherId = '') => {
   }
 
   const initialCount = existingVouchers.length;
-  const filtered = existingVouchers.filter(v => v.id !== voucherId && v.reference_no !== voucherId);
+  const filtered = existingVouchers.filter(v => v && String(v.id) !== String(voucherId) && String(v.reference_no) !== String(voucherId));
 
   if (filtered.length === initialCount) {
     throw new Error('Voucher ID not found for deletion.');
   }
 
   localStorage.setItem(vouchersKey, JSON.stringify(filtered));
-  localStorage.setItem(legacyKey, JSON.stringify(filtered));
-  localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify(filtered));
+  localStorage.setItem(scopedBookKey, JSON.stringify(filtered));
 
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('storage'));
   return true;
 };
