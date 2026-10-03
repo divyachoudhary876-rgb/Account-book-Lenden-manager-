@@ -6,15 +6,23 @@ import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
 
-export default function AccountStatementView({ firm }) {
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+export default function AccountStatementView({ firm, selectedFY }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
+  // Derive FY boundary dates
+  const cleanFY = String(selectedFY || localStorage.getItem(`app_active_fy_${activeFirmId}`) || '2026-27').replace(/FY\s*/i, '').trim();
+  const fyParts = cleanFY.split('-');
+  const fyStart = fyParts.length === 2 ? `${parseInt(fyParts[0], 10) < 100 ? 2000 + parseInt(fyParts[0], 10) : parseInt(fyParts[0], 10)}-04-01` : '2026-04-01';
+  const fyEnd = fyParts.length === 2 ? `${parseInt(fyParts[0], 10) < 100 ? 2000 + parseInt(fyParts[0], 10) + 1 : parseInt(fyParts[0], 10) + 1}-03-31` : '2027-03-31';
+
   const [accounts, setAccounts] = useState([]);
   const [selectedParty, setSelectedParty] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState(fyStart);
+  const [toDate, setToDate] = useState(todayMaxDate < fyEnd ? todayMaxDate : fyEnd);
   const [statementData, setStatementData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const [statusNotification, setStatusNotification] = useState(null);
@@ -24,7 +32,6 @@ export default function AccountStatementView({ firm }) {
       const accList = getFirmMasterAccounts(activeFirmId) || [];
       setAccounts(accList);
       
-      // Agar current selectedParty rename ho gaya hai ya list me nahi hai to sync karein
       if (accList.length > 0) {
         if (!selectedParty || !accList.some(a => (a.account_name || a.name) === selectedParty)) {
           setSelectedParty(accList[0].account_name || accList[0].name || '');
@@ -56,7 +63,7 @@ export default function AccountStatementView({ firm }) {
     try {
       const targetClean = String(selectedParty).trim().toLowerCase();
 
-      // 1. Fetch Master Opening Balance strictly for active firm
+      // 1. Master Opening Balance strictly for active firm
       let masterOpeningAmt = 0;
       let masterOpeningSign = 'Dr';
       
@@ -69,12 +76,11 @@ export default function AccountStatementView({ firm }) {
 
       let initialOpeningSum = masterOpeningSign === 'Cr' ? -masterOpeningAmt : masterOpeningAmt;
 
-      // 2. Fetch all transactions strictly from activeFirmId scoped keys
+      // 2. Fetch vouchers from primary ledger buckets strictly for activeFirmId
       let rawTx = [];
       const keysToScan = [
-        `account_book_vouchers_${activeFirmId}`,
         `app_vouchers_${activeFirmId}`,
-        `app_payroll_entries_${activeFirmId}`
+        `account_book_vouchers_${activeFirmId}`
       ];
 
       keysToScan.forEach(k => {
@@ -84,13 +90,14 @@ export default function AccountStatementView({ firm }) {
         } catch (e) {}
       });
 
+      // Deduplicate vouchers by unique voucher ID
       const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
         const vFirm = String(v.firm_id || v.firmId || '').trim();
         if (vFirm && vFirm !== String(activeFirmId).trim()) return;
 
-        const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}-${v.dr_account || ''}-${v.cr_account || ''}`;
+        const uniqueId = v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}`;
         if (!uniqueVoucherMap.has(uniqueId)) {
           uniqueVoucherMap.set(uniqueId, v);
         }
@@ -105,39 +112,7 @@ export default function AccountStatementView({ firm }) {
         const vNum = v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : 'N/A');
         const narration = v.narration || v.notes || v.description || '';
 
-        // A. Handle Worker / Payroll / Attendance Entries
-        const workerName = (v.worker || v.worker_name || '').trim();
-        const expenseLedger = (v.expense_ledger || '').trim();
-        const wageAmount = Number(v.total_amount || v.amount || 0);
-
-        if (workerName && wageAmount > 0) {
-          const isWorkerMatch = workerName.toLowerCase() === targetClean;
-          const isExpenseMatch = expenseLedger.toLowerCase() === targetClean;
-          const workInfo = `[Qty: ${v.quantity || 0} x Rate: ${v.rate || 0}]`;
-
-          if (isWorkerMatch) {
-            allParsedTransactions.push({
-              date: vDate,
-              voucher_type: vType === 'PAY' ? 'PAY' : 'JV',
-              voucher_number: vNum,
-              narration: `Work/Wages via ${expenseLedger || 'Expense'} ${workInfo}${narration ? ' - ' + narration : ''}`,
-              debit: 0,
-              credit: wageAmount
-            });
-          } else if (isExpenseMatch) {
-            allParsedTransactions.push({
-              date: vDate,
-              voucher_type: vType,
-              voucher_number: vNum,
-              narration: `Wages credited to worker ${workerName} ${workInfo}${narration ? ' - ' + narration : ''}`,
-              debit: wageAmount,
-              credit: 0
-            });
-          }
-          return;
-        }
-
-        // B. Handle Structured Double-Entry Vouchers (entries array)
+        // Case A: Structured Double-Entry Vouchers (entries array)
         if (Array.isArray(v.entries) && v.entries.length > 0) {
           let partyDebit = 0;
           let partyCredit = 0;
@@ -147,7 +122,7 @@ export default function AccountStatementView({ firm }) {
           v.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
             const amt = Number(e.amount || e.debit || e.credit || 0);
-            const type = (e.type || '').toUpperCase();
+            const type = (e.type || (Number(e.debit) > 0 ? 'DR' : 'CR')).toUpperCase();
             
             if (accName.toLowerCase() === targetClean) {
               isMatch = true;
@@ -164,22 +139,22 @@ export default function AccountStatementView({ firm }) {
               itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
             }
 
-            const contraName = otherParties.length > 0 ? `Contra: ${otherParties.join(', ')}` : '';
-            const finalNarr = [contraName, itemDisplayInfo, narration].filter(Boolean).join(' | ');
+            const opposingName = otherParties.length > 0 ? (partyDebit > 0 ? `To ${otherParties.join(', ')}` : `By ${otherParties.join(', ')}`) : '';
+            const finalNarr = [opposingName, itemDisplayInfo, narration].filter(Boolean).join(' | ');
 
             allParsedTransactions.push({
               date: vDate,
               voucher_type: vType,
               voucher_number: vNum,
               narration: finalNarr,
-              debit: partyDebit,
-              credit: partyCredit
+              debit: round2(partyDebit),
+              credit: round2(partyCredit)
             });
           }
           return;
         }
 
-        // C. Handle Standard Dr/Cr Vouchers (Purchase, Sales, Payment, Receipt)
+        // Case B: Standard Single Dr/Cr Vouchers
         const drAcc = (v.dr_account || v.debit_account || '').trim();
         const crAcc = (v.cr_account || v.credit_account || '').trim();
         const amt = Number(v.amount || v.total_amount || 0);
@@ -214,8 +189,8 @@ export default function AccountStatementView({ firm }) {
             voucher_type: vType,
             voucher_number: vNum,
             narration: descParts.join(' | '),
-            debit: isDrMatch ? amt : 0,
-            credit: isCrMatch ? amt : 0
+            debit: isDrMatch ? round2(amt) : 0,
+            credit: isCrMatch ? round2(amt) : 0
           });
         }
       });
@@ -229,20 +204,20 @@ export default function AccountStatementView({ firm }) {
         if (fromDate && t.date < fromDate) {
           runningBal += (t.debit - t.credit);
         } else if (toDate && t.date > toDate) {
-          // Skip beyond date range
+          // Exclude transactions beyond specified date range
         } else {
           filteredTransactions.push(t);
         }
       });
 
-      const finalOpeningBalance = Math.abs(runningBal);
+      const finalOpeningBalance = round2(Math.abs(runningBal));
       const finalOpeningType = runningBal >= 0 ? 'Dr' : 'Cr';
 
       const processedTransactions = filteredTransactions.map(t => {
         runningBal += (t.debit - t.credit);
         return {
           ...t,
-          runningBalance: Math.abs(runningBal),
+          runningBalance: round2(Math.abs(runningBal)),
           balanceType: runningBal >= 0 ? 'Dr' : 'Cr'
         };
       });
@@ -262,7 +237,7 @@ export default function AccountStatementView({ firm }) {
     } catch (e) {
       console.error("Error generating account statement:", e);
     }
-  }, [selectedParty, fromDate, toDate, activeFirmId]);
+  }, [selectedParty, fromDate, toDate, activeFirmId, selectedFY]);
 
   const handleExportPDF = async () => {
     if (!statementData || statementData.transactions.length === 0) {
@@ -331,7 +306,6 @@ export default function AccountStatementView({ firm }) {
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (से)</label>
             <input 
               type="date" 
-              max={todayMaxDate}
               value={fromDate} 
               onChange={e => setFromDate(e.target.value)} 
               style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff', color: '#0f172a' }} 
@@ -355,13 +329,13 @@ export default function AccountStatementView({ firm }) {
           <div style={{ ...cardStyle, backgroundColor: '#f8fafc' }}>
             <div style={labelStyle}>OPENING BALANCE</div>
             <strong style={{ fontSize: '15px', color: '#0f172a' }}>
-              ₹{statementData.openingBalance.toLocaleString('en-IN')} {statementData.openingType}
+              ₹{statementData.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.openingType}
             </strong>
           </div>
           <div style={{ ...cardStyle, backgroundColor: statementData.closingType === 'Dr' ? '#eff6ff' : '#fef2f2' }}>
             <div style={labelStyle}>NET CLOSING BALANCE</div>
             <strong style={{ fontSize: '15px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
-              ₹{statementData.closingBalance.toLocaleString('en-IN')} {statementData.closingType}
+              ₹{statementData.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.closingType}
             </strong>
           </div>
         </div>
