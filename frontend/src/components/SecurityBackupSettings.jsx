@@ -1,4 +1,5 @@
 // frontend/src/components/SecurityBackupSettings.jsx
+
 import React, { useState } from 'react';
 import { exportUniversalBackup, restoreUniversalBackup } from '../utils/backupEngine';
 
@@ -9,19 +10,36 @@ export default function SecurityBackupSettings({ firm, onClose }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPasteSection, setShowPasteSection] = useState(false);
 
+  // Active Firm Name & ID Resolver
+  const currentFirmInput = firm || localStorage.getItem('app_active_firm_id') || 'AccountBook';
+
   // Handle Export / Download Backup using backupEngine
   const handleDownloadBackup = async () => {
     setErrorMsg(null);
     setSuccessMsg(null);
     setIsProcessing(true);
     try {
-      await exportUniversalBackup(firm);
+      await exportUniversalBackup(currentFirmInput);
       setSuccessMsg('✓ Full Backup Downloaded Successfully!');
     } catch (err) {
       setErrorMsg(err.message || 'Backup export failed.');
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // Helper to format feedback message
+  const formatRestoreMessage = (result) => {
+    const vCount = result?.stats?.vouchersCount || 0;
+    const aCount = result?.stats?.accountsCount || 0;
+    const pCount = result?.stats?.purchasesCount || 0;
+
+    let msg = `✓ Successfully restored ${vCount} Vouchers, ${aCount} Accounts`;
+    if (pCount > 0) {
+      msg += `, aur ${pCount} Purchase Bills`;
+    }
+    msg += '! Application refresh ho raha hai...';
+    return msg;
   };
 
   // Handle File Upload Restore using backupEngine
@@ -36,11 +54,14 @@ export default function SecurityBackupSettings({ firm, onClose }) {
     try {
       const fileText = await file.text();
       const result = await restoreUniversalBackup(fileText);
-      const vCount = result?.stats?.vouchersCount || 0;
-      const aCount = result?.stats?.accountsCount || 0;
+      setSuccessMsg(formatRestoreMessage(result));
       
-      setSuccessMsg(`✓ Successfully restored ${vCount} vouchers and ${aCount} accounts! Reloading application...`);
-      setTimeout(() => window.location.reload(), 1500);
+      // Storage events trigger
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
+
+      setTimeout(() => window.location.reload(), 1400);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to process and restore the backup file.');
     } finally {
@@ -63,11 +84,13 @@ export default function SecurityBackupSettings({ firm, onClose }) {
     setIsProcessing(true);
     try {
       const result = await restoreUniversalBackup(pastedJson);
-      const vCount = result?.stats?.vouchersCount || 0;
-      const aCount = result?.stats?.accountsCount || 0;
+      setSuccessMsg(formatRestoreMessage(result));
 
-      setSuccessMsg(`✓ Successfully restored ${vCount} vouchers and ${aCount} accounts! Reloading...`);
-      setTimeout(() => window.location.reload(), 1500);
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
+
+      setTimeout(() => window.location.reload(), 1400);
     } catch (err) {
       setErrorMsg(err.message || 'Restore failed from pasted text.');
     } finally {
@@ -76,42 +99,46 @@ export default function SecurityBackupSettings({ firm, onClose }) {
   };
 
   return (
-    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', color: '#0f172a' }}>
+    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', color: '#0f172a' }}>
       
       {/* Header Card */}
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
+      <div style={{ backgroundColor: '#fff', padding: '16px 20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <div>
           <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>SECURITY & GOVERNANCE</div>
-          <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>🔒 Data Backup & Migration Center</h2>
+          <h2 style={{ margin: '2px 0 0 0', fontSize: '17px', fontWeight: '800', color: '#0f172a' }}>🔒 Data Backup & Restore Center</h2>
         </div>
-        {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
+        {onClose && (
+          <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>
+            Close
+          </button>
+        )}
       </div>
 
       {/* Status Messages */}
       {errorMsg && (
-        <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '12px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', marginBottom: '16px', border: '1px solid #fecaca' }}>
+        <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '12px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', marginBottom: '16px', border: '1px solid #fecaca' }}>
           ⚠️ Error: {errorMsg}
         </div>
       )}
       {successMsg && (
-        <div style={{ backgroundColor: '#ecfdf5', color: '#065f46', padding: '12px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', marginBottom: '16px', border: '1px solid #a7f3d0' }}>
+        <div style={{ backgroundColor: '#ecfdf5', color: '#065f46', padding: '12px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', marginBottom: '16px', border: '1px solid #a7f3d0' }}>
           {successMsg}
         </div>
       )}
 
       {/* Main Container */}
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         
         {/* Export Section */}
         <div>
           <h3 style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>📥 Download Full Data Backup</h3>
-          <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: '#64748b' }}>
-            सुरक्षा के लिए अपने सभी वाउचर्स, लेजर्स और इन्वेंट्री डेटा की एक समेकित JSON फाइल डाउनलोड करें।
+          <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: '#64748b', lineHeight: '1.5' }}>
+            सुरक्षा के लिए अपने सभी वाउचर्स, लेजर्स, खरीद बिल और इन्वेंट्री डेटा की एक समेकित JSON फाइल डाउनलोड करें।
           </p>
           <button 
             onClick={handleDownloadBackup}
             disabled={isProcessing}
-            style={{ width: '100%', padding: '14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 10px rgba(2, 132, 199, 0.2)' }}
+            style={{ width: '100%', padding: '12px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
           >
             {isProcessing ? 'Generating Backup...' : '📥 Export Backup (.JSON)'}
           </button>
@@ -122,7 +149,7 @@ export default function SecurityBackupSettings({ firm, onClose }) {
         {/* Restore Section */}
         <div>
           <h3 style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>📤 Restore App Backup</h3>
-          <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: '#64748b' }}>
+          <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: '#64748b', lineHeight: '1.5' }}>
             पूर्व में ली गई बैकअप फाइल अपलोड करें या नीचे दिए गए विकल्प से JSON कोड पेस्ट करें।
           </p>
           
