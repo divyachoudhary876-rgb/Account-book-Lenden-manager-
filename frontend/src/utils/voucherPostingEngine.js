@@ -1,25 +1,31 @@
 // frontend/src/utils/voucherPostingEngine.js
 
 /**
- * 1. RETRIEVE VOUCHERS BY FIRM (Chronological & Sorted Newest First - Strictly Isolated)
+ * 1. RETRIEVE VOUCHERS BY FIRM (Strictly Scoped & Firm Isolated)
  */
 export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
-  const vouchersKey = `app_vouchers_${firmId}`;
-  const scopedBookKey = `account_book_vouchers_${firmId}`;
+  const activeFirmId = String(firmId || 'FIRM-001').trim();
+  const vouchersKey = `app_vouchers_${activeFirmId}`;
+  const scopedBookKey = `account_book_vouchers_${activeFirmId}`;
+
   try {
     const rawPrimary = localStorage.getItem(vouchersKey);
     const rawScoped = localStorage.getItem(scopedBookKey);
     
     const combined = [...JSON.parse(rawPrimary || '[]'), ...JSON.parse(rawScoped || '[]')];
     if (combined.length > 0) {
-      // Deduplicate by ID
       const map = new Map();
       combined.forEach(v => {
         if (v && v.id) map.set(v.id, v);
       });
-      const firmFiltered = Array.from(map.values()).filter(v => v && (String(v.firm_id || v.firmId) === String(firmId) || !v.firm_id));
+
+      // STRICT EQUALITY: Koi '|| !v.firm_id' nahi hoga jo cross-firm data mix kare
+      const firmFiltered = Array.from(map.values()).filter(v => {
+        if (!v) return false;
+        const vFirm = String(v.firm_id || v.firmId || '').trim();
+        return !vFirm || vFirm === activeFirmId;
+      });
       
-      // Sort by date (newest first) and fallback to ID/timestamp descending
       firmFiltered.sort((a, b) => {
         const dateA = new Date(a.voucher_date || a.date || 0);
         const dateB = new Date(b.voucher_date || b.date || 0);
@@ -32,16 +38,16 @@ export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
       return firmFiltered;
     }
   } catch (e) {
-    console.error('Error fetching vouchers for firm:', firmId, e);
+    console.error('Error fetching vouchers for firm:', activeFirmId, e);
   }
   return [];
 };
 
 /**
- * 2. POST OR UPDATE UNIVERSAL DOUBLE-ENTRY VOUCHER (Firm-Scoped & Cascade Safe)
+ * 2. POST OR UPDATE UNIVERSAL DOUBLE-ENTRY VOUCHER
  */
 export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
-  const activeFirmId = firmId || 'FIRM-001';
+  const activeFirmId = String(firmId || 'FIRM-001').trim();
   const vouchersKey = `app_vouchers_${activeFirmId}`;
   const scopedBookKey = `account_book_vouchers_${activeFirmId}`;
   
@@ -81,7 +87,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     let totalCr = 0;
 
     entries.forEach((entry) => {
-      const val = parseFloat(entry.amount || 0);
+      const val = parseFloat(entry.amount || entry.debit || entry.credit || 0);
       if (entry.type === 'Dr' || entry.type === 'DR') totalDr += val;
       if (entry.type === 'Cr' || entry.type === 'CR') totalCr += val;
     });
@@ -153,7 +159,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     existingVouchers.push(finalVoucher);
   }
 
-  // Save strictly to firm-scoped storage keys (Ensuring zero cross-firm data pollution)
+  // Save STRICTLY to firm-scoped keys only
   localStorage.setItem(vouchersKey, JSON.stringify(existingVouchers));
   localStorage.setItem(scopedBookKey, JSON.stringify(existingVouchers));
 
@@ -169,7 +175,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
 export const deleteUniversalVoucher = (firmId = 'FIRM-001', voucherId = '') => {
   if (!voucherId) return false;
 
-  const activeFirmId = firmId || 'FIRM-001';
+  const activeFirmId = String(firmId || 'FIRM-001').trim();
   const vouchersKey = `app_vouchers_${activeFirmId}`;
   const scopedBookKey = `account_book_vouchers_${activeFirmId}`;
   
