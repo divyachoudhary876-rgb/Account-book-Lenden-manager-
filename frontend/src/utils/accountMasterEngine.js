@@ -67,12 +67,24 @@ export const ACCOUNT_HIERARCHY = {
 };
 
 /**
+ * Helper to resolve sanitized and valid firmId
+ */
+const resolveFirmId = (firmId) => {
+  if (firmId && typeof firmId === 'string' && firmId.trim()) {
+    return firmId.trim();
+  }
+  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+};
+
+/**
  * Retrieve master account heads strictly isolated for active firm
- * ZERO CROSS-FIRM POLLUTION: Global 'app_accounts' key has been completely eliminated.
+ * ZERO CROSS-FIRM POLLUTION: Global keys completely eliminated.
  */
 export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
+  const activeFirmId = resolveFirmId(firmId);
+
   try {
-    const primaryKey = `app_accounts_${firmId}`;
+    const primaryKey = `app_accounts_${activeFirmId}`;
     const primaryRaw = localStorage.getItem(primaryKey);
 
     if (primaryRaw) {
@@ -86,7 +98,7 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
             name: name,
             sub_group: acc.sub_group || acc.group || 'General Ledger',
             group: acc.group || acc.sub_group || 'General Ledger',
-            primary_type: acc.primary_type || acc.type || 'Expenses',
+            primary_type: acc.primary_type || acc.type || 'EXPENSES',
             type: acc.type || acc.primary_type || 'Expenses',
             opening_balance: Number(acc.opening_balance || acc.openingBalance || 0),
             openingBalance: Number(acc.opening_balance || acc.openingBalance || 0),
@@ -97,21 +109,21 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       }
     }
 
-    // Default starter accounts isolated to this firmId only
+    // Default baseline accounts for newly initialized firm (Zero dependency on other firms)
     const defaultAccounts = [
-      { id: `ACC-${firmId}-001`, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
-      { id: `ACC-${firmId}-002`, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
-      { id: `ACC-${firmId}-003`, account_name: 'Sales Revenue Account', name: 'Sales Revenue Account', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', is_system_locked: true, isSystemLocked: true },
-      { id: `ACC-${firmId}-004`, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
-      { id: `ACC-${firmId}-005`, account_name: 'Labor & Pathai Expense (मजदूरी/पथाई)', name: 'Labor & Pathai Expense (मजदूरी/पथाई)', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Pathai Expenses (मजदूरी)', group: 'Direct Labor & Wages (मज़दूर)', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
-      { id: `ACC-${firmId}-006`, account_name: 'Capital Account (स्वामी की पूंजी)', name: 'Capital Account (स्वामी की पूंजी)', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', is_system_locked: false, isSystemLocked: false }
+      { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
+      { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
+      { id: `ACC-${activeFirmId}-003`, account_name: 'Sales Revenue Account', name: 'Sales Revenue Account', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', is_system_locked: true, isSystemLocked: true },
+      { id: `ACC-${activeFirmId}-004`, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
+      { id: `ACC-${activeFirmId}-005`, account_name: 'Labor & Pathai Expense (मजदूरी/पथाई)', name: 'Labor & Pathai Expense (मजदूरी/पथाई)', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Pathai Expenses (मजदूरी)', group: 'Direct Labor & Wages (मज़दूर)', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
+      { id: `ACC-${activeFirmId}-006`, account_name: 'Capital Account (स्वामी की पूंजी)', name: 'Capital Account (स्वामी की पूंजी)', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', is_system_locked: false, isSystemLocked: false }
     ];
 
     localStorage.setItem(primaryKey, JSON.stringify(defaultAccounts));
-    localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(defaultAccounts));
+    localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(defaultAccounts));
     return defaultAccounts;
   } catch (e) {
-    console.error(`Error loading master accounts for firm ${firmId}:`, e);
+    console.error(`Error loading master accounts for firm ${activeFirmId}:`, e);
     return [];
   }
 };
@@ -133,10 +145,11 @@ export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Save or Update an Account Head with Strict Firm-Isolation & Complete Cascade Rename
+ * Save or Update an Account Head with Strict Firm-Isolation & Complete Universal Cascade Rename
  */
 export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
-  const accounts = getFirmMasterAccounts(firmId);
+  const activeFirmId = resolveFirmId(firmId);
+  const accounts = getFirmMasterAccounts(activeFirmId);
   const cleanName = (accountData.account_name || accountData.name || '').trim();
 
   if (!cleanName) throw new Error('Account name cannot be empty.');
@@ -182,100 +195,92 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     accounts.push(payload);
   }
 
-  // 1. Strictly firm-scoped keys only (NO GLOBAL KEYS OVERWRITTEN)
-  localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(accounts));
-  localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(accounts));
+  // 1. Strictly firm-scoped keys only (NO GLOBAL STORAGE POLLUTION)
+  localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(accounts));
+  localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(accounts));
 
-  // 2. Cascade Rename Engine across Vouchers & Invoices of this specific firm
+  // 2. ULTIMATE MULTI-BUCKET CASCADE RENAME ENGINE
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
 
-    // A. Update Vouchers for this firm
-    const voucherKeys = [`app_vouchers_${firmId}`, `account_book_vouchers_${firmId}`];
-    voucherKeys.forEach(vKey => {
+    // Target Storage Buckets Scoped strictly to this Active Firm
+    const firmTargetKeys = [
+      `app_vouchers_${activeFirmId}`,
+      `account_book_vouchers_${activeFirmId}`,
+      `sales_invoices_${activeFirmId}`,
+      `purchase_bills_${activeFirmId}`,
+      `bill_settlements_${activeFirmId}`,
+      `party_transactions_${activeFirmId}`,
+      `transport_trips_${activeFirmId}`,
+      `payroll_entries_${activeFirmId}`,
+      `material_consumptions_${activeFirmId}`
+    ];
+
+    // Comprehensive list of matching entity/ledger fields across all modules
+    const matchFields = [
+      'dr_account', 'cr_account', 'dr_party', 'cr_party',
+      'account_name', 'accountName', 'name', 'party',
+      'party_name', 'partyName', 'customer_name', 'customerName',
+      'supplier_name', 'supplierName', 'worker', 'worker_name',
+      'expense_ledger', 'linked_ledger_account', 'ledger_account',
+      'customer_account', 'supplier_account'
+    ];
+
+    firmTargetKeys.forEach(storageKey => {
       try {
-        const raw = localStorage.getItem(vKey);
+        const raw = localStorage.getItem(storageKey);
         if (!raw) return;
-        const vouchers = JSON.parse(raw);
+        let data = JSON.parse(raw);
         let modified = false;
 
-        vouchers.forEach(v => {
-          if (!v) return;
-
-          // Simple voucher account string update
-          if (v.dr_account && v.dr_account.trim().toLowerCase() === oldTarget) {
-            v.dr_account = cleanName;
-            modified = true;
-          }
-          if (v.cr_account && v.cr_account.trim().toLowerCase() === oldTarget) {
-            v.cr_account = cleanName;
-            modified = true;
-          }
-
-          // Compound voucher entries array update
-          if (Array.isArray(v.entries)) {
-            v.entries.forEach(entry => {
-              if (entry.account_name && entry.account_name.trim().toLowerCase() === oldTarget) {
-                entry.account_name = cleanName;
-                modified = true;
-              }
-              if (entry.party && entry.party.trim().toLowerCase() === oldTarget) {
-                entry.party = cleanName;
+        const deepReplace = (node) => {
+          if (!node) return;
+          if (Array.isArray(node)) {
+            node.forEach(item => deepReplace(item));
+          } else if (typeof node === 'object') {
+            matchFields.forEach(field => {
+              if (typeof node[field] === 'string' && node[field].trim().toLowerCase() === oldTarget) {
+                node[field] = cleanName;
                 modified = true;
               }
             });
 
-            // Rebuild compound display strings if modified
-            if (modified) {
-              v.dr_account = v.entries.filter(e => e.type === 'Dr' || e.type === 'DR').map(e => e.account_name || e.party).join(', ');
-              v.cr_account = v.entries.filter(e => e.type === 'Cr' || e.type === 'CR').map(e => e.account_name || e.party).join(', ');
+            // Compound voucher entries array update
+            if (Array.isArray(node.entries)) {
+              node.entries.forEach(entry => deepReplace(entry));
+              if (modified) {
+                node.dr_account = node.entries
+                  .filter(e => e.type === 'Dr' || e.type === 'DR')
+                  .map(e => e.account_name || e.party || cleanName)
+                  .join(', ');
+                node.cr_account = node.entries
+                  .filter(e => e.type === 'Cr' || e.type === 'CR')
+                  .map(e => e.account_name || e.party || cleanName)
+                  .join(', ');
+              }
             }
+
+            // Recurse safely into nested objects
+            Object.keys(node).forEach(key => {
+              if (typeof node[key] === 'object' && node[key] !== null) {
+                deepReplace(node[key]);
+              }
+            });
           }
-        });
+        };
+
+        deepReplace(data);
 
         if (modified) {
-          localStorage.setItem(vKey, JSON.stringify(vouchers));
+          localStorage.setItem(storageKey, JSON.stringify(data));
         }
       } catch (err) {
-        console.error(`Error cascading rename in voucher key ${vKey}:`, err);
-      }
-    });
-
-    // B. Update Sales & Invoices for this firm
-    const invoiceKeys = [`sales_invoices_${firmId}`, `purchase_bills_${firmId}`];
-    invoiceKeys.forEach(iKey => {
-      try {
-        const raw = localStorage.getItem(iKey);
-        if (!raw) return;
-        const invoices = JSON.parse(raw);
-        let modified = false;
-
-        invoices.forEach(inv => {
-          if (!inv) return;
-          if (inv.party && inv.party.trim().toLowerCase() === oldTarget) {
-            inv.party = cleanName;
-            modified = true;
-          }
-          if (inv.customer_name && inv.customer_name.trim().toLowerCase() === oldTarget) {
-            inv.customer_name = cleanName;
-            modified = true;
-          }
-          if (inv.supplier_name && inv.supplier_name.trim().toLowerCase() === oldTarget) {
-            inv.supplier_name = cleanName;
-            modified = true;
-          }
-        });
-
-        if (modified) {
-          localStorage.setItem(iKey, JSON.stringify(invoices));
-        }
-      } catch (err) {
-        console.error(`Error cascading rename in invoice key ${iKey}:`, err);
+        console.error(`[CASCADE RENAME ERROR] Failed updating bucket ${storageKey}:`, err);
       }
     });
   }
 
-  // Broadcast sync events to refresh all components instantly
+  // 3. Broadcast reactive system sync events across all components
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('storage'));
@@ -287,18 +292,19 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
  * Delete an Account Head with Protected Master Guard
  */
 export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
-  const accounts = getFirmMasterAccounts(firmId);
+  const activeFirmId = resolveFirmId(firmId);
+  const accounts = getFirmMasterAccounts(activeFirmId);
   const target = accounts.find(a => a.id === accountId);
 
   if (!target) return false;
 
   if (target.is_system_locked || target.isSystemLocked) {
-    throw new Error(`⚠️️ Cannot delete core ledger account "${target.account_name || target.name}".`);
+    throw new Error(`⚠️ Cannot delete core ledger account "${target.account_name || target.name}".`);
   }
 
   const updated = accounts.filter(a => a.id !== accountId);
-  localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(updated));
-  localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(updated));
+  localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(updated));
+  localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(updated));
 
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
