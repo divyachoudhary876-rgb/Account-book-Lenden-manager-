@@ -23,13 +23,30 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
 
   const [voucherType, setVoucherType] = useState('PAYMENT');
   const [voucherDate, setVoucherDate] = useState(todayMaxDate);
-  const [referenceNo, setReferenceNo] = useState('');
+  const [referenceNo, setReferenceNo] = useState('1');
   const [drAccount, setDrAccount] = useState('');
   const [crAccount, setCrAccount] = useState('');
   const [amount, setAmount] = useState('');
   const [narration, setNarration] = useState('');
   const [status, setStatus] = useState(null);
   const [searchFilter, setSearchFilter] = useState('');
+
+  // Auto-calculate the next sequential reference number (1, 2, 3...)
+  const getNextReferenceNumber = (vouchers) => {
+    let maxNum = 0;
+    (vouchers || []).forEach(v => {
+      const rawRef = String(v.reference_no || v.voucher_number || '').trim();
+      // Extract numeric value from ref (e.g., '1', '104', 'VCH-5' -> 5)
+      const numMatch = rawRef.match(/\d+/g);
+      if (numMatch) {
+        const val = parseInt(numMatch[numMatch.length - 1], 10);
+        if (!isNaN(val) && val > maxNum && val < 10000000) {
+          maxNum = val;
+        }
+      }
+    });
+    return String(maxNum + 1);
+  };
 
   const loadData = () => {
     try {
@@ -68,12 +85,10 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
         const vFirm = String(v.firm_id || v.firmId || '').trim();
         if (vFirm && vFirm !== String(activeFirmId).trim()) return;
 
-        // Use strict genuine ID to avoid orphan duplicates on edit
         const genuineId = v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount || 0}`;
         if (!uniqueMap.has(genuineId)) {
           let vType = String(v.voucher_type || v.type || 'JOURNAL').toUpperCase();
 
-          // Resolve display accounts for compound or simple entries
           let displayDr = v.dr_account || v.debit_account || '';
           let displayCr = v.cr_account || v.credit_account || '';
 
@@ -89,10 +104,10 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
 
           uniqueMap.set(genuineId, {
             ...v,
-            id: v.id || genuineId, // Keep genuine ID
+            id: v.id || genuineId,
             voucher_date: v.voucher_date || v.date || todayMaxDate,
             voucher_type: vType,
-            reference_no: v.reference_no || v.voucher_number || 'VCH',
+            reference_no: v.reference_no || v.voucher_number || '1',
             dr_account: displayDr || 'Dr Account',
             cr_account: displayCr || 'Cr Account',
             amount: amt
@@ -104,6 +119,11 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
       finalVchs.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
 
       setVoucherList(finalVchs);
+
+      // Auto-set the next reference number if not currently editing
+      if (!editingId) {
+        setReferenceNo(getNextReferenceNumber(finalVchs));
+      }
     } catch (e) {
       console.error("Error loading daybook vouchers:", e);
     }
@@ -125,7 +145,7 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
     setEditingId(voucher.id);
     setVoucherType(voucher.voucher_type || voucher.type || 'PAYMENT');
     setVoucherDate(voucher.voucher_date || voucher.date || todayMaxDate);
-    setReferenceNo(voucher.reference_no || voucher.voucher_number || '');
+    setReferenceNo(voucher.reference_no || voucher.voucher_number || '1');
     setDrAccount(voucher.dr_account || voucher.dr_party || '');
     setCrAccount(voucher.cr_account || voucher.cr_party || '');
     setAmount(voucher.amount ? voucher.amount.toString() : '');
@@ -142,7 +162,7 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
     setEditingId(null);
     setAmount('');
     setNarration('');
-    setReferenceNo('');
+    setReferenceNo(getNextReferenceNumber(voucherList));
     setStatus(null);
   };
 
@@ -171,7 +191,7 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
     }
 
     try {
-      const generatedRef = referenceNo.trim() || `VCH-${Math.floor(1000 + Math.random() * 9000)}`;
+      const finalRef = referenceNo.trim() || getNextReferenceNumber(voucherList);
 
       saveUniversalVoucher(activeFirmId, {
         id: editingId || `VCH-${Date.now()}`,
@@ -180,8 +200,8 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
         type: voucherType,
         voucher_date: voucherDate,
         date: voucherDate,
-        reference_no: generatedRef,
-        voucher_number: generatedRef,
+        reference_no: finalRef,
+        voucher_number: finalRef,
         dr_account: drAccount,
         cr_account: crAccount,
         amount: cleanAmount,
@@ -197,14 +217,13 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
       setStatus({
         type: 'success',
         text: editingId
-          ? `✓ Voucher Updated Successfully! Amount: ₹${cleanAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-          : `✓ ${voucherType} Voucher Saved! Amount: ₹${cleanAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+          ? `✓ Voucher #${finalRef} Updated Successfully! Amount: ₹${cleanAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+          : `✓ Voucher #${finalRef} (${voucherType}) Saved! Amount: ₹${cleanAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
       });
 
       setEditingId(null);
       setAmount('');
       setNarration('');
-      setReferenceNo('');
       loadData();
     } catch (err) {
       setStatus({ type: 'error', text: err.message });
@@ -287,7 +306,7 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
           </div>
         </div>
 
-        {/* Date & Ref */}
+        {/* Date & Auto-Incrementing Ref */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
           <div>
             <label style={labelStyle}>Date *</label>
@@ -301,13 +320,14 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
             />
           </div>
           <div>
-            <label style={labelStyle}>Reference No / Bill Ref</label>
+            <label style={labelStyle}>Reference No / Voucher No *</label>
             <input
               type="text"
-              placeholder="e.g. PV-104"
+              placeholder="e.g. 1"
               value={referenceNo}
               onChange={e => setReferenceNo(e.target.value)}
-              style={inputStyle}
+              style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0284c7' }}
+              required
             />
           </div>
         </div>
@@ -380,7 +400,7 @@ export default function VoucherEntryForm({ firm, selectedFY }) {
               cursor: 'pointer'
             }}
           >
-            {editingId ? '✓ Update Modified Voucher' : '💾 Post Double-Entry Voucher'}
+            {editingId ? `✓ Update Voucher #${referenceNo}` : `💾 Post Double-Entry Voucher (#${referenceNo})`}
           </button>
 
           {editingId && (
