@@ -19,6 +19,23 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
+ * Universal Account Name Sanitizer (Removes corrupt brackets like '(OK !<)', '(OK !-)', etc.)
+ */
+const cleanAccountTitle = (rawName) => {
+  if (!rawName) return '';
+  let str = String(rawName).trim();
+  
+  // Clean corrupt legacy tags like (OK !<), (OK !-), (OK), [OK !<]
+  str = str.replace(/\s*\(\s*OK\s*!?[^)]*\)/gi, '');
+  str = str.replace(/\s*\[\s*OK\s*!?[^\]]*\]/gi, '');
+  str = str.replace(/\s*\(OK\)/gi, '');
+  
+  // Normalize double spaces
+  str = str.replace(/\s+/g, ' ').trim();
+  return str || String(rawName).trim();
+};
+
+/**
  * Safely convert ArrayBuffer to Base64 without text encoding corruption
  */
 const arrayBufferToBase64 = (buffer) => {
@@ -85,10 +102,11 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait - Strict Non-Overlapping Coordinates)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
+  const cleanParty = cleanAccountTitle(partyName);
   const txs = (statementData && Array.isArray(statementData.transactions)) ? statementData.transactions : [];
 
   const doc = new jsPDF('p', 'mm', 'a4');
@@ -105,7 +123,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(71, 85, 105);
-    doc.text(`Account Statement: ${partyName}`, 14, y);
+    doc.text(`Account Statement: ${cleanParty}`, 14, y);
     y += 5;
 
     doc.setFontSize(8);
@@ -133,7 +151,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     const mainTitle = `${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`;
     const descText = t.narration || '';
 
-    // Strictly limit text width to 68mm so it NEVER collides with Debit column at x=132
     const splitTitle = doc.splitTextToSize(mainTitle, 68);
     const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
     const totalLines = splitTitle.length + splitDesc.length;
@@ -179,11 +196,11 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     y += rowHeight;
   });
 
-  return await exportTruePDF(doc, `Statement_${partyName}`);
+  return await exportTruePDF(doc, `Statement_${cleanParty}`);
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, P&L, Balance Sheet - No Mid-Page Cutting)
+ * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, P&L, Balance Sheet)
  */
 export const downloadFinancialStatementsReport = async (param1, param2, param3) => {
   let firmInput = 'Neelkanth Groups';
@@ -279,7 +296,8 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
 
       const deb = Number(row.dr || row.debit || 0);
       const cr = Number(row.cr || row.credit || 0);
-      const accName = doc.splitTextToSize(String(row.name || row.account_name || 'Account'), 75)[0];
+      const cleanName = cleanAccountTitle(row.name || row.account_name || 'Account');
+      const accName = doc.splitTextToSize(cleanName, 75)[0];
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
@@ -307,12 +325,12 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.text(`Rs ${(reportData?.totalDebit || 0).toFixed(2)}`, 150, y, { align: 'right' });
     doc.text(`Rs ${(reportData?.totalCredit || 0).toFixed(2)}`, 193, y, { align: 'right' });
 
-  // B. BALANCE SHEET EXPORT (Continuous Clean Flow)
+  // B. BALANCE SHEET EXPORT
   } else if (activeTab === 'BALANCE_SHEET' || activeTab === '4') {
     const assets = (reportData.balanceSheet && Array.isArray(reportData.balanceSheet.assets)) ? reportData.balanceSheet.assets : [];
     const liabilities = (reportData.balanceSheet && Array.isArray(reportData.balanceSheet.liabilities)) ? reportData.balanceSheet.liabilities : [];
 
-    // ASSETS SECTION
+    // ASSETS
     doc.setFillColor(15, 23, 42);
     doc.rect(14, y, 182, 7, 'F');
     doc.setTextColor(255, 255, 255);
@@ -337,7 +355,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
         doc.rect(14, y - 3, 182, 6, 'F');
       }
       doc.setFontSize(7.5);
-      doc.text(String(a.name || 'Asset'), 16, y);
+      doc.text(cleanAccountTitle(a.name || 'Asset'), 16, y);
       doc.text(Number(a.amount || 0).toFixed(2), 193, y, { align: 'right' });
       y += 6;
     });
@@ -348,7 +366,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.text(`Total Assets: Rs ${(reportData.balanceSheet?.totalAssets || 0).toFixed(2)}`, 193, y, { align: 'right' });
     y += 9;
 
-    // LIABILITIES SECTION (Flows naturally without artificial gaps)
+    // LIABILITIES
     if (y > 240) { 
       doc.addPage(); 
       pageNum += 1; 
@@ -380,7 +398,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
         doc.rect(14, y - 3, 182, 6, 'F');
       }
       doc.setFontSize(7.5);
-      doc.text(String(l.name || 'Liability'), 16, y);
+      doc.text(cleanAccountTitle(l.name || 'Liability'), 16, y);
       doc.text(Number(l.amount || 0).toFixed(2), 193, y, { align: 'right' });
       y += 6;
     });
@@ -400,7 +418,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE - COMPLETE ZERO OVERLAP)
+ * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE - 100% CLEAN ACCOUNT NAMES)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -450,23 +468,29 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   rows.forEach((vch, idx) => {
     const rawRef = String(vch.reference_no || vch.voucher_number || vch.id || '-');
     const vType = String(vch.voucher_type || vch.type || 'JOURNAL');
-    const drName = String(vch.dr_account || vch.dr_party || 'Dr Account');
-    const crName = String(vch.cr_account || vch.cr_party || 'Cr Account');
+    
+    // Clean accounts with the sanitizer to strip '(OK !<)' etc.
+    const drName = cleanAccountTitle(vch.dr_account || vch.dr_party || 'Dr Account');
+    const crName = cleanAccountTitle(vch.cr_account || vch.cr_party || 'Cr Account');
 
     const itemsList = Array.isArray(vch.items) ? vch.items : [];
     let itemStr = itemsList.map(it => `${it.itemName} (Qty: ${it.qty} @ Rs ${it.rate})`).join(', ');
     const noteText = vch.narration ? (itemStr ? `${itemStr} - ${vch.narration}` : vch.narration) : itemStr;
 
-    // Strict non-overlapping widths in Landscape
-    const splitDr = doc.splitTextToSize(drName, 53);
-    const splitCr = doc.splitTextToSize(crName, 58);
-    const splitNote = noteText ? doc.splitTextToSize(noteText, 115) : [];
+    // Perfectly sized non-clashing columns:
+    // Dr width = 54mm (118 to 172)
+    // Cr width = 75mm (175 to 250) - expanded to prevent any cutting!
+    // Note width = 125mm
+    // Amount is safely locked at 278mm (zero collision)
+    const splitDr = doc.splitTextToSize(drName, 54);
+    const splitCr = doc.splitTextToSize(crName, 75);
+    const splitNote = noteText ? doc.splitTextToSize(noteText, 125) : [];
 
     const namesHeight = Math.max(splitDr.length, splitCr.length) * 3.4;
     const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.2) : 0;
     const rowHeight = Math.max(6.5, 3.5 + namesHeight + noteHeight);
 
-    // CRITICAL FIX: Landscape height is 210mm, break at 190mm (not 280mm!)
+    // Landscape height is 210mm, safe break at 190mm
     if (y + rowHeight > 190) {
       doc.addPage();
       pageNum += 1;
