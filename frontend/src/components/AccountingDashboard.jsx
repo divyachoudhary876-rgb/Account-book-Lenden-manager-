@@ -25,16 +25,67 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     }
   });
 
+  const [summaryStats, setSummaryStats] = useState({ totalProduction: 0, totalConsumption: 0 });
+
   const firmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const cleanFY = String(selectedFY || '2026-27').replace(/FY\s*/i, '').trim();
   const effectiveFY = cleanFY || '2026-27';
 
   const loadDashboardData = () => {
     try {
+      // 1. Load Dynamic Financial & Stock KPIs
       const dynamicData = getDynamicDashboardMetrics(firm, effectiveFY);
       if (dynamicData) {
         setMetrics(dynamicData);
       }
+
+      // 2. Load Production Qty (Reads both production_batches and FY-specific keys)
+      const prodKeys = [
+        `production_batches_${firmId}`,
+        `bhatta_production_${firmId}_${effectiveFY}`,
+        `bhatta_production_${firmId}_FY ${effectiveFY}`
+      ];
+      let prodData = [];
+      for (const k of prodKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              prodData = parsed;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      const totalProd = Array.isArray(prodData)
+        ? prodData.reduce((sum, item) => sum + (Number(item.produced_qty || item.producedQty || item.quantity || item.qty) || 0), 0)
+        : 0;
+
+      // 3. Load Consumption Batches
+      const consKeys = [
+        `material_consumption_records_${firmId}`,
+        `fuel_consumption_${firmId}_${effectiveFY}`,
+        `fuel_consumption_${firmId}_FY ${effectiveFY}`
+      ];
+      let consData = [];
+      for (const k of consKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              consData = parsed;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      const totalCons = Array.isArray(consData) ? consData.length : 0;
+
+      setSummaryStats({ totalProduction: totalProd, totalConsumption: totalCons });
     } catch (e) {
       console.error("Error loading dashboard metrics:", e);
     }
@@ -129,7 +180,24 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
       </div>
 
-      {/* SECTION 2: INDUSTRY & PRODUCTION SPECIFIC CARDS */}
+      {/* SECTION 2: PRODUCTION & WORKFLOW SUMMARY */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px', marginBottom: '16px' }}>
+        <div style={{ ...kpiCardStyle, backgroundColor: '#f0f9ff', borderColor: '#bae6fd' }}>
+          <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: '700', textTransform: 'uppercase' }}>🧱 Total Production Qty</div>
+          <div style={{ fontSize: '16px', fontWeight: '900', color: '#0284c7', marginTop: '4px' }}>
+            {summaryStats.totalProduction.toLocaleString('en-IN')} Units
+          </div>
+        </div>
+
+        <div style={{ ...kpiCardStyle, backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}>
+          <div style={{ fontSize: '10px', color: '#15803d', fontWeight: '700', textTransform: 'uppercase' }}>🚜 Consumption Batches</div>
+          <div style={{ fontSize: '16px', fontWeight: '900', color: '#16a34a', marginTop: '4px' }}>
+            {summaryStats.totalConsumption} Records
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 3: INDUSTRY SPECIFIC CARDS */}
       {specCards.length > 0 && (
         <>
           <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -150,7 +218,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         </>
       )}
 
-      {/* SECTION 3: QUICK OPERATIONS */}
+      {/* SECTION 4: QUICK OPERATIONS */}
       {specActions.length > 0 && (
         <>
           <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -177,7 +245,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         </>
       )}
 
-      {/* SECTION 4: ALL ACCOUNTING & ERP MODULES */}
+      {/* SECTION 5: ALL ACCOUNTING & ERP MODULES */}
       <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span>🗂️</span> All Accounting & ERP Modules
       </div>
