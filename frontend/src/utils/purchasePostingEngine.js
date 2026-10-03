@@ -2,55 +2,146 @@
 
 import { updateStockItemQuantity } from './stockInventoryEngine.js';
 import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
-import { getAllUniversalVouchers } from './statementEngine.js';
+import { saveUniversalVoucher } from './voucherPostingEngine.js';
 
-export const recordUnifiedPurchase = (firmId = 'FIRM-001', payload) => {
-  const { supplier_account, item_name, quantity, unit_rate, voucher_date, invoice_number, narration } = payload;
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+export const recordUnifiedPurchase = (firmId = 'FIRM-001', payload = {}) => {
+  const activeFirmId = String(payload?.firmId || payload?.firm_id || firmId || 'FIRM-001').trim();
+  const { supplier_account, item_name, quantity, unit_rate, voucher_date, invoice_number, narration, gst_rate } = payload;
+  
   const qty = parseFloat(quantity || 0);
   const rate = parseFloat(unit_rate || 0);
-  const totalAmount = parseFloat((qty * rate).toFixed(2));
+  const gstRateVal = parseFloat(gst_rate || 0);
+
+  const taxableAmount = round2(qty * rate);
+  const gstAmount = round2((taxableAmount * gstRateVal) / 100);
+  const totalAmount = round2(taxableAmount + gstAmount);
+  
   const vDate = voucher_date || new Date().toISOString().split('T')[0];
   const cleanItem = (item_name || 'Diesel').trim();
+  const cleanSupplier = (supplier_account || '').trim();
 
-  if (!supplier_account || qty <= 0 || rate <= 0) {
-    throw new Error("⚠️ Supplier, Quantity (>0) and Purchase Rate (>0) are mandatory.");
+  if (!cleanSupplier || qty <= 0 || rate <= 0) {
+    throw new Error("Supplier Party, Quantity (>0) aur Purchase Rate (>0) darj karna anivarya hai.");
   }
 
-  // 1. Stock +IN
-  const updatedItem = updateStockItemQuantity(firmId, cleanItem, qty, rate);
+  // 1. Update Stock Quantity (+IN)
+  const updatedItem = updateStockItemQuantity(activeFirmId, cleanItem, qty, rate);
 
-  // 2. Journal Voucher
-  const expenseHead = cleanItem.toLowerCase().includes('diesel') ? 'Diesel Expenses' : `${cleanItem} Purchases`;
-  const vouchers = getAllUniversalVouchers(firmId);
-  const newVoucher = {
-    id: `PUR-${Date.now()}`,
-    firm_id: firmId,
+  // 2. Head Classification
+  const expenseHead = cleanItem.toLowerCase().includes('diesel') 
+    ? 'Tractor Diesel & Running Expense' 
+    : 'Purchase Raw Material Account';
+
+  // 3. Balanced Compound Double-Entry Lines
+  const voucherEntries = [
+    { 
+      type: 'Dr', 
+      account_name: expenseHead, 
+      party: expenseHead,
+      amount: taxableAmount, 
+      debit: taxableAmount, 
+      credit: 0 
+    }
+  ];
+
+  if (gstAmount > 0) {
+    voucherEntries.push({
+      type: 'Dr',
+      account_name: 'Duties & Taxes (GST Input Credit)',
+      party: 'Duties & Taxes (GST Input Credit)',
+      amount: gstAmount,
+      debit: gstAmount,
+      credit: 0
+    });
+  }
+
+  voucherEntries.push({ 
+    type: 'Cr', 
+    account_name: cleanSupplier, 
+    party: cleanSupplier,
+    amount: totalAmount, 
+    debit: 0, 
+    credit: totalAmount 
+  });
+
+  const purchaseId = payload.id || `PUR-${Date.now()}`;
+  const billNumber = invoice_number || `BILL-${Date.now().toString().slice(-4)}`;
+
+  const voucherPayload = {
+    id: purchaseId,
+    firm_id: activeFirmId,
+    firmId: activeFirmId,
+    voucher_number: billNumber,
+    reference_no: billNumber,
     voucher_date: vDate,
     date: vDate,
     voucher_type: 'PURCHASE',
-    dr_account: expenseHead,
-    cr_account: supplier_account,
+    type: 'PURCHASE',
     amount: totalAmount,
-    quantity: qty,
-    unit_rate: rate,
-    item_name: cleanItem,
-    reference_no: invoice_number || `PUR-${Date.now()}`,
-    narration: narration || `Purchase Inward Bill #${invoice_number || 'N/A'}: ${cleanItem} (${qty} ${updatedItem.unit} @ ₹${rate})`,
-    created_at: new Date().toISOString()
+    total_amount: totalAmount,
+    total_taxable: taxableAmount,
+    narration: narration || `Purchase Inward Bill #${billNumber}: ${cleanItem} (${qty} ${updatedItem?.unit || 'Pcs'} @ ₹${rate}) from ${cleanSupplier}`,
+    is_compound: true,
+    entries: voucherEntries,
+    items: [
+      {
+        itemId: updatedItem?.id || `ITEM-${Date.now()}`,
+        itemName: cleanItem,
+        item_name: cleanItem,
+        unit: updatedItem?.unit || (cleanItem.toLowerCase().includes('diesel') ? 'Liters' : 'Pcs'),
+        quantity: qty,
+        qty: qty,
+        rate: rate,
+        unit_rate: rate,
+        gstRate: gstRateVal,
+        taxableAmount: taxableAmount,
+        total: totalAmount
+      }
+    ]
   };
 
-  vouchers.unshift(newVoucher);
-  localStorage.setItem(`app_vouchers_${firmId}`, JSON.stringify(vouchers));
+  // 4. Atomic Save Through Universal Engine
+  const savedVoucher = saveUniversalVoucher(activeFirmId, voucherPayload);
 
-  // 3. Register Accounts
-  const accounts = getFirmMasterAccounts(firmId);
-  if (!accounts.some(a => a.account_name.toLowerCase() === supplier_account.toLowerCase())) {
-    saveMasterAccount(firmId, { account_name: supplier_account, primary_type: 'LIABILITIES', sub_group: 'Sundry Creditors (Supplier / लेनदार)', balance_type: 'Cr' });
+  // 5. Sync to Purchase Bills Bucket
+  const purchaseKey = `purchase_bills_${activeFirmId}`;
+  const existingPurchases = JSON.parse(localStorage.getItem(purchaseKey) || '[]');
+  const filteredPurchases = existingPurchases.filter(p => p && p.id !== purchaseId && p.reference_no !== billNumber);
+  filteredPurchases.unshift(savedVoucher);
+  localStorage.setItem(purchaseKey, JSON.stringify(filteredPurchases));
+  localStorage.setItem(`app_purchase_bills_${activeFirmId}`, JSON.stringify(filteredPurchases));
+
+  // 6. Ensure Ledger Heads are Registered in Account Master
+  const accounts = getFirmMasterAccounts(activeFirmId);
+  if (!accounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === cleanSupplier.toLowerCase())) {
+    saveMasterAccount(activeFirmId, { 
+      account_name: cleanSupplier, 
+      primary_type: 'LIABILITIES', 
+      type: 'Liabilities',
+      sub_group: 'Sundry Creditors (Suppliers / Vendors)', 
+      balance_type: 'Cr' 
+    });
   }
-  if (!accounts.some(a => a.account_name.toLowerCase() === expenseHead.toLowerCase())) {
-    saveMasterAccount(firmId, { account_name: expenseHead, primary_type: 'EXPENSES', sub_group: 'Direct Expenses (ईंधन व खरीद)', balance_type: 'Dr' });
+  if (!accounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === expenseHead.toLowerCase())) {
+    saveMasterAccount(activeFirmId, { 
+      account_name: expenseHead, 
+      primary_type: 'EXPENSES', 
+      type: 'Expenses',
+      sub_group: 'Raw Material Consumed', 
+      balance_type: 'Dr' 
+    });
   }
 
   window.dispatchEvent(new Event('app_state_updated'));
-  return { voucherId: newVoucher.id, totalAmount, updatedStock: updatedItem.current_stock, party: supplier_account };
+  window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('storage'));
+
+  return { 
+    voucherId: savedVoucher.id, 
+    totalAmount, 
+    updatedStock: updatedItem?.current_stock || 0, 
+    party: cleanSupplier 
+  };
 };
