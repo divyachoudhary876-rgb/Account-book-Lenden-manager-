@@ -1,16 +1,21 @@
 // frontend/src/components/EnterpriseDashboard.jsx
 
 import React, { useState, useEffect } from 'react';
-import CashFlowStatementView from './CashFlowStatementView';
-import FinancialReportsView from './FinancialReportsView';
-import JournalRegisterView from './JournalRegisterView';
-import SecurityBackupSettings from './SecurityBackupSettings';
-import { StorageService } from '../utils/storageSync';
-import { getDynamicDashboardMetrics } from '../utils/dashboardDataEngine';
+import CashFlowStatementView from './CashFlowStatementView.jsx';
+import FinancialReportsView from './FinancialReportsView.jsx';
+import JournalRegisterView from './JournalRegisterView.jsx';
+import SecurityBackupSettings from './SecurityBackupSettings.jsx';
+import { getDynamicDashboardMetrics } from '../utils/dashboardDataEngine.js';
+
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onClose }) {
   const [activeView, setActiveView] = useState('DASHBOARD');
-  
+
+  const firmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const cleanFY = String(selectedFY || localStorage.getItem(`app_active_fy_${firmId}`) || '2026-27').replace(/FY\s*/i, '').trim();
+  const effectiveFY = cleanFY || '2026-27';
+
   const [metrics, setMetrics] = useState({
     receivables: 0,
     payables: 0,
@@ -25,69 +30,156 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     }
   });
 
-  const [summaryStats, setSummaryStats] = useState({ totalProduction: 0, totalConsumption: 0 });
-
-  const firmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
-  const cleanFY = String(selectedFY || '2026-27').replace(/FY\s*/i, '').trim();
-  const effectiveFY = cleanFY || '2026-27';
+  const [summaryStats, setSummaryStats] = useState({
+    totalProduction: 0,
+    totalConsumption: 0
+  });
 
   const loadDashboardData = () => {
     try {
-      // 1. Load Dynamic Financial & Stock KPIs
-      const dynamicData = getDynamicDashboardMetrics(firm, effectiveFY);
-      if (dynamicData) {
-        setMetrics(dynamicData);
+      let dynamicData = null;
+      try {
+        if (typeof getDynamicDashboardMetrics === 'function') {
+          dynamicData = getDynamicDashboardMetrics(firm || firmId, effectiveFY);
+        }
+      } catch (err) {
+        console.warn("dashboardDataEngine fallback triggered:", err);
       }
 
-      // 2. Load Production Qty (Reads both production_batches and FY-specific keys)
+      // Always perform real-time stock valuation check to prevent stale metrics
+      const stockRaw = localStorage.getItem(`inventory_items_${firmId}`) || localStorage.getItem(`app_stock_${firmId}`) || '[]';
+      const stockItems = JSON.parse(stockRaw);
+
+      let stockVal = 0;
+      let rawBricks = 0;
+      let pakkiBricks = 0;
+      let fuelQty = 0;
+
+      stockItems.forEach(item => {
+        const qty = parseFloat(item.current_stock || item.stock || 0);
+        const rate = parseFloat(
+          item.unit_purchase_price || 
+          item.purchase_price || 
+          item.cost_price || 
+          item.unit_valuation || 
+          item.rate || 
+          0
+        );
+        const iName = String(item.name || item.item_name || '').toLowerCase();
+
+        if (qty > 0 && rate > 0) stockVal += (qty * rate);
+        if (iName.includes('kacchi') || iName.includes('raw') || iName.includes('कच्ची')) rawBricks += qty;
+        if (iName.includes('pakki') || iName.includes('red') || iName.includes('पक्की')) pakkiBricks += qty;
+        if (iName.includes('coal') || iName.includes('fuel') || iName.includes('diesel')) fuelQty += qty;
+      });
+
+      if (dynamicData && (dynamicData.cashAndBank !== 0 || dynamicData.receivables !== 0)) {
+        setMetrics({
+          ...dynamicData,
+          totalStockValuation: round2(stockVal > 0 ? stockVal : dynamicData.totalStockValuation)
+        });
+      } else {
+        const accountsRaw = localStorage.getItem(`app_accounts_${firmId}`) || localStorage.getItem(`account_heads_${firmId}`) || '[]';
+        const vouchersRaw = localStorage.getItem(`app_vouchers_${firmId}`) || localStorage.getItem(`account_book_vouchers_${firmId}`) || '[]';
+
+        const accounts = JSON.parse(accountsRaw);
+        const vouchers = JSON.parse(vouchersRaw);
+
+        let cashBank = 0;
+        let recv = 0;
+        let pay = 0;
+
+        accounts.forEach(acc => {
+          const name = String(acc.account_name || acc.name || '').toLowerCase();
+          const op = parseFloat(acc.opening_balance || acc.openingBalance || 0);
+          const type = String(acc.primary_type || acc.type || '').toUpperCase();
+          const grp = String(acc.sub_group || acc.group || '').toLowerCase();
+
+          if (name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash')) {
+            cashBank += (acc.balance_type === 'Cr' ? -op : op);
+          } else if (type === 'ASSETS' || grp.includes('debtor') || grp.includes('customer')) {
+            recv += Math.max(0, op);
+          } else if (type === 'LIABILITIES' || grp.includes('creditor') || grp.includes('supplier')) {
+            pay += Math.max(0, op);
+          }
+        });
+
+        vouchers.forEach(v => {
+          if (!v) return;
+          const amt = parseFloat(v.amount || v.total_amount || 0);
+          const dr = String(v.dr_account || '').toLowerCase();
+          const cr = String(v.cr_account || '').toLowerCase();
+
+          if (dr.includes('cash') || dr.includes('bank')) cashBank += amt;
+          if (cr.includes('cash') || cr.includes('bank')) cashBank -= amt;
+        });
+
+        setMetrics({
+          receivables: round2(recv),
+          payables: round2(pay),
+          cashAndBank: round2(cashBank),
+          totalSales: 0,
+          totalPurchases: 0,
+          totalStockValuation: round2(stockVal),
+          categorySpecifics: {
+            category: 'ईंट भट्ठा (Brick Kiln)',
+            cards: [
+              { label: 'Raw Bricks (कच्ची ईंटें)', value: `${rawBricks.toLocaleString('en-IN')} Pcs`, color: '#0284c7', icon: '🧱' },
+              { label: 'Finished Bricks (पक्की ईंटें)', value: `${pakkiBricks.toLocaleString('en-IN')} Pcs`, color: '#d97706', icon: '🏗️️' },
+              { label: 'Fuel / Coal Stock', value: `${fuelQty.toFixed(2)} Units`, color: '#475569', icon: '⚡' },
+              { label: 'Live Stock Value', value: `₹${round2(stockVal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: '#059669', icon: '📊' }
+            ],
+            actions: [
+              { key: 'sales', label: 'Brick Dispatch / Sales', icon: '🧾', bg: '#0284c7' },
+              { key: 'production', label: 'Bhatta Production Entry', icon: '🧱', bg: '#d97706' },
+              { key: 'purchase', label: 'Fuel & Raw Purchases', icon: '🛍️', bg: '#059669' },
+              { key: 'milan', label: 'Customer/Labour Milan', icon: '📑', bg: '#7c3aed' }
+            ]
+          }
+        });
+      }
+
+      // Summary stats
       const prodKeys = [
         `production_batches_${firmId}`,
         `bhatta_production_${firmId}_${effectiveFY}`,
-        `bhatta_production_${firmId}_FY ${effectiveFY}`
+        `bhatta_production_${firmId}`
       ];
       let prodData = [];
       for (const k of prodKeys) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              prodData = parsed;
-              break;
-            }
-          } catch (e) {}
-        }
+        try {
+          const parsed = JSON.parse(localStorage.getItem(k) || '[]');
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            prodData = parsed;
+            break;
+          }
+        } catch (e) {}
       }
 
-      const totalProd = Array.isArray(prodData)
-        ? prodData.reduce((sum, item) => sum + (Number(item.produced_qty || item.producedQty || item.quantity || item.qty) || 0), 0)
-        : 0;
+      const totalProd = prodData.reduce((sum, item) => 
+        sum + (Number(item.produced_qty || item.producedQty || item.quantity || item.qty) || 0), 0
+      );
 
-      // 3. Load Consumption Batches
       const consKeys = [
         `material_consumption_records_${firmId}`,
-        `fuel_consumption_${firmId}_${effectiveFY}`,
-        `fuel_consumption_${firmId}_FY ${effectiveFY}`
+        `universal_material_adjustments_${firmId}`,
+        `fuel_consumption_${firmId}_${effectiveFY}`
       ];
-      let consData = [];
+      let consCount = 0;
       for (const k of consKeys) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              consData = parsed;
-              break;
-            }
-          } catch (e) {}
-        }
+        try {
+          const parsed = JSON.parse(localStorage.getItem(k) || '[]');
+          if (Array.isArray(parsed)) consCount += parsed.length;
+        } catch (e) {}
       }
 
-      const totalCons = Array.isArray(consData) ? consData.length : 0;
+      setSummaryStats({
+        totalProduction: totalProd,
+        totalConsumption: consCount
+      });
 
-      setSummaryStats({ totalProduction: totalProd, totalConsumption: totalCons });
     } catch (e) {
-      console.error("Error loading dashboard metrics:", e);
+      console.error("Dashboard metrics calculation error:", e);
     }
   };
 
@@ -123,13 +215,13 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     <div style={{ padding: '12px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: '850px', margin: '0 auto', boxSizing: 'border-box', color: '#0f172a' }}>
       
       {/* Header Banner */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', backgroundColor: '#ffffff', padding: '14px 16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', backgroundColor: '#ffffff', padding: '14px 16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)' }}>
         <div>
           <div style={{ fontSize: '10px', color: '#0284c7', fontWeight: '800', textTransform: 'uppercase' }}>
             Enterprise Smart Manager • FY {effectiveFY}
           </div>
           <h2 style={{ margin: '2px 0 0 0', fontSize: '17px', fontWeight: '900', color: '#0f172a' }}>
-            {firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups'}
+            {firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Int Udy'}
           </h2>
         </div>
         {onClose && (
@@ -144,7 +236,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         <span>📈</span> Financial Position (वित्तीय स्थिति)
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '14px' }}>
         
         {/* Cash & Bank */}
         <div style={kpiCardStyle}>
@@ -180,8 +272,8 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
       </div>
 
-      {/* SECTION 2: PRODUCTION & WORKFLOW SUMMARY */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px', marginBottom: '16px' }}>
+      {/* SECTION 2: PRODUCTION & CONSUMPTION STATS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px', marginBottom: '14px' }}>
         <div style={{ ...kpiCardStyle, backgroundColor: '#f0f9ff', borderColor: '#bae6fd' }}>
           <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: '700', textTransform: 'uppercase' }}>🧱 Total Production Qty</div>
           <div style={{ fontSize: '16px', fontWeight: '900', color: '#0284c7', marginTop: '4px' }}>
@@ -190,7 +282,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         </div>
 
         <div style={{ ...kpiCardStyle, backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}>
-          <div style={{ fontSize: '10px', color: '#15803d', fontWeight: '700', textTransform: 'uppercase' }}>🚜 Consumption Batches</div>
+          <div style={{ fontSize: '10px', color: '#15803d', fontWeight: '700', textTransform: 'uppercase' }}>🚜 Consumption / Issue Records</div>
           <div style={{ fontSize: '16px', fontWeight: '900', color: '#16a34a', marginTop: '4px' }}>
             {summaryStats.totalConsumption} Records
           </div>
@@ -224,16 +316,16 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
           <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>⚡</span> Quick Operations
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', marginBottom: '18px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', marginBottom: '16px' }}>
             {specActions.map((act) => (
               <button 
                 key={act.key} 
                 onClick={() => {
-                  if (act.key === 'sales') onNavigate && onNavigate('SALES');
-                  else if (act.key === 'purchase') onNavigate && onNavigate('PURCHASE');
-                  else if (act.key === 'production') onNavigate && onNavigate('PRODUCTION');
-                  else if (act.key === 'inventory') onNavigate && onNavigate('INVENTORY');
-                  else if (act.key === 'milan') onNavigate && onNavigate('LEDGER');
+                  if (act.key === 'sales') onNavigate && onNavigate('sales');
+                  else if (act.key === 'purchase') onNavigate && onNavigate('purchase');
+                  else if (act.key === 'production') onNavigate && onNavigate('production');
+                  else if (act.key === 'inventory') onNavigate && onNavigate('inventory');
+                  else if (act.key === 'milan') onNavigate && onNavigate('milan');
                 }}
                 style={{ backgroundColor: act.bg || '#0284c7', color: '#ffffff', border: 'none', padding: '10px 12px', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
               >
@@ -252,43 +344,43 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
         
-        <button onClick={() => onNavigate && onNavigate('ADD_ACCOUNT')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('add_account')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>➕</span> Add Account Head (नया खाता बनाएं)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('SALES')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('sales')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>📄</span> Sales / Tax Invoice (बिक्री बिल)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('PURCHASE')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('purchase')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>📦</span> Purchase & Inward Stock (खरीद बिल)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('VOUCHER')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('vouchers')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>📝</span> Voucher Entry (Payment / Receipt / JV)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('FUEL')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>🚜</span> Fuel & Material Consumption (खपत)
+        <button onClick={() => onNavigate && onNavigate('material_adjustment')} style={menuButtonStyle}>
+          <span style={{ fontSize: '15px' }}>📦</span> Material Issue & Adjustment (सामग्री निकासी व कटौती)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('PRODUCTION')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>🧱</span> Production & Cost (उत्पादन लागत)
+        <button onClick={() => onNavigate && onNavigate('production')} style={menuButtonStyle}>
+          <span style={{ fontSize: '15px' }}>🧱</span> Production & Pakai (ईंट पकाई व लागत)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('LABOUR')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('payroll')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>👷</span> Labour, Wages & Tractor (मजदूरी)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('SETTLEMENT')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('settlement')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>⚖️</span> Bill Settlement / Khata Milan
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('INVENTORY')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('inventory')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>📋</span> Inventory & Stock Register (स्टॉक)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('LEDGER')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('milan')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>📖</span> Account Milan & Ledger (खाता बही)
         </button>
 
@@ -301,10 +393,10 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         </button>
 
         <button onClick={() => setActiveView('CASH_FLOW')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📊</span> Cash Flow Statement (नकदी प्रवाह)
+          <span style={{ fontSize: '15px' }}>📊</span> Cash Flow Statement (नकदी प्रवाह विवरण)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('SETTINGS')} style={menuButtonStyle}>
+        <button onClick={() => onNavigate && onNavigate('firm_settings')} style={menuButtonStyle}>
           <span style={{ fontSize: '15px' }}>⚙️</span> Firm Profile & Settings (फर्म विवरण)
         </button>
 
@@ -312,7 +404,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
           <span style={{ fontSize: '15px' }}>🔒</span> Backup & Restore Center (डाटा बैकअप)
         </button>
 
-        <button onClick={() => onNavigate && onNavigate('RESET')} style={{ ...menuButtonStyle, backgroundColor: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>
+        <button onClick={() => onNavigate && onNavigate('purge')} style={{ ...menuButtonStyle, backgroundColor: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>
           <span style={{ fontSize: '15px' }}>🗑️</span> Factory Reset / Clear Data (डेटा रीसेट)
         </button>
 
