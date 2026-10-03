@@ -2,18 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
-import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
+import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
+import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine.js';
+import { getAllUniversalVouchers } from '../utils/statementEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown';
 
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
 export default function PayrollManagementView({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   const [workersList, setWorkersList] = useState([]);
   const [expenseAccountsList, setExpenseAccountsList] = useState([]);
   
   const [selectedWorker, setSelectedWorker] = useState('');
   const [workDate, setWorkDate] = useState(new Date().toISOString().slice(0, 10));
-  const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expense');
+  const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expenses (मजदूरी)');
   const [quantity, setQuantity] = useState('');
   const [ratePerUnit, setRatePerUnit] = useState('');
   const [workDescription, setWorkDescription] = useState('');
@@ -21,26 +25,31 @@ export default function PayrollManagementView({ firm, onClose }) {
   const [payrollEntries, setPayrollEntries] = useState([]);
   const [editingEntryId, setEditingEntryId] = useState(null);
 
+  const [workerVouchers, setWorkerVouchers] = useState([]);
+
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
   const loadData = () => {
     if (!firm) return;
     
-    const allAccounts = getFirmMasterAccounts(activeFirmId);
+    const allAccounts = getFirmMasterAccounts(activeFirmId) || [];
     setWorkersList(allAccounts);
 
     const expenseAccs = allAccounts.filter(acc => {
-      const type = (acc.primary_type || '').toLowerCase();
+      const type = (acc.primary_type || acc.type || '').toLowerCase();
       const group = (acc.sub_group || acc.group || '').toLowerCase();
-      return type.includes('expense') || group.includes('expense') || group.includes('direct') || group.includes('indirect');
+      return type.includes('expense') || group.includes('expense') || group.includes('direct') || group.includes('labor') || group.includes('wage');
     });
     setExpenseAccountsList(expenseAccs.length > 0 ? expenseAccs : allAccounts);
     
     const entries = loadFirmData('app_payroll_entries', firm, []);
-    // Sort newest first
     entries.sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0));
     setPayrollEntries(entries);
+
+    // Fetch firm vouchers to accurately resolve paid vs earned balances
+    const allVchs = getAllUniversalVouchers(activeFirmId) || [];
+    setWorkerVouchers(allVchs);
   };
 
   useEffect(() => {
@@ -55,18 +64,23 @@ export default function PayrollManagementView({ firm, onClose }) {
     };
   }, [firm, activeFirmId]);
 
-  const calculatedTotalAmount = (Number(quantity) || 0) * (Number(ratePerUnit) || 0);
+  const calculatedTotalAmount = round2((Number(quantity) || 0) * (Number(ratePerUnit) || 0));
 
   const handlePostWorkCredit = (e) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const workerName = typeof selectedWorker === 'object' ? (selectedWorker.account_name || selectedWorker.name || '') : selectedWorker;
-    const expenseName = typeof expenseLedger === 'object' ? (expenseLedger.account_name || expenseLedger.name || '') : expenseLedger;
+    const workerName = (typeof selectedWorker === 'object' 
+      ? (selectedWorker.account_name || selectedWorker.name || '') 
+      : selectedWorker).trim();
+    
+    const expenseName = (typeof expenseLedger === 'object' 
+      ? (expenseLedger.account_name || expenseLedger.name || '') 
+      : expenseLedger).trim();
 
     if (!workerName) {
-      setErrorMsg('Please select a worker, driver, or employee.');
+      setErrorMsg('Please select a worker, driver, or contractor.');
       return;
     }
     if (!expenseName) {
@@ -74,18 +88,32 @@ export default function PayrollManagementView({ firm, onClose }) {
       return;
     }
     if (!quantity || Number(quantity) <= 0) {
-      setErrorMsg('Please enter a valid quantity/days/units.');
+      setErrorMsg('Please enter a valid quantity/units (> 0).');
       return;
     }
     if (!ratePerUnit || Number(ratePerUnit) <= 0) {
-      setErrorMsg('Please enter a valid rate per unit.');
+      setErrorMsg('Please enter a valid rate per unit (> 0).');
       return;
     }
 
     const entryId = editingEntryId || ('PAY-' + Date.now());
 
+    // 1. Ensure Worker & Expense Ledgers Exist in Master
+    const currentAccounts = getFirmMasterAccounts(activeFirmId);
+    if (!currentAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === workerName.toLowerCase())) {
+      saveMasterAccount(activeFirmId, {
+        account_name: workerName,
+        primary_type: 'LIABILITIES',
+        type: 'Liabilities',
+        sub_group: 'Sundry Creditors (Suppliers / Vendors)',
+        balance_type: 'Cr'
+      });
+    }
+
+    // 2. Save / Update Payroll Entry
     const newEntry = {
       id: entryId,
+      firm_id: activeFirmId,
       worker: workerName,
       date: workDate,
       expense_ledger: expenseName,
@@ -101,21 +129,30 @@ export default function PayrollManagementView({ firm, onClose }) {
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
+    // 3. Post Dual-Key Synchronized Double-Entry Journal Voucher
     try {
-      const allVouchers = loadFirmData('app_vouchers', firm, []);
-      const newVoucher = {
-        id: 'JV-' + entryId,
+      const voucherId = 'JV-' + entryId;
+      saveUniversalVoucher(activeFirmId, {
+        id: voucherId,
+        firm_id: activeFirmId,
+        firmId: activeFirmId,
+        voucher_type: 'JOURNAL',
+        type: 'JOURNAL',
+        voucher_number: entryId,
+        reference_no: entryId,
+        voucher_date: workDate,
         date: workDate,
-        voucher_type: 'JV', 
-        narration: `Wages credited to ${workerName} via ${expenseName} [Qty: ${quantity} x Rate: ${ratePerUnit}] - ${workDescription}`,
+        dr_account: expenseName,
+        cr_account: workerName,
+        amount: calculatedTotalAmount,
+        total_amount: calculatedTotalAmount,
+        narration: `Wages credited to ${workerName} via ${expenseName} [Qty: ${quantity} x Rate: ₹${ratePerUnit}] - ${workDescription || 'Attendance'}`,
+        is_compound: true,
         entries: [
-          { account_name: expenseName, debit: calculatedTotalAmount, credit: 0 },
-          { account_name: workerName, debit: 0, credit: calculatedTotalAmount }
-        ],
-        timestamp: new Date().toISOString()
-      };
-      const filteredVouchers = allVouchers.filter(v => v.id !== ('JV-' + entryId));
-      saveFirmData('app_vouchers', firm, [newVoucher, ...filteredVouchers]);
+          { account_name: expenseName, party: expenseName, type: 'DR', debit: calculatedTotalAmount, credit: 0, amount: calculatedTotalAmount },
+          { account_name: workerName, party: workerName, type: 'CR', debit: 0, credit: calculatedTotalAmount, amount: calculatedTotalAmount }
+        ]
+      });
     } catch (err) {
       console.error('Error posting auto-voucher for payroll:', err);
     }
@@ -124,12 +161,16 @@ export default function PayrollManagementView({ firm, onClose }) {
     window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('storage'));
 
-    setSuccessMsg(editingEntryId ? `✓ Successfully updated payroll entry for ${workerName}!` : `✓ Successfully posted ₹${calculatedTotalAmount} credit to ${workerName}'s ledger!`);
+    setSuccessMsg(editingEntryId 
+      ? `✓ Successfully updated wage entry for ${workerName}!` 
+      : `✓ Successfully posted ₹${calculatedTotalAmount.toLocaleString('en-IN')} credit to ${workerName}'s ledger!`
+    );
     
     setEditingEntryId(null);
     setQuantity('');
     setRatePerUnit('');
     setWorkDescription('');
+    loadData();
   };
 
   const handleEditEntry = (ent) => {
@@ -137,18 +178,74 @@ export default function PayrollManagementView({ firm, onClose }) {
     setEditingEntryId(ent.id);
     setSelectedWorker(ent.worker || '');
     setWorkDate(ent.date || new Date().toISOString().slice(0, 10));
-    setExpenseLedger(ent.expense_ledger || 'Pathai & Labour Expense');
+    setExpenseLedger(ent.expense_ledger || 'Pathai & Labour Expenses (मजदूरी)');
     setQuantity(ent.quantity ? String(ent.quantity) : '');
     setRatePerUnit(ent.rate ? String(ent.rate) : '');
     setWorkDescription(ent.description || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleDeleteEntry = (entryId) => {
+    if (!window.confirm('Is attendance/wage entry ko delete karne se khate se credit hat jayega. Jari rakhein?')) return;
+
+    try {
+      const filteredEntries = payrollEntries.filter(e => e.id !== entryId);
+      setPayrollEntries(filteredEntries);
+      saveFirmData('app_payroll_entries', firm, filteredEntries);
+
+      // Delete corresponding JV voucher
+      try {
+        deleteUniversalVoucher(activeFirmId, 'JV-' + entryId);
+      } catch (e) {}
+
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
+
+      if (editingEntryId === entryId) {
+        setEditingEntryId(null);
+        setQuantity('');
+        setRatePerUnit('');
+        setWorkDescription('');
+      }
+
+      loadData();
+      alert('✓ Wage entry & accounting voucher deleted successfully.');
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  };
+
   const resolvedActiveWorker = typeof selectedWorker === 'object' ? (selectedWorker.account_name || '') : selectedWorker;
   const workerEntries = payrollEntries.filter(e => !resolvedActiveWorker || e.worker === resolvedActiveWorker);
-  const totalEarned = workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
-  const totalPaid = 0; 
-  const totalBaki = totalEarned - totalPaid;
+  
+  // Real-Time Calculation of Earned vs Paid (from actual payments/vouchers)
+  const totalEarned = round2(workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0));
+  
+  let totalPaid = 0;
+  if (resolvedActiveWorker) {
+    const targetClean = resolvedActiveWorker.trim().toLowerCase();
+    workerVouchers.forEach(v => {
+      if (!v) return;
+      const vType = String(v.voucher_type || v.type || '').toUpperCase();
+      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
+      
+      // Payment made to worker (Worker A/c Dr To Cash/Bank Cr)
+      if (vType === 'PAYMENT' || vType === 'PAY') {
+        if (dr === targetClean) {
+          totalPaid += parseFloat(v.amount || v.total_amount || 0);
+        } else if (Array.isArray(v.entries)) {
+          v.entries.forEach(e => {
+            if ((e.account_name || e.party || '').trim().toLowerCase() === targetClean && (e.type === 'DR' || e.type === 'Dr')) {
+              totalPaid += parseFloat(e.amount || e.debit || 0);
+            }
+          });
+        }
+      }
+    });
+  }
+  totalPaid = round2(totalPaid);
+  const totalBaki = round2(totalEarned - totalPaid);
 
   return (
     <div style={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', backgroundColor: '#f8fafc', padding: '10px', fontFamily: 'sans-serif', boxSizing: 'border-box', overflowX: 'hidden', color: '#0f172a' }}>
@@ -188,16 +285,16 @@ export default function PayrollManagementView({ firm, onClose }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
           <div>
-            <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL (कुल)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned}</div>
+            <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL EARNED (कुल काम)</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
           <div>
-            <div style={{ fontSize: '9px', color: '#166534', fontWeight: 'bold' }}>CHUKAYE (चुकाए)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#166534' }}>₹{totalPaid}</div>
+            <div style={{ fontSize: '9px', color: '#166534', fontWeight: 'bold' }}>PAID (चुकाए/भुगतान)</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: '#166534' }}>₹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
           <div>
-            <div style={{ fontSize: '9px', color: '#991b1b', fontWeight: 'bold' }}>BAKI (बाकी)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#991b1b' }}>₹{totalBaki}</div>
+            <div style={{ fontSize: '9px', color: '#991b1b', fontWeight: 'bold' }}>BAKI (देना बाकी)</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: totalBaki > 0 ? '#991b1b' : '#059669' }}>₹{totalBaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
         </div>
       </div>
@@ -230,16 +327,16 @@ export default function PayrollManagementView({ firm, onClose }) {
         <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box', alignItems: 'flex-end' }}>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Quantity *</label>
-            <input type="number" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+            <input type="number" step="0.01" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Rate/Unit (₹) *</label>
-            <input type="number" placeholder="e.g. 100" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
+            <input type="number" step="0.01" placeholder="e.g. 100" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Kul Amount (₹)</label>
             <div style={{ padding: '10px', backgroundColor: '#f1f5f9', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box' }}>
-              ₹{calculatedTotalAmount}
+              ₹{calculatedTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
           </div>
         </div>
@@ -280,12 +377,15 @@ export default function PayrollManagementView({ firm, onClose }) {
                     {ent.description} [Qty: {ent.quantity} × Rate: ₹{ent.rate}]
                   </div>
                   <div style={{ color: '#166534', fontWeight: 'bold' }}>
-                    Earned: +₹{ent.total_amount}
+                    Earned: +₹{Number(ent.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
                 </div>
-                <div>
+                <div style={{ display: 'flex', gap: '6px' }}>
                   <button onClick={() => handleEditEntry(ent)} style={{ padding: '5px 10px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '700', cursor: 'pointer' }}>
                     Edit
+                  </button>
+                  <button onClick={() => handleDeleteEntry(ent.id)} style={{ padding: '5px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '700', cursor: 'pointer' }}>
+                    Delete
                   </button>
                 </div>
               </div>
