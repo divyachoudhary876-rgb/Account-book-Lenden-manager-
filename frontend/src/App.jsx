@@ -95,22 +95,56 @@ export default function App() {
   const firmCat = String(activeFirm?.category || 'TRADING').toUpperCase();
   const menuItems = getDynamicWorkflowMenu(firmCat);
 
-  const handleMenuClick = (item) => {
+  // Universal Navigation Handler that bridges Dashboard and Menu Keys seamlessly
+  const handleNavigate = (rawKey) => {
     setIsMenuOpen(false);
-
-    if (item.key === 'create_account') {
-      setCurrentView('ADD_ACCOUNT');
-      return;
-    }
-
-    if (item.key === 'firm_settings') {
-      setIsCreatingFirm(false);
-      setCurrentView('firm_settings');
-      return;
-    }
-
     setIsCreatingFirm(false);
-    setCurrentView(item.key);
+
+    if (!rawKey) return;
+    const key = String(rawKey).trim().toLowerCase();
+
+    // Map uppercase/lowercase/synonym route keys
+    if (key === 'dashboard') {
+      setCurrentView('dashboard');
+    } else if (key === 'add_account' || key === 'create_account') {
+      setCurrentView('ADD_ACCOUNT');
+    } else if (key === 'sales' || key === 'invoice') {
+      setCurrentView('sales');
+    } else if (key === 'purchase') {
+      setCurrentView('purchase');
+    } else if (key === 'voucher' || key === 'vouchers') {
+      setCurrentView('vouchers');
+    } else if (key === 'fuel' || key === 'consumption') {
+      setCurrentView('consumption');
+    } else if (key === 'production') {
+      setCurrentView('production');
+    } else if (key === 'labour' || key === 'payroll') {
+      setCurrentView('payroll');
+    } else if (key === 'settlement') {
+      setCurrentView('settlement');
+    } else if (key === 'inventory') {
+      setCurrentView('inventory');
+    } else if (key === 'ledger' || key === 'milan') {
+      setCurrentView('milan');
+    } else if (key === 'journal' || key === 'journal_register') {
+      setCurrentView('journal');
+    } else if (key === 'reports' || key === 'financial_reports') {
+      setCurrentView('reports');
+    } else if (key === 'cash_flow') {
+      setCurrentView('cash_flow');
+    } else if (key === 'settings' || key === 'firm_settings') {
+      setCurrentView('firm_settings');
+    } else if (key === 'backup' || key === 'backup_center') {
+      setCurrentView('backup');
+    } else if (key === 'reset' || key === 'purge') {
+      setCurrentView('purge');
+    } else {
+      setCurrentView(rawKey);
+    }
+  };
+
+  const handleMenuClick = (item) => {
+    handleNavigate(item.key);
   };
 
   const handleFYSelectChange = (e) => {
@@ -124,6 +158,7 @@ export default function App() {
         performFinancialYearRollover(activeFirm.id, val);
       }
       window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
     }
   };
 
@@ -146,12 +181,12 @@ export default function App() {
 
   const renderProductionOrSectorView = () => {
     if (firmCat.includes('TRANSPORT') || firmCat.includes('LOGISTICS')) {
-      return <TransportTripView firm={activeFirm} selectedFY={selectedFY} />;
+      return <TransportTripView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />;
     }
     if (firmCat.includes('TRADING') || firmCat.includes('RETAIL') || firmCat.includes('WHOLESALE')) {
-      return <TradingInventoryCatalogView firm={activeFirm} selectedFY={selectedFY} />;
+      return <TradingInventoryCatalogView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />;
     }
-    return <BhattaProductionMasterView firm={activeFirm} selectedFY={selectedFY} />;
+    return <BhattaProductionMasterView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />;
   };
 
   return (
@@ -196,7 +231,7 @@ export default function App() {
                 style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
               >
                 {firmsList.map(f => (
-                  <option key={f.id} value={f.id}>🏢 {f.legal_name}</option>
+                  <option key={f.id} value={f.id}>🏢 {f.legal_name || f.trade_name || f.name}</option>
                 ))}
                 <option value="CREATE_NEW">➕ New Firm...</option>
               </select>
@@ -270,7 +305,7 @@ export default function App() {
       )}
 
       {/* Main Screen Routing View */}
-      <main style={{ width: '100%', maxWidth: '650px', margin: '0 auto', padding: '16px', boxSizing: 'border-box' }}>
+      <main style={{ width: '100%', maxWidth: '850px', margin: '0 auto', padding: '16px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
             onFirmCreated={(newFirm) => {
@@ -288,10 +323,7 @@ export default function App() {
               <EnterpriseDashboard 
                 firm={activeFirm} 
                 selectedFY={selectedFY}
-                onNavigate={(viewKey) => {
-                  if (viewKey === 'firm_settings') setCurrentView('firm_settings');
-                  else setCurrentView(viewKey);
-                }} 
+                onNavigate={handleNavigate} 
               />
             )}
             {currentView === 'ADD_ACCOUNT' && (
@@ -310,20 +342,20 @@ export default function App() {
                 onNavigateDashboard={() => setCurrentView('dashboard')}
               />
             )}
-            {currentView === 'sales' && <CreateInvoice firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'consumption' && <MaterialConsumptionView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'sales' && <CreateInvoice firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'consumption' && <MaterialConsumptionView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
             {currentView === 'production' && renderProductionOrSectorView()}
-            {currentView === 'payroll' && <PayrollManagementView firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'settlement' && <BillSettlementView firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'inventory' && <InventoryStockView firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'milan' && <AccountStatementView firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'journal' && <JournalRegisterView firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'reports' && <FinancialReportsView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'payroll' && <PayrollManagementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'settlement' && <BillSettlementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'inventory' && <InventoryStockView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'milan' && <AccountStatementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'journal' && <JournalRegisterView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'reports' && <FinancialReportsView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
             {currentView === 'cash_flow' && <CashFlowStatementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />} 
-            {currentView === 'backup' && <SecurityBackupSettings firm={activeFirm} selectedFY={selectedFY} />}
-            {currentView === 'purge' && <DataPurgeView firm={activeFirm} selectedFY={selectedFY} />}
+            {currentView === 'backup' && <SecurityBackupSettings firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'purge' && <DataPurgeView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
           </>
         )}
       </main>
