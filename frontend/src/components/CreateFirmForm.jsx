@@ -22,10 +22,12 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
     const firmId = `FIRM-${Date.now()}`;
     const newFirmPayload = {
       id: firmId,
+      firm_id: firmId,
       legal_name: cleanName,
       trade_name: tradeName.trim() || cleanName,
       category: selectedCategory,
       business_category: selectedCategory,
+      businessCategory: selectedCategory,
       gstin: gstin.trim().toUpperCase() || 'UNREGISTERED',
       phone: phone.trim(),
       address: address.trim(),
@@ -33,15 +35,45 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
     };
 
     try {
+      // 1. Register firm in registry
       const existingFirms = JSON.parse(localStorage.getItem('app_firms_registry') || '[]');
       const updatedFirms = [...existingFirms, newFirmPayload];
       localStorage.setItem('app_firms_registry', JSON.stringify(updatedFirms));
 
-      const starterAccounts = getStarterAccountsForCategory(selectedCategory);
-      localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(starterAccounts));
+      // 2. Initialize isolated starter accounts (strictly scoped to this firmId)
+      let starterAccounts = [];
+      if (typeof getStarterAccountsForCategory === 'function') {
+        starterAccounts = getStarterAccountsForCategory(selectedCategory) || [];
+      }
+      
+      if (!starterAccounts || starterAccounts.length === 0) {
+        starterAccounts = [
+          { id: `ACC-${firmId}-001`, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
+          { id: `ACC-${firmId}-002`, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
+          { id: `ACC-${firmId}-003`, account_name: 'Sales Revenue Account', name: 'Sales Revenue Account', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', is_system_locked: true, isSystemLocked: true },
+          { id: `ACC-${firmId}-004`, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
+          { id: `ACC-${firmId}-005`, account_name: 'Capital Account (स्वामी की पूंजी)', name: 'Capital Account (स्वामी की पूंजी)', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', is_system_locked: false, isSystemLocked: false }
+        ];
+      }
 
+      localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(starterAccounts));
+      localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(starterAccounts));
+
+      // 3. Clean empty transaction buckets for fresh firm isolation
+      localStorage.setItem(`app_vouchers_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`material_consumptions_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`sales_invoices_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`purchase_bills_${firmId}`, JSON.stringify([]));
+
+      // 4. Switch active firm pointer
       localStorage.setItem('app_active_firm_id', firmId);
+
+      // 5. Broadcast global state update
       window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('storage'));
 
       alert(`✓ Firm "${newFirmPayload.legal_name}" Created Successfully!`);
       if (onFirmCreated) onFirmCreated(newFirmPayload);
@@ -79,13 +111,20 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         <div>
           <label style={labelStyle}>Business Category & Industry Type (व्यापार श्रेणी) *</label>
           <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0f172a' }}>
-            {Object.entries(INDUSTRY_SECTORS).map(([secKey, sec]) => (
+            {INDUSTRY_SECTORS && Object.entries(INDUSTRY_SECTORS).map(([secKey, sec]) => (
               <optgroup key={secKey} label={sec.label}>
                 {sec.categories.map(cat => (
                   <option key={cat.code} value={cat.code}>{cat.icon} {cat.label}</option>
                 ))}
               </optgroup>
             ))}
+            {!INDUSTRY_SECTORS && (
+              <>
+                <option value="BRICK_KILN">🧱 Brick Kiln Manufacturing (ईंट भट्टा उद्योग)</option>
+                <option value="BIOMASS_BRIQUETTES">🔥 Biomass Briquettes & Biofuel (बायोमास ब्रिकेट्स)</option>
+                <option value="TRADING">📦 General Trading & Wholesale</option>
+              </>
+            )}
           </select>
         </div>
 
