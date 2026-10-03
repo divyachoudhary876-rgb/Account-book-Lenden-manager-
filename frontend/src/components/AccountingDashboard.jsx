@@ -22,18 +22,26 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
   const [summaryStats, setSummaryStats] = useState({ totalProduction: 0, totalConsumption: 0 });
 
   const firmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
-  const prodStorageKey = `bhatta_production_${firmId}_${selectedFY || '2026-27'}`;
-  const consStorageKey = `fuel_consumption_${firmId}_${selectedFY || '2026-27'}`;
+  const effectiveFY = selectedFY || '2026-27';
+  const prodStorageKey = `bhatta_production_${firmId}_${effectiveFY}`;
+  const consStorageKey = `fuel_consumption_${firmId}_${effectiveFY}`;
 
   const loadDashboardData = () => {
     try {
-      const dynamicData = getDynamicDashboardMetrics(firm);
+      // Pass both firm and selectedFY to ensure strict FY synchronization
+      const dynamicData = getDynamicDashboardMetrics(firm, effectiveFY);
       if (dynamicData) setMetrics(dynamicData);
 
-      const prodData = StorageService.getItem ? StorageService.getItem(prodStorageKey) : JSON.parse(localStorage.getItem(prodStorageKey) || '[]');
-      const consData = StorageService.getItem ? StorageService.getItem(consStorageKey) : JSON.parse(localStorage.getItem(consStorageKey) || '[]');
+      const prodData = StorageService.getItem 
+        ? StorageService.getItem(prodStorageKey) 
+        : JSON.parse(localStorage.getItem(prodStorageKey) || '[]');
+      const consData = StorageService.getItem 
+        ? StorageService.getItem(consStorageKey) 
+        : JSON.parse(localStorage.getItem(consStorageKey) || '[]');
       
-      const totalProd = Array.isArray(prodData) ? prodData.reduce((sum, item) => sum + (Number(item.producedQty || item.produced_qty) || 0), 0) : 0;
+      const totalProd = Array.isArray(prodData) 
+        ? prodData.reduce((sum, item) => sum + (Number(item.producedQty || item.produced_qty || item.quantity || item.qty) || 0), 0) 
+        : 0;
       const totalCons = Array.isArray(consData) ? consData.length : 0;
 
       setSummaryStats({ totalProduction: totalProd, totalConsumption: totalCons });
@@ -52,19 +60,19 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
       window.removeEventListener('app_storage_updated', loadDashboardData);
       window.removeEventListener('storage', loadDashboardData);
     };
-  }, [firmId, selectedFY, firm]);
+  }, [firmId, effectiveFY, firm]);
 
   if (activeView === 'CASH_FLOW') {
-    return <CashFlowStatementView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
+    return <CashFlowStatementView firm={firm} selectedFY={effectiveFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
   if (activeView === 'FINANCIAL_REPORTS') {
-    return <FinancialReportsView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
+    return <FinancialReportsView firm={firm} selectedFY={effectiveFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
   if (activeView === 'JOURNAL_REGISTER') {
-    return <JournalRegisterView firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
+    return <JournalRegisterView firm={firm} selectedFY={effectiveFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
   if (activeView === 'BACKUP_CENTER') {
-    return <SecurityBackupSettings firm={firm} selectedFY={selectedFY} onClose={() => setActiveView('DASHBOARD')} />;
+    return <SecurityBackupSettings firm={firm} selectedFY={effectiveFY} onClose={() => setActiveView('DASHBOARD')} />;
   }
 
   const specCards = metrics.categorySpecifics?.cards || [];
@@ -76,7 +84,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
       {/* Header Banner */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', backgroundColor: '#ffffff', padding: '16px 20px', borderRadius: '14px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
         <div>
-          <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: '800', textTransform: 'uppercase' }}>Enterprise Smart Manager • {selectedFY || '2026-27'}</div>
+          <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: '800', textTransform: 'uppercase' }}>Enterprise Smart Manager • {effectiveFY}</div>
           <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: '900', color: '#0f172a' }}>{firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups'}</h2>
         </div>
         {onClose && (
@@ -177,7 +185,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
       {/* SECTION 4: ALL ACCOUNTING & ERP MODULES */}
       <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <span>🗂</span> All Accounting & ERP Modules
+        <span>🗂️</span> All Accounting & ERP Modules
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
