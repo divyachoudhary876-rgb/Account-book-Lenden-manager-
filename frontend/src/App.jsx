@@ -12,7 +12,6 @@ import FirmProfileSettingsView from './components/FirmProfileSettingsView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
 import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
 import VoucherEntryForm from './components/VoucherEntryForm.jsx';
-import MaterialConsumptionView from './components/MaterialConsumptionView.jsx';
 import MaterialAdjustmentView from './components/MaterialAdjustmentView.jsx';
 import BhattaProductionMasterView from './components/BhattaProductionMasterView.jsx';
 import PayrollManagementView from './components/PayrollManagementView.jsx';
@@ -104,7 +103,7 @@ export default function App() {
     if (!rawKey) return;
     const key = String(rawKey).trim().toLowerCase();
 
-    // Map uppercase/lowercase/synonym route keys
+    // Map route keys cleanly
     if (key === 'dashboard') {
       setCurrentView('dashboard');
     } else if (key === 'add_account' || key === 'create_account') {
@@ -115,9 +114,7 @@ export default function App() {
       setCurrentView('purchase');
     } else if (key === 'voucher' || key === 'vouchers') {
       setCurrentView('vouchers');
-    } else if (key === 'fuel' || key === 'consumption') {
-      setCurrentView('consumption');
-    } else if (key === 'material_adjustment' || key === 'stock_adjustment' || key === 'tractor_fuel' || key === 'diesel_cut') {
+    } else if (key === 'fuel' || key === 'consumption' || key === 'material_adjustment' || key === 'stock_adjustment' || key === 'diesel_cut') {
       setCurrentView('material_adjustment');
     } else if (key === 'production') {
       setCurrentView('production');
@@ -197,7 +194,7 @@ export default function App() {
       
       <AppUpdateBanner />
 
-      {/* Unified Responsive Top Header */}
+      {/* Top Header */}
       {!isCreatingFirm && activeFirm && (
         <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', width: '100%', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', flexWrap: 'wrap' }}>
           
@@ -263,7 +260,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Workflow Menu Drawer */}
+      {/* Workflow Menu Drawer - Completely Uniform & Clean (No Highlights) */}
       {isMenuOpen && (
         <div style={{
           backgroundColor: '#ffffff',
@@ -283,9 +280,9 @@ export default function App() {
                 key={item.key}
                 onClick={() => handleMenuClick(item)}
                 style={{
-                  backgroundColor: item.key === 'material_adjustment' ? '#fef3c7' : (item.key === 'cash_flow' ? '#0284c7' : '#f1f5f9'),
-                  color: item.isDanger ? '#dc2626' : (item.key === 'material_adjustment' ? '#92400e' : (item.key === 'cash_flow' ? '#ffffff' : '#0f172a')),
-                  border: item.key === 'material_adjustment' ? '1px solid #fde68a' : '1px solid #e2e8f0',
+                  backgroundColor: '#f8fafc',
+                  color: item.isDanger ? '#dc2626' : '#0f172a',
+                  border: '1px solid #e2e8f0',
                   borderRadius: '8px',
                   padding: '10px 12px',
                   fontSize: '12px',
@@ -307,7 +304,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Screen Routing View */}
+      {/* Main Screen Routing */}
       <main style={{ width: '100%', maxWidth: '850px', margin: '0 auto', padding: '16px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
@@ -348,7 +345,6 @@ export default function App() {
             {currentView === 'sales' && <CreateInvoice firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
             {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
             {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
-            {currentView === 'consumption' && <MaterialConsumptionView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
             {currentView === 'material_adjustment' && <MaterialAdjustmentView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
             {currentView === 'production' && renderProductionOrSectorView()}
             {currentView === 'payroll' && <PayrollManagementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
