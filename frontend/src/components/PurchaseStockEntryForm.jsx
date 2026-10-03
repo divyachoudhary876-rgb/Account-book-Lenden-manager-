@@ -2,12 +2,38 @@
 
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
-import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
+import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
 import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+// Universal Supplier Name Resolver
+const getBillSupplierName = (bill) => {
+  if (!bill) return 'Supplier Party';
+  if (bill.supplier && String(bill.supplier).trim() !== '') return String(bill.supplier).trim();
+  if (bill.supplier_name && String(bill.supplier_name).trim() !== '') return String(bill.supplier_name).trim();
+  if (bill.party && String(bill.party).trim() !== '') return String(bill.party).trim();
+  if (bill.party_name && String(bill.party_name).trim() !== '') return String(bill.party_name).trim();
+  if (bill.vendor && String(bill.vendor).trim() !== '') return String(bill.vendor).trim();
+  if (bill.cr_account && String(bill.cr_account).trim() !== '') return String(bill.cr_account).trim();
+
+  if (Array.isArray(bill.entries) && bill.entries.length > 0) {
+    const crEntry = bill.entries.find(e => (e.type || '').toUpperCase() === 'CR' || Number(e.credit) > 0);
+    if (crEntry && (crEntry.account_name || crEntry.party)) {
+      return (crEntry.account_name || crEntry.party).trim();
+    }
+  }
+
+  const narr = String(bill.narration || '');
+  const matchFrom = narr.match(/from\s+([^(\n]+)/i);
+  if (matchFrom && matchFrom[1]) {
+    return matchFrom[1].trim();
+  }
+
+  return 'Supplier Party';
+};
 
 export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
@@ -28,6 +54,22 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
   const [searchFilter, setSearchFilter] = useState('');
   const [statusMessage, setStatusMessage] = useState(null);
+
+  // Auto-calculate the next sequential Bill Number (#1, #2... #69, #70)
+  const getNextBillNumber = (bills) => {
+    let maxNum = 0;
+    (bills || []).forEach(b => {
+      const raw = String(b.bill_number || b.reference_no || '').trim();
+      const numMatch = raw.match(/\d+/g);
+      if (numMatch) {
+        const val = parseInt(numMatch[numMatch.length - 1], 10);
+        if (!isNaN(val) && val > maxNum && val < 1000000) {
+          maxNum = val;
+        }
+      }
+    });
+    return String(maxNum + 1);
+  };
 
   const loadData = () => {
     try {
@@ -50,10 +92,10 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       const stockList = loadFirmData('inventory_items', firm, []);
       setInventoryItems(stockList.filter(i => i && (i.name || i.item_name)));
 
-      // 3. COMPLETE MULTI-BUCKET AGGREGATION (MERGES BILLS #1 TO #46 AND #47 TO #68+)
+      // 3. Consolidated Multi-Bucket Aggregation (Deep Scan for #1 to #68+)
       const billsMap = new Map();
 
-      // Scan all potential purchase bill keys without stopping
+      // Scan Purchase Keys
       const purchaseKeysToScan = [
         `purchase_bills_${activeFirmId}`,
         'purchase_bills',
@@ -72,6 +114,8 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                 if (!b) return;
                 const bNum = String(b.bill_number || b.reference_no || b.id || '').trim();
                 const cleanKey = b.id || bNum;
+                const partyName = getBillSupplierName(b);
+
                 if (!billsMap.has(cleanKey) && bNum) {
                   billsMap.set(cleanKey, {
                     ...b,
@@ -80,8 +124,9 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                     reference_no: bNum,
                     date: b.date || b.purchase_date || todayMaxDate,
                     purchase_date: b.purchase_date || b.date || todayMaxDate,
-                    supplier: b.supplier || b.supplier_name || 'Supplier',
-                    supplier_name: b.supplier_name || b.supplier || 'Supplier',
+                    supplier: partyName,
+                    supplier_name: partyName,
+                    party: partyName,
                     item_name: b.item_name || 'Material',
                     quantity: Number(b.quantity || b.qty || 1),
                     rate: Number(b.rate || b.purchase_rate || 0),
@@ -95,7 +140,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         } catch (e) {}
       });
 
-      // Scan universal voucher buckets for legacy purchase bills (#1 to #46)
+      // Scan Universal Voucher Buckets for Purchase Vouchers
       const voucherKeysToScan = [
         `app_vouchers_${activeFirmId}`,
         `account_book_vouchers_${activeFirmId}`,
@@ -114,12 +159,17 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
               if (vType === 'PURCHASE') {
                 const bNum = String(v.reference_no || v.voucher_number || v.id || '').replace(/^PV-|^PUR-/, '').trim();
                 const cleanKey = v.id || bNum;
+                const partyName = getBillSupplierName(v);
 
-                // Check duplicate by bill number
                 let isAlreadyPresent = false;
                 for (const existing of billsMap.values()) {
                   if (String(existing.bill_number).trim() === bNum || String(existing.id).trim() === String(v.id).trim()) {
                     isAlreadyPresent = true;
+                    if (existing.supplier === 'Supplier Party' && partyName !== 'Supplier Party') {
+                      existing.supplier = partyName;
+                      existing.supplier_name = partyName;
+                      existing.party = partyName;
+                    }
                     break;
                   }
                 }
@@ -131,8 +181,9 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                     purchase_date: v.voucher_date || v.date || todayMaxDate,
                     bill_number: bNum,
                     reference_no: bNum,
-                    supplier: v.cr_account || v.supplier_name || 'Supplier',
-                    supplier_name: v.cr_account || v.supplier_name || 'Supplier',
+                    supplier: partyName,
+                    supplier_name: partyName,
+                    party: partyName,
                     item_name: v.dr_account || 'Material',
                     quantity: Number(v.quantity || v.qty || 1),
                     rate: Number(v.rate || v.unit_rate || v.amount || 0),
@@ -149,7 +200,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
       const completeBills = Array.from(billsMap.values());
 
-      // Numeric Descending Sort (#68, #67 ... #47 ... #2, #1)
+      // Numeric Descending Sort (#71, #70 ... #1)
       completeBills.sort((a, b) => {
         const numA = parseInt(String(a.bill_number).replace(/\D/g, ''), 10) || 0;
         const numB = parseInt(String(b.bill_number).replace(/\D/g, ''), 10) || 0;
@@ -161,7 +212,12 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
       setPurchaseBills(completeBills);
 
-      // Consolidate full register to activeFirmId bucket so data stays permanently linked
+      // Auto-set sequence if not editing
+      if (!editingBill) {
+        setBillNumber(getNextBillNumber(completeBills));
+      }
+
+      // Save consolidated list into active firm key
       if (completeBills.length > 0) {
         localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(completeBills));
       }
@@ -184,6 +240,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
   const calculatedTotal = round2((Number(quantity) || 0) * (Number(purchaseRate) || 0));
 
+  // Safe Stock Reversion (Deducts stock of previous version of the bill)
   const revertStockForBill = (billObj, currentStockList) => {
     if (!billObj) return currentStockList;
     const targetItemId = String(billObj.item_id || billObj.stock_id || '');
@@ -240,8 +297,9 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
     try {
       const billId = editingBill ? editingBill.id : `PUR-${Date.now()}`;
-      const finalBillNo = billNumber.trim() || `BILL-${Math.floor(1000 + Math.random() * 9000)}`;
+      const finalBillNo = billNumber.trim() || getNextBillNumber(purchaseBills);
 
+      // 1. Stock Synchronization (Atomic revert + add)
       let currentStock = [...inventoryItems];
 
       if (editingBill) {
@@ -278,6 +336,20 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       saveFirmData('inventory_items', firm, currentStock);
       setInventoryItems(currentStock);
 
+      // 2. Ensure Stock Asset Head Exists in Master Chart of Accounts
+      const stockAssetAccount = `${cleanItemName} Stock Account`;
+      const masterAccounts = getFirmMasterAccounts(activeFirmId);
+      if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === stockAssetAccount.toLowerCase())) {
+        saveMasterAccount(activeFirmId, {
+          account_name: stockAssetAccount,
+          primary_type: 'ASSETS',
+          type: 'Assets',
+          sub_group: 'Raw Material Inventory (कच्चा माल)',
+          balance_type: 'Dr'
+        });
+      }
+
+      // 3. Save Purchase Bill Record
       const newBillRecord = {
         id: billId,
         firm_id: activeFirmId,
@@ -287,6 +359,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         reference_no: finalBillNo,
         supplier: supplierName,
         supplier_name: supplierName,
+        party: supplierName,
         item_id: selectedStockId,
         item_name: cleanItemName,
         unit: cleanUnit,
@@ -304,6 +377,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(updatedBills));
       setPurchaseBills(updatedBills);
 
+      // 4. Post Ind AS Balanced Universal Purchase Voucher
       const voucherRefId = `JV-${billId}`;
       saveUniversalVoucher(activeFirmId, {
         id: voucherRefId,
@@ -314,18 +388,22 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         date: purchaseDate,
         reference_no: finalBillNo,
         voucher_number: finalBillNo,
-        dr_account: `${cleanItemName} Stock Account`,
+        dr_account: stockAssetAccount,
         cr_account: supplierName,
         amount: calculatedTotal,
         total_amount: calculatedTotal,
         narration: newBillRecord.narration,
         is_compound: true,
+        items: [
+          { itemName: cleanItemName, name: cleanItemName, qty: numQty, quantity: numQty, unit: cleanUnit, rate: numRate }
+        ],
         entries: [
-          { account_name: `${cleanItemName} Stock Account`, party: `${cleanItemName} Stock Account`, type: 'DR', debit: calculatedTotal, credit: 0, amount: calculatedTotal },
+          { account_name: stockAssetAccount, party: stockAssetAccount, type: 'DR', debit: calculatedTotal, credit: 0, amount: calculatedTotal },
           { account_name: supplierName, party: supplierName, type: 'CR', debit: 0, credit: calculatedTotal, amount: calculatedTotal }
         ]
       });
 
+      // Universal Event Broadcast
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
@@ -338,7 +416,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       });
 
       setEditingBill(null);
-      setBillNumber('');
       setQuantity('');
       setPurchaseRate('');
       setNarration('');
@@ -353,7 +430,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
     setEditingBill(bill);
     setPurchaseDate(bill.purchase_date || bill.date || todayMaxDate);
     setBillNumber(bill.bill_number || bill.reference_no || '');
-    setSelectedSupplier(bill.supplier || bill.supplier_name || '');
+    setSelectedSupplier(getBillSupplierName(bill));
     setSelectedStockId(bill.item_id || bill.stock_id || '');
     setQuantity(bill.quantity ? String(bill.quantity) : '');
     setPurchaseRate(bill.rate || bill.purchase_rate ? String(bill.rate || bill.purchase_rate) : '');
@@ -364,30 +441,43 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
   const handleCancelEdit = () => {
     setEditingBill(null);
-    setBillNumber('');
     setQuantity('');
     setPurchaseRate('');
     setNarration('');
+    setBillNumber(getNextBillNumber(purchaseBills));
     setStatusMessage(null);
   };
 
   const handleDeleteBill = (bill) => {
-    if (!window.confirm(`Purchase Bill #${bill.bill_number || bill.reference_no} ko delete karne se stock vapas minus ho jayega. Jari rakhein?`)) return;
+    const bNum = bill.bill_number || bill.reference_no;
+    if (!window.confirm(`Purchase Bill #${bNum} ko delete karne se inventory stock wapis reverse ho jayega. Jari rakhein?`)) return;
 
     try {
+      // Revert stock atomically
       let currentStock = [...inventoryItems];
       currentStock = revertStockForBill(bill, currentStock);
       saveFirmData('inventory_items', firm, currentStock);
       setInventoryItems(currentStock);
 
+      // Remove from purchase bills bucket
       const filteredBills = purchaseBills.filter(b => b && b.id !== bill.id && b.bill_number !== bill.bill_number);
       localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(filteredBills));
       setPurchaseBills(filteredBills);
 
-      try {
-        deleteUniversalVoucher(activeFirmId, `JV-${bill.id}`);
-        deleteUniversalVoucher(activeFirmId, bill.id);
-      } catch (e) {}
+      // Multi-candidate sweep delete from vouchers bucket
+      const candidateVchIds = [
+        `JV-${bill.id}`,
+        bill.id,
+        `PUR-${bNum}`,
+        `PV-${bNum}`,
+        bNum
+      ];
+
+      candidateVchIds.forEach(vId => {
+        try {
+          deleteUniversalVoucher(activeFirmId, vId);
+        } catch (e) {}
+      });
 
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
@@ -398,7 +488,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       }
 
       loadData();
-      alert('✓ Purchase bill deleted & stock reverted successfully.');
+      alert(`✓ Purchase Bill #${bNum} deleted & stock reversed successfully.`);
     } catch (err) {
       alert(`Delete failed: ${err.message}`);
     }
@@ -407,10 +497,10 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
   const filteredBills = purchaseBills.filter(b => {
     if (!b) return false;
     const q = (searchFilter || '').toLowerCase();
+    const supName = getBillSupplierName(b).toLowerCase();
     return (
       (b.bill_number && String(b.bill_number).toLowerCase().includes(q)) ||
-      (b.supplier && String(b.supplier).toLowerCase().includes(q)) ||
-      (b.supplier_name && String(b.supplier_name).toLowerCase().includes(q)) ||
+      supName.includes(q) ||
       (b.item_name && String(b.item_name).toLowerCase().includes(q)) ||
       (b.narration && String(b.narration).toLowerCase().includes(q))
     );
@@ -452,7 +542,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         </div>
       )}
 
-      {/* Main Entry Form */}
+      {/* Main Purchase Entry Form */}
       <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '12px' }}>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -471,10 +561,10 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
             <label style={labelStyle}>BILL / REF NO *</label>
             <input 
               type="text" 
-              placeholder="e.g. 69" 
+              placeholder="e.g. 72" 
               value={billNumber} 
               onChange={e => setBillNumber(e.target.value)} 
-              style={inputStyle} 
+              style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0284c7' }} 
               required 
             />
           </div>
@@ -560,7 +650,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
               cursor: 'pointer' 
             }}
           >
-            {editingBill ? '✓ Update Purchase & Adjust Stock' : '💾 Save Purchase & Add Stock'}
+            {editingBill ? `✓ Update Purchase #${billNumber}` : `💾 Save Purchase & Add Stock (#${billNumber})`}
           </button>
 
           {editingBill && (
@@ -610,6 +700,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
             filteredBills.map((bill) => {
               const totalAmt = parseFloat(bill.total_amount || 0);
               const isSelected = editingBill && (editingBill.id === bill.id || editingBill.bill_number === bill.bill_number);
+              const displayName = getBillSupplierName(bill);
 
               return (
                 <div 
@@ -634,9 +725,11 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                         #{bill.bill_number || bill.reference_no}
                       </strong>
                     </div>
+
                     <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#dc2626', marginTop: '2px' }}>
-                      {bill.supplier || bill.supplier_name}
+                      {displayName}
                     </div>
+
                     <div style={{ fontSize: '11px', color: '#475569' }}>
                       📦 {bill.item_name} — Qty: <strong>{bill.quantity} {bill.unit || 'Quintal'}</strong> @ ₹{bill.rate || bill.purchase_rate}
                     </div>
