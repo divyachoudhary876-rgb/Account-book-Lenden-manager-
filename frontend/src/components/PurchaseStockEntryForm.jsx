@@ -1,4 +1,5 @@
 // frontend/src/components/PurchaseStockEntryForm.jsx
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { loadFirmData } from '../utils/firmIsolationEngine';
@@ -8,7 +9,7 @@ import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { processPurchaseStockPosting, revertPurchaseStockOnDeletion } from '../utils/inventoryPostingEngine.js';
 
 export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
   const [allItems, setAllItems] = useState([]);
@@ -36,8 +37,9 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       const accList = getFirmMasterAccounts(activeFirmId) || [];
       setAccountsList(accList);
 
-      const allVouchers = StorageService.getItem('account_book_vouchers') || [];
-      const purchases = allVouchers.filter(v => v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001') && (v.voucher_type === 'PURCHASE' || v.type === 'PURCHASE'));
+      // STRICT FIRM ISOLATION: Scanned strictly from activeFirmId
+      const allVouchers = StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || [];
+      const purchases = allVouchers.filter(v => v && (String(v.firm_id || v.firmId || '').trim() === String(activeFirmId).trim()) && (v.voucher_type === 'PURCHASE' || v.type === 'PURCHASE'));
       
       purchases.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
       setPurchaseList(purchases);
@@ -71,10 +73,9 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     setIsSubmitting(true);
     try {
       if (editingId) {
-        revertPurchaseStockOnDeletion(editingId, activeFirmId);
+        rePurchaseStockReversal(editingId, activeFirmId);
       }
 
-      // Robust Item & Unit Resolution
       const selectedItemObj = allItems.find(i => 
         String(i.id || i.item_id || '') === String(selectedItemId || '') || 
         String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId || '').trim().toLowerCase()
@@ -86,6 +87,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
       const purchasePayload = {
         id: editingId || `PURCH-${Date.now()}`,
         firmId: activeFirmId,
+        firm_id: activeFirmId,
         supplierId: supplierParty,
         invoiceNumber: billNo,
         entryDate: purchaseDate,
@@ -135,10 +137,10 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     try {
       revertPurchaseStockOnDeletion(voucherId, activeFirmId);
 
-      const vouchers = StorageService.getItem('account_book_vouchers') || [];
+      const vouchers = StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || [];
       const filtered = vouchers.filter(v => v && v.id !== voucherId && v.reference_no !== refNo);
-      StorageService.setItem('account_book_vouchers', filtered);
       StorageService.setItem(`account_book_vouchers_${activeFirmId}`, filtered);
+      StorageService.setItem(`app_vouchers_${activeFirmId}`, filtered);
 
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
@@ -337,7 +339,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {filteredPurchases.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '11px' }}>
-              No purchase bills recorded yet.
+              No purchase bills recorded yet for this firm.
             </div>
           ) : (
             filteredPurchases.map(inv => {
