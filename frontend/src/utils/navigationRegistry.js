@@ -2,7 +2,7 @@
 
 /**
  * Enterprise Multi-Sector Dynamic Workflow Navigation Registry
- * Configures tailored menu items, specialized sector modules, and category-specific icons.
+ * Configures tailored menu items, specialized sector modules, and clean uniform styling.
  */
 export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
   const cat = String(firmCategory || '').toUpperCase();
@@ -46,21 +46,17 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
     }
   ];
 
+  // Universal Material Issue & Adjustment (Handles Fuel, Diesel, Mitti, and Internal stock out)
+  menu.push({
+    key: 'material_adjustment',
+    label: 'Material Issue & Adjustment (सामग्री निकासी व कटौती)',
+    icon: '📦',
+    category: 'OPERATIONS'
+  });
+
   // 1. BRICK KILN (ईंट भट्ठा) SPECIALIZED MENUS
   if (isBrickKiln) {
     menu.push(
-      { 
-        key: 'consumption', 
-        label: 'Fuel & Coal Consumption (कोयला/डीजल खपत)', 
-        icon: '⛽', 
-        category: 'OPERATIONS' 
-      },
-      { 
-        key: 'material_adjustment', 
-        label: 'Material Issue & Adjustment (सामग्री निकासी व कटौती)', 
-        icon: '📦', 
-        category: 'OPERATIONS' 
-      },
       { 
         key: 'production', 
         label: 'Bhatta Production & Pakai (ईंट पकाई व निर्माण)', 
@@ -79,18 +75,6 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
   else if (isBiomass || isManufacturing) {
     menu.push(
       { 
-        key: 'consumption', 
-        label: 'Raw Material Consumption (कच्चा माल खपत)', 
-        icon: '⚙️', 
-        category: 'OPERATIONS' 
-      },
-      { 
-        key: 'material_adjustment', 
-        label: 'Material Issue & Adjustment (सामग्री निकासी व कटौती)', 
-        icon: '📦', 
-        category: 'OPERATIONS' 
-      },
-      { 
         key: 'production', 
         label: 'Finished Goods Production (उत्पादन व पैकिंग)', 
         icon: '🏭', 
@@ -108,18 +92,6 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
   else if (isTransport) {
     menu.push(
       { 
-        key: 'consumption', 
-        label: 'Vehicle Fuel & Maintenance (गाड़ी डीजल व रख-रखाव)', 
-        icon: '⛽', 
-        category: 'OPERATIONS' 
-      },
-      { 
-        key: 'material_adjustment', 
-        label: 'Tyre / Fuel Issue & Driver Cut (डीजल/सामग्री कटौती)', 
-        icon: '📦', 
-        category: 'OPERATIONS' 
-      },
-      { 
         key: 'production', 
         label: 'Trip Sheet & LR Management (ट्रिप शीट व एलआर बुकिंग)', 
         icon: '🚚', 
@@ -136,12 +108,6 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
   // 4. TRADING & GENERAL RETAIL SPECIALIZED MENUS
   else {
     menu.push(
-      { 
-        key: 'material_adjustment', 
-        label: 'Stock Issue & Party Adjustment (स्टॉक निकासी व समायोजन)', 
-        icon: '📦', 
-        category: 'OPERATIONS' 
-      },
       { 
         key: 'payroll', 
         label: 'Staff Salary & Employee Wages (स्टाफ वेतन व मजदूरी)', 
