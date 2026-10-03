@@ -11,7 +11,7 @@ import {
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 export default function VoucherEntryForm({ firm }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-1790909076433';
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
   const [accounts, setAccounts] = useState([]);
@@ -39,19 +39,13 @@ export default function VoucherEntryForm({ firm }) {
         setCrAccount(cashAcc?.account_name || accList[0].account_name);
       }
 
-      // Universal Deep Scan across all storage keys so NO entry ever gets missed
+      // STRICT FIRM ISOLATION: Scanned ONLY for this activeFirmId
       let rawTxs = [];
       const keysToScan = [
         `app_vouchers_${activeFirmId}`,
         `account_book_vouchers_${activeFirmId}`,
         `app_sales_invoices_${activeFirmId}`,
-        `app_invoices_${activeFirmId}`,
-        `purchase_bills_${activeFirmId}`,
-        'app_vouchers',
-        'account_book_vouchers',
-        'app_sales_invoices',
-        'app_invoices',
-        'purchase_bills'
+        `purchase_bills_${activeFirmId}`
       ];
 
       keysToScan.forEach(k => {
@@ -59,26 +53,20 @@ export default function VoucherEntryForm({ firm }) {
           const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
           if (Array.isArray(val)) {
             rawTxs.push(...val);
-          } else if (val && typeof val === 'object') {
-            Object.values(val).forEach(sub => {
-              if (Array.isArray(sub)) rawTxs.push(...sub);
-            });
           }
         } catch (e) {}
       });
 
-      // Fallback to unified engine if needed
       const engineVchs = getUniversalVouchersByFirm(activeFirmId);
       if (Array.isArray(engineVchs)) rawTxs.push(...engineVchs);
 
-      // Deduplicate by ID or Reference
       const uniqueMap = new Map();
       rawTxs.forEach(v => {
         if (!v) return;
-        const vFirm = v.firm_id || v.firmId || activeFirmId;
-        if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
+        const vFirm = String(v.firm_id || v.firmId || '').trim();
+        if (vFirm && vFirm !== String(activeFirmId).trim()) return;
 
-        const uId = v.id || v.reference_no || v.invoice_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount || 0}-${Math.random()}`;
+        const uId = v.id || v.reference_no || v.invoice_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount || 0}`;
         if (!uniqueMap.has(uId)) {
           let vType = String(v.voucher_type || v.type || 'JV').toUpperCase();
           if (v.invoice_number && !v.voucher_type) vType = 'SALES';
@@ -102,7 +90,6 @@ export default function VoucherEntryForm({ firm }) {
       });
 
       const finalVchs = Array.from(uniqueMap.values());
-      // Sort newest first
       finalVchs.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
 
       setVoucherList(finalVchs);
@@ -412,7 +399,6 @@ export default function VoucherEntryForm({ firm }) {
           style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '12px' }}
         />
 
-        {/* Scrollable Container with Non-Overlapping Card Layout */}
         <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
           {filteredVouchers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '12px' }}>
