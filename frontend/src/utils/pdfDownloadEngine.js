@@ -19,20 +19,28 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * Universal Account Name Sanitizer (Removes corrupt brackets like '(OK !<)', '(OK !-)', etc.)
+ * Ultra-Robust Account Name Sanitizer (Completely eliminates '(OK !<)', '(OK !-)', etc.)
  */
 const cleanAccountTitle = (rawName) => {
   if (!rawName) return '';
   let str = String(rawName).trim();
-  
-  // Clean corrupt legacy tags like (OK !<), (OK !-), (OK), [OK !<]
-  str = str.replace(/\s*\(\s*OK\s*!?[^)]*\)/gi, '');
-  str = str.replace(/\s*\[\s*OK\s*!?[^\]]*\]/gi, '');
-  str = str.replace(/\s*\(OK\)/gi, '');
-  
-  // Normalize double spaces
+
+  // Special case: Cash account ko hamesha pure 'Cash in Hand' me convert karein
+  if (/cash\s*in\s*hand/i.test(str) || /^cash$/i.test(str)) {
+    return 'Cash in Hand';
+  }
+
+  // Remove any bracket containing 'OK', exclamation marks, or comparison symbols
+  str = str.replace(/\s*\([^)]*OK[^)]*\)/gi, '');
+  str = str.replace(/\s*\[[^\]]*OK[^\]]*\]/gi, '');
+  str = str.replace(/\s*\([^)]*![^)]*\)/gi, '');
+  str = str.replace(/\s*\([^)]*<[^)]*\)/gi, '');
+  str = str.replace(/\s*\(OK\s*!?.*$/gi, '');
+  str = str.replace(/\s*\[OK\s*!?.*$/gi, '');
+
+  // Normalize extra spaces
   str = str.replace(/\s+/g, ' ').trim();
-  return str || String(rawName).trim();
+  return str || 'Account';
 };
 
 /**
@@ -130,7 +138,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
     y += 6;
 
-    // Header Bar
     doc.setFillColor(15, 23, 42);
     doc.rect(14, y, 182, 7, 'F');
     doc.setTextColor(255, 255, 255);
@@ -148,10 +155,10 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   printHeader();
 
   txs.forEach((t, index) => {
-    const mainTitle = `${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`;
+    const rawTitle = `${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`;
     const descText = t.narration || '';
 
-    const splitTitle = doc.splitTextToSize(mainTitle, 68);
+    const splitTitle = doc.splitTextToSize(rawTitle, 68);
     const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
     const totalLines = splitTitle.length + splitDesc.length;
     const rowHeight = Math.max(7, 3 + (totalLines * 3.4));
@@ -210,12 +217,8 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   [param1, param2, param3].forEach(arg => {
     if (!arg) return;
     if (typeof arg === 'object') {
-      if (arg.legal_name || arg.trade_name || arg.name || arg.id) {
-        firmInput = arg;
-      }
-      if (arg.trialBalance || arg.trading || arg.balanceSheet || arg.gstSummary || arg.pnl) {
-        reportData = arg;
-      }
+      if (arg.legal_name || arg.trade_name || arg.name || arg.id) firmInput = arg;
+      if (arg.trialBalance || arg.trading || arg.balanceSheet || arg.gstSummary || arg.pnl) reportData = arg;
     } else if (typeof arg === 'string') {
       const upper = arg.toUpperCase();
       if (['TRIAL_BALANCE', 'TRADING', 'PNL', 'BALANCE_SHEET', 'GST_SUMMARY', 'TB', '1', '2', '3', '4', '5'].includes(upper)) {
@@ -418,7 +421,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE - 100% CLEAN ACCOUNT NAMES)
+ * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE - COMPLETE CLEANUP)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -468,8 +471,8 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   rows.forEach((vch, idx) => {
     const rawRef = String(vch.reference_no || vch.voucher_number || vch.id || '-');
     const vType = String(vch.voucher_type || vch.type || 'JOURNAL');
-    
-    // Clean accounts with the sanitizer to strip '(OK !<)' etc.
+
+    // Strict cleaning for both Dr & Cr accounts
     const drName = cleanAccountTitle(vch.dr_account || vch.dr_party || 'Dr Account');
     const crName = cleanAccountTitle(vch.cr_account || vch.cr_party || 'Cr Account');
 
@@ -477,11 +480,6 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     let itemStr = itemsList.map(it => `${it.itemName} (Qty: ${it.qty} @ Rs ${it.rate})`).join(', ');
     const noteText = vch.narration ? (itemStr ? `${itemStr} - ${vch.narration}` : vch.narration) : itemStr;
 
-    // Perfectly sized non-clashing columns:
-    // Dr width = 54mm (118 to 172)
-    // Cr width = 75mm (175 to 250) - expanded to prevent any cutting!
-    // Note width = 125mm
-    // Amount is safely locked at 278mm (zero collision)
     const splitDr = doc.splitTextToSize(drName, 54);
     const splitCr = doc.splitTextToSize(crName, 75);
     const splitNote = noteText ? doc.splitTextToSize(noteText, 125) : [];
@@ -490,7 +488,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.2) : 0;
     const rowHeight = Math.max(6.5, 3.5 + namesHeight + noteHeight);
 
-    // Landscape height is 210mm, safe break at 190mm
+    // Landscape height = 210mm, safe break at 190mm
     if (y + rowHeight > 190) {
       doc.addPage();
       pageNum += 1;
