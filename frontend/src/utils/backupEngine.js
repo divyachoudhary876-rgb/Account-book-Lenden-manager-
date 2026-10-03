@@ -1,4 +1,5 @@
 // frontend/src/utils/backupEngine.js
+
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
@@ -12,7 +13,7 @@ const resolveFirmNameString = (firmInput) => {
 };
 
 /**
- * 1. UNIVERSAL ZERO-LOSS EXPORT
+ * 1. UNIVERSAL ZERO-LOSS EXPORT ENGINE
  */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
@@ -28,8 +29,12 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
           const parsed = JSON.parse(rawVal);
           storageSnapshot[key] = parsed;
           if (Array.isArray(parsed)) {
-            if (key.includes('voucher') || key.includes('invoice')) vouchersCount += parsed.length;
-            if (key.includes('account') || key.includes('inventory')) accountsCount += parsed.length;
+            if (key.includes('voucher') || key.includes('invoice') || key.includes('purchase_bill')) {
+              vouchersCount += parsed.length;
+            }
+            if (key.includes('account') || key.includes('inventory')) {
+              accountsCount += parsed.length;
+            }
           }
         } catch {
           storageSnapshot[key] = rawVal;
@@ -41,8 +46,16 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     const now = new Date();
     const fileName = `${cleanFirm}_Backup_${now.toISOString().slice(0, 10)}.json`;
 
+    const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+
     const backupPayload = {
-      meta: { app: "AccountBook", firm: cleanFirm, version: "2.1.0", export_timestamp: now.toISOString() },
+      meta: { 
+        app: "AccountBook", 
+        firm: cleanFirm, 
+        version: "3.2.0", 
+        export_timestamp: now.toISOString(),
+        active_firm_id: activeFirmId 
+      },
       stats: { vouchersCount, accountsCount, total_keys: Object.keys(storageSnapshot).length },
       data: storageSnapshot
     };
@@ -51,7 +64,10 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 
     if (Capacitor.isNativePlatform()) {
       const writeResult = await Filesystem.writeFile({
-        path: fileName, data: jsonString, directory: Directory.Cache, encoding: Encoding.UTF8
+        path: fileName, 
+        data: jsonString, 
+        directory: Directory.Cache, 
+        encoding: Encoding.UTF8
       });
       if (writeResult?.uri) {
         await Share.share({ title: 'Account Book Backup', url: writeResult.uri });
@@ -66,7 +82,10 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+    setTimeout(() => { 
+      document.body.removeChild(a); 
+      URL.revokeObjectURL(url); 
+    }, 1500);
 
     return { success: true };
   } catch (err) {
@@ -75,96 +94,92 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH AUTOMATIC FIRM ID REMAPPING)
+ * 2. SMART ZERO-LOSS RESTORE ENGINE (DYNAMIC FIRM-REMAPPING & FULL DEDUPLICATION)
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
     if (!rawInput) throw new Error("No backup data provided.");
 
-    let parsedContent = typeof rawInput === 'string' ? JSON.parse(rawInput) : rawInput;
+    let parsedContent;
+    if (typeof rawInput === 'string') {
+      parsedContent = JSON.parse(rawInput);
+    } else if (rawInput instanceof Blob || rawInput instanceof File) {
+      const text = await rawInput.text();
+      parsedContent = JSON.parse(text);
+    } else {
+      parsedContent = rawInput;
+    }
+
     let targetData = parsedContent?.data && typeof parsedContent.data === 'object' && !Array.isArray(parsedContent.data) 
       ? parsedContent.data 
-      : parsedContent;
+      : parsedContent?.storage_dump || parsedContent;
 
     if (!targetData || typeof targetData !== 'object' || Array.isArray(targetData)) {
       throw new Error("Invalid backup schema structure.");
     }
 
     // A. Detect the true active firm ID
-    let activeFirmId = targetData['app_active_firm_id'] || localStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433';
+    let activeFirmId = localStorage.getItem('app_active_firm_id') || 
+                       parsedContent?.meta?.active_firm_id || 
+                       targetData['app_active_firm_id'] || 
+                       'FIRM-001';
 
-    // B. First write all raw keys as provided in backup
+    // B. Write all raw keys first as in the dump
     Object.keys(targetData).forEach(key => {
       const val = targetData[key];
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
       localStorage.setItem(key, stringifiedVal);
     });
 
-    // Ensure active firm ID is saved in localStorage
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
     // ========================================================
-    // C. CONSOLIDATE ALL 570+ ACCOUNTS (Zero-Loss Deduplication)
+    // C. CONSOLIDATE ACCOUNTS (Zero-Loss Master Recovery)
     // ========================================================
     const consolidatedAccountsMap = new Map();
-    const accountKeysToExtract = [
-      'app_accounts_default_firm_id',
-      'app_accounts_default_firm',
-      `account_heads_${activeFirmId}`,
-      `app_accounts_${activeFirmId}`,
-      'app_accounts',
-      'account_heads',
-      'app_account_heads'
-    ];
-
-    accountKeysToExtract.forEach(key => {
-      const raw = targetData[key] || localStorage.getItem(key);
-      if (raw) {
-        try {
-          const list = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          if (Array.isArray(list)) {
-            list.forEach(acc => {
-              if (!acc) return;
-              const name = (acc.account_name || acc.name || '').trim();
-              if (name) {
-                const uniqueKey = name.toLowerCase();
-                if (!consolidatedAccountsMap.has(uniqueKey)) {
-                  consolidatedAccountsMap.set(uniqueKey, {
-                    ...acc,
-                    id: acc.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-                    name: name,
-                    account_name: name,
-                    primary_type: acc.primary_type || acc.type || 'Expenses',
-                    type: acc.type || acc.primary_type || 'Expenses',
-                    sub_group: acc.sub_group || acc.group || 'General Ledger',
-                    group: acc.group || acc.sub_group || 'General Ledger',
-                    opening_balance: Number(acc.opening_balance || acc.openingBalance || 0),
-                    openingBalance: Number(acc.opening_balance || acc.openingBalance || 0),
-                    balance_type: acc.balance_type || acc.balanceType || 'Dr',
-                    balanceType: acc.balance_type || acc.balanceType || 'Dr'
-                  });
-                } else {
-                  // Merge missing properties if already present
-                  const existing = consolidatedAccountsMap.get(uniqueKey);
-                  consolidatedAccountsMap.set(uniqueKey, {
-                    ...existing,
-                    ...acc,
-                    name: name,
-                    account_name: name,
-                    opening_balance: Number(acc.opening_balance || acc.openingBalance || existing.opening_balance || 0),
-                    openingBalance: Number(acc.opening_balance || acc.openingBalance || existing.openingBalance || 0)
-                  });
-                }
+    
+    Object.keys(targetData).forEach(key => {
+      if (key.includes('account_heads') || key.includes('app_accounts')) {
+        const raw = targetData[key];
+        if (Array.isArray(raw)) {
+          raw.forEach(acc => {
+            if (!acc) return;
+            const name = (acc.account_name || acc.name || '').trim();
+            if (name) {
+              const uniqueKey = name.toLowerCase();
+              if (!consolidatedAccountsMap.has(uniqueKey)) {
+                consolidatedAccountsMap.set(uniqueKey, {
+                  ...acc,
+                  id: acc.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                  name: name,
+                  account_name: name,
+                  primary_type: acc.primary_type || acc.type || 'Expenses',
+                  type: acc.type || acc.primary_type || 'Expenses',
+                  sub_group: acc.sub_group || acc.group || 'General Ledger',
+                  group: acc.group || acc.sub_group || 'General Ledger',
+                  opening_balance: Number(acc.opening_balance || acc.openingBalance || 0),
+                  openingBalance: Number(acc.opening_balance || acc.openingBalance || 0),
+                  balance_type: acc.balance_type || acc.balanceType || 'Dr',
+                  balanceType: acc.balance_type || acc.balanceType || 'Dr'
+                });
+              } else {
+                const existing = consolidatedAccountsMap.get(uniqueKey);
+                consolidatedAccountsMap.set(uniqueKey, {
+                  ...existing,
+                  ...acc,
+                  name: name,
+                  account_name: name,
+                  opening_balance: Number(acc.opening_balance || acc.openingBalance || existing.opening_balance || 0),
+                  openingBalance: Number(acc.opening_balance || acc.openingBalance || existing.openingBalance || 0)
+                });
               }
-            });
-          }
-        } catch (e) {}
+            }
+          });
+        }
       }
     });
 
     const finalAccountsList = Array.from(consolidatedAccountsMap.values());
-
-    // Inject consolidated accounts into both active firm keys
     if (finalAccountsList.length > 0) {
       localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(finalAccountsList));
       localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(finalAccountsList));
@@ -174,33 +189,24 @@ export const restoreUniversalBackup = async (rawInput) => {
     // D. CONSOLIDATE INVENTORY ITEMS
     // ========================================================
     const consolidatedItemsMap = new Map();
-    const itemKeysToExtract = [
-      'inventory_items_default_firm',
-      'inventory_items_default_firm_id',
-      `inventory_items_${activeFirmId}`,
-      'inventory_items'
-    ];
 
-    itemKeysToExtract.forEach(key => {
-      const raw = targetData[key] || localStorage.getItem(key);
-      if (raw) {
-        try {
-          const list = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          if (Array.isArray(list)) {
-            list.forEach(item => {
-              if (!item) return;
-              const name = (item.item_name || item.name || item.itemName || '').trim();
-              if (name && !consolidatedItemsMap.has(name.toLowerCase())) {
-                consolidatedItemsMap.set(name.toLowerCase(), {
-                  ...item,
-                  firm_id: activeFirmId,
-                  item_name: name,
-                  name: name
-                });
-              }
-            });
-          }
-        } catch (e) {}
+    Object.keys(targetData).forEach(key => {
+      if (key.startsWith('inventory_items') || key.startsWith('app_stock')) {
+        const raw = targetData[key];
+        if (Array.isArray(raw)) {
+          raw.forEach(item => {
+            if (!item) return;
+            const name = (item.item_name || item.name || item.itemName || '').trim();
+            if (name && !consolidatedItemsMap.has(name.toLowerCase())) {
+              consolidatedItemsMap.set(name.toLowerCase(), {
+                ...item,
+                firm_id: activeFirmId,
+                item_name: name,
+                name: name
+              });
+            }
+          });
+        }
       }
     });
 
@@ -210,35 +216,26 @@ export const restoreUniversalBackup = async (rawInput) => {
     }
 
     // ========================================================
-    // E. CONSOLIDATE VOUCHERS & SALES INVOICES (603 Vouchers Safe)
+    // E. CONSOLIDATE VOUCHERS, SALES & JOURNAL ENTRIES
     // ========================================================
     const consolidatedVouchersMap = new Map();
-    const voucherKeysToExtract = [
-      'account_book_vouchers',
-      `account_book_vouchers_${activeFirmId}`,
-      `app_vouchers_${activeFirmId}`,
-      `app_invoices_${activeFirmId}`
-    ];
 
-    voucherKeysToExtract.forEach(key => {
-      const raw = targetData[key] || localStorage.getItem(key);
-      if (raw) {
-        try {
-          const list = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          if (Array.isArray(list)) {
-            list.forEach(v => {
-              if (!v) return;
-              const vId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.amount || v.total_amount}`;
-              if (!consolidatedVouchersMap.has(vId)) {
-                consolidatedVouchersMap.set(vId, {
-                  ...v,
-                  firm_id: activeFirmId,
-                  firmId: activeFirmId
-                });
-              }
-            });
-          }
-        } catch (e) {}
+    Object.keys(targetData).forEach(key => {
+      if (key.includes('voucher') || key.includes('invoice')) {
+        const raw = targetData[key];
+        if (Array.isArray(raw)) {
+          raw.forEach(v => {
+            if (!v) return;
+            const vId = v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount}`;
+            if (!consolidatedVouchersMap.has(vId)) {
+              consolidatedVouchersMap.set(vId, {
+                ...v,
+                firm_id: activeFirmId,
+                firmId: activeFirmId
+              });
+            }
+          });
+        }
       }
     });
 
@@ -248,7 +245,63 @@ export const restoreUniversalBackup = async (rawInput) => {
       localStorage.setItem(`account_book_vouchers_${activeFirmId}`, JSON.stringify(finalVouchersList));
     }
 
-    // Broadcast system events
+    // ========================================================
+    // F. CONSOLIDATE PURCHASE BILLS (CRITICAL FIX FOR ZERO BILLS)
+    // ========================================================
+    const consolidatedPurchaseMap = new Map();
+
+    Object.keys(targetData).forEach(key => {
+      if (key.startsWith('purchase_bills') || key.startsWith('purchase_inward')) {
+        const raw = targetData[key];
+        if (Array.isArray(raw)) {
+          raw.forEach(bill => {
+            if (!bill) return;
+            const bId = bill.id || bill.bill_number || bill.reference_no || `${bill.date || bill.purchase_date}-${bill.total_amount || bill.amount}`;
+            if (!consolidatedPurchaseMap.has(bId)) {
+              consolidatedPurchaseMap.set(bId, {
+                ...bill,
+                firm_id: activeFirmId,
+                firmId: activeFirmId
+              });
+            }
+          });
+        }
+      }
+    });
+
+    const finalPurchaseList = Array.from(consolidatedPurchaseMap.values());
+    if (finalPurchaseList.length > 0) {
+      localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(finalPurchaseList));
+    }
+
+    // ========================================================
+    // G. CONSOLIDATE MATERIAL ADJUSTMENTS & CONSUMPTIONS
+    // ========================================================
+    const consolidatedAdjMap = new Map();
+    Object.keys(targetData).forEach(key => {
+      if (key.includes('material_adjustment') || key.includes('consumption_record')) {
+        const raw = targetData[key];
+        if (Array.isArray(raw)) {
+          raw.forEach(adj => {
+            if (!adj) return;
+            const aId = adj.id || `${adj.date}-${adj.total_amount || adj.total_value}`;
+            if (!consolidatedAdjMap.has(aId)) {
+              consolidatedAdjMap.set(aId, {
+                ...adj,
+                firm_id: activeFirmId
+              });
+            }
+          });
+        }
+      }
+    });
+
+    const finalAdjList = Array.from(consolidatedAdjMap.values());
+    if (finalAdjList.length > 0) {
+      localStorage.setItem(`universal_material_adjustments_${activeFirmId}`, JSON.stringify(finalAdjList));
+    }
+
+    // Trigger universal instant UI reload across all open screens
     window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('storage'));
@@ -256,8 +309,9 @@ export const restoreUniversalBackup = async (rawInput) => {
     return {
       success: true,
       stats: {
-        vouchersCount: finalVouchersList.length || parsedContent?.stats?.vouchersCount || 0,
-        accountsCount: finalAccountsList.length || parsedContent?.stats?.accountsCount || 0
+        vouchersCount: finalVouchersList.length,
+        accountsCount: finalAccountsList.length,
+        purchasesCount: finalPurchaseList.length
       }
     };
   } catch (err) {
