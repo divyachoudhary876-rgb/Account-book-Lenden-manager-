@@ -160,7 +160,7 @@ export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Save or Update an Account Head strictly for active firm with Cascade Name Update
+ * Save or Update an Account Head strictly for active firm with Deep Universal Cascade Name Update
  */
 export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const accounts = getFirmMasterAccounts(firmId);
@@ -203,59 +203,48 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   // 1. Save updated master accounts list
   localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(accounts));
+  localStorage.setItem(`app_accounts`, JSON.stringify(accounts));
 
-  // 2. CASCADE RENAME ENGINE: If account name changed, update it across all vouchers & invoices
+  // 2. DEEP UNIVERSAL CASCADE RENAME ENGINE: Updates account name across all entries, vouchers, sales, purchase & statements
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
     
     for (let i = 0; i < localStorage.length; i++) {
       const storageKey = localStorage.key(i);
-      if (storageKey && (storageKey.includes('voucher') || storageKey.includes('invoice') || storageKey.includes('bill') || storageKey.includes('transaction'))) {
+      if (storageKey) {
         const rawVal = localStorage.getItem(storageKey);
         if (rawVal) {
           try {
-            let parsedList = JSON.parse(rawVal);
-            if (Array.isArray(parsedList)) {
-              let isModified = false;
-              parsedList = parsedList.map(v => {
-                if (!v) return v;
-                let vModified = false;
-                const copy = { ...v };
+            let parsed = JSON.parse(rawVal);
 
-                if (String(copy.dr_account || '').trim().toLowerCase() === oldTarget) {
-                  copy.dr_account = cleanName;
-                  vModified = true;
-                }
-                if (String(copy.cr_account || '').trim().toLowerCase() === oldTarget) {
-                  copy.cr_account = cleanName;
-                  vModified = true;
-                }
-                if (String(copy.supplier_name || '').trim().toLowerCase() === oldTarget) {
-                  copy.supplier_name = cleanName;
-                  vModified = true;
-                }
-                if (String(copy.customer_name || '').trim().toLowerCase() === oldTarget) {
-                  copy.customer_name = cleanName;
-                  vModified = true;
-                }
+            const recursiveReplace = (item) => {
+              if (!item) return false;
+              let changed = false;
 
-                if (Array.isArray(copy.entries)) {
-                  copy.entries = copy.entries.map(ent => {
-                    if (ent && String(ent.account_name || ent.party || '').trim().toLowerCase() === oldTarget) {
-                      vModified = true;
-                      return { ...ent, account_name: cleanName, party: cleanName };
+              if (typeof item === 'object') {
+                if (Array.isArray(item)) {
+                  item.forEach((subItem) => {
+                    if (recursiveReplace(subItem)) changed = true;
+                  });
+                } else {
+                  Object.keys(item).forEach(prop => {
+                    const val = item[prop];
+                    if (typeof val === 'string' && val.trim().toLowerCase() === oldTarget) {
+                      if (['dr_account', 'cr_account', 'supplier_name', 'customer_name', 'party', 'account_name', 'name', 'worker', 'expense_ledger', 'dr_party', 'cr_party'].includes(prop)) {
+                        item[prop] = cleanName;
+                        changed = true;
+                      }
+                    } else if (typeof val === 'object' && val !== null) {
+                      if (recursiveReplace(val)) changed = true;
                     }
-                    return ent;
                   });
                 }
-
-                if (vModified) isModified = true;
-                return copy;
-              });
-
-              if (isModified) {
-                localStorage.setItem(storageKey, JSON.stringify(parsedList));
               }
+              return changed;
+            };
+
+            if (recursiveReplace(parsed)) {
+              localStorage.setItem(storageKey, JSON.stringify(parsed));
             }
           } catch (e) {}
         }
