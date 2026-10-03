@@ -109,7 +109,7 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       }
     }
 
-    // Default baseline accounts for newly initialized firm (Zero dependency on other firms)
+    // Default baseline accounts for newly initialized firm
     const defaultAccounts = [
       { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
       { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
@@ -203,27 +203,32 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
 
-    // Target Storage Buckets Scoped strictly to this Active Firm
+    // All possible storage buckets scoped to active firm
     const firmTargetKeys = [
       `app_vouchers_${activeFirmId}`,
       `account_book_vouchers_${activeFirmId}`,
       `sales_invoices_${activeFirmId}`,
+      `app_sales_invoices_${activeFirmId}`,
+      `app_invoices_${activeFirmId}`,
       `purchase_bills_${activeFirmId}`,
+      `app_purchase_bills_${activeFirmId}`,
       `bill_settlements_${activeFirmId}`,
       `party_transactions_${activeFirmId}`,
       `transport_trips_${activeFirmId}`,
+      `app_payroll_entries_${activeFirmId}`,
       `payroll_entries_${activeFirmId}`,
       `material_consumptions_${activeFirmId}`
     ];
 
-    // Comprehensive list of matching entity/ledger fields across all modules
+    // Every field where account/party/vendor/customer/worker name can be stored
     const matchFields = [
       'dr_account', 'cr_account', 'dr_party', 'cr_party',
       'account_name', 'accountName', 'name', 'party',
       'party_name', 'partyName', 'customer_name', 'customerName',
-      'supplier_name', 'supplierName', 'worker', 'worker_name',
-      'expense_ledger', 'linked_ledger_account', 'ledger_account',
-      'customer_account', 'supplier_account'
+      'supplier_name', 'supplierName', 'customer_account', 'supplier_account',
+      'customerParty', 'supplierParty', 'customerId', 'supplierId',
+      'worker', 'worker_name', 'expense_ledger', 'linked_ledger_account', 
+      'ledger_account', 'debit_account', 'credit_account'
     ];
 
     firmTargetKeys.forEach(storageKey => {
@@ -245,7 +250,7 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
               }
             });
 
-            // Compound voucher entries array update
+            // Compound voucher entries array
             if (Array.isArray(node.entries)) {
               node.entries.forEach(entry => deepReplace(entry));
               if (modified) {
@@ -260,7 +265,12 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
               }
             }
 
-            // Recurse safely into nested objects
+            // Invoices line items / items array if applicable
+            if (Array.isArray(node.items)) {
+              node.items.forEach(it => deepReplace(it));
+            }
+
+            // Recurse into nested objects
             Object.keys(node).forEach(key => {
               if (typeof node[key] === 'object' && node[key] !== null) {
                 deepReplace(node[key]);
