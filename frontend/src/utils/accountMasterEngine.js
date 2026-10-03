@@ -87,7 +87,6 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       if (Array.isArray(parsed)) rawAccounts.push(...parsed);
     }
 
-    // Also check global fallback
     const globalRaw = localStorage.getItem('app_accounts');
     if (globalRaw) {
       const parsed = JSON.parse(globalRaw);
@@ -163,7 +162,7 @@ export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Save or Update an Account Head with 100% Robust Multi-Storage Deep Cascade Rename Engine
+ * Save or Update an Account Head with Universal Deep Storage & Entry Cascade Rename Engine
  */
 export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const accounts = getFirmMasterAccounts(firmId);
@@ -209,7 +208,7 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   localStorage.setItem(`app_accounts`, JSON.stringify(accounts));
   localStorage.setItem(`app_account_heads`, JSON.stringify(accounts));
 
-  // 2. ULTIMATE DEEP RECURSIVE CASCADE RENAME ENGINE
+  // 2. ULTIMATE DEEP UNIVERSAL CASCADE RENAME ENGINE
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
     
@@ -238,7 +237,7 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
                         'dr_account', 'cr_account', 'supplier_name', 'customer_name', 
                         'party', 'account_name', 'name', 'worker', 'expense_ledger', 
                         'dr_party', 'cr_party', 'customer_account', 'supplier_account',
-                        'linked_ledger_account', 'entity_name'
+                        'linked_ledger_account', 'entity_name', 'item_name', 'item'
                       ].includes(prop)) {
                         item[prop] = cleanName;
                         changed = true;
@@ -261,10 +260,15 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     }
   }
 
-  // 3. Broadcast global update events so all active views re-render instantly
+  // 3. Broadcast aggressive global update events and reload window for instant 100% reflection across all views
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('storage'));
+  
+  setTimeout(() => {
+    window.location.reload();
+  }, 100);
+
   return payload;
 };
 
