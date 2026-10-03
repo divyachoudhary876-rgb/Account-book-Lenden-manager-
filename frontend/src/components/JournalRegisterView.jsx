@@ -1,11 +1,12 @@
 // frontend/src/components/JournalRegisterView.jsx
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { loadFirmData } from '../utils/firmIsolationEngine';
 import { downloadJournalRegisterPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function JournalRegisterView({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
   const [journalEntries, setJournalEntries] = useState([]);
@@ -13,13 +14,12 @@ export default function JournalRegisterView({ firm, onClose }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [sortOrder, setSortOrder] = useState('DESC'); // Default newest first
+  const [sortOrder, setSortOrder] = useState('DESC');
   const [isExporting, setIsExporting] = useState(false);
   const [statusNotification, setStatusNotification] = useState(null);
 
   const loadJournal = () => {
     try {
-      // 1. Load Master Inventory Items to resolve correct units dynamically
       const rawInventory = loadFirmData('inventory_items', firm, []);
       const inventoryMap = new Map();
       rawInventory.forEach(inv => {
@@ -32,12 +32,11 @@ export default function JournalRegisterView({ firm, onClose }) {
       });
 
       let rawTx = [];
+      // STRICT FIRM ISOLATION: No global keys scanned
       const keysToScan = [
-        'account_book_vouchers',
-        'app_vouchers',
-        'app_payroll_entries',
         `account_book_vouchers_${activeFirmId}`,
-        `app_vouchers_${activeFirmId}`
+        `app_vouchers_${activeFirmId}`,
+        `app_payroll_entries_${activeFirmId}`
       ];
 
       keysToScan.forEach(k => {
@@ -50,8 +49,8 @@ export default function JournalRegisterView({ firm, onClose }) {
       const uniqueMap = new Map();
       rawTx.forEach(tx => {
         if (!tx) return;
-        const vFirm = tx.firm_id || activeFirmId;
-        if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
+        const vFirm = String(tx.firm_id || tx.firmId || '').trim();
+        if (vFirm && vFirm !== String(activeFirmId).trim()) return;
 
         const uId = tx.id || tx.reference_no || `${tx.voucher_date || tx.date}-${Math.random()}`;
         if (!uniqueMap.has(uId)) {
@@ -306,7 +305,7 @@ export default function JournalRegisterView({ firm, onClose }) {
       <div style={{ maxHeight: '500px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
         {filteredEntries.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
-            No journal entries found matching criteria.
+            No journal entries found for this firm.
           </div>
         ) : (
           filteredEntries.map((entry, idx) => {
