@@ -2,14 +2,14 @@
 import { getFirmScopedStorageKey, getActiveFirmId } from './firmIsolationEngine';
 
 /**
- * Universal voucher fetcher that scans ALL possible keys in localStorage (scoped, global, backup snapshots)
+ * Strictly Firm-Isolated voucher fetcher (No Cross-Firm Leakage)
  */
 export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
   try {
-    let rawTx = [];
     const firmId = getActiveFirmId(firmInput);
+    let rawTx = [];
 
-    // 1. Check direct scoped keys for this firm
+    // 1. Fetch strictly from firm-scoped keys only
     const scopedKeys = [
       getFirmScopedStorageKey('app_vouchers', firmInput),
       getFirmScopedStorageKey('account_book_vouchers', firmInput),
@@ -29,58 +29,15 @@ export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
       }
     });
 
-    // 2. Check global base keys and backup restore keys
-    const globalKeys = [
-      'app_vouchers', 'account_book_vouchers', 'vouchers', 
-      'transactions', 'daybook', 'journal_entries', 'account_book_vouchers_default_firm_id'
-    ];
-
-    globalKeys.forEach(k => {
-      const val = localStorage.getItem(k);
-      if (val) {
-        try {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) rawTx.push(...parsed);
-          else if (parsed && typeof parsed === 'object') {
-            if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
-            if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
-            Object.values(parsed).forEach(sub => {
-              if (Array.isArray(sub)) rawTx.push(...sub);
-            });
-          }
-        } catch (e) {}
-      }
-    });
-
-    // 3. Deep scan ALL localStorage keys for any voucher/transaction/backup data
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('journal') || key.includes('backup'))) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              rawTx.push(...parsed);
-            } else if (parsed && typeof parsed === 'object') {
-              if (parsed.data && typeof parsed.data === 'object') {
-                Object.values(parsed.data).forEach(subVal => {
-                  if (Array.isArray(subVal)) rawTx.push(...subVal);
-                });
-              }
-              Object.values(parsed).forEach(subVal => {
-                if (Array.isArray(subVal)) rawTx.push(...subVal);
-              });
-            }
-          } catch (err) {}
-        }
-      }
-    }
-
-    // Deduplicate entries by unique ID or signature
+    // 2. Strict Firm Filtering: Ensure transaction belongs to this firm or has no firm_id (legacy fallback)
     const uniqueMap = new Map();
     rawTx.forEach(tx => {
       if (!tx) return;
+      const txFirm = tx.firm_id || tx.firmId;
+      if (txFirm && String(txFirm).trim().replace(/[^a-zA-Z0-9_-]/g, '_') !== firmId) {
+        return; // Skip if belongs to another firm
+      }
+
       const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount || tx.grand_total}-${tx.dr_account || tx.debit_account || ''}-${tx.cr_account || tx.credit_account || ''}`;
       if (!uniqueMap.has(uId)) {
         uniqueMap.set(uId, tx);
@@ -95,7 +52,7 @@ export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
 };
 
 /**
- * Retrieve account heads for a firm with backup fallback & deep scan
+ * Retrieve account heads strictly isolated for the active firm
  */
 export const getAccountHeads = (firmInput = 'FIRM-001') => {
   try {
@@ -105,8 +62,10 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
     const scopedKeys = [
       getFirmScopedStorageKey('app_accounts', firmInput),
       getFirmScopedStorageKey('account_heads', firmInput),
-      `app_accounts_${firmId}`
+      `app_accounts_${firmId}`,
+      `account_heads_${firmId}`
     ];
+
     scopedKeys.forEach(k => {
       const val = localStorage.getItem(k);
       if (val) {
@@ -117,43 +76,14 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
       }
     });
 
-    const globalKeys = ['app_accounts', 'account_heads', 'accounts_list', 'ledgers'];
-    globalKeys.forEach(k => {
-      const val = localStorage.getItem(k);
-      if (val) {
-        try {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) rawAccounts.push(...parsed);
-        } catch (e) {}
-      }
-    });
-
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.includes('account') || key.includes('ledger') || key.includes('party') || key.includes('backup'))) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) rawAccounts.push(...parsed);
-            else if (parsed && typeof parsed === 'object') {
-              if (parsed.data && typeof parsed.data === 'object') {
-                Object.values(parsed.data).forEach(sub => {
-                  if (Array.isArray(sub)) rawAccounts.push(...sub);
-                });
-              }
-              Object.values(parsed).forEach(sub => {
-                if (Array.isArray(sub)) rawAccounts.push(...sub);
-              });
-            }
-          } catch (e) {}
-        }
-      }
-    }
-
     const uniqueMap = new Map();
     rawAccounts.forEach(acc => {
       if (!acc) return;
+      const accFirm = acc.firm_id || acc.firmId;
+      if (accFirm && String(accFirm).trim().replace(/[^a-zA-Z0-9_-]/g, '_') !== firmId) {
+        return;
+      }
+
       const name = (acc.account_name || acc.name || '').trim().toLowerCase();
       if (name && !uniqueMap.has(name)) {
         uniqueMap.set(name, acc);
