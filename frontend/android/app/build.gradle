@@ -9,14 +9,12 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         
-        // Version increments for smooth in-place application updates
-        versionCode 4
-        versionName "1.0.3"
+        // Base versioning for seamless in-place application updates
+        versionCode 100
+        versionName "1.0.4"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate Modern Web Apps.
-             // For more information see https://developer.android.com/studio/build/configure-apk-splits.html
              ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
@@ -61,5 +59,5 @@ try {
         apply plugin: 'com.google.gms.google-services'
     }
 } catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications will not work")
+    logger.info("google-services.json not found, google-services plugin not applied.")
 }
