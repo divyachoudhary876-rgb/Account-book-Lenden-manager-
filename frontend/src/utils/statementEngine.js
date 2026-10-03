@@ -2,21 +2,34 @@
 import { getFirmScopedStorageKey, getActiveFirmId } from './firmIsolationEngine';
 
 /**
- * Strictly Firm-Isolated voucher fetcher (No Cross-Firm Leakage)
+ * Helper to resolve exact sanitized firmId
+ */
+const resolveFirmId = (firmInput) => {
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') {
+    return firmInput.trim();
+  }
+  if (firmInput && typeof firmInput === 'object') {
+    return String(firmInput.id || firmInput.firm_id || firmInput.firmId || '').trim();
+  }
+  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+};
+
+/**
+ * Strictly Firm-Isolated voucher fetcher (Includes Simple, Compound, Sales Invoices & Purchases)
  */
 export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
   try {
-    const firmId = getActiveFirmId(firmInput);
+    const firmId = resolveFirmId(firmInput);
     let rawTx = [];
 
-    // 1. Fetch strictly from firm-scoped keys only
+    // 1. Fetch strictly from all firm-scoped transaction buckets
     const scopedKeys = [
-      getFirmScopedStorageKey('app_vouchers', firmInput),
-      getFirmScopedStorageKey('account_book_vouchers', firmInput),
-      getFirmScopedStorageKey('vouchers', firmInput),
-      getFirmScopedStorageKey('transactions', firmInput),
       `app_vouchers_${firmId}`,
-      `account_book_vouchers_${firmId}`
+      `account_book_vouchers_${firmId}`,
+      `app_invoices_${firmId}`,
+      `sales_invoices_${firmId}`,
+      `purchase_bills_${firmId}`,
+      `app_payroll_entries_${firmId}`
     ];
 
     scopedKeys.forEach(k => {
@@ -29,16 +42,16 @@ export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
       }
     });
 
-    // 2. Strict Firm Filtering: Ensure transaction belongs to this firm or has no firm_id (legacy fallback)
+    // 2. Deduplicate by unique ID and enforce firm boundary
     const uniqueMap = new Map();
     rawTx.forEach(tx => {
       if (!tx) return;
-      const txFirm = tx.firm_id || tx.firmId;
-      if (txFirm && String(txFirm).trim().replace(/[^a-zA-Z0-9_-]/g, '_') !== firmId) {
-        return; // Skip if belongs to another firm
+      const txFirm = String(tx.firm_id || tx.firmId || '').trim();
+      if (txFirm && txFirm !== firmId) {
+        return; // Strict cross-firm boundary enforcement
       }
 
-      const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount || tx.grand_total}-${tx.dr_account || tx.debit_account || ''}-${tx.cr_account || tx.credit_account || ''}`;
+      const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount || 0}-${Math.random()}`;
       if (!uniqueMap.has(uId)) {
         uniqueMap.set(uId, tx);
       }
@@ -56,12 +69,10 @@ export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
  */
 export const getAccountHeads = (firmInput = 'FIRM-001') => {
   try {
-    const firmId = getActiveFirmId(firmInput);
+    const firmId = resolveFirmId(firmInput);
     let rawAccounts = [];
 
     const scopedKeys = [
-      getFirmScopedStorageKey('app_accounts', firmInput),
-      getFirmScopedStorageKey('account_heads', firmInput),
       `app_accounts_${firmId}`,
       `account_heads_${firmId}`
     ];
@@ -79,14 +90,20 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
     const uniqueMap = new Map();
     rawAccounts.forEach(acc => {
       if (!acc) return;
-      const accFirm = acc.firm_id || acc.firmId;
-      if (accFirm && String(accFirm).trim().replace(/[^a-zA-Z0-9_-]/g, '_') !== firmId) {
+      const accFirm = String(acc.firm_id || acc.firmId || '').trim();
+      if (accFirm && accFirm !== firmId) {
         return;
       }
 
-      const name = (acc.account_name || acc.name || '').trim().toLowerCase();
-      if (name && !uniqueMap.has(name)) {
-        uniqueMap.set(name, acc);
+      const name = (acc.account_name || acc.name || '').trim();
+      if (name && !uniqueMap.has(name.toLowerCase())) {
+        uniqueMap.set(name.toLowerCase(), {
+          ...acc,
+          account_name: name,
+          name: name,
+          opening_balance: parseFloat(acc.opening_balance || acc.openingBalance || 0),
+          balance_type: acc.balance_type || acc.balanceType || 'Dr'
+        });
       }
     });
 
@@ -97,10 +114,11 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
 };
 
 /**
- * Generate Double-Entry Account Milan Ledger Statement adhering to strict accounting rules
+ * Generate Double-Entry Account Milan Ledger Statement (Supports Compound & Itemized Lines)
  */
-export const getAccountLedgerStatement = (firmId = 'FIRM-001', targetAccountName = '') => {
-  if (!targetAccountName) {
+export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccountName = '') => {
+  const cleanTarget = (targetAccountName || '').trim();
+  if (!cleanTarget) {
     return {
       accountName: '',
       openingBalance: 0,
@@ -113,80 +131,144 @@ export const getAccountLedgerStatement = (firmId = 'FIRM-001', targetAccountName
     };
   }
 
+  const firmId = resolveFirmId(firmIdInput);
   const accounts = getAccountHeads(firmId);
   const vouchers = getAllUniversalVouchers(firmId);
+  const targetLower = cleanTarget.toLowerCase();
 
   const matchedAccount = accounts.find(
-    a => (a.account_name || '').trim().toLowerCase() === targetAccountName.trim().toLowerCase()
+    a => (a.account_name || a.name || '').trim().toLowerCase() === targetLower
   );
 
-  const openingBal = parseFloat(matchedAccount?.opening_balance || 0);
-  const balanceType = matchedAccount?.balance_type || 'Dr';
+  const openingBal = parseFloat(matchedAccount?.opening_balance || matchedAccount?.openingBalance || 0);
+  const balanceType = matchedAccount?.balance_type || matchedAccount?.balanceType || 'Dr';
 
   let runningBalance = balanceType === 'Dr' ? openingBal : -openingBal;
   let totalDebit = 0;
   let totalCredit = 0;
 
-  const targetLower = targetAccountName.trim().toLowerCase();
-
+  // Filter vouchers where account participates (in simple Dr/Cr OR inside compound entries array)
   const relevantVouchers = vouchers
     .filter(v => {
+      if (!v) return false;
       const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
       const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim().toLowerCase();
-      return dr === targetLower || cr === targetLower;
+      
+      if (dr === targetLower || cr === targetLower) return true;
+
+      // Check compound entries array
+      if (Array.isArray(v.entries) && v.entries.length > 0) {
+        return v.entries.some(e => (e.account_name || e.party || '').trim().toLowerCase() === targetLower);
+      }
+
+      // Check worker/contractor field
+      if (v.worker && String(v.worker).trim().toLowerCase() === targetLower) return true;
+      if (v.expense_ledger && String(v.expense_ledger).trim().toLowerCase() === targetLower) return true;
+
+      return false;
     })
     .sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
 
-  const ledgerEntries = relevantVouchers.map((v, index) => {
-    const drName = (v.dr_account || v.debit_account || v.dr_party || '').trim();
-    const crName = (v.cr_account || v.credit_account || v.cr_party || '').trim();
-    const amt = parseFloat(v.amount || v.total_amount || 0);
+  const ledgerEntries = [];
 
-    const isDebit = drName.toLowerCase() === targetLower;
-    const isCredit = crName.toLowerCase() === targetLower;
-
+  relevantVouchers.forEach((v, index) => {
     let debitAmount = 0;
     let creditAmount = 0;
     let counterParty = '';
 
-    if (isDebit) {
-      debitAmount = amt;
-      totalDebit += amt;
-      runningBalance += amt;
-      counterParty = crName || 'Various Account';
-    } else if (isCredit) {
-      creditAmount = amt;
-      totalCredit += amt;
-      runningBalance -= amt;
-      counterParty = drName || 'Various Account';
+    // A. Compound entries evaluation
+    if (Array.isArray(v.entries) && v.entries.length > 0) {
+      let isMatched = false;
+      const otherParties = [];
+
+      v.entries.forEach(e => {
+        const accName = (e.account_name || e.party || '').trim();
+        const amt = parseFloat(e.amount || e.debit || e.credit || 0);
+        const type = (e.type || '').toUpperCase();
+
+        if (accName.toLowerCase() === targetLower) {
+          isMatched = true;
+          if (type === 'DR' || parseFloat(e.debit || 0) > 0) debitAmount += amt;
+          if (type === 'CR' || parseFloat(e.credit || 0) > 0) creditAmount += amt;
+        } else if (accName) {
+          otherParties.push(accName);
+        }
+      });
+
+      if (isMatched) {
+        counterParty = otherParties.join(', ') || 'Various Account';
+      }
+    } 
+    // B. Worker wage entry evaluation
+    else if (v.worker && (String(v.worker).toLowerCase() === targetLower || String(v.expense_ledger).toLowerCase() === targetLower)) {
+      const amt = parseFloat(v.total_amount || v.amount || 0);
+      if (String(v.worker).toLowerCase() === targetLower) {
+        creditAmount = amt;
+        counterParty = v.expense_ledger || 'Wages Expense';
+      } else {
+        debitAmount = amt;
+        counterParty = v.worker || 'Labour Party';
+      }
+    }
+    // C. Simple Dr/Cr evaluation
+    else {
+      const drName = (v.dr_account || v.debit_account || v.dr_party || '').trim();
+      const crName = (v.cr_account || v.credit_account || v.cr_party || '').trim();
+      const amt = parseFloat(v.amount || v.total_amount || 0);
+
+      if (drName.toLowerCase() === targetLower) {
+        debitAmount = amt;
+        counterParty = crName || 'Various Account';
+      }
+      if (crName.toLowerCase() === targetLower) {
+        creditAmount = amt;
+        counterParty = drName || 'Various Account';
+      }
     }
 
-    return {
-      index: index + 1,
-      id: v.id,
-      date: v.voucher_date || v.date || '2026-04-01',
-      voucher_type: v.voucher_type || v.type || 'JOURNAL',
-      voucher_no: v.voucher_number || v.reference_no || `REF-${index + 1}`,
-      particulars: isDebit ? `To ${counterParty}` : `By ${counterParty}`,
-      opposite_account: counterParty,
-      debit: debitAmount,
-      credit: creditAmount,
-      running_balance: Math.abs(runningBalance),
-      balance_type: runningBalance >= 0 ? 'Dr' : 'Cr',
-      narration: v.narration || v.notes || ''
-    };
+    if (debitAmount > 0 || creditAmount > 0) {
+      totalDebit += debitAmount;
+      totalCredit += creditAmount;
+      runningBalance += (debitAmount - creditAmount);
+
+      let itemNote = '';
+      if (Array.isArray(v.items) && v.items.length > 0) {
+        itemNote = v.items.map(it => `${it.itemName || it.name || 'Item'} (${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
+      }
+
+      const finalParticulars = [
+        debitAmount > 0 ? `To ${counterParty}` : `By ${counterParty}`,
+        itemNote,
+        v.narration || v.notes || ''
+      ].filter(Boolean).join(' | ');
+
+      ledgerEntries.push({
+        index: ledgerEntries.length + 1,
+        id: v.id,
+        date: v.voucher_date || v.date || '2026-04-01',
+        voucher_type: (v.voucher_type || v.type || 'JOURNAL').toUpperCase(),
+        voucher_no: v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : `REF-${index + 1}`),
+        particulars: finalParticulars,
+        opposite_account: counterParty,
+        debit: debitAmount,
+        credit: creditAmount,
+        running_balance: Math.abs(runningBalance),
+        balance_type: runningBalance >= 0 ? 'Dr' : 'Cr',
+        narration: v.narration || v.notes || ''
+      });
+    }
   });
 
   return {
-    accountName: targetAccountName,
-    primaryType: matchedAccount?.primary_type || 'ASSETS',
-    subGroup: matchedAccount?.sub_group || 'General Ledger',
+    accountName: cleanTarget,
+    primaryType: matchedAccount?.primary_type || matchedAccount?.type || 'ASSETS',
+    subGroup: matchedAccount?.sub_group || matchedAccount?.group || 'General Ledger',
     openingBalance: openingBal,
     openingBalanceType: balanceType,
     entries: ledgerEntries,
-    totalDebit: totalDebit,
-    totalCredit: totalCredit,
-    closingBalance: Math.abs(runningBalance),
+    totalDebit: parseFloat(totalDebit.toFixed(2)),
+    totalCredit: parseFloat(totalCredit.toFixed(2)),
+    closingBalance: parseFloat(Math.abs(runningBalance).toFixed(2)),
     closingBalanceType: runningBalance >= 0 ? 'Dr' : 'Cr'
   };
 };
@@ -203,7 +285,7 @@ export const downloadCSVStatement = (statement, firmName = 'Firm') => {
     e.date,
     e.voucher_type,
     e.voucher_no,
-    `"${e.particulars.replace(/"/g, '""')}"`,
+    `"${(e.particulars || '').replace(/"/g, '""')}"`,
     e.debit.toFixed(2),
     e.credit.toFixed(2),
     e.running_balance.toFixed(2),
