@@ -1,16 +1,17 @@
 // frontend/src/components/CashFlowStatementView.jsx
+
 import React, { useState, useEffect } from 'react';
 import { computeCashFlowStatement } from '../utils/cashFlowEngine';
 
 export default function CashFlowStatementView({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState(todayMaxDate);
   const [cashFlowData, setCashFlowData] = useState(null);
 
-  useEffect(() => {
+  const loadCashFlow = () => {
     try {
       const data = computeCashFlowStatement(activeFirmId, fromDate, toDate);
       setCashFlowData(data || {
@@ -22,6 +23,18 @@ export default function CashFlowStatementView({ firm, onClose }) {
     } catch (e) {
       console.error("Error computing cash flow:", e);
     }
+  };
+
+  useEffect(() => {
+    loadCashFlow();
+    window.addEventListener('app_storage_updated', loadCashFlow);
+    window.addEventListener('app_state_updated', loadCashFlow);
+    window.addEventListener('storage', loadCashFlow);
+    return () => {
+      window.removeEventListener('app_storage_updated', loadCashFlow);
+      window.removeEventListener('app_state_updated', loadCashFlow);
+      window.removeEventListener('storage', loadCashFlow);
+    };
   }, [activeFirmId, fromDate, toDate]);
 
   return (
@@ -71,15 +84,15 @@ export default function CashFlowStatementView({ firm, onClose }) {
             <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: '800', color: '#1d4ed8' }}>1. Operating Activities (ऑपरेटिंग गतिविधियाँ)</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0' }}>
               <span>Cash Inflows (प्राप्तियाँ):</span>
-              <span style={{ fontWeight: 'bold', color: '#059669' }}>+₹{cashFlowData.operating.inflow.toFixed(2)}</span>
+              <span style={{ fontWeight: 'bold', color: '#059669' }}>+₹{Number(cashFlowData.operating?.inflow || 0).toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0' }}>
               <span>Cash Outflows (भुगतान):</span>
-              <span style={{ fontWeight: 'bold', color: '#dc2626' }}>-₹{cashFlowData.operating.outflow.toFixed(2)}</span>
+              <span style={{ fontWeight: 'bold', color: '#dc2626' }}>-₹{Number(cashFlowData.operating?.outflow || 0).toFixed(2)}</span>
             </div>
             <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px' }}>
               <span>Net Cash from Operations:</span>
-              <span style={{ color: cashFlowData.operating.net >= 0 ? '#059669' : '#dc2626' }}>₹{cashFlowData.operating.net.toFixed(2)}</span>
+              <span style={{ color: Number(cashFlowData.operating?.net || 0) >= 0 ? '#059669' : '#dc2626' }}>₹{Number(cashFlowData.operating?.net || 0).toFixed(2)}</span>
             </div>
           </div>
 
@@ -88,11 +101,11 @@ export default function CashFlowStatementView({ firm, onClose }) {
             <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: '800', color: '#7c3aed' }}>2. Investing Activities (निवेश गतिविधियाँ)</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0' }}>
               <span>Asset Purchases / Outflows:</span>
-              <span style={{ fontWeight: 'bold', color: '#dc2626' }}>-₹{cashFlowData.investing.outflow.toFixed(2)}</span>
+              <span style={{ fontWeight: 'bold', color: '#dc2626' }}>-₹{Number(cashFlowData.investing?.outflow || 0).toFixed(2)}</span>
             </div>
             <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px' }}>
               <span>Net Cash from Investing:</span>
-              <span style={{ color: '#7c3aed' }}>₹{cashFlowData.investing.net.toFixed(2)}</span>
+              <span style={{ color: '#7c3aed' }}>₹{Number(cashFlowData.investing?.net || 0).toFixed(2)}</span>
             </div>
           </div>
 
@@ -101,23 +114,23 @@ export default function CashFlowStatementView({ firm, onClose }) {
             <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: '800', color: '#047857' }}>3. Financing Activities (वित्तीय गतिविधियाँ)</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0' }}>
               <span>Loans / Capital Inflows:</span>
-              <span style={{ fontWeight: 'bold', color: '#059669' }}>+₹{cashFlowData.financing.inflow.toFixed(2)}</span>
+              <span style={{ fontWeight: 'bold', color: '#059669' }}>+₹{Number(cashFlowData.financing?.inflow || 0).toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0' }}>
               <span>Repayments / Drawings:</span>
-              <span style={{ fontWeight: 'bold', color: '#dc2626' }}>-₹{cashFlowData.financing.outflow.toFixed(2)}</span>
+              <span style={{ fontWeight: 'bold', color: '#dc2626' }}>-₹{Number(cashFlowData.financing?.outflow || 0).toFixed(2)}</span>
             </div>
             <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px' }}>
               <span>Net Cash from Financing:</span>
-              <span style={{ color: cashFlowData.financing.net >= 0 ? '#059669' : '#dc2626' }}>₹{cashFlowData.financing.net.toFixed(2)}</span>
+              <span style={{ color: Number(cashFlowData.financing?.net || 0) >= 0 ? '#059669' : '#dc2626' }}>₹{Number(cashFlowData.financing?.net || 0).toFixed(2)}</span>
             </div>
           </div>
 
           {/* Net Change Grand Total */}
           <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '13px', fontWeight: '800', color: '#166534' }}>Net Increase/Decrease in Cash & Bank:</span>
-            <span style={{ fontSize: '16px', fontWeight: '900', color: cashFlowData.netChangeInCash >= 0 ? '#15803d' : '#dc2626' }}>
-              ₹{cashFlowData.netChangeInCash.toFixed(2)}
+            <span style={{ fontSize: '16px', fontWeight: '900', color: Number(cashFlowData.netChangeInCash || 0) >= 0 ? '#15803d' : '#dc2626' }}>
+              ₹{Number(cashFlowData.netChangeInCash || 0).toFixed(2)}
             </span>
           </div>
 
