@@ -2,54 +2,62 @@
 
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
-import { loadFirmData } from '../utils/firmIsolationEngine';
+import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
+import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
+import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import SearchableStockDropdown from './SearchableStockDropdown.jsx';
-import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
-import { processPurchaseStockPosting, revertPurchaseStockOnDeletion } from '../utils/inventoryPostingEngine.js';
 
-export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
-  const [allItems, setAllItems] = useState([]);
-  const [accountsList, setAccountsList] = useState([]);
-  const [purchaseList, setPurchaseList] = useState([]);
+  const [supplierAccounts, setSupplierAccounts] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [purchaseBills, setPurchaseBills] = useState([]);
 
-  const [editingId, setEditingId] = useState(null);
+  const [editingBill, setEditingBill] = useState(null);
   const [purchaseDate, setPurchaseDate] = useState(todayMaxDate);
-  const [billNo, setBillNo] = useState('1');
-  const [supplierParty, setSupplierParty] = useState(''); 
-  const [selectedItemId, setSelectedItemId] = useState('');
+  const [billNumber, setBillNumber] = useState('');
+  const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [selectedStockId, setSelectedStockId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [purchaseRate, setPurchaseRate] = useState('');
-  
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState(null);
+  const [narration, setNarration] = useState('');
+
   const [searchFilter, setSearchFilter] = useState('');
+  const [statusMessage, setStatusMessage] = useState(null);
 
   const loadData = () => {
     try {
-      const rawInventory = loadFirmData('inventory_items', firm, []);
-      const validInventory = rawInventory.filter(i => i && (i.name || i.item_name) && i.item_type !== 'SERVICE' && !String(i.item_name || i.name || '').toLowerCase().includes('freight'));
-      setAllItems(validInventory);
+      // 1. Load Supplier / Creditor Accounts
+      const allAccounts = getFirmMasterAccounts(activeFirmId) || [];
+      const suppliers = allAccounts.filter(a => {
+        const type = String(a.primary_type || a.type || '').toUpperCase();
+        const grp = String(a.sub_group || a.group || '').toLowerCase();
+        return (
+          type === 'LIABILITIES' ||
+          grp.includes('creditor') ||
+          grp.includes('supplier') ||
+          grp.includes('thekedar') ||
+          grp.includes('vendor')
+        );
+      });
+      setSupplierAccounts(suppliers.length > 0 ? suppliers : allAccounts);
 
-      const accList = getFirmMasterAccounts(activeFirmId) || [];
-      setAccountsList(accList);
+      // 2. Load Inventory Items
+      const stockList = loadFirmData('inventory_items', firm, []);
+      setInventoryItems(stockList.filter(i => i && (i.name || i.item_name)));
 
-      // STRICT FIRM ISOLATION: Scanned strictly from activeFirmId
-      const allVouchers = StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || [];
-      const purchases = allVouchers.filter(v => v && (String(v.firm_id || v.firmId || '').trim() === String(activeFirmId).trim()) && (v.voucher_type === 'PURCHASE' || v.type === 'PURCHASE'));
-      
-      purchases.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
-      setPurchaseList(purchases);
-
-      if (!editingId) {
-        const nextNum = purchases.length + 1;
-        setBillNo(String(nextNum));
-      }
+      // 3. Load Recent Purchase Bills strictly for active firm
+      const billsKey = `purchase_bills_${activeFirmId}`;
+      const savedBills = StorageService.getItem(billsKey, []);
+      savedBills.sort((a, b) => new Date(b.date || b.purchase_date || 0) - new Date(a.date || a.purchase_date || 0));
+      setPurchaseBills(savedBills);
     } catch (e) {
-      console.error("Error loading purchase data:", e);
+      console.error("Error loading purchase form data:", e);
     }
   };
 
@@ -57,319 +65,506 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     loadData();
     window.addEventListener('app_state_updated', loadData);
     window.addEventListener('app_storage_updated', loadData);
+    window.addEventListener('storage', loadData);
     return () => {
       window.removeEventListener('app_state_updated', loadData);
       window.removeEventListener('app_storage_updated', loadData);
+      window.removeEventListener('storage', loadData);
     };
-  }, [firm, activeFirmId]);
+  }, [activeFirmId]);
+
+  const calculatedTotal = round2((Number(quantity) || 0) * (Number(purchaseRate) || 0));
+
+  // Safe stock reversal helper to prevent "rePurchaseStockReversal is not defined"
+  const revertStockForBill = (billObj, currentStockList) => {
+    if (!billObj) return currentStockList;
+    const targetItemId = String(billObj.item_id || billObj.stock_id || '');
+    const targetItemName = String(billObj.item_name || '').trim().toLowerCase();
+    const qtyToRevert = parseFloat(billObj.quantity || billObj.qty || 0);
+
+    return currentStockList.map(item => {
+      const isIdMatch = targetItemId && String(item.id) === targetItemId;
+      const isNameMatch = targetItemName && String(item.name || item.item_name || '').trim().toLowerCase() === targetItemName;
+
+      if ((isIdMatch || isNameMatch) && !item.is_service && item.item_type !== 'SERVICE') {
+        const curStock = parseFloat(item.current_stock || item.stock || item.qty || 0);
+        const newStock = round2(Math.max(0, curStock - qtyToRevert));
+        return {
+          ...item,
+          current_stock: newStock,
+          stock: newStock,
+          qty: newStock,
+          updated_at: new Date().toISOString()
+        };
+      }
+      return item;
+    });
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    setFeedback(null);
+    setStatusMessage(null);
 
-    if (!supplierParty) return setFeedback({ type: 'error', message: 'कृपया Supplier / Vendor Party चुनें।' });
-    if (!selectedItemId) return setFeedback({ type: 'error', message: 'कृपया Stock Item चुनें।' });
+    const supplierName = (typeof selectedSupplier === 'object'
+      ? (selectedSupplier.account_name || selectedSupplier.name || '')
+      : selectedSupplier).trim();
 
-    setIsSubmitting(true);
+    if (!supplierName) {
+      setStatusMessage({ type: 'error', text: 'Kripya Supplier / Vendor party chunein!' });
+      return;
+    }
+    if (!selectedStockId) {
+      setStatusMessage({ type: 'error', text: 'Kripya Stock Item chunein!' });
+      return;
+    }
+
+    const numQty = parseFloat(quantity);
+    const numRate = parseFloat(purchaseRate);
+
+    if (!numQty || numQty <= 0) {
+      setStatusMessage({ type: 'error', text: 'Kripya valid Quantity (> 0) darj karein!' });
+      return;
+    }
+    if (!numRate || numRate <= 0) {
+      setStatusMessage({ type: 'error', text: 'Kripya valid Purchase Rate (> 0) darj karein!' });
+      return;
+    }
+
     try {
-      if (editingId) {
-        rePurchaseStockReversal(editingId, activeFirmId);
+      const billId = editingBill ? editingBill.id : `PUR-${Date.now()}`;
+      const finalBillNo = billNumber.trim() || `BILL-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      // Resolve selected item details
+      let currentStock = [...inventoryItems];
+
+      // Step 1: If editing, revert old purchase quantity first
+      if (editingBill) {
+        currentStock = revertStockForBill(editingBill, currentStock);
       }
 
-      const selectedItemObj = allItems.find(i => 
-        String(i.id || i.item_id || '') === String(selectedItemId || '') || 
-        String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId || '').trim().toLowerCase()
+      // Step 2: Add new purchase quantity & update purchase rate
+      const itemIdx = currentStock.findIndex(i =>
+        String(i.id) === String(selectedStockId) ||
+        String(i.name || i.item_name || '').trim().toLowerCase() === String(selectedStockId).trim().toLowerCase()
       );
-      
-      const itemNameClean = selectedItemObj?.item_name || selectedItemObj?.name || selectedItemId || 'Stock Item';
-      const itemUnit = selectedItemObj?.unit || selectedItemObj?.unit_name || (String(itemNameClean).toLowerCase().includes('diesel') ? 'Liters' : 'Pcs');
 
-      const purchasePayload = {
-        id: editingId || `PURCH-${Date.now()}`,
-        firmId: activeFirmId,
+      let cleanItemName = 'Purchase Item';
+      let cleanUnit = 'Units';
+
+      if (itemIdx !== -1) {
+        cleanItemName = currentStock[itemIdx].name || currentStock[itemIdx].item_name || 'Item';
+        cleanUnit = currentStock[itemIdx].unit || 'Units';
+        const oldQty = parseFloat(currentStock[itemIdx].current_stock || currentStock[itemIdx].stock || 0);
+        const newQty = round2(oldQty + numQty);
+
+        currentStock[itemIdx] = {
+          ...currentStock[itemIdx],
+          current_stock: newQty,
+          stock: newQty,
+          qty: newQty,
+          unit_purchase_price: numRate,
+          purchase_price: numRate,
+          rate: numRate,
+          cost_price: numRate,
+          updated_at: new Date().toISOString()
+        };
+      }
+
+      // Save updated inventory back to firm storage
+      saveFirmData('inventory_items', firm, currentStock);
+      setInventoryItems(currentStock);
+
+      // Step 3: Save / Update Purchase Bill Record
+      const newBillRecord = {
+        id: billId,
         firm_id: activeFirmId,
-        supplierId: supplierParty,
-        invoiceNumber: billNo,
-        entryDate: purchaseDate,
-        itemId: selectedItemObj?.id || selectedItemId,
-        itemName: itemNameClean,
-        item_name: itemNameClean,
-        quantity: quantity,
-        qty: quantity,
-        unit: itemUnit,
-        purchaseRate: purchaseRate,
-        rate: purchaseRate,
-        narration: `Purchase Bill #${billNo} from ${supplierParty}`
+        date: purchaseDate,
+        purchase_date: purchaseDate,
+        bill_number: finalBillNo,
+        reference_no: finalBillNo,
+        supplier: supplierName,
+        supplier_name: supplierName,
+        item_id: selectedStockId,
+        item_name: cleanItemName,
+        unit: cleanUnit,
+        quantity: numQty,
+        rate: numRate,
+        purchase_rate: numRate,
+        total_amount: calculatedTotal,
+        narration: narration.trim() || `Purchased ${numQty} ${cleanUnit} ${cleanItemName} from ${supplierName} (Bill #${finalBillNo})`,
+        updated_at: new Date().toISOString()
       };
 
-      processPurchaseStockPosting(purchasePayload, activeFirmId);
+      const billsKey = `purchase_bills_${activeFirmId}`;
+      const existingBills = StorageService.getItem(billsKey, []);
+      const filteredBills = existingBills.filter(b => b && b.id !== billId);
+      const updatedBills = [newBillRecord, ...filteredBills];
 
+      StorageService.setItem(billsKey, updatedBills);
+
+      // Step 4: Post Double-Entry Journal Voucher (Dr. Stock, Cr. Supplier)
+      const voucherRefId = `JV-${billId}`;
+      saveUniversalVoucher(activeFirmId, {
+        id: voucherRefId,
+        firm_id: activeFirmId,
+        voucher_type: 'PURCHASE',
+        type: 'PURCHASE',
+        voucher_date: purchaseDate,
+        date: purchaseDate,
+        reference_no: finalBillNo,
+        voucher_number: finalBillNo,
+        dr_account: `${cleanItemName} Stock Account`,
+        cr_account: supplierName,
+        amount: calculatedTotal,
+        total_amount: calculatedTotal,
+        narration: newBillRecord.narration,
+        is_compound: true,
+        entries: [
+          { account_name: `${cleanItemName} Stock Account`, party: `${cleanItemName} Stock Account`, type: 'DR', debit: calculatedTotal, credit: 0, amount: calculatedTotal },
+          { account_name: supplierName, party: supplierName, type: 'CR', debit: 0, credit: calculatedTotal, amount: calculatedTotal }
+        ]
+      });
+
+      // Broadcast storage updates
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
-      loadData();
+      window.dispatchEvent(new Event('storage'));
 
-      setFeedback({ type: 'success', message: editingId ? '✓ Purchase Bill Updated & Stock Adjusted!' : '✓ Purchase Bill Saved & Stock Updated!' });
-      setEditingId(null);
-      setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty('');
-      setBillNo(String(purchaseList.length + 2));
+      setStatusMessage({
+        type: 'success',
+        text: editingBill
+          ? `✓ Purchase Bill #${finalBillNo} updated & stock synchronized successfully!`
+          : `✓ Purchase Bill #${finalBillNo} saved & stock added successfully!`
+      });
+
+      // Reset form
+      setEditingBill(null);
+      setBillNumber('');
+      setQuantity('');
+      setPurchaseRate('');
+      setNarration('');
+      loadData();
     } catch (err) {
-      setFeedback({ type: 'error', message: 'Error: ' + err.message });
-    } finally {
-      setIsSubmitting(false);
+      setStatusMessage({ type: 'error', text: `Error: ${err.message}` });
     }
   };
 
-  const handleEdit = (inv) => {
-    if (!inv) return;
-    setEditingId(inv.id);
-    setPurchaseDate(inv.voucher_date || inv.date || todayMaxDate);
-    setBillNo(inv.reference_no || '');
-    setSupplierParty(inv.cr_account || '');
-    setSelectedItemId(inv.itemId || inv.item_id || inv.itemName || inv.item_name || '');
-    setQuantity(inv.qty || inv.quantity ? String(inv.qty || inv.quantity) : '');
-    setPurchaseRate(inv.rate || inv.unit_rate ? String(inv.rate || inv.unit_rate) : '');
+  const handleEditInit = (bill) => {
+    if (!bill) return;
+    setEditingBill(bill);
+    setPurchaseDate(bill.purchase_date || bill.date || todayMaxDate);
+    setBillNumber(bill.bill_number || bill.reference_no || '');
+    setSelectedSupplier(bill.supplier || bill.supplier_name || '');
+    setSelectedStockId(bill.item_id || bill.stock_id || '');
+    setQuantity(bill.quantity ? String(bill.quantity) : '');
+    setPurchaseRate(bill.rate || bill.purchase_rate ? String(bill.rate || bill.purchase_rate) : '');
+    setNarration(bill.narration || '');
+    setStatusMessage(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDeletePurchase = (voucherId, refNo) => {
-    if (!window.confirm(`Bill #${refNo} को हटाने से इसका स्टॉक वापस माइनस हो जाएगा। जारी रखें?`)) return;
+  const handleCancelEdit = () => {
+    setEditingBill(null);
+    setBillNumber('');
+    setQuantity('');
+    setPurchaseRate('');
+    setNarration('');
+    setStatusMessage(null);
+  };
+
+  const handleDeleteBill = (bill) => {
+    if (!window.confirm(`Purchase Bill #${bill.bill_number || bill.reference_no} ko delete karne se stock vapas minus ho jayega. Jari rakhein?`)) return;
 
     try {
-      revertPurchaseStockOnDeletion(voucherId, activeFirmId);
+      // 1. Revert Stock
+      let currentStock = [...inventoryItems];
+      currentStock = revertStockForBill(bill, currentStock);
+      saveFirmData('inventory_items', firm, currentStock);
+      setInventoryItems(currentStock);
 
-      const vouchers = StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || [];
-      const filtered = vouchers.filter(v => v && v.id !== voucherId && v.reference_no !== refNo);
-      StorageService.setItem(`account_book_vouchers_${activeFirmId}`, filtered);
-      StorageService.setItem(`app_vouchers_${activeFirmId}`, filtered);
+      // 2. Remove Purchase Bill Record
+      const billsKey = `purchase_bills_${activeFirmId}`;
+      const existingBills = StorageService.getItem(billsKey, []);
+      const filteredBills = existingBills.filter(b => b && b.id !== bill.id);
+      StorageService.setItem(billsKey, filteredBills);
+
+      // 3. Delete Linked Voucher
+      try {
+        deleteUniversalVoucher(activeFirmId, `JV-${bill.id}`);
+        deleteUniversalVoucher(activeFirmId, bill.id);
+      } catch (e) {}
 
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
-      loadData();
+      window.dispatchEvent(new Event('storage'));
 
-      if (editingId === voucherId) {
-        setEditingId(null);
-        setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty('');
+      if (editingBill && editingBill.id === bill.id) {
+        handleCancelEdit();
       }
-      alert('✓ Purchase entry deleted & stock adjusted.');
+
+      loadData();
+      alert('✓ Purchase bill deleted & stock reverted successfully.');
     } catch (err) {
-      alert('Delete failed: ' + err.message);
+      alert(`Delete failed: ${err.message}`);
     }
   };
 
-  const handlePrint = (inv) => {
-    if (!inv) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return alert('Popup blocked! Please allow popups.');
-
-    const firmName = firm?.name || firm?.legal_name || 'Neelkanth Groups';
-    const refNo = inv.reference_no || '';
-    const vDate = inv.voucher_date || '';
-    const supplier = inv.cr_account || '';
-    const itemName = inv.itemName || inv.item_name || 'Stock Item';
-    const qty = inv.qty || inv.quantity || 0;
-    const unit = inv.unit || (String(itemName).toLowerCase().includes('diesel') ? 'Liters' : 'Pcs');
-    const rate = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
-    const amount = Number(inv.amount || inv.total_amount || 0).toFixed(2);
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Inward Slip #${refNo}</title>
-          <style>
-            body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 24px; color: #0f172a; }
-            .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
-            .header h2 { margin: 0; font-size: 20px; font-weight: 800; }
-            .header p { margin: 4px 0 0 0; font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; }
-            .meta { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 12px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
-            th { background: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; text-align: left; }
-            td { padding: 10px; border: 1px solid #cbd5e1; }
-            .text-right { text-align: right; }
-            .total { margin-top: 20px; text-align: right; font-size: 15px; font-weight: 900; color: #059669; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h2>${firmName}</h2>
-            <p>PURCHASE INWARD SLIP</p>
-          </div>
-          <div class="meta">
-            <div>
-              <strong>Bill / Ref No:</strong> ${refNo}<br/>
-              <strong>Date:</strong> ${vDate}
-            </div>
-            <div style="text-align: right;">
-              <strong>Supplier / Vendor:</strong><br/>
-              <span style="font-size: 14px; font-weight: bold;">${supplier}</span>
-            </div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Item Description</th>
-                <th class="text-right">Quantity</th>
-                <th class="text-right">Rate (₹)</th>
-                <th class="text-right">Total (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>${itemName}</strong></td>
-                <td class="text-right">${qty} ${unit}</td>
-                <td class="text-right">${rate}</td>
-                <td class="text-right"><strong>${amount}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="total">Grand Total: ₹${amount}</div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-  };
-
-  const filteredPurchases = purchaseList.filter(v => {
-    if (!v) return false;
+  const filteredBills = purchaseBills.filter(b => {
+    if (!b) return false;
     const q = (searchFilter || '').toLowerCase();
     return (
-      (v.reference_no && v.reference_no.toLowerCase().includes(q)) ||
-      (v.cr_account && v.cr_account.toLowerCase().includes(q)) ||
-      (v.itemName && v.itemName.toLowerCase().includes(q)) ||
-      (v.item_name && v.item_name.toLowerCase().includes(q)) ||
-      (v.narration && v.narration.toLowerCase().includes(q))
+      (b.bill_number && String(b.bill_number).toLowerCase().includes(q)) ||
+      (b.supplier && String(b.supplier).toLowerCase().includes(q)) ||
+      (b.item_name && String(b.item_name).toLowerCase().includes(q)) ||
+      (b.narration && String(b.narration).toLowerCase().includes(q))
     );
   });
 
   return (
-    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
+    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* Form Card */}
-      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', boxSizing: 'border-box', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
-            {editingId ? '✏️ Edit Purchase Bill' : '📦 Purchase Inward & Stock Entry'}
-          </h2>
-          {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
-        </div>
-        
-        {feedback && <div style={{ padding: '10px 14px', marginBottom: '14px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#f0fdf4', color: feedback.type === 'error' ? '#991b1b' : '#166534', fontWeight: '700', fontSize: '12px', border: `1px solid ${feedback.type === 'error' ? '#fecaca' : '#bbf7d0'}` }}>{feedback.message}</div>}
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase', display: 'block' }}>Purchase Date *</label>
-              <input 
-                type="date" 
-                max={todayMaxDate}
-                value={purchaseDate} 
-                onChange={e => setPurchaseDate(e.target.value)} 
-                style={inputStyle} 
-                required 
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase', display: 'block' }}>Bill / Ref No *</label>
-              <input type="text" value={billNo} onChange={e => setBillNo(e.target.value)} style={inputStyle} required />
-            </div>
+      {/* Header Banner */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
+              {editingBill ? '✏️ Edit Purchase Bill' : '📦 Purchase & Inward Stock (+IN)'}
+            </h3>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>Raw materials, fuel inward, and supplier ledger credit</span>
           </div>
-
-          <div style={{ marginBottom: '12px' }}>
-            <SearchableAccountDropdown
-              label="Supplier / Vendor Party *"
-              accounts={accountsList}
-              value={supplierParty}
-              onChange={val => setSupplierParty(val)}
-              placeholder="Search vendor account..."
-              colorAccent="#dc2626"
-              required
-            />
-          </div>
-
-          <div style={{ marginBottom: '12px' }}>
-            <SearchableStockDropdown 
-              firm={firm}
-              label="Stock Item (+IN) *"
-              value={selectedItemId}
-              onChange={val => setSelectedItemId(val)}
-              placeholder="-- Choose Stock Item --"
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase', display: 'block' }}>Quantity *</label>
-              <input type="number" step="0.01" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="e.g. 1000" style={inputStyle} required />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase', display: 'block' }}>Purchase Rate (₹) *</label>
-              <input type="number" step="0.01" value={purchaseRate} onChange={e => setPurchaseRate(e.target.value)} placeholder="e.g. 4.5" style={inputStyle} required />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button type="submit" disabled={isSubmitting} style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
-              {editingId ? '✓ Update Purchase & Adjust Stock' : '📥 Post Purchase & Generate Inward Slip'}
+          {onClose && (
+            <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+              Close
             </button>
-            {editingId && (
-              <button type="button" onClick={() => { setEditingId(null); setQuantity(''); setPurchaseRate(''); setSelectedItemId(''); setSupplierParty(''); }} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
+          )}
+        </div>
       </div>
 
-      {/* PURCHASE REGISTER LIST WITH SCROLLBAR */}
-      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <strong style={{ fontSize: '13px', color: '#0f172a', fontWeight: '800' }}>
-            📋 Purchase Bills Register ({filteredPurchases.length})
+      {statusMessage && (
+        <div style={{
+          backgroundColor: statusMessage.type === 'error' ? '#fef2f2' : '#ecfdf5',
+          border: `1px solid ${statusMessage.type === 'error' ? '#fecaca' : '#a7f3d0'}`,
+          color: statusMessage.type === 'error' ? '#991b1b' : '#065f46',
+          padding: '10px 14px',
+          borderRadius: '10px',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          boxSizing: 'border-box',
+          width: '100%'
+        }}>
+          {statusMessage.text}
+        </div>
+      )}
+
+      {/* Main Entry Form */}
+      <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>PURCHASE DATE *</label>
+            <input 
+              type="date" 
+              max={todayMaxDate}
+              value={purchaseDate} 
+              onChange={e => setPurchaseDate(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>BILL / REF NO *</label>
+            <input 
+              type="text" 
+              placeholder="e.g. 69" 
+              value={billNumber} 
+              onChange={e => setBillNumber(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
+          </div>
+        </div>
+
+        <div>
+          <SearchableAccountDropdown
+            label="Supplier / Vendor Party * *"
+            accounts={supplierAccounts}
+            value={selectedSupplier}
+            onChange={val => setSelectedSupplier(val)}
+            placeholder="Search supplier or vendor..."
+            colorAccent="#dc2626"
+            required
+          />
+        </div>
+
+        <div>
+          <SearchableStockDropdown
+            firm={firm}
+            label="STOCK ITEM (+IN) *"
+            value={selectedStockId}
+            onChange={val => setSelectedStockId(val)}
+            placeholder="-- Choose Stock Item --"
+          />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>QUANTITY *</label>
+            <input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={quantity} 
+              onChange={e => setQuantity(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>PURCHASE RATE (₹) *</label>
+            <input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={purchaseRate} 
+              onChange={e => setPurchaseRate(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
+          </div>
+        </div>
+
+        <div style={{ backgroundColor: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Total Purchase Amount:</span>
+          <span style={{ fontSize: '15px', fontWeight: '900', color: '#059669' }}>₹{calculatedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Narration / Remarks</label>
+          <input 
+            type="text" 
+            placeholder="e.g. Received at chamber / tractor freight" 
+            value={narration} 
+            onChange={e => setNarration(e.target.value)} 
+            style={inputStyle} 
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+          <button 
+            type="submit" 
+            style={{ 
+              flex: 1, 
+              backgroundColor: '#059669', 
+              color: '#ffffff', 
+              border: 'none', 
+              padding: '12px', 
+              borderRadius: '8px', 
+              fontSize: '12px', 
+              fontWeight: 'bold', 
+              cursor: 'pointer' 
+            }}
+          >
+            {editingBill ? '✓ Update Purchase & Adjust Stock' : '💾 Save Purchase & Add Stock'}
+          </button>
+
+          {editingBill && (
+            <button 
+              type="button" 
+              onClick={handleCancelEdit} 
+              style={{ 
+                backgroundColor: '#f1f5f9', 
+                color: '#475569', 
+                border: '1px solid #cbd5e1', 
+                padding: '12px 16px', 
+                borderRadius: '8px', 
+                fontSize: '12px', 
+                fontWeight: 'bold', 
+                cursor: 'pointer' 
+              }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+
+      </form>
+
+      {/* Purchase Register */}
+      <div style={cardStyle}>
+        <div style={{ marginBottom: '10px' }}>
+          <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+            📋 Purchase Bills Register ({filteredBills.length})
           </strong>
         </div>
 
-        <input
-          type="text"
-          placeholder="🔍 Search bills by reference no, vendor, item..."
-          value={searchFilter}
-          onChange={e => setSearchFilter(e.target.value)}
-          style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', marginBottom: '10px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }}
+        <input 
+          type="text" 
+          placeholder="🔍 Search purchase bills by bill no, supplier, item..." 
+          value={searchFilter} 
+          onChange={e => setSearchFilter(e.target.value)} 
+          style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '10px' }} 
         />
 
-        <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {filteredPurchases.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '11px' }}>
-              No purchase bills recorded yet for this firm.
+        <div style={{ maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {filteredBills.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '12px' }}>
+              No purchase bills found for this firm.
             </div>
           ) : (
-            filteredPurchases.map(inv => {
-              const amt = Number(inv.amount || inv.total_amount || 0);
-              const itemName = inv.itemName || inv.item_name || 'Stock Item';
-              const qVal = inv.qty || inv.quantity || 0;
-              const uVal = inv.unit || (String(itemName).toLowerCase().includes('diesel') ? 'Liters' : 'Pcs');
-              const rVal = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
+            filteredBills.map((bill) => {
+              const totalAmt = parseFloat(bill.total_amount || 0);
+              const isSelected = editingBill && editingBill.id === bill.id;
+
               return (
-                <div key={inv.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
+                <div 
+                  key={bill.id} 
+                  style={{ 
+                    backgroundColor: isSelected ? '#ecfdf5' : '#f8fafc', 
+                    border: `1px solid ${isSelected ? '#059669' : '#e2e8f0'}`, 
+                    borderRadius: '8px', 
+                    padding: '10px 12px', 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    boxSizing: 'border-box'
+                  }}
+                >
                   <div>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '10px', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>{inv.voucher_date || ''}</span>
-                      <strong style={{ fontSize: '12px', color: '#0f172a' }}>{inv.reference_no || ''}</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                        {bill.purchase_date || bill.date}
+                      </span>
+                      <strong style={{ fontSize: '12px', color: '#0f172a' }}>
+                        #{bill.bill_number || bill.reference_no}
+                      </strong>
                     </div>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#dc2626' }}>{inv.cr_account || ''}</div>
-                    <div style={{ fontSize: '11px', color: '#0284c7', marginTop: '2px', fontWeight: '800' }}>
-                      📦 {itemName}
+                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#dc2626', marginTop: '2px' }}>
+                      {bill.supplier || bill.supplier_name}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#475569', marginTop: '1px', fontWeight: '600' }}>
-                      Qty: <strong>{qVal} {uVal}</strong> | Rate: <strong>₹{rVal}</strong>
+                    <div style={{ fontSize: '11px', color: '#475569' }}>
+                      📦 {bill.item_name} — Qty: <strong>{bill.quantity} {bill.unit || 'Units'}</strong> @ ₹{bill.rate || bill.purchase_rate}
                     </div>
                   </div>
-                  
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '900', color: '#059669', marginBottom: '6px' }}>₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                    <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                      <button onClick={() => handlePrint(inv)} style={{ padding: '5px 8px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}>Print</button>
-                      <button onClick={() => handleEdit(inv)} style={{ padding: '5px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}>Edit</button>
-                      <button onClick={() => handleDeletePurchase(inv.id, inv.reference_no)} style={{ padding: '5px 8px', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}>Delete</button>
+
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '900', color: '#059669' }}>
+                      ₹{totalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button 
+                        type="button" 
+                        onClick={() => handleEditInit(bill)} 
+                        style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => handleDeleteBill(bill)} 
+                        style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -383,13 +578,32 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
   );
 }
 
+const cardStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '12px',
+  padding: '14px',
+  border: '1px solid #cbd5e1',
+  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
+  boxSizing: 'border-box',
+  width: '100%'
+};
+
+const labelStyle = {
+  display: 'block',
+  fontSize: '11px',
+  fontWeight: 'bold',
+  color: '#334155',
+  marginBottom: '4px'
+};
+
 const inputStyle = {
   width: '100%',
-  padding: '8px',
-  borderRadius: '6px',
+  padding: '9px 10px',
+  borderRadius: '8px',
   border: '1px solid #cbd5e1',
-  fontSize: '11px',
+  fontSize: '12px',
   boxSizing: 'border-box',
   backgroundColor: '#ffffff',
-  color: '#0f172a'
+  color: '#0f172a',
+  outline: 'none'
 };
