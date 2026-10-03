@@ -6,6 +6,7 @@ import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
 import { saveUniversalVoucher } from '../utils/voucherPostingEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine';
 import SearchableStockDropdown from './SearchableStockDropdown';
+import SearchableAccountDropdown from './SearchableAccountDropdown';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
@@ -16,6 +17,10 @@ export default function MaterialConsumptionView({ firm, onClose }) {
   const [usageDate, setUsageDate] = useState(new Date().toISOString().slice(0, 10));
   const [usesFor, setUsesFor] = useState('');
   
+  // Dynamic Expense Account State (Default to Land Development or Factory Expense)
+  const [expenseLedger, setExpenseLedger] = useState('Land Development (Land development)');
+  const [accountsList, setAccountsList] = useState([]);
+
   const [inventoryItems, setInventoryItems] = useState([]);
   const [selectedStockId, setSelectedStockId] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -27,10 +32,24 @@ export default function MaterialConsumptionView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     
+    // 1. Load Inventory Items
     const rawInventory = loadFirmData('inventory_items', firm, []);
     const validInventory = rawInventory.filter(i => i && (i.name || i.item_name));
     setInventoryItems(validInventory);
 
+    // 2. Load Master Accounts for Expense/Purpose selection
+    const masterAccs = getFirmMasterAccounts(activeFirmId) || [];
+    setAccountsList(masterAccs);
+
+    // Set smart default if Land Development exists
+    const landDevAccount = masterAccs.find(a => 
+      (a.account_name || a.name || '').toLowerCase().includes('land development')
+    );
+    if (landDevAccount && !expenseLedger) {
+      setExpenseLedger(landDevAccount.account_name || landDevAccount.name);
+    }
+
+    // 3. Load Saved Consumption Records
     const records = loadFirmData('material_consumption_records', firm, []);
     records.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     setSavedRecords(records);
@@ -61,8 +80,15 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       return alert(`Available stock se zyada quantity darj nahi kar sakte! (Uplabdh: ${availableStock} ${itemObj.unit || 'Units'})`);
     }
 
-    // Complete rate fallback resolution
-    const rateVal = parseFloat(itemObj.unit_purchase_price || itemObj.purchase_price || itemObj.cost_price || itemObj.rate || 0);
+    // Complete multi-key rate fallback resolution
+    const rateVal = parseFloat(
+      itemObj.unit_purchase_price || 
+      itemObj.purchase_price || 
+      itemObj.cost_price || 
+      itemObj.unit_valuation || 
+      itemObj.rate || 
+      0
+    );
     const totalItemCost = round2(qty * rateVal);
 
     setConsumptionList([
@@ -92,13 +118,20 @@ export default function MaterialConsumptionView({ firm, onClose }) {
     e.preventDefault();
     setFeedback(null);
 
-    if (!usesFor) return alert('Kripya usage location / purpose darj karein (e.g. Chamber-1 / Tractor / Generator).');
+    const targetExpenseLedger = (
+      typeof expenseLedger === 'object' 
+        ? (expenseLedger.account_name || expenseLedger.name || '') 
+        : expenseLedger || ''
+    ).trim();
+
+    if (!targetExpenseLedger) return alert('Kripya Debit Expense Account (e.g. Land Development) chunein!');
+    if (!usesFor) return alert('Kripya usage purpose/location darj karein (e.g. Land Development Bharti).');
     if (consumptionList.length === 0) return alert('Kam se kam ek item consumption list me jodein.');
 
     try {
       const recordId = 'CONS-' + Date.now();
 
-      // 1. Deduct Stock from Inventory
+      // STEP 1: DEDUCT PHYSICAL STOCK FROM INVENTORY
       const updatedInventory = inventoryItems.map(inv => {
         const matched = consumptionList.find(c => String(c.itemId) === String(inv.id));
         if (matched) {
@@ -118,12 +151,13 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       setInventoryItems(updatedInventory);
       saveFirmData('inventory_items', firm, updatedInventory);
 
-      // 2. Save Consumption History Record
+      // STEP 2: SAVE CONSUMPTION HISTORY RECORD
       const newRecord = {
         id: recordId,
         fiscal_year: activeFY,
         date: usageDate,
         uses_for: usesFor,
+        expense_account: targetExpenseLedger,
         items: consumptionList,
         total_value: totalConsumptionValue,
         created_at: new Date().toISOString()
@@ -133,37 +167,40 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       setSavedRecords(updatedRecords);
       saveFirmData('material_consumption_records', firm, updatedRecords);
 
-      // 3. Post Ind AS Double-Entry Fuel/Material Consumption Journal Voucher (JV)
-      // Resolves P&L Expense Head vs Stock Asset Head
-      const isFuel = consumptionList.some(c => c.name.toLowerCase().includes('diesel') || c.name.toLowerCase().includes('fuel'));
-      const expenseLedgerName = isFuel 
-        ? 'Tractor Diesel & Running Expense' 
-        : 'Direct Production & Factory Expenses';
-      
-      const stockAssetLedger = isFuel 
-        ? 'Consumables & Fuel Stock' 
-        : 'Raw Material Inventory';
-
+      // STEP 3: ENSURE STATUTORY MASTER ACCOUNTS EXIST
       const masterAccounts = getFirmMasterAccounts(activeFirmId);
-      if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === expenseLedgerName.toLowerCase())) {
+      
+      // Ensure Debit Account exists
+      if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === targetExpenseLedger.toLowerCase())) {
         saveMasterAccount(activeFirmId, {
-          account_name: expenseLedgerName,
+          account_name: targetExpenseLedger,
           primary_type: 'EXPENSES',
           type: 'Expenses',
-          sub_group: isFuel ? 'Operating Fuel Costs (Tractor / Generator Diesel)' : 'Direct Production Expenses',
+          sub_group: 'Direct Production & Site Development Expenses',
           balance_type: 'Dr'
         });
       }
+
+      // Determine stock asset head to credit
+      const itemNames = consumptionList.map(c => c.name).join(', ');
+      const isFuel = consumptionList.some(c => c.name.toLowerCase().includes('diesel') || c.name.toLowerCase().includes('fuel'));
+      const stockAssetLedger = isFuel 
+        ? 'Consumables & Fuel Stock' 
+        : `${consumptionList[0]?.name || 'Raw Material'} Stock Account`;
+
       if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === stockAssetLedger.toLowerCase())) {
         saveMasterAccount(activeFirmId, {
           account_name: stockAssetLedger,
           primary_type: 'ASSETS',
           type: 'Assets',
-          sub_group: isFuel ? 'Consumables & Fuel Stock (ईंधन/डीजल स्टॉक)' : 'Raw Material Inventory (कच्चा माल)',
+          sub_group: 'Raw Material Inventory (कच्चा माल)',
           balance_type: 'Dr'
         });
       }
 
+      // STEP 4: POST DOUBLE-ENTRY JOURNAL VOUCHER (JV)
+      // DR: Land Development (Land development) Expense
+      // CR: Mitti Stock Account (Asset/Inventory)
       saveUniversalVoucher(activeFirmId, {
         id: `JV-${recordId}`,
         firm_id: activeFirmId,
@@ -172,24 +209,27 @@ export default function MaterialConsumptionView({ firm, onClose }) {
         voucher_date: usageDate,
         date: usageDate,
         reference_no: recordId,
-        dr_account: expenseLedgerName,
+        dr_account: targetExpenseLedger,
         cr_account: stockAssetLedger,
         amount: totalConsumptionValue,
         total_amount: totalConsumptionValue,
-        narration: `Material/Fuel consumed for ${usesFor}: ${consumptionList.map(c => `${c.name} (${c.qty}${c.unit})`).join(', ')}. Total: ₹${totalConsumptionValue}`,
+        narration: `Consumed ${itemNames} for ${usesFor}. Debited to ${targetExpenseLedger} & Stock Deducted. Total: ₹${totalConsumptionValue}`,
         is_compound: true,
         entries: [
-          { account_name: expenseLedgerName, party: expenseLedgerName, type: 'DR', debit: totalConsumptionValue, credit: 0, amount: totalConsumptionValue },
+          { account_name: targetExpenseLedger, party: targetExpenseLedger, type: 'DR', debit: totalConsumptionValue, credit: 0, amount: totalConsumptionValue },
           { account_name: stockAssetLedger, party: stockAssetLedger, type: 'CR', debit: 0, credit: totalConsumptionValue, amount: totalConsumptionValue }
         ]
       });
 
-      // 4. Trigger Global System Broadcast
+      // Broadcast reactivity across all open views
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
 
-      setFeedback({ type: 'success', message: '✓ Consumption recorded, inventory deducted & accounting JV posted successfully!' });
+      setFeedback({ 
+        type: 'success', 
+        message: `✓ Mitti stock deducted & ₹${totalConsumptionValue.toLocaleString('en-IN')} successfully debited to "${targetExpenseLedger}"!` 
+      });
 
       setUsesFor('');
       setConsumptionList([]);
@@ -205,9 +245,12 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
-            🚜 Multi-Item Fuel & Material Consumption ({activeFY})
-          </h2>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
+              🚜 Fuel & Material Consumption / Bharti Work ({activeFY})
+            </h2>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>Stock item minus karein aur kharcha seedhe expense khate me transfer karein</span>
+          </div>
           {onClose && (
             <button onClick={onClose} style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
               Close
@@ -223,8 +266,8 @@ export default function MaterialConsumptionView({ firm, onClose }) {
 
         <form onSubmit={handleSaveConsumption}>
           
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <div style={{ flex: 1 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+            <div>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
                 Date of Usage *
               </label>
@@ -236,13 +279,13 @@ export default function MaterialConsumptionView({ firm, onClose }) {
                 required 
               />
             </div>
-            <div style={{ flex: 1 }}>
+            <div>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
                 Uses For / Location *
               </label>
               <input 
                 type="text" 
-                placeholder="e.g. Chamber-1 / Tractor / GenSet" 
+                placeholder="e.g. Land Development Bharti / Site Filling" 
                 value={usesFor} 
                 onChange={e => setUsesFor(e.target.value)} 
                 style={inputStyle} 
@@ -251,9 +294,22 @@ export default function MaterialConsumptionView({ firm, onClose }) {
             </div>
           </div>
 
+          {/* DYNAMIC EXPENSE/PURPOSE ACCOUNT (e.g. Land Development) */}
+          <div style={{ marginBottom: '12px' }}>
+            <SearchableAccountDropdown
+              label="Debit Expense Account (खर्चे का खाता) *"
+              accounts={accountsList}
+              value={expenseLedger}
+              onChange={val => setExpenseLedger(val)}
+              placeholder="-- Select Expense Head (e.g. Land Development) --"
+              colorAccent="#0284c7"
+              required={true}
+            />
+          </div>
+
           <div style={{ backgroundColor: '#f1f5f9', padding: '12px', borderRadius: '10px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
             <div style={{ fontSize: '11px', fontWeight: '800', color: '#334155', marginBottom: '8px' }}>
-              Select Stock Item & Quantity
+              Select Stock Item (Mitti/Fuel/Coal) & Quantity
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
@@ -262,7 +318,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
                 label=""
                 value={selectedStockId}
                 onChange={val => setSelectedStockId(val)}
-                placeholder="-- Search & Choose Fuel/Stock --"
+                placeholder="-- Search & Choose Mitti / Stock Item --"
               />
 
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -270,7 +326,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
                   <input 
                     type="number" 
                     step="0.01" 
-                    placeholder="Enter Qty" 
+                    placeholder="Enter Qty (Quintal/Trolly)" 
                     value={quantity} 
                     onChange={e => setQuantity(e.target.value)} 
                     style={inputStyle} 
@@ -290,12 +346,12 @@ export default function MaterialConsumptionView({ firm, onClose }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
                 {consumptionList.map(c => (
                   <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px' }}>
-                    <span><strong>{c.name}</strong> - {c.qty} {c.unit} (₹{c.totalCost.toFixed(2)})</span>
+                    <span><strong>{c.name}</strong> - {c.qty} {c.unit} (@ ₹{c.rate}/unit = ₹{c.totalCost.toFixed(2)})</span>
                     <button type="button" onClick={() => removeItemFromList(c.id)} style={{ color: '#dc2626', border: 'none', background: 'none', fontWeight: 'bold', cursor: 'pointer' }}>✕ Remove</button>
                   </div>
                 ))}
                 <div style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '11px', color: '#059669', marginTop: '4px' }}>
-                  Total Consumption Value: ₹{totalConsumptionValue.toFixed(2)}
+                  Total Khapat Cost: ₹{totalConsumptionValue.toFixed(2)}
                 </div>
               </div>
             )}
@@ -305,13 +361,13 @@ export default function MaterialConsumptionView({ firm, onClose }) {
             type="submit" 
             style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
           >
-            ⚡ Post Material Consumption & Sync Journal
+            ⚡ Deduct Mitti Stock & Debit to {typeof expenseLedger === 'object' ? (expenseLedger.account_name || 'Land Development') : (expenseLedger || 'Land Development')}
           </button>
 
         </form>
       </div>
 
-      {/* Scrollable Consumption History Register */}
+      {/* Consumption History Register */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
           Consumption History Register ({activeFY}) - ({savedRecords.length})
@@ -325,8 +381,12 @@ export default function MaterialConsumptionView({ firm, onClose }) {
           <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {savedRecords.map(rec => (
               <div key={rec.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', boxSizing: 'border-box' }}>
-                <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#0f172a' }}>
-                  {rec.date} | Location: {rec.uses_for} {rec.total_value ? `(₹${Number(rec.total_value).toFixed(2)})` : ''}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <strong style={{ color: '#0f172a' }}>{rec.date} | Location: {rec.uses_for}</strong>
+                  <span style={{ color: '#059669', fontWeight: 'bold' }}>₹{Number(rec.total_value || 0).toFixed(2)}</span>
+                </div>
+                <div style={{ color: '#0284c7', fontWeight: '600', marginBottom: '2px' }}>
+                  Debited to: {rec.expense_account || 'Land Development'}
                 </div>
                 <div style={{ color: '#64748b' }}>
                   Items: {(rec.items || []).map(i => `${i.name} (${i.qty} ${i.unit})`).join(', ')}
