@@ -160,7 +160,7 @@ export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Save or Update an Account Head strictly for active firm
+ * Save or Update an Account Head strictly for active firm with Cascade Name Update
  */
 export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const accounts = getFirmMasterAccounts(firmId);
@@ -171,6 +171,11 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const existingIdx = accounts.findIndex(
     a => (a.id && a.id === accountData.id) || a.account_name.toLowerCase() === cleanName.toLowerCase()
   );
+
+  let oldName = '';
+  if (existingIdx !== -1) {
+    oldName = accounts[existingIdx].account_name || accounts[existingIdx].name || '';
+  }
 
   const payload = {
     id: accountData.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -195,8 +200,69 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     accounts.push(payload);
   }
 
+  // 1. Save updated master accounts list
   localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(accounts));
+
+  // 2. CASCADE RENAME ENGINE: If account name changed, update it across all vouchers & invoices
+  if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
+    const oldTarget = oldName.trim().toLowerCase();
+    
+    for (let i = 0; i < localStorage.length; i++) {
+      const storageKey = localStorage.key(i);
+      if (storageKey && (storageKey.includes('voucher') || storageKey.includes('invoice') || storageKey.includes('bill') || storageKey.includes('transaction'))) {
+        const rawVal = localStorage.getItem(storageKey);
+        if (rawVal) {
+          try {
+            let parsedList = JSON.parse(rawVal);
+            if (Array.isArray(parsedList)) {
+              let isModified = false;
+              parsedList = parsedList.map(v => {
+                if (!v) return v;
+                let vModified = false;
+                const copy = { ...v };
+
+                if (String(copy.dr_account || '').trim().toLowerCase() === oldTarget) {
+                  copy.dr_account = cleanName;
+                  vModified = true;
+                }
+                if (String(copy.cr_account || '').trim().toLowerCase() === oldTarget) {
+                  copy.cr_account = cleanName;
+                  vModified = true;
+                }
+                if (String(copy.supplier_name || '').trim().toLowerCase() === oldTarget) {
+                  copy.supplier_name = cleanName;
+                  vModified = true;
+                }
+                if (String(copy.customer_name || '').trim().toLowerCase() === oldTarget) {
+                  copy.customer_name = cleanName;
+                  vModified = true;
+                }
+
+                if (Array.isArray(copy.entries)) {
+                  copy.entries = copy.entries.map(ent => {
+                    if (ent && String(ent.account_name || ent.party || '').trim().toLowerCase() === oldTarget) {
+                      vModified = true;
+                      return { ...ent, account_name: cleanName, party: cleanName };
+                    }
+                    return ent;
+                  });
+                }
+
+                if (vModified) isModified = true;
+                return copy;
+              });
+
+              if (isModified) {
+                localStorage.setItem(storageKey, JSON.stringify(parsedList));
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+  }
+
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
   return payload;
