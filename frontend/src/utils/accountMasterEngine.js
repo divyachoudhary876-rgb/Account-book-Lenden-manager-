@@ -1,8 +1,7 @@
 // frontend/src/utils/accountMasterEngine.js
 
-/**
- * Standard Statutory Account Hierarchy (Ind AS / Indian GAAP Aligned)
- */
+import { getUniversalVouchersByFirm } from './voucherPostingEngine.js';
+
 export const ACCOUNT_HIERARCHY = {
   ASSETS: {
     label: 'ASSETS (संपत्तियां)',
@@ -66,9 +65,6 @@ export const ACCOUNT_HIERARCHY = {
   }
 };
 
-/**
- * Helper to resolve sanitized and valid firmId
- */
 const resolveFirmId = (firmId) => {
   if (firmId && typeof firmId === 'string' && firmId.trim()) {
     return firmId.trim();
@@ -76,10 +72,6 @@ const resolveFirmId = (firmId) => {
   return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 };
 
-/**
- * Retrieve master account heads strictly isolated for active firm
- * ZERO CROSS-FIRM POLLUTION: Global keys completely eliminated.
- */
 export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
   const activeFirmId = resolveFirmId(firmId);
 
@@ -109,7 +101,6 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       }
     }
 
-    // Default baseline accounts for newly initialized firm
     const defaultAccounts = [
       { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
       { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
@@ -128,9 +119,6 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
   }
 };
 
-/**
- * Filter and extract only Expense account heads
- */
 export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
   const accounts = getFirmMasterAccounts(firmId);
   return accounts.filter(a => 
@@ -144,15 +132,12 @@ export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
   );
 };
 
-/**
- * Save or Update an Account Head with Strict Firm-Isolation & Complete Universal Cascade Rename
- */
 export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const activeFirmId = resolveFirmId(firmId);
   const accounts = getFirmMasterAccounts(activeFirmId);
   const cleanName = (accountData.account_name || accountData.name || '').trim();
 
-  if (!cleanName) throw new Error('Account name cannot be empty.');
+  if (!cleanName) throw new Error('Account name khali nahi ho sakta.');
 
   const existingIdx = accounts.findIndex(
     a => (accountData.id && a.id === accountData.id) || 
@@ -188,14 +173,14 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
 
   if (existingIdx !== -1) {
     if ((accounts[existingIdx].is_system_locked || accounts[existingIdx].isSystemLocked) && accounts[existingIdx].account_name !== payload.account_name) {
-      throw new Error(`System core account "${accounts[existingIdx].account_name}" cannot be renamed.`);
+      throw new Error(`System core account "${accounts[existingIdx].account_name}" ka naam nahi badla ja sakta.`);
     }
     accounts[existingIdx] = { ...accounts[existingIdx], ...payload };
   } else {
     accounts.push(payload);
   }
 
-  // 1. Strictly firm-scoped keys only (NO GLOBAL STORAGE POLLUTION)
+  // 1. Strictly firm-scoped keys only
   localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(accounts));
 
@@ -203,7 +188,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
 
-    // All possible storage buckets scoped to active firm
     const firmTargetKeys = [
       `app_vouchers_${activeFirmId}`,
       `account_book_vouchers_${activeFirmId}`,
@@ -220,7 +204,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
       `material_consumptions_${activeFirmId}`
     ];
 
-    // Every field where account/party/vendor/customer/worker name can be stored
     const matchFields = [
       'dr_account', 'cr_account', 'dr_party', 'cr_party',
       'account_name', 'accountName', 'name', 'party',
@@ -250,7 +233,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
               }
             });
 
-            // Compound voucher entries array
             if (Array.isArray(node.entries)) {
               node.entries.forEach(entry => deepReplace(entry));
               if (modified) {
@@ -265,12 +247,10 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
               }
             }
 
-            // Invoices line items / items array if applicable
             if (Array.isArray(node.items)) {
               node.items.forEach(it => deepReplace(it));
             }
 
-            // Recurse into nested objects
             Object.keys(node).forEach(key => {
               if (typeof node[key] === 'object' && node[key] !== null) {
                 deepReplace(node[key]);
@@ -290,7 +270,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     });
   }
 
-  // 3. Broadcast reactive system sync events across all components
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('storage'));
@@ -299,7 +278,7 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
 };
 
 /**
- * Delete an Account Head with Protected Master Guard
+ * Delete an Account Head with Foreign Key Dependency Check (Prevents Broken Orphan Vouchers)
  */
 export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
   const activeFirmId = resolveFirmId(firmId);
@@ -308,8 +287,29 @@ export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
 
   if (!target) return false;
 
+  // 1. Guard core statutory accounts
   if (target.is_system_locked || target.isSystemLocked) {
-    throw new Error(`⚠️ Cannot delete core ledger account "${target.account_name || target.name}".`);
+    throw new Error(`Core statutory ledger account "${target.account_name || target.name}" ko delete nahi kiya ja sakta.`);
+  }
+
+  const targetName = (target.account_name || target.name || '').trim().toLowerCase();
+
+  // 2. Guard against orphan vouchers / active transaction dependency
+  const existingVouchers = getUniversalVouchersByFirm(activeFirmId) || [];
+  const hasActiveTransactions = existingVouchers.some(v => {
+    if (!v) return false;
+    const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
+    const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim().toLowerCase();
+    if (dr === targetName || cr === targetName) return true;
+
+    if (Array.isArray(v.entries)) {
+      return v.entries.some(e => (e.account_name || e.party || '').trim().toLowerCase() === targetName);
+    }
+    return false;
+  });
+
+  if (hasActiveTransactions) {
+    throw new Error(`⚠️ Is account "${target.account_name || target.name}" par purane transactions (vouchers/bills) darj hain. Account delete karne se pehle iske sabhi vouchers delete ya adjust karein, taaki Balance Sheet tally rahe.`);
   }
 
   const updated = accounts.filter(a => a.id !== accountId);
