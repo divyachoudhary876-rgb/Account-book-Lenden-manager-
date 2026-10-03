@@ -19,7 +19,7 @@ export const getDynamicDashboardMetrics = (firm) => {
     : (StorageService.getInventoryItems(firmId) || []);
   const accounts = getFirmMasterAccounts(firmId) || [];
 
-  // 2. Double-entry ledger aggregation
+  // 2. Double-entry ledger aggregation map
   const balanceMap = {};
   accounts.forEach(acc => {
     const name = (acc.account_name || acc.name || '').trim();
@@ -47,7 +47,7 @@ export const getDynamicDashboardMetrics = (firm) => {
     if (vType === 'SALES') totalSales += vAmount;
     if (vType === 'PURCHASE') totalPurchases += vAmount;
 
-    // Handle compound entries array
+    // A. Handle compound multi-line entries
     if (Array.isArray(v.entries) && v.entries.length > 0) {
       v.entries.forEach(entry => {
         const accName = (entry.account_name || entry.party || '').trim();
@@ -72,7 +72,7 @@ export const getDynamicDashboardMetrics = (firm) => {
         }
       });
     } else {
-      // Handle simple single-debit / single-credit vouchers
+      // B. Handle single Dr/Cr vouchers
       const dr = (v.dr_account || v.debit_account || '').trim();
       const cr = (v.cr_account || v.credit_account || '').trim();
 
@@ -102,17 +102,17 @@ export const getDynamicDashboardMetrics = (firm) => {
     const type = (acc.primary_type || '').toUpperCase();
     const group = (acc.sub_group || '').toLowerCase();
 
-    // Cash and Bank
+    // Cash & Bank Balances
     if (lowerName.includes('cash') || lowerName.includes('bank') || group.includes('bank') || group.includes('cash')) {
       cashAndBank += rawNet;
     }
-    // Receivables (Customers / Debtors)
+    // Receivables (Sundry Debtors)
     else if (type === 'ASSETS' || group.includes('debtor') || group.includes('customer') || lowerName.includes('debtor') || lowerName.includes('customer')) {
       if (rawNet > 0) {
         totalReceivables += rawNet;
       }
     }
-    // Payables (Suppliers / Creditors)
+    // Payables (Sundry Creditors)
     else if (type === 'LIABILITIES' || group.includes('creditor') || group.includes('supplier') || lowerName.includes('creditor') || lowerName.includes('supplier')) {
       if (rawNet < 0) {
         totalPayables += Math.abs(rawNet);
@@ -128,7 +128,7 @@ export const getDynamicDashboardMetrics = (firm) => {
     return acc + (qty > 0 && rate > 0 ? (qty * rate) : 0);
   }, 0);
 
-  // 4. Category-Specific Manufacturing Metrics
+  // 4. Category-Specific KPIs (Brick Kiln, Biomass, Trading)
   const categorySpecifics = {
     category,
     cards: [],
