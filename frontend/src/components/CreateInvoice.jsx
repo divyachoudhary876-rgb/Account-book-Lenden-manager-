@@ -1,4 +1,5 @@
 // frontend/src/components/CreateInvoice.jsx
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { loadFirmData } from '../utils/firmIsolationEngine';
@@ -7,8 +8,10 @@ import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { processSalesInvoicePosting, revertSalesStockOnDeletion } from '../utils/salesPostingEngine.js';
 
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
 export default function CreateInvoice({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
   
   const [allItems, setAllItems] = useState([]);
@@ -39,8 +42,14 @@ export default function CreateInvoice({ firm, onClose }) {
       const accList = getFirmMasterAccounts(activeFirmId) || [];
       setAccountsList(accList);
 
-      const allVouchers = StorageService.getItem('account_book_vouchers') || [];
-      const salesInvoices = allVouchers.filter(v => v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001') && (v.voucher_type === 'SALES' || v.type === 'SALES'));
+      // Strictly firm-scoped sales vouchers scan (No FIRM-001 fallback pollution)
+      const scopedVouchersKey = `account_book_vouchers_${activeFirmId}`;
+      const allVouchers = StorageService.getItem(scopedVouchersKey, []);
+      
+      const salesInvoices = allVouchers.filter(v => 
+        v && String(v.firm_id || v.firmId || '').trim() === String(activeFirmId).trim() && 
+        (String(v.voucher_type || v.type || '').toUpperCase() === 'SALES')
+      );
       
       salesInvoices.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
       setInvoiceList(salesInvoices);
@@ -76,25 +85,25 @@ export default function CreateInvoice({ firm, onClose }) {
 
     const qty = Number(quantity);
     const rt = Number(rate);
-    const baseAmount = qty * rt;
+    const baseAmount = round2(qty * rt);
     const gRate = Number(gstRate);
     
-    const taxAmount = baseAmount * (gRate / 100);
-    const totalWithTax = baseAmount + taxAmount;
+    const taxAmount = round2(baseAmount * (gRate / 100));
+    const totalWithTax = round2(baseAmount + taxAmount);
     const cleanItemName = itemObj.item_name || itemObj.name || 'Stock Item';
     const cleanUnit = itemObj.unit || 'Pcs';
 
     setCart([...cart, {
       id: Date.now(),
-      itemId: selectedItemId,
+      itemId: itemObj.id || selectedItemId,
       itemName: cleanItemName,
       unit: cleanUnit,
       qty,
       rate: rt,
       gstRate: gRate,
       taxableAmount: baseAmount,
-      cgst: taxAmount / 2,
-      sgst: taxAmount / 2,
+      cgst: round2(taxAmount / 2),
+      sgst: round2(taxAmount / 2),
       total: totalWithTax,
       isService: itemObj.item_type === 'SERVICE' || String(cleanItemName).toLowerCase().includes('freight')
     }]);
@@ -104,10 +113,10 @@ export default function CreateInvoice({ firm, onClose }) {
 
   const removeCartItem = (id) => setCart(cart.filter(c => c.id !== id));
 
-  const totalTaxable = cart.reduce((sum, i) => sum + (i.taxableAmount || 0), 0);
-  const totalCgst = cart.reduce((sum, i) => sum + (i.cgst || 0), 0);
-  const totalSgst = cart.reduce((sum, i) => sum + (i.sgst || 0), 0);
-  const grandTotal = totalTaxable + totalCgst + totalSgst;
+  const totalTaxable = round2(cart.reduce((sum, i) => sum + (i.taxableAmount || 0), 0));
+  const totalCgst = round2(cart.reduce((sum, i) => sum + (i.cgst || 0), 0));
+  const totalSgst = round2(cart.reduce((sum, i) => sum + (i.sgst || 0), 0));
+  const grandTotal = round2(totalTaxable + totalCgst + totalSgst);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -123,19 +132,21 @@ export default function CreateInvoice({ firm, onClose }) {
       const invoicePayload = {
         id: editingId || `INV-${Date.now()}`,
         firmId: activeFirmId,
+        firm_id: activeFirmId,
         customer_id: customerParty,
         invoiceDate: invoiceDate,
         taxable_amount: totalTaxable,
         gstRate: Number(gstRate),
-        gst_amount: totalCgst + totalSgst,
+        gst_amount: round2(totalCgst + totalSgst),
         reference_no: invoiceNo,
         vehicle_no: vehicleNo,
-        narration: `Sales Invoice ${invoiceNo} to ${customerParty} - Vehicle: ${vehicleNo}`,
+        narration: `Sales Invoice ${invoiceNo} to ${customerParty}${vehicleNo ? ' - Vehicle: ' + vehicleNo : ''}`,
         items: cart.map(c => ({
           itemId: c.itemId,
           itemName: c.itemName,
           unit: c.unit,
           quantity: c.qty,
+          qty: c.qty,
           rate: c.rate,
           gstRate: c.gstRate,
           taxableAmount: c.taxableAmount,
@@ -193,18 +204,29 @@ export default function CreateInvoice({ firm, onClose }) {
     try {
       revertSalesStockOnDeletion(invId, activeFirmId);
 
-      const vouchers = StorageService.getItem('account_book_vouchers') || [];
-      const filteredVouchers = vouchers.filter(v => v && v.id !== invId && v.reference_no !== invId);
-      StorageService.setItem('account_book_vouchers', filteredVouchers);
-      StorageService.setItem(`account_book_vouchers_${activeFirmId}`, filteredVouchers);
+      // Strictly delete from both firm-scoped buckets
+      const scopedVouchersKey = `account_book_vouchers_${activeFirmId}`;
+      const scopedPrimaryVouchersKey = `app_vouchers_${activeFirmId}`;
+      const scopedInvoicesKey = `app_invoices_${activeFirmId}`;
+      const salesInvoicesKey = `sales_invoices_${activeFirmId}`;
 
-      const invoices = StorageService.getItem(`app_invoices_${activeFirmId}`) || StorageService.getItem('app_invoices') || [];
-      const filteredInvoices = invoices.filter(i => i && i.id !== invId && i.invoice_number !== invId);
-      StorageService.setItem(`app_invoices_${activeFirmId}`, filteredInvoices);
-      StorageService.setItem('app_invoices', filteredInvoices);
+      const filterOut = v => v && String(v.id) !== String(invId) && String(v.reference_no) !== String(invNo);
+
+      const vchs1 = StorageService.getItem(scopedVouchersKey, []);
+      StorageService.setItem(scopedVouchersKey, vchs1.filter(filterOut));
+
+      const vchs2 = StorageService.getItem(scopedPrimaryVouchersKey, []);
+      StorageService.setItem(scopedPrimaryVouchersKey, vchs2.filter(filterOut));
+
+      const invs1 = StorageService.getItem(scopedInvoicesKey, []);
+      StorageService.setItem(scopedInvoicesKey, invs1.filter(filterOut));
+
+      const invs2 = StorageService.getItem(salesInvoicesKey, []);
+      StorageService.setItem(salesInvoicesKey, invs2.filter(filterOut));
 
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
       loadData();
 
       if (editingId === invId) {
@@ -233,13 +255,13 @@ export default function CreateInvoice({ firm, onClose }) {
       const name = i.itemName ? i.itemName : 'Item';
       const qty = i.qty || i.quantity || 0;
       const unit = i.unit ? i.unit : 'Pcs';
-      const rate = Number(i.rate ? i.rate : 0).toFixed(2);
+      const rateVal = Number(i.rate ? i.rate : 0).toFixed(2);
       const gst = i.gstRate ? i.gstRate : 0;
       const total = Number(i.total ? i.total : 0).toFixed(2);
       return `<tr>
         <td><strong>${name}</strong></td>
         <td class="text-right">${qty} ${unit}</td>
-        <td class="text-right">${rate}</td>
+        <td class="text-right">${rateVal}</td>
         <td class="text-right">${gst}%</td>
         <td class="text-right"><strong>${total}</strong></td>
       </tr>`;
@@ -313,9 +335,9 @@ export default function CreateInvoice({ firm, onClose }) {
     if (!v) return false;
     const q = (searchFilter || '').toLowerCase();
     return (
-      (v.reference_no && v.reference_no.toLowerCase().includes(q)) ||
-      (v.dr_account && v.dr_account.toLowerCase().includes(q)) ||
-      (v.narration && v.narration.toLowerCase().includes(q))
+      (v.reference_no && String(v.reference_no).toLowerCase().includes(q)) ||
+      (v.dr_account && String(v.dr_account).toLowerCase().includes(q)) ||
+      (v.narration && String(v.narration).toLowerCase().includes(q))
     );
   });
 
@@ -324,7 +346,7 @@ export default function CreateInvoice({ firm, onClose }) {
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', boxSizing: 'border-box', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
-            {editingId ? '✏ Edit GST Sales Invoice' : '📄 Multi-Item GST Invoicing'}
+            {editingId ? '✏️️ Edit GST Sales Invoice' : '📄 Multi-Item GST Invoicing'}
           </h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
         </div>
@@ -455,7 +477,7 @@ export default function CreateInvoice({ firm, onClose }) {
         </div>
 
         {filteredInvoices.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '11px' }}>No sales invoices found.</div>
+          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '11px' }}>No sales invoices found for this firm.</div>
         ) : (
           <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {filteredInvoices.map(inv => {
@@ -464,7 +486,7 @@ export default function CreateInvoice({ firm, onClose }) {
                 <div key={inv.id} style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>#{inv.reference_no} — {inv.dr_account}</div>
-                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date}</div>
+                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date || inv.date}</div>
                     
                     <div style={{ marginTop: '4px', fontSize: '11px', color: '#334155' }}>
                       {itemsList.map((it, idx) => (
@@ -476,7 +498,7 @@ export default function CreateInvoice({ firm, onClose }) {
                   </div>
 
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: '900', color: '#059669' }}>₹{(inv.amount || 0).toFixed(2)}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '900', color: '#059669' }}>₹{Number(inv.amount || inv.total_amount || 0).toFixed(2)}</span>
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <button onClick={() => handlePrint(inv)} style={{ padding: '4px 8px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Print</button>
                       <button onClick={() => handleEdit(inv)} style={{ padding: '4px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Edit</button>
