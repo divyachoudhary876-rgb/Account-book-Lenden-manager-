@@ -5,16 +5,22 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 
+/**
+ * Universal safe firm name resolver
+ */
 const getCleanFirmName = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') {
     return firmInput.trim();
   }
   if (firmInput && typeof firmInput === 'object') {
-    return firmInput.legal_name || firmInput.trade_name || firmInput.name || 'Neelkanth Groups';
+    return firmInput.legal_name || firmInput.trade_name || firmInput.name || firmInput.firm_name || 'Neelkanth Groups';
   }
   return 'Neelkanth Groups';
 };
 
+/**
+ * Safely convert ArrayBuffer to Base64 without text encoding corruption
+ */
 const arrayBufferToBase64 = (buffer) => {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -25,6 +31,9 @@ const arrayBufferToBase64 = (buffer) => {
   return window.btoa(binary);
 };
 
+/**
+ * 100% Corruption-Free True PDF Exporter (ArrayBuffer Binary Stream)
+ */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fullFileName = `${cleanName}_${Date.now()}.pdf`;
@@ -32,6 +41,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   try {
     const pdfArrayBuffer = doc.output('arraybuffer');
 
+    // 1. Mobile Capacitor Native Environment (Android/iOS)
     if (Capacitor.isNativePlatform()) {
       const base64Data = arrayBufferToBase64(pdfArrayBuffer);
       const writeResult = await Filesystem.writeFile({
@@ -51,6 +61,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
+    // 2. Standard Web Browser Download via Blob
     const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
     const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
@@ -74,7 +85,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait - Clean Spacing)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait - Strict Non-Overlapping Coordinates)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
@@ -101,6 +112,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
     y += 6;
 
+    // Header Bar
     doc.setFillColor(15, 23, 42);
     doc.rect(14, y, 182, 7, 'F');
     doc.setTextColor(255, 255, 255);
@@ -108,9 +120,9 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.setFontSize(8);
 
     doc.text('Date', 16, y + 4.8);
-    doc.text('Particulars & Description', 40, y + 4.8);
-    doc.text('Debit (Rs)', 130, y + 4.8, { align: 'right' });
-    doc.text('Credit (Rs)', 160, y + 4.8, { align: 'right' });
+    doc.text('Particulars & Description', 38, y + 4.8);
+    doc.text('Debit (Rs)', 132, y + 4.8, { align: 'right' });
+    doc.text('Credit (Rs)', 162, y + 4.8, { align: 'right' });
     doc.text('Balance (Rs)', 193, y + 4.8, { align: 'right' });
     y += 9;
   };
@@ -120,12 +132,12 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   txs.forEach((t, index) => {
     const mainTitle = `${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`;
     const descText = t.narration || '';
-    
-    // Width constrained to 65mm so it NEVER touches Debit column at x=130
-    const splitTitle = doc.splitTextToSize(mainTitle, 65);
-    const splitDesc = descText ? doc.splitTextToSize(descText, 65) : [];
+
+    // Strictly limit text width to 68mm so it NEVER collides with Debit column at x=132
+    const splitTitle = doc.splitTextToSize(mainTitle, 68);
+    const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
     const totalLines = splitTitle.length + splitDesc.length;
-    const rowHeight = Math.max(7, 3 + (totalLines * 3.5));
+    const rowHeight = Math.max(7, 3 + (totalLines * 3.4));
 
     if (y + rowHeight > 280) {
       doc.addPage();
@@ -144,23 +156,23 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.setTextColor(15, 23, 42);
 
     doc.text(String(t.date || '-'), 16, y);
-    doc.text(splitTitle, 40, y);
+    doc.text(splitTitle, 38, y);
 
     const deb = Number(t.debit || 0);
     const cr = Number(t.credit || 0);
     const runBal = Number(t.runningBalance || 0);
 
-    doc.text(deb > 0 ? deb.toFixed(2) : '-', 130, y, { align: 'right' });
-    doc.text(cr > 0 ? cr.toFixed(2) : '-', 160, y, { align: 'right' });
+    doc.text(deb > 0 ? deb.toFixed(2) : '-', 132, y, { align: 'right' });
+    doc.text(cr > 0 ? cr.toFixed(2) : '-', 162, y, { align: 'right' });
     doc.setFont('helvetica', 'bold');
     doc.text(`${runBal.toFixed(2)} ${t.balanceType || 'Dr'}`, 193, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
     if (splitDesc.length > 0) {
-      const descY = y + (splitTitle.length * 3.5);
+      const descY = y + (splitTitle.length * 3.4);
       doc.setFontSize(6.8);
       doc.setTextColor(100, 116, 139);
-      doc.text(splitDesc, 40, descY);
+      doc.text(splitDesc, 38, descY);
       doc.setTextColor(15, 23, 42);
     }
 
@@ -171,7 +183,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, Balance Sheet - No Cutting)
+ * 2. FINANCIAL STATEMENTS REPORT (Trial Balance, P&L, Balance Sheet - No Mid-Page Cutting)
  */
 export const downloadFinancialStatementsReport = async (param1, param2, param3) => {
   let firmInput = 'Neelkanth Groups';
@@ -181,8 +193,12 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
   [param1, param2, param3].forEach(arg => {
     if (!arg) return;
     if (typeof arg === 'object') {
-      if (arg.legal_name || arg.trade_name || arg.name || arg.id) firmInput = arg;
-      if (arg.trialBalance || arg.trading || arg.balanceSheet || arg.gstSummary || arg.pnl) reportData = arg;
+      if (arg.legal_name || arg.trade_name || arg.name || arg.id) {
+        firmInput = arg;
+      }
+      if (arg.trialBalance || arg.trading || arg.balanceSheet || arg.gstSummary || arg.pnl) {
+        reportData = arg;
+      }
     } else if (typeof arg === 'string') {
       const upper = arg.toUpperCase();
       if (['TRIAL_BALANCE', 'TRADING', 'PNL', 'BALANCE_SHEET', 'GST_SUMMARY', 'TB', '1', '2', '3', '4', '5'].includes(upper)) {
@@ -229,7 +245,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
 
   printReportTop();
 
-  // TRIAL BALANCE EXPORT
+  // A. TRIAL BALANCE EXPORT
   if (activeTab === 'TRIAL_BALANCE' || activeTab === 'TB') {
     const printTBHeader = () => {
       doc.setFillColor(15, 23, 42);
@@ -275,7 +291,12 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
       y += 6;
     });
 
-    if (y > 270) { doc.addPage(); pageNum += 1; y = 18; printReportTop(); }
+    if (y > 270) { 
+      doc.addPage(); 
+      pageNum += 1; 
+      y = 18; 
+      printReportTop(); 
+    }
     y += 2;
     doc.setDrawColor(203, 213, 225);
     doc.line(14, y, 196, y);
@@ -286,7 +307,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.text(`Rs ${(reportData?.totalDebit || 0).toFixed(2)}`, 150, y, { align: 'right' });
     doc.text(`Rs ${(reportData?.totalCredit || 0).toFixed(2)}`, 193, y, { align: 'right' });
 
-  // BALANCE SHEET EXPORT (NO PAGE DROP / SPLIT BUG)
+  // B. BALANCE SHEET EXPORT (Continuous Clean Flow)
   } else if (activeTab === 'BALANCE_SHEET' || activeTab === '4') {
     const assets = (reportData.balanceSheet && Array.isArray(reportData.balanceSheet.assets)) ? reportData.balanceSheet.assets : [];
     const liabilities = (reportData.balanceSheet && Array.isArray(reportData.balanceSheet.liabilities)) ? reportData.balanceSheet.liabilities : [];
@@ -305,7 +326,12 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.setFont('helvetica', 'normal');
 
     assets.forEach((a, index) => {
-      if (y > 275) { doc.addPage(); pageNum += 1; y = 18; printReportTop(); }
+      if (y > 275) { 
+        doc.addPage(); 
+        pageNum += 1; 
+        y = 18; 
+        printReportTop(); 
+      }
       if (index % 2 === 0) {
         doc.setFillColor(248, 250, 252);
         doc.rect(14, y - 3, 182, 6, 'F');
@@ -320,10 +346,10 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.text(`Total Assets: Rs ${(reportData.balanceSheet?.totalAssets || 0).toFixed(2)}`, 193, y, { align: 'right' });
-    y += 8;
+    y += 9;
 
-    // LIABILITIES SECTION (Direct flow with safe page break)
-    if (y > 230) { 
+    // LIABILITIES SECTION (Flows naturally without artificial gaps)
+    if (y > 240) { 
       doc.addPage(); 
       pageNum += 1; 
       y = 18; 
@@ -343,7 +369,12 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     doc.setFont('helvetica', 'normal');
 
     liabilities.forEach((l, index) => {
-      if (y > 275) { doc.addPage(); pageNum += 1; y = 18; printReportTop(); }
+      if (y > 275) { 
+        doc.addPage(); 
+        pageNum += 1; 
+        y = 18; 
+        printReportTop(); 
+      }
       if (index % 2 === 0) {
         doc.setFillColor(248, 250, 252);
         doc.rect(14, y - 3, 182, 6, 'F');
@@ -397,7 +428,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
     y += 6;
 
-    // Table Header Bar (Total Width: 269mm)
+    // Header Bar: Total Width 269mm (x=14 to x=283)
     doc.setFillColor(15, 23, 42);
     doc.rect(14, y, 269, 7, 'F');
     doc.setTextColor(255, 255, 255);
@@ -426,11 +457,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     let itemStr = itemsList.map(it => `${it.itemName} (Qty: ${it.qty} @ Rs ${it.rate})`).join(', ');
     const noteText = vch.narration ? (itemStr ? `${itemStr} - ${vch.narration}` : vch.narration) : itemStr;
 
-    // Strict column widths in Landscape:
-    // Dr width = 53mm (118 to 171)
-    // Cr width = 58mm (175 to 233)
-    // Note width = 115mm (118 to 233)
-    // Amount is at 278mm (far right, zero chance of overlap)
+    // Strict non-overlapping widths in Landscape
     const splitDr = doc.splitTextToSize(drName, 53);
     const splitCr = doc.splitTextToSize(crName, 58);
     const splitNote = noteText ? doc.splitTextToSize(noteText, 115) : [];
@@ -439,8 +466,8 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.2) : 0;
     const rowHeight = Math.max(6.5, 3.5 + namesHeight + noteHeight);
 
-    // Landscape page break (height = 210mm, break at 195mm)
-    if (y + rowHeight > 195) {
+    // CRITICAL FIX: Landscape height is 210mm, break at 190mm (not 280mm!)
+    if (y + rowHeight > 190) {
       doc.addPage();
       pageNum += 1;
       y = 16;
@@ -462,20 +489,16 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     doc.text(String(vch.voucher_date || vch.date || '-'), 27, y);
     doc.text(vType, 48, y);
 
-    // Reference column max 36mm
     const splitRef = doc.splitTextToSize(rawRef, 36);
     doc.text(splitRef[0] || rawRef, 78, y);
 
-    // Dr & Cr parallel columns
     doc.text(splitDr, 118, y);
     doc.text(splitCr, 175, y);
 
-    // Amount strictly aligned right at 278mm
     doc.setFont('helvetica', 'bold');
     doc.text(amt.toFixed(2), 278, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
-    // Narration / Note placed cleanly below accounts
     if (splitNote.length > 0) {
       const noteY = y + namesHeight;
       doc.setFontSize(6.8);
