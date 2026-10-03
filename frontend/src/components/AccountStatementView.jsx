@@ -1,4 +1,5 @@
 // frontend/src/components/AccountStatementView.jsx
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
@@ -6,7 +7,7 @@ import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function AccountStatementView({ firm }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
@@ -22,8 +23,12 @@ export default function AccountStatementView({ firm }) {
     try {
       const accList = getFirmMasterAccounts(activeFirmId) || [];
       setAccounts(accList);
-      if (accList.length > 0 && !selectedParty) {
-        setSelectedParty(accList[0].name || accList[0].account_name || '');
+      
+      // Agar current selectedParty rename ho gaya hai ya list me nahi hai to sync karein
+      if (accList.length > 0) {
+        if (!selectedParty || !accList.some(a => (a.account_name || a.name) === selectedParty)) {
+          setSelectedParty(accList[0].account_name || accList[0].name || '');
+        }
       }
     } catch (e) {
       console.error("Error loading accounts:", e);
@@ -51,71 +56,25 @@ export default function AccountStatementView({ firm }) {
     try {
       const targetClean = String(selectedParty).trim().toLowerCase();
 
-      // 1. Fetch Master Opening Balance with deep backup scan
+      // 1. Fetch Master Opening Balance strictly for active firm
       let masterOpeningAmt = 0;
       let masterOpeningSign = 'Dr';
-      try {
-        const possibleAccountKeys = [
-          `account_heads_${activeFirmId}`,
-          'app_accounts',
-          'account_heads',
-          'accounts_list',
-          `app_accounts_${activeFirmId}`
-        ];
-        
-        let savedHeads = [];
-        possibleAccountKeys.forEach(pk => {
-          const val = localStorage.getItem(pk);
-          if (val) {
-            try {
-              const parsed = JSON.parse(val);
-              if (Array.isArray(parsed)) savedHeads.push(...parsed);
-            } catch (e) {}
-          }
-        });
-
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.includes('account') || key.includes('ledger') || key.includes('party') || key.includes('backup'))) {
-            const raw = localStorage.getItem(key);
-            if (raw) {
-              try {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) savedHeads.push(...parsed);
-                else if (parsed && typeof parsed === 'object') {
-                  Object.values(parsed).forEach(sub => {
-                    if (Array.isArray(sub)) savedHeads.push(...sub);
-                  });
-                }
-              } catch (e) {}
-            }
-          }
-        }
-
-        const foundHead = savedHeads.find(a => String(a.name || a.account_name || '').trim().toLowerCase() === targetClean);
-        if (foundHead) {
-          masterOpeningAmt = Number(foundHead.openingBalance || foundHead.opening_balance || 0);
-          masterOpeningSign = foundHead.balanceType || foundHead.balance_type || 'Dr';
-        }
-      } catch (err) {
-        console.error("Error reading master opening balance:", err);
+      
+      const firmAccounts = getFirmMasterAccounts(activeFirmId) || [];
+      const foundHead = firmAccounts.find(a => String(a.account_name || a.name || '').trim().toLowerCase() === targetClean);
+      if (foundHead) {
+        masterOpeningAmt = Number(foundHead.opening_balance || foundHead.openingBalance || 0);
+        masterOpeningSign = foundHead.balance_type || foundHead.balanceType || 'Dr';
       }
 
       let initialOpeningSum = masterOpeningSign === 'Cr' ? -masterOpeningAmt : masterOpeningAmt;
 
-      // 2. Fetch all transactions with robust backup scan & scoped keys support
+      // 2. Fetch all transactions strictly from activeFirmId scoped keys
       let rawTx = [];
       const keysToScan = [
-        'account_book_vouchers',
-        'app_vouchers',
-        'transactions',
-        'app_payroll_entries',
-        'daybook',
-        'journal_entries',
         `account_book_vouchers_${activeFirmId}`,
         `app_vouchers_${activeFirmId}`,
-        `app_payroll_entries_${activeFirmId}`,
-        'account_book_vouchers_default_firm_id'
+        `app_payroll_entries_${activeFirmId}`
       ];
 
       keysToScan.forEach(k => {
@@ -125,37 +84,11 @@ export default function AccountStatementView({ firm }) {
         } catch (e) {}
       });
 
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('daybook') || key.includes('backup') || key.includes('journal') || key.includes('book') || key.includes('payroll'))) {
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) {
-                rawTx.push(...parsed);
-              } else if (parsed && typeof parsed === 'object') {
-                if (Array.isArray(parsed.vouchers)) rawTx.push(...parsed.vouchers);
-                if (Array.isArray(parsed.transactions)) rawTx.push(...parsed.transactions);
-                if (parsed.data && typeof parsed.data === 'object') {
-                  Object.values(parsed.data).forEach(sub => {
-                    if (Array.isArray(sub)) rawTx.push(...sub);
-                  });
-                }
-                Object.values(parsed).forEach(sub => {
-                  if (Array.isArray(sub)) rawTx.push(...sub);
-                });
-              }
-            } catch (err) {}
-          }
-        }
-      }
-
       const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
-        const vFirm = v.firm_id || activeFirmId;
-        if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
+        const vFirm = String(v.firm_id || v.firmId || '').trim();
+        if (vFirm && vFirm !== String(activeFirmId).trim()) return;
 
         const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}-${v.dr_account || ''}-${v.cr_account || ''}`;
         if (!uniqueVoucherMap.has(uniqueId)) {
@@ -296,7 +229,7 @@ export default function AccountStatementView({ firm }) {
         if (fromDate && t.date < fromDate) {
           runningBal += (t.debit - t.credit);
         } else if (toDate && t.date > toDate) {
-          // Skip
+          // Skip beyond date range
         } else {
           filteredTransactions.push(t);
         }
@@ -333,7 +266,7 @@ export default function AccountStatementView({ firm }) {
 
   const handleExportPDF = async () => {
     if (!statementData || statementData.transactions.length === 0) {
-      alert("⚠ No transactions found to export.");
+      alert("⚠️ No transactions found to export.");
       return;
     }
 
