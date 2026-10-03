@@ -75,9 +75,6 @@ export const switchActiveFirm = (firmId) => {
   return true;
 };
 
-/**
- * Alias for active firm setter for backward compatibility
- */
 export const setActiveFirmId = switchActiveFirm;
 
 /**
@@ -119,21 +116,36 @@ export const updateFirmProfile = (firmId, updatedFields) => {
 };
 
 /**
- * Delete a firm profile and purge its strictly isolated storage buckets
+ * Delete a firm profile and purge ALL of its strictly isolated storage buckets
+ * Eliminates all orphan keys and memory leaks
  */
 export const deleteFirmProfile = (firmId) => {
+  if (!firmId) return false;
+
   const firms = getFirmsRegistry().filter(f => f.id !== firmId);
   localStorage.setItem('app_firms_registry', JSON.stringify(firms));
   
-  // Purge firm-scoped storage keys to prevent data leakage or stale data retention
-  localStorage.removeItem(`app_accounts_${firmId}`);
-  localStorage.removeItem(`account_heads_${firmId}`);
-  localStorage.removeItem(`app_vouchers_${firmId}`);
-  localStorage.removeItem(`account_book_vouchers_${firmId}`);
-  localStorage.removeItem(`inventory_items_${firmId}`);
-  localStorage.removeItem(`app_invoices_${firmId}`);
-  localStorage.removeItem(`app_payroll_entities_${firmId}`);
-  localStorage.removeItem(`app_payroll_work_logs_${firmId}`);
+  // Comprehensive purge of all firm-scoped buckets
+  const firmKeysToPurge = [
+    `app_accounts_${firmId}`,
+    `account_heads_${firmId}`,
+    `app_vouchers_${firmId}`,
+    `account_book_vouchers_${firmId}`,
+    `inventory_items_${firmId}`,
+    `app_invoices_${firmId}`,
+    `sales_invoices_${firmId}`,
+    `purchase_bills_${firmId}`,
+    `app_purchase_bills_${firmId}`,
+    `app_payroll_entries_${firmId}`,
+    `material_consumption_records_${firmId}`,
+    `production_batches_${firmId}`,
+    `app_active_fy_${firmId}`,
+    `financial_years_${firmId}`
+  ];
+
+  firmKeysToPurge.forEach(k => {
+    localStorage.removeItem(k);
+  });
 
   if (firms.length > 0) {
     localStorage.setItem('app_active_firm_id', firms[0].id);
