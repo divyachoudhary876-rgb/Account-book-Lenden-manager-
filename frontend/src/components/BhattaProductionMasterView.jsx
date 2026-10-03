@@ -1,11 +1,18 @@
 // frontend/src/components/SmartProductionView.jsx
+
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
+import { saveUniversalVoucher } from '../utils/voucherPostingEngine';
+import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine';
 import SearchableStockDropdown from './SearchableStockDropdown';
+
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 export default function SmartProductionView({ firm, onClose }) {
   const activeFY = getCurrentActiveFY();
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+
   const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
   const [useForLocation, setUseForLocation] = useState('');
   
@@ -31,7 +38,6 @@ export default function SmartProductionView({ firm, onClose }) {
     setInventoryItems(validItems);
 
     const savedBatches = loadFirmData('production_batches', firm, []);
-    // Sort newest first
     savedBatches.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     setBatchesList(savedBatches);
   };
@@ -39,10 +45,12 @@ export default function SmartProductionView({ firm, onClose }) {
   useEffect(() => {
     loadData();
     window.addEventListener('app_storage_updated', loadData);
+    window.addEventListener('app_state_updated', loadData);
     return () => {
       window.removeEventListener('app_storage_updated', loadData);
+      window.removeEventListener('app_state_updated', loadData);
     };
-  }, [firm]);
+  }, [firm, activeFirmId]);
 
   const handleAddMaterial = () => {
     if (!selectedMaterial || !materialQty || Number(materialQty) <= 0) {
@@ -52,7 +60,7 @@ export default function SmartProductionView({ firm, onClose }) {
     if (!itemObj) return alert('Selected inventory item not found.');
 
     const qty = Number(materialQty);
-    const costPrice = Number(itemObj.cost_price || itemObj.rate || itemObj.unit_purchase_price || 0);
+    const costPrice = Number(itemObj.unit_purchase_price || itemObj.purchase_price || itemObj.cost_price || itemObj.rate || 0);
 
     setConsumedMaterials([
       ...consumedMaterials,
@@ -62,7 +70,7 @@ export default function SmartProductionView({ firm, onClose }) {
         name: itemObj.name || itemObj.item_name,
         qty,
         unit: itemObj.unit || 'Units',
-        estimatedCost: qty * costPrice
+        estimatedCost: round2(qty * costPrice)
       }
     ]);
 
@@ -74,9 +82,9 @@ export default function SmartProductionView({ firm, onClose }) {
     setConsumedMaterials(consumedMaterials.filter(m => m.id !== id));
   };
 
-  const totalMaterialCost = consumedMaterials.reduce((sum, m) => sum + (m.estimatedCost || 0), 0);
-  const totalProductionCost = totalMaterialCost + (Number(directLaborCost) || 0) + (Number(machineryOverheads) || 0);
-  const unitValuation = (Number(producedQty) > 0) ? (totalProductionCost / Number(producedQty)).toFixed(2) : 0;
+  const totalMaterialCost = round2(consumedMaterials.reduce((sum, m) => sum + (m.estimatedCost || 0), 0));
+  const totalProductionCost = round2(totalMaterialCost + (Number(directLaborCost) || 0) + (Number(machineryOverheads) || 0));
+  const unitValuation = (Number(producedQty) > 0) ? round2(totalProductionCost / Number(producedQty)) : 0;
 
   const handleSaveProduction = (e) => {
     e.preventDefault();
@@ -103,10 +111,14 @@ export default function SmartProductionView({ firm, onClose }) {
             if (invId === String(oldBatch.output_item_id)) {
               currentStock = Math.max(0, currentStock - Number(oldBatch.produced_qty));
             }
-            return { ...inv, current_stock: currentStock, stock: currentStock, qty: currentStock };
+            return { ...inv, current_stock: round2(currentStock), stock: round2(currentStock), qty: round2(currentStock) };
           });
         }
       }
+
+      // 1. Output Item Resolution
+      const outputItemObj = workingInventory.find(i => String(i.id) === String(outputItem));
+      const finishedName = (outputItemObj?.name || outputItemObj?.item_name || 'Finished Goods').trim();
 
       const newBatch = {
         id: batchId,
@@ -118,6 +130,7 @@ export default function SmartProductionView({ firm, onClose }) {
         machinery_overheads: Number(machineryOverheads) || 0,
         total_cost: totalProductionCost,
         output_item_id: outputItem,
+        output_item_name: finishedName,
         produced_qty: Number(producedQty),
         unit_valuation: Number(unitValuation),
         created_at: new Date().toISOString()
@@ -128,6 +141,7 @@ export default function SmartProductionView({ firm, onClose }) {
       setBatchesList(updatedBatches);
       saveFirmData('production_batches', firm, updatedBatches);
 
+      // 2. Final Inventory Quantities Commit
       const finalInventory = workingInventory.map(inv => {
         const invId = String(inv.id);
         const consumedMatch = consumedMaterials.find(m => String(m.itemId) === invId);
@@ -141,21 +155,72 @@ export default function SmartProductionView({ firm, onClose }) {
           currentStock += Number(producedQty);
         }
 
+        const isOutput = invId === String(outputItem);
         return {
           ...inv,
-          current_stock: currentStock,
-          stock: currentStock,
-          qty: currentStock,
-          ...(invId === String(outputItem) ? { cost_price: Number(unitValuation), unit_purchase_price: Number(unitValuation), rate: Number(unitValuation) } : {})
+          current_stock: round2(currentStock),
+          stock: round2(currentStock),
+          qty: round2(currentStock),
+          ...(isOutput ? {
+            cost_price: Number(unitValuation),
+            unit_purchase_price: Number(unitValuation),
+            purchase_price: Number(unitValuation),
+            rate: Number(unitValuation)
+          } : {})
         };
       });
 
       setInventoryItems(finalInventory);
       saveFirmData('inventory_items', firm, finalInventory);
 
+      // 3. Double-Entry WIP & Inventory Accounting Voucher
+      const accounts = getFirmMasterAccounts(activeFirmId);
+      const finishedInventoryLedger = `${finishedName} Stock Account`;
+      const wipLedger = 'Manufacturing / Work-in-Progress (WIP)';
+
+      if (!accounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === finishedInventoryLedger.toLowerCase())) {
+        saveMasterAccount(activeFirmId, {
+          account_name: finishedInventoryLedger,
+          primary_type: 'ASSETS',
+          type: 'Assets',
+          sub_group: 'Finished Goods Inventory (तैयार माल)',
+          balance_type: 'Dr'
+        });
+      }
+      if (!accounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === wipLedger.toLowerCase())) {
+        saveMasterAccount(activeFirmId, {
+          account_name: wipLedger,
+          primary_type: 'EXPENSES',
+          type: 'Expenses',
+          sub_group: 'Direct Production & Factory Expenses',
+          balance_type: 'Cr'
+        });
+      }
+
+      saveUniversalVoucher(activeFirmId, {
+        id: `JV-${batchId}`,
+        firm_id: activeFirmId,
+        voucher_type: 'JOURNAL',
+        voucher_date: productionDate,
+        date: productionDate,
+        reference_no: batchId,
+        dr_account: finishedInventoryLedger,
+        cr_account: wipLedger,
+        amount: totalProductionCost,
+        total_amount: totalProductionCost,
+        narration: `Production Batch #${batchId}: Produced ${producedQty} ${outputItemObj?.unit || 'Units'} of ${finishedName} @ ₹${unitValuation}/unit at ${useForLocation}. Total batch cost: ₹${totalProductionCost}`,
+        is_compound: true,
+        entries: [
+          { account_name: finishedInventoryLedger, party: finishedInventoryLedger, type: 'DR', debit: totalProductionCost, credit: 0, amount: totalProductionCost },
+          { account_name: wipLedger, party: wipLedger, type: 'CR', debit: 0, credit: totalProductionCost, amount: totalProductionCost }
+        ]
+      });
+
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
-      setFeedback({ type: 'success', message: editingBatchId ? '✓ Production batch updated successfully!' : '✓ Production saved successfully!' });
+      window.dispatchEvent(new Event('storage'));
+
+      setFeedback({ type: 'success', message: editingBatchId ? '✓ Production batch updated & accounting JV synced!' : '✓ Production saved & double-entry JV posted successfully!' });
 
       setEditingBatchId(null);
       setUseForLocation('');
@@ -184,7 +249,7 @@ export default function SmartProductionView({ firm, onClose }) {
   };
 
   const handleDeleteBatch = (batchId) => {
-    if (!window.confirm('Is production batch ko delete karne se stock purani sthiti me vapas aa jayega. Jari rakhein?')) return;
+    if (!window.confirm('Is production batch ko delete karne se stock aur journal voucher purani sthiti me vapas aa jayenge. Jari rakhein?')) return;
 
     try {
       const batchToDelete = batchesList.find(b => b.id === batchId);
@@ -199,7 +264,7 @@ export default function SmartProductionView({ firm, onClose }) {
         if (invId === String(batchToDelete.output_item_id)) {
           currentStock = Math.max(0, currentStock - Number(batchToDelete.produced_qty));
         }
-        return { ...inv, current_stock: currentStock, stock: currentStock, qty: currentStock };
+        return { ...inv, current_stock: round2(currentStock), stock: round2(currentStock), qty: round2(currentStock) };
       });
 
       setInventoryItems(revertedInventory);
@@ -209,8 +274,19 @@ export default function SmartProductionView({ firm, onClose }) {
       setBatchesList(filteredBatches);
       saveFirmData('production_batches', firm, filteredBatches);
 
+      // Revert associated JV voucher from all buckets
+      const vKey1 = `app_vouchers_${activeFirmId}`;
+      const vKey2 = `account_book_vouchers_${activeFirmId}`;
+      const vList1 = JSON.parse(localStorage.getItem(vKey1) || '[]');
+      const vList2 = JSON.parse(localStorage.getItem(vKey2) || '[]');
+      
+      const filterV = v => v && v.id !== `JV-${batchId}` && v.reference_no !== batchId;
+      localStorage.setItem(vKey1, JSON.stringify(vList1.filter(filterV)));
+      localStorage.setItem(vKey2, JSON.stringify(vList2.filter(filterV)));
+
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
 
       if (editingBatchId === batchId) {
         setEditingBatchId(null);
@@ -222,7 +298,7 @@ export default function SmartProductionView({ firm, onClose }) {
         setProducedQty('');
       }
 
-      alert('✓ Production batch deleted & stock restored.');
+      alert('✓ Production batch deleted & stock/accounting JV restored.');
     } catch (err) {
       alert('Delete failed: ' + err.message);
     }
@@ -337,7 +413,7 @@ export default function SmartProductionView({ firm, onClose }) {
               👷 Step 2: Direct Labor & Overheads (Optional)
             </div>
             <div style={{ fontSize: '10px', color: '#15803d', marginBottom: '8px' }}>
-              *(खर्चे अलग से जर्नल/वाउचर में दर्ज होने पर इसे **0** छोड़ सकते हैं)*
+              *(खर्चे अलग से जर्नल/वाउचर में दर्ज होने पर इसे 0 छोड़ सकते हैं)*
             </div>
 
             <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -452,7 +528,7 @@ export default function SmartProductionView({ firm, onClose }) {
                     {batch.date} | Location: {batch.location}
                   </div>
                   <div style={{ color: '#64748b' }}>
-                    Produced Qty: {batch.produced_qty} Units (Valued @ ₹{batch.unit_valuation}/unit) | <strong style={{ color: '#166534' }}>Cost: ₹{batch.total_cost.toFixed(2)}</strong>
+                    Produced Qty: {batch.produced_qty} Units (Valued @ ₹{batch.unit_valuation}/unit) | <strong style={{ color: '#166534' }}>Cost: ₹{Number(batch.total_cost || 0).toFixed(2)}</strong>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '6px' }}>
