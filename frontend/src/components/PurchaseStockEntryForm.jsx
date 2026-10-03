@@ -74,13 +74,14 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         revertPurchaseStockOnDeletion(editingId, activeFirmId);
       }
 
+      // Robust Item & Unit Resolution
       const selectedItemObj = allItems.find(i => 
-        String(i.id || i.item_id) === String(selectedItemId) || 
-        String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId).trim().toLowerCase()
+        String(i.id || i.item_id || '') === String(selectedItemId || '') || 
+        String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId || '').trim().toLowerCase()
       );
       
-      const itemUnit = selectedItemObj?.unit || 'Pcs';
-      const itemNameClean = selectedItemObj?.item_name || selectedItemObj?.name || 'Stock Item';
+      const itemNameClean = selectedItemObj?.item_name || selectedItemObj?.name || selectedItemId || 'Stock Item';
+      const itemUnit = selectedItemObj?.unit || selectedItemObj?.unit_name || (String(itemNameClean).toLowerCase().includes('diesel') ? 'Liters' : 'Pcs');
 
       const purchasePayload = {
         id: editingId || `PURCH-${Date.now()}`,
@@ -88,7 +89,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
         supplierId: supplierParty,
         invoiceNumber: billNo,
         entryDate: purchaseDate,
-        itemId: selectedItemId,
+        itemId: selectedItemObj?.id || selectedItemId,
         itemName: itemNameClean,
         item_name: itemNameClean,
         quantity: quantity,
@@ -122,7 +123,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     setPurchaseDate(inv.voucher_date || inv.date || todayMaxDate);
     setBillNo(inv.reference_no || '');
     setSupplierParty(inv.cr_account || '');
-    setSelectedItemId(inv.itemId || inv.item_id || '');
+    setSelectedItemId(inv.itemId || inv.item_id || inv.itemName || inv.item_name || '');
     setQuantity(inv.qty || inv.quantity ? String(inv.qty || inv.quantity) : '');
     setPurchaseRate(inv.rate || inv.unit_rate ? String(inv.rate || inv.unit_rate) : '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -164,7 +165,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
     const supplier = inv.cr_account || '';
     const itemName = inv.itemName || inv.item_name || 'Stock Item';
     const qty = inv.qty || inv.quantity || 0;
-    const unit = inv.unit || 'Pcs';
+    const unit = inv.unit || (String(itemName).toLowerCase().includes('diesel') ? 'Liters' : 'Pcs');
     const rate = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
     const amount = Number(inv.amount || inv.total_amount || 0).toFixed(2);
 
@@ -343,7 +344,7 @@ export default function PurchaseStockEntryForm({ firm, onSave, onClose }) {
               const amt = Number(inv.amount || inv.total_amount || 0);
               const itemName = inv.itemName || inv.item_name || 'Stock Item';
               const qVal = inv.qty || inv.quantity || 0;
-              const uVal = inv.unit || 'Pcs';
+              const uVal = inv.unit || (String(itemName).toLowerCase().includes('diesel') ? 'Liters' : 'Pcs');
               const rVal = Number(inv.rate || inv.unit_rate || 0).toFixed(2);
               return (
                 <div key={inv.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
