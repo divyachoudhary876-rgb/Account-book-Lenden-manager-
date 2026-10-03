@@ -25,7 +25,7 @@ export default function PayrollManagementView({ firm, onClose }) {
   const [payrollEntries, setPayrollEntries] = useState([]);
   const [editingEntryId, setEditingEntryId] = useState(null);
 
-  const [workerVouchers, setWorkerVouchers] = useState([]);
+  const [firmVouchers, setFirmVouchers] = useState([]);
 
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
@@ -47,9 +47,9 @@ export default function PayrollManagementView({ firm, onClose }) {
     entries.sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0));
     setPayrollEntries(entries);
 
-    // Fetch firm vouchers to accurately resolve paid vs earned balances
+    // Fetch all vouchers of active firm strictly
     const allVchs = getAllUniversalVouchers(activeFirmId) || [];
-    setWorkerVouchers(allVchs);
+    setFirmVouchers(allVchs);
   };
 
   useEffect(() => {
@@ -57,10 +57,12 @@ export default function PayrollManagementView({ firm, onClose }) {
     window.addEventListener('focus', loadData);
     window.addEventListener('app_storage_updated', loadData);
     window.addEventListener('app_state_updated', loadData);
+    window.addEventListener('storage', loadData);
     return () => {
       window.removeEventListener('focus', loadData);
       window.removeEventListener('app_storage_updated', loadData);
       window.removeEventListener('app_state_updated', loadData);
+      window.removeEventListener('storage', loadData);
     };
   }, [firm, activeFirmId]);
 
@@ -216,34 +218,62 @@ export default function PayrollManagementView({ firm, onClose }) {
     }
   };
 
-  const resolvedActiveWorker = typeof selectedWorker === 'object' ? (selectedWorker.account_name || '') : selectedWorker;
-  const workerEntries = payrollEntries.filter(e => !resolvedActiveWorker || e.worker === resolvedActiveWorker);
-  
-  // Real-Time Calculation of Earned vs Paid (from actual payments/vouchers)
+  // -------------------------------------------------------------
+  // ACCURATE RECONCILIATION CALCULATION (KUL, PAID, BAKI)
+  // -------------------------------------------------------------
+  const resolvedActiveWorker = (typeof selectedWorker === 'object' 
+    ? (selectedWorker.account_name || selectedWorker.name || '') 
+    : selectedWorker || '').trim().toLowerCase();
+
+  // 1. Worker entries filter
+  const workerEntries = payrollEntries.filter(e => !resolvedActiveWorker || String(e.worker || '').trim().toLowerCase() === resolvedActiveWorker);
   const totalEarned = round2(workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0));
-  
-  let totalPaid = 0;
+
+  // Set of target workers (either single worker or all payroll workers)
+  const targetWorkerNames = new Set();
   if (resolvedActiveWorker) {
-    const targetClean = resolvedActiveWorker.trim().toLowerCase();
-    workerVouchers.forEach(v => {
-      if (!v) return;
-      const vType = String(v.voucher_type || v.type || '').toUpperCase();
-      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
-      
-      // Payment made to worker (Worker A/c Dr To Cash/Bank Cr)
-      if (vType === 'PAYMENT' || vType === 'PAY') {
-        if (dr === targetClean) {
-          totalPaid += parseFloat(v.amount || v.total_amount || 0);
-        } else if (Array.isArray(v.entries)) {
-          v.entries.forEach(e => {
-            if ((e.account_name || e.party || '').trim().toLowerCase() === targetClean && (e.type === 'DR' || e.type === 'Dr')) {
-              totalPaid += parseFloat(e.amount || e.debit || 0);
-            }
-          });
-        }
-      }
+    targetWorkerNames.add(resolvedActiveWorker);
+  } else {
+    payrollEntries.forEach(e => {
+      if (e.worker) targetWorkerNames.add(String(e.worker).trim().toLowerCase());
     });
   }
+
+  // 2. Scan vouchers for all payments/debits made to target workers
+  let totalPaid = 0;
+  firmVouchers.forEach(v => {
+    if (!v) return;
+
+    // A. Check compound entries
+    if (Array.isArray(v.entries) && v.entries.length > 0) {
+      v.entries.forEach(e => {
+        const acc = String(e.account_name || e.party || '').trim().toLowerCase();
+        const isDebit = String(e.type || '').toUpperCase() === 'DR' || Number(e.debit || 0) > 0;
+        const amt = Number(e.amount || e.debit || 0);
+
+        if (targetWorkerNames.has(acc) && isDebit && amt > 0) {
+          // Do not count wage accrual itself as payment
+          const isWageVoucher = String(v.id || '').startsWith('JV-PAY-') || String(v.narration || '').toLowerCase().includes('wages credited to');
+          if (!isWageVoucher) {
+            totalPaid += amt;
+          }
+        }
+      });
+    } 
+    // B. Check standard simple vouchers
+    else {
+      const dr = String(v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
+      const amt = Number(v.amount || v.total_amount || 0);
+
+      if (targetWorkerNames.has(dr) && amt > 0) {
+        const isWageVoucher = String(v.id || '').startsWith('JV-PAY-') || String(v.narration || '').toLowerCase().includes('wages credited to');
+        if (!isWageVoucher) {
+          totalPaid += amt;
+        }
+      }
+    }
+  });
+
   totalPaid = round2(totalPaid);
   const totalBaki = round2(totalEarned - totalPaid);
 
@@ -274,11 +304,11 @@ export default function PayrollManagementView({ firm, onClose }) {
           <SearchableAccountDropdown 
             firm={firm}
             firmId={activeFirmId}
-            label="Select Worker / Driver / Staff (Optional filter)"
+            label="Select Worker / Driver / Staff (Filter)"
             accounts={workersList}
             value={selectedWorker}
             onChange={(val) => setSelectedWorker(val)}
-            placeholder="-- Search Worker or Staff --"
+            placeholder="-- All Workers / Select Worker --"
             required={false}
           />
         </div>
@@ -380,11 +410,11 @@ export default function PayrollManagementView({ firm, onClose }) {
                     Earned: +₹{Number(ent.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
+                <div>
                   <button onClick={() => handleEditEntry(ent)} style={{ padding: '5px 10px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '700', cursor: 'pointer' }}>
                     Edit
                   </button>
-                  <button onClick={() => handleDeleteEntry(ent.id)} style={{ padding: '5px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '700', cursor: 'pointer' }}>
+                  <button onClick={() => handleDeleteEntry(ent.id)} style={{ padding: '5px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '700', cursor: 'pointer', marginLeft: '6px' }}>
                     Delete
                   </button>
                 </div>
