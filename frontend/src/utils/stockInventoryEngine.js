@@ -1,80 +1,90 @@
-// frontend/src/utils/stockinventory.js
+// frontend/src/utils/stockInventoryEngine.js
+
+import { StorageService } from './storageSync.js';
+
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 /**
- * Core engine to get stock items strictly filtered by the active Firm ID or Firm Name
+ * Retrieve inventory stock items strictly scoped to active firm
  */
-export const getActiveFirmStockItems = (activeFirmInput) => {
-  let activeFirmId = 'FIRM-001';
-  let activeFirmName = '';
-
-  if (typeof activeFirmInput === 'string') {
-    activeFirmName = activeFirmInput.trim().toLowerCase();
-    activeFirmId = activeFirmInput.trim();
-  } else if (activeFirmInput && typeof activeFirmInput === 'object') {
-    activeFirmId = activeFirmInput.id || activeFirmInput.firm_id || 'FIRM-001';
-    activeFirmName = (activeFirmInput.legal_name || activeFirmInput.trade_name || activeFirmInput.name || activeFirmInput.firm_name || '').trim().toLowerCase();
-  }
-
-  let rawItems = [];
-  const stockKeys = ['inventory_items', 'stock_master', 'items_list', 'stock_items'];
-
-  // 1. Fetch from known stock storage keys
-  stockKeys.forEach(k => {
-    try {
-      const val = JSON.parse(localStorage.getItem(k) || '[]');
-      if (Array.isArray(val)) rawItems.push(...val);
-    } catch (e) {}
+export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
+  const activeFirmId = String(firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
+  const rawItems = StorageService.getInventoryItems(activeFirmId) || [];
+  
+  return rawItems.map(item => {
+    const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.purchasePrice || item.rate || 0);
+    const stock = parseFloat(item.current_stock || item.stock || item.qty || 0);
+    return {
+      ...item,
+      firm_id: activeFirmId,
+      item_name: (item.item_name || item.name || item.itemName || 'Item').trim(),
+      name: (item.item_name || item.name || item.itemName || 'Item').trim(),
+      current_stock: stock,
+      stock: stock,
+      unit_purchase_price: rate,
+      purchase_price: rate,
+      rate: rate
+    };
   });
-
-  // 2. Deep scan localStorage for any stock/inventory related keys
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && (key.includes('stock') || key.includes('inventory') || key.includes('item'))) {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) rawItems.push(...parsed);
-        } catch (err) {}
-      }
-    }
-  }
-
-  // 3. Deduplicate items by ID or name
-  const uniqueMap = new Map();
-  rawItems.forEach(item => {
-    if (!item) return;
-    const uKey = item.id || item.item_name || item.name;
-    if (uKey && !uniqueMap.has(uKey)) {
-      uniqueMap.set(uKey, item);
-    }
-  });
-
-  const allItems = Array.from(uniqueMap.values());
-
-  // 4. STRICT FIRM ISOLATION FILTER
-  const filteredItems = allItems.filter(item => {
-    const itemFirmId = String(item.firm_id || item.company_id || '').trim();
-    const itemFirmName = String(item.firm_name || item.company_name || '').trim().toLowerCase();
-
-    // If item has a firm tag, it must match active firm ID or name
-    if (itemFirmId && activeFirmId && itemFirmId !== 'FIRM-001' && activeFirmId !== 'FIRM-001') {
-      return itemFirmId === activeFirmId || itemFirmName === activeFirmName;
-    }
-
-    if (itemFirmName && activeFirmName) {
-      return itemFirmName === activeFirmName;
-    }
-
-    // Fallback: If item has no firm metadata, exclude it in multi-firm mode to prevent leaks
-    return !itemFirmId && !itemFirmName; 
-  });
-
-  return filteredItems;
 };
 
-// --- UNIVERSAL EXPORT ALIASES ---
-export const getStockItemsByFirm = getActiveFirmStockItems;
-export const getStockItems = getActiveFirmStockItems;
-export const fetchInventoryItems = getActiveFirmStockItems;
-export const getStockInventory = getActiveFirmStockItems;
+/**
+ * Atomic stock update (+IN on purchase, -OUT on sales/consumption)
+ */
+export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyChange = 0, newUnitRate = 0) => {
+  const activeFirmId = String(firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
+  const cleanItemName = (itemName || '').trim().toLowerCase();
+  const delta = parseFloat(qtyChange || 0);
+  const rate = parseFloat(newUnitRate || 0);
+
+  const items = getStockItemsByFirm(activeFirmId);
+  const targetIndex = items.findIndex(i => (i.item_name || i.name || '').trim().toLowerCase() === cleanItemName);
+
+  let updatedTarget = null;
+
+  if (targetIndex !== -1) {
+    const existing = items[targetIndex];
+    const oldQty = parseFloat(existing.current_stock || existing.stock || 0);
+    const newQty = round2(Math.max(0, oldQty + delta));
+    const effectiveRate = rate > 0 ? rate : parseFloat(existing.unit_purchase_price || existing.purchase_price || 0);
+
+    updatedTarget = {
+      ...existing,
+      current_stock: newQty,
+      stock: newQty,
+      qty: newQty,
+      unit_purchase_price: effectiveRate,
+      purchase_price: effectiveRate,
+      rate: effectiveRate,
+      updated_at: new Date().toISOString()
+    };
+    items[targetIndex] = updatedTarget;
+  } else {
+    // If not found, create item atomically
+    updatedTarget = {
+      id: `ITEM-${Date.now()}`,
+      firm_id: activeFirmId,
+      item_name: itemName.trim(),
+      name: itemName.trim(),
+      item_type: 'PHYSICAL',
+      unit: itemName.toLowerCase().includes('diesel') ? 'Liters' : (itemName.toLowerCase().includes('husk') || itemName.toLowerCase().includes('coal') ? 'MT' : 'Pcs'),
+      opening_stock: 0,
+      current_stock: round2(Math.max(0, delta)),
+      stock: round2(Math.max(0, delta)),
+      qty: round2(Math.max(0, delta)),
+      unit_purchase_price: rate,
+      purchase_price: rate,
+      rate: rate,
+      created_at: new Date().toISOString()
+    };
+    items.push(updatedTarget);
+  }
+
+  StorageService.saveInventoryItems(items, activeFirmId);
+
+  window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('storage'));
+
+  return updatedTarget;
+};
