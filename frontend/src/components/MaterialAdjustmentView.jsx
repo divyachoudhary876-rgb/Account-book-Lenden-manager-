@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
-import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
+import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
 import { saveUniversalVoucher } from '../utils/voucherPostingEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import SearchableStockDropdown from './SearchableStockDropdown.jsx';
@@ -32,16 +32,16 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
 
-    // 1. Load All Master Accounts (Drivers, Thekedars, Suppliers, Expense Heads)
+    // 1. Master Accounts load karein
     const allAccounts = getFirmMasterAccounts(activeFirmId) || [];
     setAccountsList(allAccounts);
 
-    // 2. Load Inventory (Raw Material, Fuel, Finished Goods)
+    // 2. Firm-scoped Inventory load karein
     const rawStock = loadFirmData('inventory_items', firm, []);
     const validStock = rawStock.filter(i => i && (i.name || i.item_name));
     setInventoryList(validStock);
 
-    // 3. Load Adjustment History Logs
+    // 3. Saved Adjustment logs load karein
     const savedLogs = loadFirmData('universal_material_adjustments', firm, []);
     savedLogs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     setRecentAdjustments(savedLogs);
@@ -57,7 +57,6 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
     };
   }, [firm, activeFirmId]);
 
-  // Stock Item change hone par rate aur unit auto-detect karein
   const handleStockChange = (stockId) => {
     setSelectedStockId(stockId);
     const itemObj = inventoryList.find(i => String(i.id) === String(stockId));
@@ -90,7 +89,7 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
     ).trim();
 
     if (!partyName) {
-      setFeedback({ type: 'error', message: 'Kripya Party / Contractor / Ledger Account chunein!' });
+      setFeedback({ type: 'error', message: 'Kripya Party / Contractor / Khata chunein!' });
       return;
     }
     if (!selectedStockId) {
@@ -120,7 +119,7 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
     if (qty > currentAvail && !itemObj.is_service && itemObj.item_type !== 'SERVICE') {
       setFeedback({ 
         type: 'error', 
-        message: `Available stock se zyada quantity nahi nikaal sakte! (Uplabdh Stock: ${currentAvail} ${itemObj.unit || 'Units'})` 
+        message: `Available stock se zyada quantity nahi nikaal sakte! (Uplabdh: ${currentAvail} ${itemObj.unit || 'Units'})` 
       });
       return;
     }
@@ -130,7 +129,19 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
       const cleanItemName = (itemObj.name || itemObj.item_name || 'Material').trim();
       const stockAssetAccount = `${cleanItemName} Stock Account`;
 
-      // 1. DEDUCT PHYSICAL STOCK ITEM FROM INVENTORY
+      // 1. Ensure Stock Asset Head exists in Master
+      const masterAccounts = getFirmMasterAccounts(activeFirmId);
+      if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === stockAssetAccount.toLowerCase())) {
+        saveMasterAccount(activeFirmId, {
+          account_name: stockAssetAccount,
+          primary_type: 'ASSETS',
+          type: 'Assets',
+          sub_group: 'Raw Material Inventory (कच्चा माल)',
+          balance_type: 'Dr'
+        });
+      }
+
+      // 2. DEDUCT PHYSICAL STOCK ITEM FROM INVENTORY
       const updatedStockList = inventoryList.map(inv => {
         if (String(inv.id) === String(selectedStockId)) {
           const oldStock = parseFloat(inv.current_stock || inv.stock || 0);
@@ -140,6 +151,7 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
             current_stock: newStock,
             stock: newStock,
             qty: newStock,
+            unit_purchase_price: rate,
             updated_at: new Date().toISOString()
           };
         }
@@ -149,10 +161,10 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
       saveFirmData('inventory_items', firm, updatedStockList);
       setInventoryList(updatedStockList);
 
-      // 2. POST IND AS BALANCED JOURNAL VOUCHER (JV)
-      // DR: Party / Expense Account (Katoti ya Direct kharcha)
-      // CR: Stock Account (Inventory asset out)
-      const narrationText = `Material Issue: ${qty} ${itemObj.unit || 'Units'} ${cleanItemName} @ ₹${rate} for ${referenceDetail || partyName} | Ledger adjusted - ${remarks || 'Internal Issue'}`;
+      // 3. POST BALANCED JOURNAL VOUCHER (Enhanced Narration for Statement Clarity)
+      const refPart = referenceDetail ? ` | Ref: ${referenceDetail}` : '';
+      const remPart = remarks ? ` - ${remarks}` : '';
+      const detailedNarration = `Material Issue: ${qty} ${itemObj.unit || 'Units'} ${cleanItemName} @ ₹${rate}${refPart}${remPart}`;
 
       saveUniversalVoucher(activeFirmId, {
         id: `JV-${recordId}`,
@@ -167,15 +179,18 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
         cr_account: stockAssetAccount,
         amount: calculatedTotal,
         total_amount: calculatedTotal,
-        narration: narrationText,
+        narration: detailedNarration,
         is_compound: true,
+        items: [
+          { itemName: cleanItemName, name: cleanItemName, qty, quantity: qty, unit: itemObj.unit || 'Units', rate }
+        ],
         entries: [
           { account_name: partyName, party: partyName, type: 'DR', debit: calculatedTotal, credit: 0, amount: calculatedTotal },
           { account_name: stockAssetAccount, party: stockAssetAccount, type: 'CR', debit: 0, credit: calculatedTotal, amount: calculatedTotal }
         ]
       });
 
-      // 3. SAVE TO LOCAL HISTORY LOGS
+      // 4. SAVE LOG RECORD
       const newLog = {
         id: recordId,
         date,
@@ -193,17 +208,16 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
       setRecentAdjustments(updatedLogs);
       saveFirmData('universal_material_adjustments', firm, updatedLogs);
 
-      // Trigger instant UI re-render across the entire app
+      // Universal reactivity broadcast
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
 
       setFeedback({
         type: 'success',
-        message: `✓ ${qty} ${itemObj.unit || 'Units'} ${cleanItemName} stock se minus hua aur ₹${calculatedTotal.toLocaleString('en-IN')} "${partyName}" ke khate me adjust ho gaye!`
+        message: `✓ ${qty} ${itemObj.unit || 'Units'} ${cleanItemName} stock se minus hua aur ₹${calculatedTotal.toLocaleString('en-IN')} "${partyName}" ke khate me darj ho gaye!`
       });
 
-      // Reset form fields
       setQuantity('');
       setReferenceDetail('');
       setRemarks('');
@@ -217,15 +231,14 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: '720px', margin: '0 auto', boxSizing: 'border-box', color: '#0f172a' }}>
       
-      {/* Header Banner */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '10px', color: '#d97706', fontWeight: '800', textTransform: 'uppercase' }}>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>
               DIRECT STOCK OUT & LEDGER KNOCK-OFF • {activeFY}
             </div>
             <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
-              📦 Material Issue & Ledger Adjustment (सामग्री निकासी व कटौती)
+              📦 Material Issue & Adjustment (सामग्री निकासी व कटौती)
             </h2>
           </div>
           {onClose && (
@@ -251,7 +264,6 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
         </div>
       )}
 
-      {/* Main Adjustment Form */}
       <form onSubmit={handlePostAdjustment} style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -278,7 +290,6 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* Target Party or Expense Account Dropdown */}
         <div>
           <SearchableAccountDropdown
             label="Party / Contractor / Expense Khata (Dr - नामे) *"
@@ -291,25 +302,23 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
           />
         </div>
 
-        {/* Stock Item Selection */}
         <div>
           <SearchableStockDropdown
             firm={firm}
             label="Stock Item to Issue (-Stock OUT) *"
             value={selectedStockId}
             onChange={handleStockChange}
-            placeholder="-- Choose Material (Diesel, Mitti, Coal, Eent, etc.) --"
+            placeholder="-- Material chunein (Diesel, Mitti, Koyla, Eent) --"
           />
         </div>
 
-        {/* Qty & Rate */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <label style={labelStyle}>Quantity ({itemUnit}) *</label>
             <input 
               type="number" 
               step="0.01" 
-              placeholder={`Enter Qty in ${itemUnit}`} 
+              placeholder={`Qty darj karein (${itemUnit})`} 
               value={quantity} 
               onChange={e => setQuantity(e.target.value)} 
               style={inputStyle} 
@@ -330,7 +339,6 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* Total Cost Box */}
         <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '10px 14px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#92400e' }}>
             Khate Me Se Katoti / Adjustment Amount (Dr):
@@ -344,7 +352,7 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
           <label style={labelStyle}>Narration / Purpose</label>
           <input 
             type="text" 
-            placeholder="e.g. Kiraya adjustment / internal site work" 
+            placeholder="e.g. Kiraya adjustment / Land development bharti" 
             value={remarks} 
             onChange={e => setRemarks(e.target.value)} 
             style={inputStyle} 
@@ -370,7 +378,6 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
 
       </form>
 
-      {/* Recent Adjustments Register */}
       <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
           📋 Recent Material Deductions & Adjustments ({recentAdjustments.length})
@@ -378,7 +385,7 @@ export default function MaterialAdjustmentView({ firm, onClose }) {
 
         {recentAdjustments.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '11px' }}>
-            No recent material adjustments recorded yet.
+            Abhi koi material deduction record nahi hai.
           </div>
         ) : (
           <div style={{ maxHeight: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
