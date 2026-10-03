@@ -10,7 +10,9 @@ import {
 } from '../utils/voucherPostingEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
-export default function VoucherEntryForm({ firm }) {
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+export default function VoucherEntryForm({ firm, selectedFY }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
@@ -31,21 +33,19 @@ export default function VoucherEntryForm({ firm }) {
 
   const loadData = () => {
     try {
-      const accList = getFirmMasterAccounts(activeFirmId);
+      const accList = getFirmMasterAccounts(activeFirmId) || [];
       setAccounts(accList);
       if (accList.length > 0 && !drAccount) {
-        setDrAccount(accList[0].account_name);
-        const cashAcc = accList.find(a => (a.account_name || '').toLowerCase().includes('cash')) || accList[1] || accList[0];
-        setCrAccount(cashAcc?.account_name || accList[0].account_name);
+        setDrAccount(accList[0].account_name || accList[0].name || '');
+        const cashAcc = accList.find(a => (a.account_name || a.name || '').toLowerCase().includes('cash')) || accList[1] || accList[0];
+        setCrAccount(cashAcc?.account_name || cashAcc?.name || accList[0].account_name || '');
       }
 
       // STRICT FIRM ISOLATION: Scanned ONLY for this activeFirmId
       let rawTxs = [];
       const keysToScan = [
         `app_vouchers_${activeFirmId}`,
-        `account_book_vouchers_${activeFirmId}`,
-        `app_sales_invoices_${activeFirmId}`,
-        `purchase_bills_${activeFirmId}`
+        `account_book_vouchers_${activeFirmId}`
       ];
 
       keysToScan.forEach(k => {
@@ -57,8 +57,10 @@ export default function VoucherEntryForm({ firm }) {
         } catch (e) {}
       });
 
-      const engineVchs = getUniversalVouchersByFirm(activeFirmId);
-      if (Array.isArray(engineVchs)) rawTxs.push(...engineVchs);
+      try {
+        const engineVchs = getUniversalVouchersByFirm(activeFirmId);
+        if (Array.isArray(engineVchs)) rawTxs.push(...engineVchs);
+      } catch (e) {}
 
       const uniqueMap = new Map();
       rawTxs.forEach(v => {
@@ -66,24 +68,33 @@ export default function VoucherEntryForm({ firm }) {
         const vFirm = String(v.firm_id || v.firmId || '').trim();
         if (vFirm && vFirm !== String(activeFirmId).trim()) return;
 
-        const uId = v.id || v.reference_no || v.invoice_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount || 0}`;
-        if (!uniqueMap.has(uId)) {
-          let vType = String(v.voucher_type || v.type || 'JV').toUpperCase();
-          if (v.invoice_number && !v.voucher_type) vType = 'SALES';
-          if (v.bill_number && !v.voucher_type) vType = 'PURCHASE';
+        // Use strict genuine ID to avoid orphan duplicates on edit
+        const genuineId = v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount || 0}`;
+        if (!uniqueMap.has(genuineId)) {
+          let vType = String(v.voucher_type || v.type || 'JOURNAL').toUpperCase();
 
-          let drAcc = v.dr_account || v.debit_account || v.customer_name || 'Account';
-          let crAcc = v.cr_account || v.credit_account || v.supplier_name || 'Account';
-          let amt = Number(v.amount || v.total_amount || v.grand_total || 0);
+          // Resolve display accounts for compound or simple entries
+          let displayDr = v.dr_account || v.debit_account || '';
+          let displayCr = v.cr_account || v.credit_account || '';
 
-          uniqueMap.set(uId, {
+          if ((!displayDr || !displayCr) && Array.isArray(v.entries) && v.entries.length > 0) {
+            const drEntries = v.entries.filter(e => (e.type || '').toUpperCase() === 'DR' || Number(e.debit) > 0);
+            const crEntries = v.entries.filter(e => (e.type || '').toUpperCase() === 'CR' || Number(e.credit) > 0);
+
+            displayDr = drEntries.map(e => e.account_name || e.party).join(', ') || 'Multiple Dr';
+            displayCr = crEntries.map(e => e.account_name || e.party).join(', ') || 'Multiple Cr';
+          }
+
+          let amt = Number(v.amount || v.total_amount || 0);
+
+          uniqueMap.set(genuineId, {
             ...v,
-            id: uId,
-            voucher_date: v.voucher_date || v.date || v.invoice_date || todayMaxDate,
+            id: v.id || genuineId, // Keep genuine ID
+            voucher_date: v.voucher_date || v.date || todayMaxDate,
             voucher_type: vType,
-            reference_no: v.reference_no || v.voucher_number || v.invoice_number || v.bill_number || '1001',
-            dr_account: drAcc,
-            cr_account: crAcc,
+            reference_no: v.reference_no || v.voucher_number || 'VCH',
+            dr_account: displayDr || 'Dr Account',
+            cr_account: displayCr || 'Cr Account',
             amount: amt
           });
         }
@@ -153,29 +164,41 @@ export default function VoucherEntryForm({ firm }) {
     e.preventDefault();
     setStatus(null);
 
-    const cleanAmount = parseFloat(amount);
+    const cleanAmount = round2(parseFloat(amount));
     if (!cleanAmount || cleanAmount <= 0) {
       setStatus({ type: 'error', text: 'Transaction amount zero se adhik hona chahiye.' });
       return;
     }
 
     try {
+      const generatedRef = referenceNo.trim() || `VCH-${Math.floor(1000 + Math.random() * 9000)}`;
+
       saveUniversalVoucher(activeFirmId, {
-        id: editingId,
+        id: editingId || `VCH-${Date.now()}`,
+        firm_id: activeFirmId,
         voucher_type: voucherType,
+        type: voucherType,
         voucher_date: voucherDate,
-        reference_no: referenceNo,
+        date: voucherDate,
+        reference_no: generatedRef,
+        voucher_number: generatedRef,
         dr_account: drAccount,
         cr_account: crAccount,
         amount: cleanAmount,
-        narration
+        total_amount: cleanAmount,
+        narration: narration.trim(),
+        is_compound: true,
+        entries: [
+          { account_name: drAccount, party: drAccount, type: 'DR', debit: cleanAmount, credit: 0, amount: cleanAmount },
+          { account_name: crAccount, party: crAccount, type: 'CR', debit: 0, credit: cleanAmount, amount: cleanAmount }
+        ]
       });
 
       setStatus({
         type: 'success',
         text: editingId
-          ? `✓ Voucher Updated Successfully! Amount: ₹${cleanAmount.toLocaleString('en-IN')}`
-          : `✓ ${voucherType} Voucher Saved! Amount: ₹${cleanAmount.toLocaleString('en-IN')}`
+          ? `✓ Voucher Updated Successfully! Amount: ₹${cleanAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+          : `✓ ${voucherType} Voucher Saved! Amount: ₹${cleanAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
       });
 
       setEditingId(null);
@@ -430,7 +453,7 @@ export default function VoucherEntryForm({ firm }) {
                         {vch.voucher_date || vch.date}
                       </span>
                       <strong style={{ fontSize: '12px', color: '#0f172a' }}>
-                        {vch.reference_no || vch.voucher_number}
+                        #{vch.reference_no || vch.voucher_number}
                       </strong>
                       <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e0e7ff', color: '#3730a3' }}>
                         {vch.voucher_type || vch.type}
