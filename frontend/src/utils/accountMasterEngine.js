@@ -73,7 +73,6 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
   try {
     let rawAccounts = [];
 
-    // 1. Check primary firm-scoped key
     const primaryKey = `app_accounts_${firmId}`;
     const primaryRaw = localStorage.getItem(primaryKey);
     if (primaryRaw) {
@@ -81,7 +80,6 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       if (Array.isArray(parsed)) rawAccounts.push(...parsed);
     }
 
-    // 2. Check modal creation firm-scoped key
     const modalKey = `account_heads_${firmId}`;
     const modalRaw = localStorage.getItem(modalKey);
     if (modalRaw) {
@@ -89,7 +87,13 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       if (Array.isArray(parsed)) rawAccounts.push(...parsed);
     }
 
-    // Deduplicate and normalize keys strictly for this firm
+    // Also check global fallback
+    const globalRaw = localStorage.getItem('app_accounts');
+    if (globalRaw) {
+      const parsed = JSON.parse(globalRaw);
+      if (Array.isArray(parsed)) rawAccounts.push(...parsed);
+    }
+
     const uniqueMap = new Map();
     rawAccounts.forEach(acc => {
       if (!acc) return;
@@ -112,7 +116,6 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       return Array.from(uniqueMap.values());
     }
 
-    // Default Baseline Chart of Accounts for new/empty firm profile
     const defaultAccounts = [
       { id: 'ACC-001', account_name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', sub_group: 'Cash in Hand (रोकड़)', opening_balance: 0, balance_type: 'Dr', is_system_locked: true },
       { id: 'ACC-002', account_name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', sub_group: 'Bank Accounts (बैंक खाते)', opening_balance: 0, balance_type: 'Dr', is_system_locked: false },
@@ -160,7 +163,7 @@ export const getExpenseAccountHeads = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Save or Update an Account Head strictly for active firm with Deep Universal Cascade Name Update
+ * Save or Update an Account Head with 100% Robust Multi-Storage Deep Cascade Rename Engine
  */
 export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   const accounts = getFirmMasterAccounts(firmId);
@@ -200,12 +203,13 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     accounts.push(payload);
   }
 
-  // 1. Save updated master accounts list
+  // 1. Save updated master accounts list across all firm & global keys
   localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(accounts));
   localStorage.setItem(`app_accounts`, JSON.stringify(accounts));
+  localStorage.setItem(`app_account_heads`, JSON.stringify(accounts));
 
-  // 2. DEEP UNIVERSAL CASCADE RENAME ENGINE: Updates account name across all entries, vouchers, sales, purchase & statements
+  // 2. ULTIMATE DEEP RECURSIVE CASCADE RENAME ENGINE
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
     
@@ -230,7 +234,12 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
                   Object.keys(item).forEach(prop => {
                     const val = item[prop];
                     if (typeof val === 'string' && val.trim().toLowerCase() === oldTarget) {
-                      if (['dr_account', 'cr_account', 'supplier_name', 'customer_name', 'party', 'account_name', 'name', 'worker', 'expense_ledger', 'dr_party', 'cr_party'].includes(prop)) {
+                      if ([
+                        'dr_account', 'cr_account', 'supplier_name', 'customer_name', 
+                        'party', 'account_name', 'name', 'worker', 'expense_ledger', 
+                        'dr_party', 'cr_party', 'customer_account', 'supplier_account',
+                        'linked_ledger_account', 'entity_name'
+                      ].includes(prop)) {
                         item[prop] = cleanName;
                         changed = true;
                       }
@@ -252,8 +261,10 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     }
   }
 
+  // 3. Broadcast global update events so all active views re-render instantly
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('storage'));
   return payload;
 };
 
@@ -275,5 +286,6 @@ export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
   localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(updated));
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('storage'));
   return true;
 };
