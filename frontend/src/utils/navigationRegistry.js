@@ -56,6 +56,12 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
         category: 'OPERATIONS' 
       },
       { 
+        key: 'material_adjustment', 
+        label: 'Material Issue & Adjustment (सामग्री निकासी व कटौती)', 
+        icon: '📦', 
+        category: 'OPERATIONS' 
+      },
+      { 
         key: 'production', 
         label: 'Bhatta Production & Pakai (ईंट पकाई व निर्माण)', 
         icon: '🧱', 
@@ -76,6 +82,12 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
         key: 'consumption', 
         label: 'Raw Material Consumption (कच्चा माल खपत)', 
         icon: '⚙️', 
+        category: 'OPERATIONS' 
+      },
+      { 
+        key: 'material_adjustment', 
+        label: 'Material Issue & Adjustment (सामग्री निकासी व कटौती)', 
+        icon: '📦', 
         category: 'OPERATIONS' 
       },
       { 
@@ -102,6 +114,12 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
         category: 'OPERATIONS' 
       },
       { 
+        key: 'material_adjustment', 
+        label: 'Tyre / Fuel Issue & Driver Cut (डीजल/सामग्री कटौती)', 
+        icon: '📦', 
+        category: 'OPERATIONS' 
+      },
+      { 
         key: 'production', 
         label: 'Trip Sheet & LR Management (ट्रिप शीट व एलआर बुकिंग)', 
         icon: '🚚', 
@@ -118,6 +136,12 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
   // 4. TRADING & GENERAL RETAIL SPECIALIZED MENUS
   else {
     menu.push(
+      { 
+        key: 'material_adjustment', 
+        label: 'Stock Issue & Party Adjustment (स्टॉक निकासी व समायोजन)', 
+        icon: '📦', 
+        category: 'OPERATIONS' 
+      },
       { 
         key: 'payroll', 
         label: 'Staff Salary & Employee Wages (स्टाफ वेतन व मजदूरी)', 
@@ -157,6 +181,12 @@ export const getDynamicWorkflowMenu = (firmCategory = 'TRADING') => {
       key: 'reports', 
       label: 'Financial Reports (P&L / Balance Sheet)', 
       icon: '📈', 
+      category: 'REPORTS' 
+    },
+    { 
+      key: 'cash_flow', 
+      label: 'Cash Flow Statement (नकदी प्रवाह विवरण)', 
+      icon: '📊', 
       category: 'REPORTS' 
     },
     { 
