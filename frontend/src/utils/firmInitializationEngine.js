@@ -15,9 +15,11 @@ export const initializeFirmWithIndustryDefaults = (firmProfile) => {
     created_at: new Date().toISOString()
   };
 
-  // 1. Fetch Existing Local Storage Buckets
-  const accounts = JSON.parse(localStorage.getItem('app_account_heads') || '[]');
-  const inventory = JSON.parse(localStorage.getItem('app_inventory') || '[]');
+  // 1. Fetch Existing Firm-Scoped Buckets (Strict Isolation to Prevent Data Loss)
+  const accountsKey = `app_accounts_${firmId}`;
+  const inventoryKey = `inventory_items_${firmId}`;
+  const accounts = JSON.parse(localStorage.getItem(accountsKey) || '[]');
+  const inventory = JSON.parse(localStorage.getItem(inventoryKey) || '[]');
 
   // 2. Industry-Specific Default Account Heads & Stock Items
   let defaultAccounts = [];
@@ -50,11 +52,20 @@ export const initializeFirmWithIndustryDefaults = (firmProfile) => {
     ];
   }
 
-  // Save Dynamic Profile & Default Masters
+  // Save Dynamic Profile & Firm-Scoped Default Masters (Zero Risk of Overwriting Other Firms)
   localStorage.setItem('active_firm_profile', JSON.stringify(completeProfile));
-  localStorage.setItem('app_account_heads', JSON.stringify([...accounts, ...defaultAccounts]));
-  localStorage.setItem('app_inventory', JSON.stringify([...inventory, ...defaultItems]));
+  
+  // Maintain a master list of all created firms so they can be switched safely
+  const existingFirmsList = JSON.parse(localStorage.getItem('app_firms_list') || '[]');
+  if (!existingFirmsList.some(f => f.id === firmId)) {
+    existingFirmsList.push(completeProfile);
+    localStorage.setItem('app_firms_list', JSON.stringify(existingFirmsList));
+  }
+
+  localStorage.setItem(accountsKey, JSON.stringify([...accounts, ...defaultAccounts]));
+  localStorage.setItem(inventoryKey, JSON.stringify([...inventory, ...defaultItems]));
 
   window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('app_state_updated'));
   return completeProfile;
 };
