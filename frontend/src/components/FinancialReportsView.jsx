@@ -1,11 +1,12 @@
 // frontend/src/components/FinancialReportsView.jsx
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { downloadFinancialReportPDF } from '../utils/pdfDownloadEngine.js';
 
 export default function FinancialReportsView({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   const [activeTab, setActiveTab] = useState('TRIAL_BALANCE');
   const [reportData, setReportData] = useState({
@@ -30,20 +31,20 @@ export default function FinancialReportsView({ firm, onClose }) {
         const name = (acc.name || acc.account_name || '').trim();
         if (name) {
           const category = (acc.category || acc.primary_type || 'GENERAL').toUpperCase();
+          const openBal = Number(acc.opening_balance || acc.openingBalance || 0);
+          const isDr = (acc.balance_type || acc.balanceType || 'Dr') === 'Dr';
           ledgerMap[name] = {
             name,
             category,
-            debit: Number(acc.opening_balance || 0) * (acc.balance_type === 'Dr' ? 1 : 0),
-            credit: Number(acc.opening_balance || 0) * (acc.balance_type === 'Cr' ? 1 : 0)
+            debit: isDr ? openBal : 0,
+            credit: !isDr ? openBal : 0
           };
         }
       });
 
       let rawTx = [];
+      // STRICT FIRM ISOLATION: No global keys scanned
       const keysToScan = [
-        'account_book_vouchers',
-        'app_vouchers',
-        'app_payroll_entries',
         `account_book_vouchers_${activeFirmId}`,
         `app_vouchers_${activeFirmId}`,
         `app_payroll_entries_${activeFirmId}`
@@ -59,8 +60,9 @@ export default function FinancialReportsView({ firm, onClose }) {
       const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
-        const vFirm = v.firm_id || activeFirmId;
-        if (vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
+        const vFirm = String(v.firm_id || v.firmId || '').trim();
+        // Discard any record not belonging to this active firm
+        if (vFirm && vFirm !== String(activeFirmId).trim()) return;
 
         const uniqueId = v.id || v.reference_no || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}`;
         if (!uniqueVoucherMap.has(uniqueId)) {
@@ -113,7 +115,7 @@ export default function FinancialReportsView({ firm, onClose }) {
             if (!ledgerMap[accName]) {
               let inferredCat = 'EXPENSES';
               const lower = accName.toLowerCase();
-              if (lower.includes('cash') || lower.includes('bank')) inferredCat = 'ASSETS';
+              if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor')) inferredCat = 'ASSETS';
               else if (lower.includes('sale') || lower.includes('income')) inferredCat = 'INCOME';
               else if (lower.includes('capital') || lower.includes('creditor')) inferredCat = 'LIABILITIES';
 
@@ -217,7 +219,6 @@ export default function FinancialReportsView({ firm, onClose }) {
     setStatusNotification({ type: 'info', message: `⏳ Generating PDF for ${activeTab.replace('_', ' ')}...` });
 
     try {
-      // Explicitly pass activeTab so pdfDownloadEngine downloads the currently active report
       await downloadFinancialReportPDF(firm, reportData, activeTab);
       setStatusNotification({ type: 'success', message: '✓ Report PDF downloaded successfully!' });
     } catch (e) {
@@ -334,7 +335,7 @@ export default function FinancialReportsView({ firm, onClose }) {
         </div>
       )}
 
-      {/* Balance Sheet (Clean Responsive Stacking Layout - No Overlap) */}
+      {/* Balance Sheet */}
       {activeTab === 'BALANCE_SHEET' && (
         <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>🏛️ बैलेंस शीट (Balance Sheet - Assets & Liabilities) - A to Z Sorted</h3>
