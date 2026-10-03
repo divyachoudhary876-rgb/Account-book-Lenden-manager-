@@ -177,7 +177,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
       {/* SECTION 4: ALL ACCOUNTING & ERP MODULES */}
       <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <span>🗂️️</span> All Accounting & ERP Modules
+        <span>🗂</span> All Accounting & ERP Modules
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
