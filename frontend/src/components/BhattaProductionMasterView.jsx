@@ -15,12 +15,11 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   // Toggle Tab: Stage-Wise Daily Batch vs Full Round Cost Audit
-  const [activeTab, setActiveTab] = useState('STAGE_PROD'); // 'STAGE_PROD' | 'ROUND_AUDIT'
+  const [activeTab, setActiveTab] = useState('STAGE_PROD');
 
   const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
   const [useForLocation, setUseForLocation] = useState('');
   
-  // Production Stage Routing (Pathai, Pakai, Nikasi)
   const [productionStage, setProductionStage] = useState('STAGE_3_NIKASI');
   const [labourStartDate, setLabourStartDate] = useState('');
   const [labourEndDate, setLabourEndDate] = useState(new Date().toISOString().slice(0, 10));
@@ -62,7 +61,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     };
   }, [firm, activeFirmId]);
 
-  // AUTO-FETCH LABOUR EXPENSES FROM PAYROLL VOUCHERS ACCORDING TO STAGE & DATES
   const handleAutoFetchLabour = () => {
     try {
       const payrollEntries = loadFirmData('app_payroll_entries', firm, []);
@@ -431,7 +429,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* RENDER VIEW ACCORDING TO TAB */}
       {activeTab === 'ROUND_AUDIT' ? (
         <BhattaCostAuditView firm={firm} onClose={onClose} />
       ) : (
@@ -451,7 +448,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
           <form onSubmit={handleSaveProduction}>
             
-            {/* PRODUCTION STAGE SELECTOR */}
             <div style={{ marginBottom: '12px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#0f172a' }}>
                 🏭 Production Stage (उत्पादन चरण) *
@@ -496,7 +492,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               </div>
             </div>
 
-            {/* STEP 1: Consumed Raw Materials */}
             <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
               <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '8px' }}>
                 🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
@@ -547,7 +542,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               )}
             </div>
 
-            {/* STEP 2: Direct Labor & Overheads with AUTO-FETCH BUTTON */}
             <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', marginBottom: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>
@@ -608,7 +602,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               </div>
             </div>
 
-            {/* STEP 3: Output Finished Product & Auto Valuation */}
             <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px' }}>
               <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '8px' }}>
                 📦 Step 3: Output Finished Product & Auto Valuation
@@ -670,7 +663,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
           </form>
 
-          {/* Scrollable Production Batches Register */}
           <div style={{ marginTop: '16px' }}>
             <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
               Production Batches Register ({activeFY}) - ({batchesList.length})
