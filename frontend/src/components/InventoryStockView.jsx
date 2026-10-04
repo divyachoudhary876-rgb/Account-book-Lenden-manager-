@@ -1,11 +1,15 @@
-// frontend/src/components/InventoryManagerView.jsx
+// frontend/src/components/InventoryStockView.jsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getFirmInventoryItems, saveFirmInventoryItem, deleteFirmInventoryItem } from '../utils/inventoryItemEngine';
 import { getCleanFirmId } from '../utils/firmIsolationEngine';
 
-export default function InventoryManagerView({ firm, onClose }) {
-  const activeFirmId = getCleanFirmId(firm) || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+export default function InventoryStockView({ firm, onClose }) {
+  const activeFirmId = useMemo(() => {
+    return getCleanFirmId(firm) || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  }, [firm]);
 
   const [items, setItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,26 +57,34 @@ export default function InventoryManagerView({ firm, onClose }) {
     }
 
     try {
+      const numStock = editingItem 
+        ? parseFloat(editingItem.current_stock || editingItem.stock || 0)
+        : (parseFloat(openingStock) || 0);
+
       saveFirmInventoryItem(firm, {
         id: editingItem ? editingItem.id : undefined,
         name: cleanName,
+        item_name: cleanName,
         unit: unit.trim() || 'Pcs',
         item_type: itemType,
         is_service: itemType === 'SERVICE',
-        current_stock: editingItem ? editingItem.current_stock : (parseFloat(openingStock) || 0),
-        unit_purchase_price: parseFloat(purchasePrice) || 0,
-        unit_selling_price: parseFloat(sellingPrice) || 0,
+        current_stock: numStock,
+        stock: numStock,
+        qty: numStock,
+        unit_purchase_price: round2(parseFloat(purchasePrice) || 0),
+        purchase_price: round2(parseFloat(purchasePrice) || 0),
+        unit_selling_price: round2(parseFloat(sellingPrice) || 0),
+        selling_price: round2(parseFloat(sellingPrice) || 0),
         hsn_sac: hsnSac.trim()
       });
 
       setStatusMessage({
         type: 'success',
         text: editingItem 
-          ? `✓ "${cleanName}" aur uska Stock Ledger update ho gaya!` 
+          ? `✓ "${cleanName}" aur uska Linked Stock Ledger update ho gaya!` 
           : `✓ "${cleanName}" inventory me save ho gaya aur "${cleanName} Stock Account" ledger auto-create ho gaya!`
       });
 
-      // Reset Form
       setEditingItem(null);
       setItemName('');
       setOpeningStock('');
@@ -85,20 +97,28 @@ export default function InventoryManagerView({ firm, onClose }) {
     }
   };
 
-  const handleEdit = (item) => {
+  const handleEdit = (e, item) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setEditingItem(item);
     setItemName(item.name || item.item_name || '');
     setUnit(item.unit || 'Pcs');
     setItemType(item.item_type || (item.is_service ? 'SERVICE' : 'GOODS'));
-    setOpeningStock(String(item.current_stock || item.stock || 0));
-    setPurchasePrice(String(item.unit_purchase_price || item.purchase_price || ''));
+    setOpeningStock(String(item.current_stock || item.stock || item.qty || 0));
+    setPurchasePrice(String(item.unit_purchase_price || item.purchase_price || item.rate || ''));
     setSellingPrice(String(item.unit_selling_price || item.selling_price || ''));
     setHsnSac(item.hsn_sac || '');
     setStatusMessage(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDelete = (item) => {
+  const handleDelete = (e, item) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const name = item.name || item.item_name;
     if (!window.confirm(`Kya aap "${name}" ko inventory se delete karna chahte hain?`)) return;
 
@@ -107,6 +127,7 @@ export default function InventoryManagerView({ firm, onClose }) {
   };
 
   const filteredItems = items.filter(i => {
+    if (!i) return false;
     const q = searchQuery.toLowerCase();
     const name = (i.name || i.item_name || '').toLowerCase();
     const hsn = (i.hsn_sac || '').toLowerCase();
@@ -114,9 +135,9 @@ export default function InventoryManagerView({ firm, onClose }) {
   });
 
   return (
-    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* Header */}
+      {/* Header Banner */}
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -126,7 +147,7 @@ export default function InventoryManagerView({ firm, onClose }) {
             <span style={{ fontSize: '11px', color: '#64748b' }}>Item bante hi uska Stock Asset Ledger automatic ban jayega</span>
           </div>
           {onClose && (
-            <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+            <button type="button" onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
               Close
             </button>
           )}
@@ -141,7 +162,9 @@ export default function InventoryManagerView({ firm, onClose }) {
           padding: '10px 14px',
           borderRadius: '10px',
           fontSize: '12px',
-          fontWeight: 'bold'
+          fontWeight: 'bold',
+          boxSizing: 'border-box',
+          width: '100%'
         }}>
           {statusMessage.text}
         </div>
@@ -271,8 +294,8 @@ export default function InventoryManagerView({ firm, onClose }) {
             </div>
           ) : (
             filteredItems.map((item) => {
-              const stockQty = parseFloat(item.current_stock || item.stock || 0);
-              const rate = parseFloat(item.unit_purchase_price || item.purchase_price || 0);
+              const stockQty = parseFloat(item.current_stock || item.stock || item.qty || 0);
+              const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
 
               return (
                 <div 
@@ -284,7 +307,8 @@ export default function InventoryManagerView({ firm, onClose }) {
                     padding: '10px 12px', 
                     display: 'flex', 
                     justifyContent: 'space-between', 
-                    alignItems: 'center' 
+                    alignItems: 'center',
+                    boxSizing: 'border-box'
                   }}
                 >
                   <div>
@@ -306,14 +330,14 @@ export default function InventoryManagerView({ firm, onClose }) {
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <button 
                         type="button" 
-                        onClick={() => handleEdit(item)} 
+                        onClick={(e) => handleEdit(e, item)} 
                         style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
                         Edit
                       </button>
                       <button 
                         type="button" 
-                        onClick={() => handleDelete(item)} 
+                        onClick={(e) => handleDelete(e, item)} 
                         style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
                         Delete
