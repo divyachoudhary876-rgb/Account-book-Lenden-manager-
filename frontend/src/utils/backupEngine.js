@@ -3,6 +3,7 @@
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
+import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
 
 const resolveFirmNameString = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
@@ -10,6 +11,132 @@ const resolveFirmNameString = (firmInput) => {
     return firmInput.legal_name || firmInput.trade_name || firmInput.name || firmInput.firm_name || 'AccountBook';
   }
   return 'AccountBook';
+};
+
+/**
+ * Ensures an Inventory Stock Item always has a corresponding Financial Asset Account
+ * under Current Assets without manual user intervention.
+ */
+export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
+  if (!firmId || !rawItemName) return null;
+
+  const cleanItemName = String(rawItemName).trim();
+  const stockAccountName = `${cleanItemName} Stock Account`;
+
+  try {
+    const masterAccounts = getFirmMasterAccounts(firmId) || [];
+    
+    // Case-insensitive duplicate check
+    const exists = masterAccounts.some(
+      (acc) => (acc.account_name || acc.name || '').trim().toLowerCase() === stockAccountName.toLowerCase()
+    );
+
+    if (!exists) {
+      const newAccountObj = {
+        id: `ACC-STK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        firm_id: firmId,
+        account_name: stockAccountName,
+        name: stockAccountName,
+        primary_type: 'ASSETS',
+        type: 'Assets',
+        sub_group: 'Inventory / Current Assets',
+        group: 'Current Assets',
+        balance_type: 'Dr',
+        opening_balance: 0,
+        is_system_generated: true,
+        created_at: new Date().toISOString()
+      };
+
+      saveMasterAccount(firmId, newAccountObj);
+      return newAccountObj;
+    }
+  } catch (error) {
+    console.error('Error auto-syncing stock ledger account:', error);
+  }
+
+  return null;
+};
+
+/**
+ * Post-Restore Self-Healing & Ledger Synchronization Sweep
+ * Scans all restored inventory items and purchase bills to auto-create missing stock ledgers.
+ */
+export const autoHealRestoredInventoryAndAccounts = (firmId) => {
+  const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+
+  try {
+    // 1. Scan Inventory Items across all standard keys
+    let stockItems = [];
+    const stockKeys = [
+      `inventory_items_${cleanFirmId}`,
+      'inventory_items',
+      'inventory_items_FIRM-001'
+    ];
+
+    stockKeys.forEach(k => {
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(it => {
+              const itName = it?.name || it?.item_name;
+              if (itName && !stockItems.some(x => (x.name || x.item_name) === itName)) {
+                stockItems.push(it);
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    });
+
+    stockItems.forEach(item => {
+      const itemName = item?.name || item?.item_name;
+      if (itemName && !item.is_service && item.item_type !== 'SERVICE') {
+        ensureStockItemLedgerAccount(cleanFirmId, itemName);
+      }
+    });
+
+    // 2. Scan Purchase Bills to guarantee Dr asset ledger heads exist
+    let purchaseBills = [];
+    const billKeys = [
+      `purchase_bills_${cleanFirmId}`,
+      'purchase_bills',
+      'purchase_bills_FIRM-001'
+    ];
+
+    billKeys.forEach(bk => {
+      try {
+        const raw = localStorage.getItem(bk);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(pb => {
+              if (pb && pb.item_name && !purchaseBills.some(x => x.item_name === pb.item_name)) {
+                purchaseBills.push(pb);
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    });
+
+    purchaseBills.forEach(bill => {
+      const itemName = bill?.item_name;
+      if (itemName) {
+        ensureStockItemLedgerAccount(cleanFirmId, itemName);
+      }
+    });
+
+    // 3. Complete Reactive Broadcast
+    window.dispatchEvent(new Event('app_accounts_updated'));
+    window.dispatchEvent(new Event('app_inventory_updated'));
+    window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('app_state_updated'));
+    window.dispatchEvent(new Event('storage'));
+  } catch (err) {
+    console.error('Error during autoHealRestoredInventoryAndAccounts:', err);
+  }
 };
 
 /**
@@ -52,7 +179,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: { 
         app: "AccountBook", 
         firm: cleanFirm, 
-        version: "3.2.0", 
+        version: "3.3.0", 
         export_timestamp: now.toISOString(),
         active_firm_id: activeFirmId 
       },
@@ -94,7 +221,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SMART ZERO-LOSS RESTORE ENGINE (DYNAMIC FIRM-REMAPPING & FULL DEDUPLICATION)
+ * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH AUTO-HEALING & BACKWARD-COMPATIBILITY)
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -213,6 +340,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     const finalItemsList = Array.from(consolidatedItemsMap.values());
     if (finalItemsList.length > 0) {
       localStorage.setItem(`inventory_items_${activeFirmId}`, JSON.stringify(finalItemsList));
+      localStorage.setItem('inventory_items', JSON.stringify(finalItemsList));
     }
 
     // ========================================================
@@ -246,7 +374,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     }
 
     // ========================================================
-    // F. CONSOLIDATE PURCHASE BILLS (CRITICAL FIX FOR ZERO BILLS)
+    // F. CONSOLIDATE PURCHASE BILLS (Zero-Loss Recovery)
     // ========================================================
     const consolidatedPurchaseMap = new Map();
 
@@ -272,6 +400,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     const finalPurchaseList = Array.from(consolidatedPurchaseMap.values());
     if (finalPurchaseList.length > 0) {
       localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(finalPurchaseList));
+      localStorage.setItem('purchase_bills', JSON.stringify(finalPurchaseList));
     }
 
     // ========================================================
@@ -301,10 +430,11 @@ export const restoreUniversalBackup = async (rawInput) => {
       localStorage.setItem(`universal_material_adjustments_${activeFirmId}`, JSON.stringify(finalAdjList));
     }
 
-    // Trigger universal instant UI reload across all open screens
-    window.dispatchEvent(new Event('app_storage_updated'));
-    window.dispatchEvent(new Event('app_state_updated'));
-    window.dispatchEvent(new Event('storage'));
+    // ========================================================
+    // H. CRITICAL POST-RESTORE SELF-HEALING SWEEP
+    // Auto-creates missing Stock Accounts for all restored items & purchases
+    // ========================================================
+    autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
       success: true,
@@ -322,3 +452,5 @@ export const restoreUniversalBackup = async (rawInput) => {
 export const exportUniversalBackup = downloadAppBackup;
 export const downloadAppBackupFromFile = restoreUniversalBackup;
 export const restoreAppBackupFromFile = restoreUniversalBackup;
+export const exportAppBackupJSON = downloadAppBackup;
+export const restoreAppBackupJSON = restoreUniversalBackup;
