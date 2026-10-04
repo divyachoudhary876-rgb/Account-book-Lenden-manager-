@@ -44,57 +44,56 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       # -------------------------------------------------------------
-      # CAPACITOR ANDROID SYNC & PROJECT DETECTION
+      # COMPLETE CAPACITOR PLATFORM GUARANTEE & SYNC
       # -------------------------------------------------------------
-      - name: Sync Capacitor Android
+      - name: Ensure Android Platform & Settings Exist
         run: |
-          if [ -d "frontend" ] && [ -f "frontend/capacitor.config.json" -o -f "frontend/capacitor.config.ts" ]; then
-            cd frontend
-            if [ ! -d "android" ] && [ ! -d "../android" ]; then
-              npx cap add android || true
-            fi
-            npx cap sync android || true
-            cd ..
-          else
-            if [ ! -d "android" ]; then
-              npx cap add android || true
-            fi
-            npx cap sync android || true
+          WORKDIR="."
+          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
+            WORKDIR="frontend"
+          fi
+          cd "$WORKDIR"
+
+          echo "Checking capacitor android platform in $(pwd)..."
+          # Ensure android platform is added if settings.gradle is absent
+          if [ ! -f "android/settings.gradle" ] && [ ! -f "../android/settings.gradle" ]; then
+            echo "Android platform missing or incomplete. Adding fresh android platform..."
+            npx cap add android || true
           fi
 
+          echo "Syncing web assets to android..."
+          npx cap sync android
+
       # -------------------------------------------------------------
-      # DETECT TRUE ANDROID DIRECTORY CONTAINING settings.gradle
+      # SETUP STATIC DETERMINISTIC RELEASE KEYSTORE
       # -------------------------------------------------------------
-      - name: Locate Android Project & Ensure Keystore
-        id: locate-android
+      - name: Setup Keystore & Signing Environment
+        id: prep-build
         run: |
           TARGET_DIR=""
-          if [ -f "android/settings.gradle" ] || [ -f "android/build.gradle" ]; then
-            TARGET_DIR="android"
-          elif [ -f "frontend/android/settings.gradle" ] || [ -f "frontend/android/build.gradle" ]; then
+          if [ -d "frontend/android/app" ]; then
             TARGET_DIR="frontend/android"
+          elif [ -d "android/app" ]; then
+            TARGET_DIR="android"
           else
-            # Deep search for settings.gradle
-            SETTINGS_PATH=$(find . -name "settings.gradle" -not -path "*/node_modules/*" | head -n 1)
-            if [ -n "$SETTINGS_PATH" ]; then
-              TARGET_DIR=$(dirname "$SETTINGS_PATH")
-            fi
+            TARGET_DIR=$(find . -type d -name "app" | head -n 1 | sed 's#/app##')
           fi
 
           if [ -z "$TARGET_DIR" ]; then
-            echo "FATAL: Android project with settings.gradle could not be found!"
+            echo "Critical Error: Android app module could not be determined!"
             exit 1
           fi
 
-          echo "Found Android Project at: $TARGET_DIR"
-          echo "android_dir=$TARGET_DIR" >> $GITHUB_OUTPUT
+          echo "Target build directory: $TARGET_DIR"
+          echo "target_dir=$TARGET_DIR" >> $GITHUB_OUTPUT
 
-          # Ensure static keystore inside the target app folder
           mkdir -p "$TARGET_DIR/app"
-          if [ ! -f "$TARGET_DIR/app/permanent-release.keystore" ]; then
-            echo "Generating static release keystore..."
+          cd "$TARGET_DIR/app"
+
+          if [ ! -f "permanent-release.keystore" ]; then
+            echo "Generating static release keystore with fixed epoch..."
             keytool -genkeypair -v \
-              -keystore "$TARGET_DIR/app/permanent-release.keystore" \
+              -keystore permanent-release.keystore \
               -alias accountbookkey \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -startdate "2024/01/01 00:00:00" \
@@ -104,16 +103,22 @@ jobs:
           fi
 
       # -------------------------------------------------------------
-      # BUILD SIGNED RELEASE APK AT THE VERIFIED PATH
+      # BUILD SIGNED RELEASE APK
       # -------------------------------------------------------------
-      - name: Build Release APK via Gradle
+      - name: Assemble Release APK
         run: |
-          ANDROID_PATH="${{ steps.locate-android.outputs.android_dir }}"
-          cd "$ANDROID_PATH"
-          echo "Building inside: $(pwd)"
+          TARGET_DIR="${{ steps.prep-build.outputs.target_dir }}"
+          cd "$TARGET_DIR"
 
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
+          # Ensure gradlew executable exists
+          if [ ! -f "./gradlew" ]; then
+            echo "Generating gradle wrapper binary..."
+            gradle wrapper || true
+          fi
+          chmod +x ./gradlew || true
+
+          echo "Executing release build in $(pwd)..."
+          if [ -x "./gradlew" ]; then
             ./gradlew assembleRelease \
               -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
               -Pandroid.injected.signing.store.password=AccountBookPass2026 \
