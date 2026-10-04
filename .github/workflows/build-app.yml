@@ -38,18 +38,24 @@ jobs:
           npx cap sync android
 
       # -------------------------------------------------------------
-      # PERMANENT FIXED SIGNING ENGINE (NEVER CHANGES SIGNATURE AGAIN)
+      # PERMANENT STATIC KEYSTORE WITH FIXED STARTDATE EPOCH
+      # Deterministic startdate ensures identical SHA-256 fingerprint across all runs
       # -------------------------------------------------------------
-      - name: Generate or Use Fixed Deterministic Keystore
+      - name: Generate Static Deterministic Keystore
         run: |
+          mkdir -p android/app
           cd android/app
-          # Create a fixed, persistent release keystore with permanent credentials
-          keytool -genkeypair -v -keystore permanent-release.keystore \
-            -alias accountbookkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass "AccountBookPass2026" \
-            -keypass "AccountBookPass2026" \
-            -dname "CN=AccountBook, OU=IT, O=Neelkanth, L=Hanumangarh, ST=Rajasthan, C=IN" || true
+          if [ ! -f "permanent-release.keystore" ]; then
+            echo "Generating permanent release keystore..."
+            keytool -genkeypair -v \
+              -keystore permanent-release.keystore \
+              -alias accountbookkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -startdate "2024/01/01 00:00:00" \
+              -storepass "AccountBookPass2026" \
+              -keypass "AccountBookPass2026" \
+              -dname "CN=AccountBook, OU=IT, O=Neelkanth, L=Hanumangarh, ST=Rajasthan, C=IN"
+          fi
           cd ../..
 
       - name: Setup Gradle
