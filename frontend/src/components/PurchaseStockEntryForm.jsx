@@ -35,6 +35,63 @@ const getBillSupplierName = (bill) => {
   return 'Supplier Party';
 };
 
+/**
+ * Robust Item Name Resolver: Strictly eliminates generic "Purchase A/c" or "Purchase Raw Material"
+ * Extracts true inventory item from items list, stock ledger or narration
+ */
+const getCleanPurchaseItemName = (bill) => {
+  if (!bill) return 'Stock Item';
+
+  const isGeneric = (str) => {
+    if (!str) return true;
+    const s = String(str).toLowerCase().trim();
+    return s === 'purchase a/c' || 
+           s === 'purchase account' || 
+           s.startsWith('purchase raw material') ||
+           s === 'material' ||
+           s === 'general purchase' ||
+           s === 'purchase';
+  };
+
+  // 1. Direct explicit item name
+  if (bill.item_name && !isGeneric(bill.item_name)) {
+    return String(bill.item_name).replace(/\s*Stock\s*Account/i, '').trim();
+  }
+  if (bill.itemName && !isGeneric(bill.itemName)) {
+    return String(bill.itemName).replace(/\s*Stock\s*Account/i, '').trim();
+  }
+  if (bill.stock_item_name && !isGeneric(bill.stock_item_name)) {
+    return String(bill.stock_item_name).replace(/\s*Stock\s*Account/i, '').trim();
+  }
+
+  // 2. Check nested items array
+  if (Array.isArray(bill.items) && bill.items.length > 0) {
+    for (const it of bill.items) {
+      const itName = it?.itemName || it?.item_name || it?.name;
+      if (itName && !isGeneric(itName)) {
+        return String(itName).replace(/\s*Stock\s*Account/i, '').trim();
+      }
+    }
+  }
+
+  // 3. Extract from Narration (e.g. "Purchase Inward Bill #45: Mitti Grade A (116 Pcs @ 96)")
+  const narr = String(bill.narration || '');
+  if (narr) {
+    const colonMatch = narr.match(/(?:bill\s*#?\d*|purchase|item|inward)\s*:\s*([^–\-(@\n]+)/i);
+    if (colonMatch && colonMatch[1] && !isGeneric(colonMatch[1])) {
+      return colonMatch[1].trim();
+    }
+  }
+
+  // 4. Extract from Debit Account if it was a Stock Account (e.g. "Diesel Stock Account")
+  const dr = String(bill.dr_account || bill.debit_account || '');
+  if (dr && !isGeneric(dr)) {
+    return dr.replace(/\s*Stock\s*Account/i, '').trim();
+  }
+
+  return 'Stock Item';
+};
+
 export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
   const activeFirmId = useMemo(() => {
     return firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
@@ -74,11 +131,11 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
     return String(maxNum + 1);
   }, []);
 
-  // Atomic Stock Reversion Helper (Prevents 2 Pcs / Duplicate stock accumulation)
+  // Atomic Stock Reversion Helper (Prevents duplicate stock accumulation on edit/delete)
   const revertStockForBill = useCallback((billObj, currentStockList) => {
     if (!billObj || !Array.isArray(currentStockList)) return currentStockList || [];
     const targetItemId = String(billObj.item_id || billObj.stock_id || '');
-    const targetItemName = String(billObj.item_name || '').trim().toLowerCase();
+    const targetItemName = String(getCleanPurchaseItemName(billObj)).trim().toLowerCase();
     const qtyToRevert = parseFloat(billObj.quantity || billObj.qty || 0);
 
     return currentStockList.map(item => {
@@ -151,6 +208,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                 const bNum = String(b.bill_number || b.reference_no || b.id || '').trim();
                 const cleanKey = b.id || bNum;
                 const partyName = getBillSupplierName(b);
+                const resolvedItem = getCleanPurchaseItemName(b);
 
                 if (!billsMap.has(cleanKey) && bNum) {
                   billsMap.set(cleanKey, {
@@ -163,8 +221,9 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                     supplier: partyName,
                     supplier_name: partyName,
                     party: partyName,
-                    item_name: b.item_name || 'Material',
+                    item_name: resolvedItem,
                     quantity: Number(b.quantity || b.qty || 1),
+                    unit: b.unit || 'Pcs',
                     rate: Number(b.rate || b.purchase_rate || 0),
                     purchase_rate: Number(b.purchase_rate || b.rate || 0),
                     total_amount: Number(b.total_amount || b.amount || 0)
@@ -176,7 +235,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         } catch (e) {}
       });
 
-      // Synchronize with Vouchers to ensure 1 to 73+ are completely visible
+      // Synchronize with Vouchers to ensure all bills #1 to #73+ are completely visible with proper item names
       const voucherKeysToScan = [
         `app_vouchers_${activeFirmId}`,
         `account_book_vouchers_${activeFirmId}`,
@@ -196,6 +255,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                 const bNum = String(v.reference_no || v.voucher_number || v.id || '').replace(/^#|^PUR-|^PV-/, '').trim();
                 const cleanKey = v.id || bNum;
                 const partyName = getBillSupplierName(v);
+                const resolvedItem = getCleanPurchaseItemName(v);
 
                 let isAlreadyPresent = false;
                 for (const existing of billsMap.values()) {
@@ -206,11 +266,24 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                       existing.supplier_name = partyName;
                       existing.party = partyName;
                     }
+                    if (existing.item_name === 'Purchase A/c' || existing.item_name === 'Material' || !existing.item_name) {
+                      existing.item_name = resolvedItem;
+                    }
                     break;
                   }
                 }
 
                 if (!isAlreadyPresent && bNum) {
+                  // Resolve unit from nested items or narration
+                  let resolvedUnit = 'Pcs';
+                  if (Array.isArray(v.items) && v.items[0]?.unit) {
+                    resolvedUnit = v.items[0].unit;
+                  } else if (String(v.narration || '').toLowerCase().includes('liters') || resolvedItem.toLowerCase().includes('diesel')) {
+                    resolvedUnit = 'Liters';
+                  } else if (String(v.narration || '').toLowerCase().includes('quintal')) {
+                    resolvedUnit = 'Quintal';
+                  }
+
                   billsMap.set(cleanKey, {
                     id: v.id || `PUR-${bNum}`,
                     date: v.voucher_date || v.date || todayMaxDate,
@@ -220,10 +293,11 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                     supplier: partyName,
                     supplier_name: partyName,
                     party: partyName,
-                    item_name: v.dr_account || 'Material',
-                    quantity: Number(v.quantity || v.qty || 1),
-                    rate: Number(v.rate || v.unit_rate || v.amount || 0),
-                    purchase_rate: Number(v.rate || v.unit_rate || v.amount || 0),
+                    item_name: resolvedItem,
+                    unit: resolvedUnit,
+                    quantity: Number(v.quantity || v.qty || (Array.isArray(v.items) && v.items[0]?.qty) || 1),
+                    rate: Number(v.rate || v.unit_rate || (Array.isArray(v.items) && v.items[0]?.rate) || v.amount || 0),
+                    purchase_rate: Number(v.rate || v.unit_rate || (Array.isArray(v.items) && v.items[0]?.rate) || v.amount || 0),
                     total_amount: Number(v.amount || v.total_amount || 0),
                     narration: v.narration || ''
                   });
@@ -314,7 +388,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       // 1. ATOMIC INVENTORY UPDATE WITH PRE-REVERSION
       let currentStock = [...inventoryItems];
 
-      // If updating, rollback old bill stock first to prevent double accumulation
       if (editingBill) {
         currentStock = revertStockForBill(editingBill, currentStock);
       }
@@ -346,7 +419,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         };
       }
 
-      // Save stock to both scoped and raw keys
       saveFirmData('inventory_items', firm, currentStock);
       localStorage.setItem(`inventory_items_${activeFirmId}`, JSON.stringify(currentStock));
       localStorage.setItem('inventory_items', JSON.stringify(currentStock));
@@ -360,7 +432,8 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
           account_name: stockAssetAccount,
           primary_type: 'ASSETS',
           type: 'Assets',
-          sub_group: 'Inventory / Current Assets',
+          sub_group: 'Raw Material Inventory (कच्चा माल)',
+          group: 'Current Assets',
           balance_type: 'Dr'
         });
       }
@@ -383,7 +456,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         rate: numRate,
         purchase_rate: numRate,
         total_amount: calculatedTotal,
-        narration: narration.trim() || `Purchase Bill #${finalBillNo} from ${supplierName}`,
+        narration: narration.trim() || `Purchase Bill #${finalBillNo}: ${cleanItemName} (${numQty} ${cleanUnit} @ ₹${numRate}) from ${supplierName}`,
         updated_at: new Date().toISOString()
       };
 
@@ -394,7 +467,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       setPurchaseBills(updatedBills);
 
       // 4. OVERWRITE / SAVE BALANCED DOUBLE-ENTRY JOURNAL VOUCHER
-      // Remove any previous alias of this voucher if editing
       if (editingBill) {
         const oldCandidateIds = [
           editingBill.id,
@@ -604,10 +676,11 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
     if (!b) return false;
     const q = (searchFilter || '').toLowerCase();
     const supName = getBillSupplierName(b).toLowerCase();
+    const itemNameStr = getCleanPurchaseItemName(b).toLowerCase();
     return (
       (b.bill_number && String(b.bill_number).toLowerCase().includes(q)) ||
       supName.includes(q) ||
-      (b.item_name && String(b.item_name).toLowerCase().includes(q)) ||
+      itemNameStr.includes(q) ||
       (b.narration && String(b.narration).toLowerCase().includes(q))
     );
   });
@@ -807,6 +880,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
               const totalAmt = parseFloat(bill.total_amount || 0);
               const isSelected = editingBill && (editingBill.id === bill.id || String(editingBill.bill_number) === String(bill.bill_number));
               const displayName = getBillSupplierName(bill);
+              const displayItemName = getCleanPurchaseItemName(bill);
 
               return (
                 <div 
@@ -836,8 +910,8 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                       {displayName}
                     </div>
 
-                    <div style={{ fontSize: '11px', color: '#475569' }}>
-                      📦 {bill.item_name} — Qty: <strong>{bill.quantity} {bill.unit || 'Pcs'}</strong> @ ₹{bill.rate || bill.purchase_rate}
+                    <div style={{ fontSize: '11px', color: '#475569', marginTop: '2px' }}>
+                      📦 <strong style={{ color: '#0f172a' }}>{displayItemName}</strong> — Qty: <strong>{bill.quantity} {bill.unit || 'Pcs'}</strong> @ ₹{bill.rate || bill.purchase_rate}
                     </div>
                   </div>
 
