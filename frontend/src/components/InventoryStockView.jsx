@@ -1,10 +1,19 @@
 // frontend/src/components/InventoryStockView.jsx
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { loadFirmData, saveFirmData, getCleanFirmId } from '../utils/firmIsolationEngine';
+import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+// Universal Safe Firm ID Resolver (Zero external named-export dependency)
+const resolveActiveFirmId = (firmInput) => {
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
+  if (firmInput && typeof firmInput === 'object') {
+    return firmInput.id || firmInput.firm_id || firmInput.firmId || 'FIRM-001';
+  }
+  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+};
 
 /**
  * Self-Contained Helper: Auto-creates Stock Asset Ledger in Master Accounts
@@ -65,7 +74,7 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
  * Self-Contained Helper: Read inventory items with firm-scoped fallback
  */
 const loadFirmInventory = (firmInput) => {
-  const firmId = getCleanFirmId(firmInput) || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const firmId = resolveActiveFirmId(firmInput);
   let items = loadFirmData('inventory_items', firmInput, []);
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -86,7 +95,7 @@ const loadFirmInventory = (firmInput) => {
  * Self-Contained Helper: Save inventory item atomically
  */
 const saveFirmInventory = (firmInput, itemData) => {
-  const firmId = getCleanFirmId(firmInput) || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const firmId = resolveActiveFirmId(firmInput);
   const cleanName = String(itemData.name || itemData.item_name || '').trim();
   if (!cleanName) throw new Error('Item name is mandatory.');
 
@@ -149,7 +158,7 @@ const saveFirmInventory = (firmInput, itemData) => {
  * Self-Contained Helper: Delete inventory item cleanly
  */
 const deleteFirmInventory = (firmInput, itemId) => {
-  const firmId = getCleanFirmId(firmInput) || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const firmId = resolveActiveFirmId(firmInput);
   if (!firmId || !itemId) return false;
 
   const existingItems = loadFirmInventory(firmInput);
@@ -168,7 +177,7 @@ const deleteFirmInventory = (firmInput, itemId) => {
 
 export default function InventoryStockView({ firm, onClose }) {
   const activeFirmId = useMemo(() => {
-    return getCleanFirmId(firm) || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+    return resolveActiveFirmId(firm);
   }, [firm]);
 
   const [items, setItems] = useState([]);
