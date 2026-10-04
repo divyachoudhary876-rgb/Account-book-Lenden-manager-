@@ -20,13 +20,19 @@ jobs:
 
       - name: Install Frontend Dependencies
         run: |
-          cd frontend
-          npm install
+          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
+            cd frontend && npm install && cd ..
+          elif [ -f "package.json" ]; then
+            npm install
+          fi
 
       - name: Build Web Application
         run: |
-          cd frontend
-          npm run build
+          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
+            cd frontend && npm run build && cd ..
+          elif [ -f "package.json" ]; then
+            npm run build
+          fi
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -37,21 +43,58 @@ jobs:
       - name: Setup Gradle Runtime
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Sync Capacitor to Android
+      # -------------------------------------------------------------
+      # CAPACITOR ANDROID SYNC & PROJECT DETECTION
+      # -------------------------------------------------------------
+      - name: Sync Capacitor Android
         run: |
-          cd frontend
-          npx cap sync android
+          if [ -d "frontend" ] && [ -f "frontend/capacitor.config.json" -o -f "frontend/capacitor.config.ts" ]; then
+            cd frontend
+            if [ ! -d "android" ] && [ ! -d "../android" ]; then
+              npx cap add android || true
+            fi
+            npx cap sync android || true
+            cd ..
+          else
+            if [ ! -d "android" ]; then
+              npx cap add android || true
+            fi
+            npx cap sync android || true
+          fi
 
       # -------------------------------------------------------------
-      # ENSURE FIXED PERMANENT RELEASE KEYSTORE (NO SIGNATURE MISMATCH)
+      # DETECT TRUE ANDROID DIRECTORY CONTAINING settings.gradle
       # -------------------------------------------------------------
-      - name: Guarantee Static Keystore
+      - name: Locate Android Project & Ensure Keystore
+        id: locate-android
         run: |
-          cd frontend/android/app
-          if [ ! -f "permanent-release.keystore" ]; then
-            echo "Creating permanent static keystore..."
+          TARGET_DIR=""
+          if [ -f "android/settings.gradle" ] || [ -f "android/build.gradle" ]; then
+            TARGET_DIR="android"
+          elif [ -f "frontend/android/settings.gradle" ] || [ -f "frontend/android/build.gradle" ]; then
+            TARGET_DIR="frontend/android"
+          else
+            # Deep search for settings.gradle
+            SETTINGS_PATH=$(find . -name "settings.gradle" -not -path "*/node_modules/*" | head -n 1)
+            if [ -n "$SETTINGS_PATH" ]; then
+              TARGET_DIR=$(dirname "$SETTINGS_PATH")
+            fi
+          fi
+
+          if [ -z "$TARGET_DIR" ]; then
+            echo "FATAL: Android project with settings.gradle could not be found!"
+            exit 1
+          fi
+
+          echo "Found Android Project at: $TARGET_DIR"
+          echo "android_dir=$TARGET_DIR" >> $GITHUB_OUTPUT
+
+          # Ensure static keystore inside the target app folder
+          mkdir -p "$TARGET_DIR/app"
+          if [ ! -f "$TARGET_DIR/app/permanent-release.keystore" ]; then
+            echo "Generating static release keystore..."
             keytool -genkeypair -v \
-              -keystore permanent-release.keystore \
+              -keystore "$TARGET_DIR/app/permanent-release.keystore" \
               -alias accountbookkey \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -startdate "2024/01/01 00:00:00" \
@@ -61,11 +104,14 @@ jobs:
           fi
 
       # -------------------------------------------------------------
-      # DIRECT GRADLE EXECUTION (ZERO EXIT CODE 127 ISSUES)
+      # BUILD SIGNED RELEASE APK AT THE VERIFIED PATH
       # -------------------------------------------------------------
       - name: Build Release APK via Gradle
-        working-directory: frontend/android
         run: |
+          ANDROID_PATH="${{ steps.locate-android.outputs.android_dir }}"
+          cd "$ANDROID_PATH"
+          echo "Building inside: $(pwd)"
+
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
             ./gradlew assembleRelease \
@@ -74,7 +120,6 @@ jobs:
               -Pandroid.injected.signing.key.alias=accountbookkey \
               -Pandroid.injected.signing.key.password=AccountBookPass2026
           else
-            echo "Running direct gradle tool..."
             gradle assembleRelease \
               -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
               -Pandroid.injected.signing.store.password=AccountBookPass2026 \
@@ -83,11 +128,12 @@ jobs:
           fi
 
       # -------------------------------------------------------------
-      # UPLOAD ARTIFACT V4 (NO DEPRECATION ERROR)
+      # UPLOAD ARTIFACT V4
       # -------------------------------------------------------------
       - name: Upload Installable APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Android-APK-App
-          path: frontend/android/app/build/outputs/apk/release/*.apk
+          path: |
+            **/build/outputs/apk/release/*.apk
           retention-days: 7
