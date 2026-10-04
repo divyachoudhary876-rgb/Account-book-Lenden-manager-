@@ -26,9 +26,6 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK Tools
-        uses: android-actions/setup-android@v3
-
       - name: Install Frontend Dependencies
         run: |
           cd frontend
@@ -86,9 +83,8 @@ jobs:
           if [ -n "$APK_FOUND" ]; then
             cp "$APK_FOUND" android_artifact/AccountBook-Installable.apk
           else
-            echo "Release APK not found, checking debug fallback..."
-            APK_DEBUG=$(find frontend/android/app/build/outputs/apk -name "*.apk" | head -n 1)
-            cp "$APK_DEBUG" android_artifact/AccountBook-Installable.apk
+            APK_FALLBACK=$(find frontend/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+            cp "$APK_FALLBACK" android_artifact/AccountBook-Installable.apk
           fi
 
       - name: Upload Android APK
