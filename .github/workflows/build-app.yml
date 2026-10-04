@@ -36,20 +36,32 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       # -------------------------------------------------------------
-      # ONLY SYNC (NO 'cap add' TO AVOID 'ALREADY EXISTS' ERROR)
+      # ONLY SYNC CAPACITOR ASSETS
       # -------------------------------------------------------------
       - name: Sync Capacitor Android
         working-directory: frontend
         run: npx cap sync android
 
       # -------------------------------------------------------------
-      # GUARANTEE PERMANENT RELEASE KEYSTORE (STATIC SHA-256)
+      # LOCATE REAL ANDROID DIR & ENSURE KEYSTORE
       # -------------------------------------------------------------
-      - name: Ensure Static Release Keystore
-        working-directory: frontend/android/app
+      - name: Prepare Keystore and Target Path
+        id: setup-target
         run: |
+          if [ -d "frontend/android/app" ]; then
+            TARGET="frontend/android"
+          elif [ -d "android/app" ]; then
+            TARGET="android"
+          else
+            TARGET=$(find . -name "build.gradle" -not -path "*/node_modules/*" | grep "/app/" | head -n 1 | sed 's#/app/build.gradle##')
+          fi
+          echo "Target directory is: $TARGET"
+          echo "target_dir=$TARGET" >> $GITHUB_OUTPUT
+
+          mkdir -p "$TARGET/app"
+          cd "$TARGET/app"
           if [ ! -f "permanent-release.keystore" ]; then
-            echo "Generating permanent static release keystore..."
+            echo "Generating static release keystore..."
             keytool -genkeypair -v \
               -keystore permanent-release.keystore \
               -alias accountbookkey \
@@ -61,24 +73,42 @@ jobs:
           fi
 
       # -------------------------------------------------------------
-      # BUILD SIGNED RELEASE APK VIA GRADLE
+      # BUILD SIGNED RELEASE APK (NATIVE GRADLE DIRECT EXECUTION)
       # -------------------------------------------------------------
       - name: Assemble Release APK
-        working-directory: frontend/android
         run: |
-          chmod +x ./gradlew
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
-            -Pandroid.injected.signing.store.password=AccountBookPass2026 \
-            -Pandroid.injected.signing.key.alias=accountbookkey \
-            -Pandroid.injected.signing.key.password=AccountBookPass2026
+          TARGET="${{ steps.setup-target.outputs.target_dir }}"
+          cd "$TARGET"
+          echo "Running build inside: $(pwd)"
+
+          # Generate gradle wrapper if missing
+          if [ ! -f "gradlew" ]; then
+            echo "Generating wrapper via gradle CLI..."
+            gradle wrapper || true
+          fi
+          chmod +x ./gradlew || true
+
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
+              -Pandroid.injected.signing.store.password=AccountBookPass2026 \
+              -Pandroid.injected.signing.key.alias=accountbookkey \
+              -Pandroid.injected.signing.key.password=AccountBookPass2026
+          else
+            gradle assembleRelease \
+              -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
+              -Pandroid.injected.signing.store.password=AccountBookPass2026 \
+              -Pandroid.injected.signing.key.alias=accountbookkey \
+              -Pandroid.injected.signing.key.password=AccountBookPass2026
+          fi
 
       # -------------------------------------------------------------
-      # UPLOAD INSTALLABLE APK ARTIFACT (V4 SPECIFICATION)
+      # UPLOAD ARTIFACT V4
       # -------------------------------------------------------------
       - name: Upload Installable APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Android-APK-App
-          path: frontend/android/app/build/outputs/apk/release/*.apk
+          path: |
+            **/build/outputs/apk/release/*.apk
           retention-days: 7
