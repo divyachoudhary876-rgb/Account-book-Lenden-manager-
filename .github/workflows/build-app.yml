@@ -17,22 +17,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
 
-      - name: Install Dependencies
+      - name: Install Frontend Dependencies
         run: |
-          if [ -f "frontend/package.json" ]; then
+          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
             cd frontend && npm install && cd ..
-          else
+          elif [ -f "package.json" ]; then
             npm install
           fi
 
       - name: Build Web Application
         run: |
-          if [ -f "frontend/package.json" ]; then
+          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
             cd frontend && npm run build && cd ..
-          else
+          elif [ -f "package.json" ]; then
             npm run build
           fi
 
@@ -44,14 +42,14 @@ jobs:
 
       - name: Sync Capacitor to Android
         run: |
-          if [ -f "frontend/package.json" ]; then
+          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
             cd frontend && npx cap sync android && cd ..
-          else
+          elif [ -f "package.json" ]; then
             npx cap sync android
           fi
 
       # -------------------------------------------------------------
-      # PERMANENT STATIC KEYSTORE WITH FIXED EPOCH (PREVENTS RE-SIGN CONFLICT)
+      # PERMANENT STATIC KEYSTORE (FIXED SIGNATURE ACROSS ALL BUILDS)
       # -------------------------------------------------------------
       - name: Ensure Static Release Keystore Exists
         run: |
@@ -62,7 +60,7 @@ jobs:
           mkdir -p $TARGET_DIR
           cd $TARGET_DIR
           if [ ! -f "permanent-release.keystore" ]; then
-            echo "Generating static release keystore with fixed epoch..."
+            echo "Generating persistent static release keystore..."
             keytool -genkeypair -v \
               -keystore permanent-release.keystore \
               -alias accountbookkey \
@@ -80,7 +78,7 @@ jobs:
         run: |
           if [ -d "frontend/android" ]; then
             cd frontend/android && chmod +x ./gradlew || true
-          else
+          elif [ -d "android" ]; then
             cd android && chmod +x ./gradlew || true
           fi
 
@@ -93,7 +91,7 @@ jobs:
               -Pandroid.injected.signing.store.password=AccountBookPass2026 \
               -Pandroid.injected.signing.key.alias=accountbookkey \
               -Pandroid.injected.signing.key.password=AccountBookPass2026
-          else
+          elif [ -d "android" ]; then
             cd android
             ./gradlew assembleRelease \
               -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
@@ -103,7 +101,7 @@ jobs:
           fi
 
       # -------------------------------------------------------------
-      # UPDATED TO V4 (FIXES GITHUB DEPRECATION ERROR #354)
+      # UPLOAD ARTIFACT V4 (NO DEPRECATION ERROR)
       # -------------------------------------------------------------
       - name: Upload Installable APK Artifact
         uses: actions/upload-artifact@v4
