@@ -19,6 +19,33 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
+ * Ultra-Robust Typography & Spacing Normalizer
+ * Eliminates weird spacing around colons, rates, parentheses, and multiple spaces
+ */
+export const cleanTypographySpacing = (rawText) => {
+  if (!rawText) return '';
+  let str = String(rawText);
+
+  // Normalize colon spacing: "Issue : 100" -> "Issue: 100"
+  str = str.replace(/\s*:\s*/g, ': ');
+
+  // Normalize rate symbol spacing: "@ 102" or "@Rs 102" -> " @ Rs "
+  str = str.replace(/\s*@\s*(?:rs\.?|₹)?\s*/gi, ' @ Rs ');
+
+  // Normalize commas and hyphens
+  str = str.replace(/\s*,\s*/g, ', ');
+  str = str.replace(/\s*-\s*/g, ' - ');
+
+  // Clean brackets inner spacing: "( 141 Liters )" -> "(141 Liters)"
+  str = str.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+
+  // Collapse multiple whitespaces/tabs into a single neat space
+  str = str.replace(/\s{2,}/g, ' ');
+
+  return str.trim();
+};
+
+/**
  * Ultra-Robust Account Name Sanitizer (Completely eliminates '(OK !<)', '(OK !-)', etc.)
  */
 const cleanAccountTitle = (rawName) => {
@@ -38,9 +65,7 @@ const cleanAccountTitle = (rawName) => {
   str = str.replace(/\s*\(OK\s*!?.*$/gi, '');
   str = str.replace(/\s*\[OK\s*!?.*$/gi, '');
 
-  // Normalize extra spaces
-  str = str.replace(/\s+/g, ' ').trim();
-  return str || 'Account';
+  return cleanTypographySpacing(str) || 'Account';
 };
 
 /**
@@ -155,8 +180,8 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   printHeader();
 
   txs.forEach((t, index) => {
-    const rawTitle = `${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`;
-    const descText = t.narration || '';
+    const rawTitle = cleanTypographySpacing(`${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`);
+    const descText = cleanTypographySpacing(t.narration || '');
 
     const splitTitle = doc.splitTextToSize(rawTitle, 68);
     const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
@@ -421,7 +446,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE - COMPLETE CLEANUP)
+ * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE - FIXED SPACING)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -469,16 +494,28 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   printJournalHeader();
 
   rows.forEach((vch, idx) => {
-    const rawRef = String(vch.reference_no || vch.voucher_number || vch.id || '-');
+    const rawRef = cleanTypographySpacing(String(vch.reference_no || vch.voucher_number || vch.id || '-'));
     const vType = String(vch.voucher_type || vch.type || 'JOURNAL');
 
     // Strict cleaning for both Dr & Cr accounts
     const drName = cleanAccountTitle(vch.dr_account || vch.dr_party || 'Dr Account');
     const crName = cleanAccountTitle(vch.cr_account || vch.cr_party || 'Cr Account');
 
+    // Clean narration and material issue string
     const itemsList = Array.isArray(vch.items) ? vch.items : [];
-    let itemStr = itemsList.map(it => `${it.itemName} (Qty: ${it.qty} @ Rs ${it.rate})`).join(', ');
-    const noteText = vch.narration ? (itemStr ? `${itemStr} - ${vch.narration}` : vch.narration) : itemStr;
+    let itemStr = itemsList.map(it => {
+      const iName = cleanTypographySpacing(it.itemName || it.name || 'Item');
+      const iQty = it.qty || it.quantity || 0;
+      const iUnit = (it.unit || 'Pcs').trim();
+      const iRate = parseFloat(it.rate || it.price || 0);
+      return cleanTypographySpacing(`${iName} (Qty: ${iQty} ${iUnit} @ Rs ${iRate.toFixed(2)})`);
+    }).join(', ');
+
+    const rawNote = vch.narration || vch.remarks || vch.description || '';
+    const cleanNote = cleanTypographySpacing(rawNote);
+    const noteText = cleanNote 
+      ? (itemStr ? `${itemStr} - ${cleanNote}` : cleanNote) 
+      : itemStr;
 
     const splitDr = doc.splitTextToSize(drName, 54);
     const splitCr = doc.splitTextToSize(crName, 75);
@@ -540,7 +577,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
  */
 export const generateProfessionalInvoicePDF = async (firmInput, invoice = {}) => {
   const firmName = getCleanFirmName(firmInput);
-  const invNumber = invoice?.invoice_number || ('INV-' + Date.now());
+  const invNumber = cleanTypographySpacing(invoice?.invoice_number || ('INV-' + Date.now()));
   const grandTotal = parseFloat(invoice?.grand_total || invoice?.total_amount || 0);
 
   const doc = new jsPDF('p', 'mm', 'a4');
