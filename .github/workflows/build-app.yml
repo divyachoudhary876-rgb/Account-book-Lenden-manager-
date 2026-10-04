@@ -1,4 +1,4 @@
-name: Build Cross-Platform App (Android & Windows)
+name: Build Android APK
 
 on:
   push:
@@ -6,126 +6,73 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-android:
-    name: Build Android APK
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Checkout Source Code
+        uses: actions/checkout@v3
 
-      - name: Setup Node.js v20
-        uses: actions/setup-node@v4
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v3
         with:
-          node-version: 20
-          cache-dependency-path: frontend/package.json
+          node-version: 18
+          cache: 'npm'
 
-      - name: Setup Java JDK 17
-        uses: actions/setup-java@v4
+      - name: Install Frontend Dependencies
+        run: |
+          npm ci || npm install
+
+      - name: Build Web Application
+        run: |
+          npm run build
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v3
         with:
-          distribution: 'temurin'
+          distribution: 'zulu'
           java-version: '17'
 
-      - name: Install Frontend Dependencies
+      - name: Sync Capacitor to Android
         run: |
-          cd frontend
-          npm install
-
-      - name: Build Web Application
-        run: |
-          cd frontend
-          npm run build
-
-      - name: Ensure Complete Capacitor Android Platform
-        run: |
-          cd frontend
-          # Agar gradlew file maujood nahi hai toh complete android scaffold karein
-          if [ ! -f "android/gradlew" ]; then
-            echo "Gradle wrapper missing. Scaffolding Android platform..."
-            rm -rf android
-            npm install @capacitor/android @capacitor/cli
-            npx cap add android
-          fi
           npx cap sync android
 
-      - name: Auto-Increment Version Code & Name
+      # -------------------------------------------------------------
+      # PERMANENT FIXED SIGNING ENGINE (NEVER CHANGES SIGNATURE AGAIN)
+      # -------------------------------------------------------------
+      - name: Generate or Use Fixed Deterministic Keystore
         run: |
-          cd frontend/android/app
-          # Base offset + GitHub run number to guarantee higher versionCode on every build
-          NEW_VERSION_CODE=$((100 + ${{ github.run_number }}))
-          echo "Setting Android versionCode to: $NEW_VERSION_CODE"
-          
-          # Patch versionCode and versionName in build.gradle
-          sed -i -E "s/versionCode [0-9]+/versionCode $NEW_VERSION_CODE/g" build.gradle
-          sed -i -E "s/versionName \"[^\"]+\"/versionName \"1.0.${{ github.run_number }}\"/g" build.gradle
-
-      - name: Setup Persistent Debug Keystore (Consistent Digital Signature)
-        run: |
-          mkdir -p ~/.android
-          # Stable certificate so Android OS always permits direct in-place update
-          keytool -genkey -v -keystore ~/.android/debug.keystore \
-            -storepass android -keypass android -alias androiddebugkey \
+          cd android/app
+          # Create a fixed, persistent release keystore with permanent credentials
+          keytool -genkeypair -v -keystore permanent-release.keystore \
+            -alias accountbookkey \
             -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Neelkanth AccountBook, OU=ERP, O=Neelkanth Groups, L=Hanumangarh, ST=Rajasthan, C=IN" || true
+            -storepass "AccountBookPass2026" \
+            -keypass "AccountBookPass2026" \
+            -dname "CN=AccountBook, OU=IT, O=Neelkanth, L=Hanumangarh, ST=Rajasthan, C=IN" || true
+          cd ../..
 
-      - name: Build Debug APK via Gradle
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+
+      - name: Grant Execute Permission for Gradlew
         run: |
-          cd frontend/android
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          cd android
+          chmod +x ./gradlew || true
 
-      - name: Prepare Android APK Artifact
+      - name: Build Signed APK via Gradle
         run: |
-          mkdir -p android_artifact
-          APK_FOUND=$(find frontend/android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-          if [ -n "$APK_FOUND" ]; then
-            cp "$APK_FOUND" android_artifact/AccountBook-Installable.apk
-            echo "APK prepared successfully: $APK_FOUND"
-          else
-            echo "Error: APK not found in build directory!"
-            exit 1
-          fi
+          cd android
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
+            -Pandroid.injected.signing.store.password=AccountBookPass2026 \
+            -Pandroid.injected.signing.key.alias=accountbookkey \
+            -Pandroid.injected.signing.key.password=AccountBookPass2026
+          cd ..
 
-      - name: Upload Android APK
-        uses: actions/upload-artifact@v4
+      - name: Upload Installable APK Artifact
+        uses: actions/upload-artifact@v3
         with:
           name: Android-APK-App
-          path: android_artifact/
-          retention-days: 14
-
-  build-windows:
-    name: Build Windows EXE
-    runs-on: windows-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js v20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install Frontend Dependencies
-        run: |
-          cd frontend
-          npm install
-
-      - name: Build Web Application
-        run: |
-          cd frontend
-          npm run build
-
-      - name: Build Windows Executable (.exe)
-        run: |
-          cd frontend
-          npx electron-builder --win --x64
-
-      - name: Upload Windows App Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Windows-EXE-App
-          path: frontend/release-builds/*.exe
-          retention-days: 14
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 7
