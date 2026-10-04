@@ -9,9 +9,8 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         
-        // Base versioning for seamless in-place application updates
-        versionCode 100
-        versionName "1.0.4"
+        versionCode 105
+        versionName "1.0.5"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -19,12 +18,23 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            storeFile file("permanent-release.keystore")
+            storePassword "AccountBookPass2026"
+            keyAlias "accountbookkey"
+            keyPassword "AccountBookPass2026"
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
+            signingConfig signingConfigs.release
             debuggable true
         }
     }
