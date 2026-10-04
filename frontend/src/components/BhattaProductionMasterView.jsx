@@ -1,4 +1,4 @@
-// frontend/src/components/SmartProductionView.jsx
+// frontend/src/components/BhattaProductionMasterView.jsx
 
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
@@ -6,12 +6,16 @@ import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
 import { saveUniversalVoucher } from '../utils/voucherPostingEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine';
 import SearchableStockDropdown from './SearchableStockDropdown';
+import BhattaCostAuditView from './BhattaCostAuditView';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-export default function SmartProductionView({ firm, onClose }) {
+export default function BhattaProductionMasterView({ firm, onClose }) {
   const activeFY = getCurrentActiveFY();
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+
+  // Toggle Tab: Stage-Wise Daily Batch vs Full Round Cost Audit
+  const [activeTab, setActiveTab] = useState('STAGE_PROD'); // 'STAGE_PROD' | 'ROUND_AUDIT'
 
   const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
   const [useForLocation, setUseForLocation] = useState('');
@@ -178,7 +182,6 @@ export default function SmartProductionView({ firm, onClose }) {
         }
       }
 
-      // 1. Output Item Resolution
       const outputItemObj = workingInventory.find(i => String(i.id) === String(outputItem));
       const finishedName = (outputItemObj?.name || outputItemObj?.item_name || 'Finished Goods').trim();
 
@@ -204,7 +207,6 @@ export default function SmartProductionView({ firm, onClose }) {
       setBatchesList(updatedBatches);
       saveFirmData('production_batches', firm, updatedBatches);
 
-      // 2. Final Inventory Quantities Commit
       const finalInventory = workingInventory.map(inv => {
         const invId = String(inv.id);
         const consumedMatch = consumedMaterials.find(m => String(m.itemId) === invId);
@@ -236,7 +238,6 @@ export default function SmartProductionView({ firm, onClose }) {
       setInventoryItems(finalInventory);
       saveFirmData('inventory_items', firm, finalInventory);
 
-      // 3. Double-Entry WIP & Inventory Accounting Voucher
       const accounts = getFirmMasterAccounts(activeFirmId);
       const finishedInventoryLedger = `${finishedName} Stock Account`;
       const wipLedger = 'Manufacturing / Work-in-Progress (WIP)';
@@ -343,7 +344,6 @@ export default function SmartProductionView({ firm, onClose }) {
       setBatchesList(filteredBatches);
       saveFirmData('production_batches', firm, filteredBatches);
 
-      // Revert associated JV voucher from all buckets
       const vKey1 = `app_vouchers_${activeFirmId}`;
       const vKey2 = `account_book_vouchers_${activeFirmId}`;
       const vList1 = JSON.parse(localStorage.getItem(vKey1) || '[]');
@@ -374,281 +374,336 @@ export default function SmartProductionView({ firm, onClose }) {
   };
 
   return (
-    <div style={{ padding: '12px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
+    <div style={{ padding: '10px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
       
-      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', marginBottom: '16px' }}>
-        
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
-            {editingBatchId ? '✏️ Edit Production Batch' : `⚙️ Smart Production & Auto-Valuation (${activeFY})`}
-          </h2>
+      {/* Top Toggle Switch Bar */}
+      <div style={{ backgroundColor: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {onClose && (
-            <button onClick={onClose} style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-              Close
+            <button 
+              onClick={onClose} 
+              style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+            >
+              ← Dashboard
             </button>
           )}
+          <span style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
+            🧱 Bhatta Manufacturing & Costing Center
+          </span>
         </div>
 
-        {feedback && (
-          <div style={{ padding: '10px', marginBottom: '12px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#f0fdf4', color: feedback.type === 'error' ? '#991b1b' : '#166534', fontWeight: 'bold', fontSize: '11px', border: `1px solid ${feedback.type === 'error' ? '#fecaca' : '#bbf7d0'}` }}>
-            {feedback.message}
-          </div>
-        )}
+        {/* Tab Buttons */}
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('STAGE_PROD')}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid',
+              borderColor: activeTab === 'STAGE_PROD' ? '#0f172a' : '#cbd5e1',
+              backgroundColor: activeTab === 'STAGE_PROD' ? '#0f172a' : '#f8fafc',
+              color: activeTab === 'STAGE_PROD' ? '#ffffff' : '#475569',
+              fontSize: '11px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            ⚙️ Daily Stage Production
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('ROUND_AUDIT')}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid',
+              borderColor: activeTab === 'ROUND_AUDIT' ? '#0284c7' : '#cbd5e1',
+              backgroundColor: activeTab === 'ROUND_AUDIT' ? '#0284c7' : '#f8fafc',
+              color: activeTab === 'ROUND_AUDIT' ? '#ffffff' : '#475569',
+              fontSize: '11px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            🎯 Round Audit & Real Cost
+          </button>
+        </div>
+      </div>
 
-        <form onSubmit={handleSaveProduction}>
+      {/* RENDER VIEW ACCORDING TO TAB */}
+      {activeTab === 'ROUND_AUDIT' ? (
+        <BhattaCostAuditView firm={firm} onClose={onClose} />
+      ) : (
+        <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', marginBottom: '16px' }}>
           
-          {/* PRODUCTION STAGE SELECTOR */}
-          <div style={{ marginBottom: '12px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#0f172a' }}>
-              🏭 Production Stage (उत्पादन चरण) *
-            </label>
-            <select 
-              value={productionStage} 
-              onChange={e => setProductionStage(e.target.value)} 
-              style={{ ...inputStyle, fontWeight: '700', backgroundColor: '#ffffff' }}
-            >
-              <option value="STAGE_1_PATHAI">Stage 1: Pathai (मिट्टी ➔ कच्ची ईंट निर्माण)</option>
-              <option value="STAGE_2_PAKAI">Stage 2: Bharai & Pakai (कच्ची ईंट + कोयला ➔ भट्टी पकाई)</option>
-              <option value="STAGE_3_NIKASI">Stage 3: Nikasi & Grading (पकाई ➔ पक्की ईंट 1-No / 2-No)</option>
-              <option value="STAGE_GENERAL">General / Single-Stage Manufacturing</option>
-            </select>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+              {editingBatchId ? '✏️ Edit Production Batch' : `⚙️ Smart Production & Auto-Valuation (${activeFY})`}
+            </h2>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
-                Production Date *
-              </label>
-              <input 
-                type="date" 
-                value={productionDate} 
-                onChange={e => setProductionDate(e.target.value)} 
-                style={inputStyle} 
-                required 
-              />
+          {feedback && (
+            <div style={{ padding: '10px', marginBottom: '12px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#f0fdf4', color: feedback.type === 'error' ? '#991b1b' : '#166534', fontWeight: 'bold', fontSize: '11px', border: `1px solid ${feedback.type === 'error' ? '#fecaca' : '#bbf7d0'}` }}>
+              {feedback.message}
             </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
-                Use For / Location *
-              </label>
-              <input 
-                type="text" 
-                placeholder="e.g. Chamber-1 / Batch-2" 
-                value={useForLocation} 
-                onChange={e => setUseForLocation(e.target.value)} 
-                style={inputStyle} 
-                required 
-              />
-            </div>
-          </div>
+          )}
 
-          {/* STEP 1: Consumed Raw Materials */}
-          <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '8px' }}>
-              🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
-            </div>
+          <form onSubmit={handleSaveProduction}>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px', boxSizing: 'border-box' }}>
-              <SearchableStockDropdown 
-                firm={firm}
-                label=""
-                value={selectedMaterial}
-                onChange={val => setSelectedMaterial(val)}
-                placeholder="-- Select Inventory --"
-              />
+            {/* PRODUCTION STAGE SELECTOR */}
+            <div style={{ marginBottom: '12px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+              <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#0f172a' }}>
+                🏭 Production Stage (उत्पादन चरण) *
+              </label>
+              <select 
+                value={productionStage} 
+                onChange={e => setProductionStage(e.target.value)} 
+                style={{ ...inputStyle, fontWeight: '700', backgroundColor: '#ffffff' }}
+              >
+                <option value="STAGE_1_PATHAI">Stage 1: Pathai (मिट्टी ➔ कच्ची ईंट निर्माण)</option>
+                <option value="STAGE_2_PAKAI">Stage 2: Bharai & Pakai (कच्ची ईंट + कोयला ➔ भट्टी पकाई)</option>
+                <option value="STAGE_3_NIKASI">Stage 3: Nikasi & Grading (पकाई ➔ पक्की ईंट 1-No / 2-No)</option>
+                <option value="STAGE_GENERAL">General / Single-Stage Manufacturing</option>
+              </select>
+            </div>
 
-              <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="Enter Qty" 
-                    value={materialQty} 
-                    onChange={e => setMaterialQty(e.target.value)} 
-                    style={inputStyle} 
-                  />
-                </div>
-                <button 
-                  type="button" 
-                  onClick={handleAddMaterial} 
-                  style={{ padding: '9px 16px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
-                >
-                  + Add Item
-                </button>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
+                  Production Date *
+                </label>
+                <input 
+                  type="date" 
+                  value={productionDate} 
+                  onChange={e => setProductionDate(e.target.value)} 
+                  style={inputStyle} 
+                  required 
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
+                  Use For / Location *
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Chamber-1 / Batch-2" 
+                  value={useForLocation} 
+                  onChange={e => setUseForLocation(e.target.value)} 
+                  style={inputStyle} 
+                  required 
+                />
               </div>
             </div>
 
-            {consumedMaterials.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
-                {consumedMaterials.map(mat => (
-                  <div key={mat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #fef3c7', fontSize: '11px' }}>
-                    <span><strong>{mat.name}</strong> - {mat.qty} {mat.unit}</span>
-                    <span>
-                      Est: ₹{mat.estimatedCost.toFixed(2)}
-                      <button type="button" onClick={() => removeConsumedItem(mat.id)} style={{ color: '#dc2626', border: 'none', background: 'none', marginLeft: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✕</button>
-                    </span>
+            {/* STEP 1: Consumed Raw Materials */}
+            <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
+              <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '8px' }}>
+                🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px', boxSizing: 'border-box' }}>
+                <SearchableStockDropdown 
+                  firm={firm}
+                  label=""
+                  value={selectedMaterial}
+                  onChange={val => setSelectedMaterial(val)}
+                  placeholder="-- Select Inventory --"
+                />
+
+                <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      placeholder="Enter Qty" 
+                      value={materialQty} 
+                      onChange={e => setMaterialQty(e.target.value)} 
+                      style={inputStyle} 
+                    />
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={handleAddMaterial} 
+                    style={{ padding: '9px 16px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    + Add Item
+                  </button>
+                </div>
+              </div>
+
+              {consumedMaterials.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
+                  {consumedMaterials.map(mat => (
+                    <div key={mat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #fef3c7', fontSize: '11px' }}>
+                      <span><strong>{mat.name}</strong> - {mat.qty} {mat.unit}</span>
+                      <span>
+                        Est: ₹{mat.estimatedCost.toFixed(2)}
+                        <button type="button" onClick={() => removeConsumedItem(mat.id)} style={{ color: '#dc2626', border: 'none', background: 'none', marginLeft: '8px', fontWeight: 'bold', cursor: 'pointer' }}>✕</button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* STEP 2: Direct Labor & Overheads with AUTO-FETCH BUTTON */}
+            <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>
+                  👷 Step 2: Direct Labor & Overheads (Auto-Fetch by Dates)
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', alignItems: 'center', backgroundColor: '#ffffff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                <input 
+                  type="date" 
+                  value={labourStartDate} 
+                  onChange={e => setLabourStartDate(e.target.value)} 
+                  style={{ ...inputStyle, padding: '4px 6px', fontSize: '10px', flex: 1 }} 
+                />
+                <span style={{ fontSize: '10px', color: '#64748b' }}>to</span>
+                <input 
+                  type="date" 
+                  value={labourEndDate} 
+                  onChange={e => setLabourEndDate(e.target.value)} 
+                  style={{ ...inputStyle, padding: '4px 6px', fontSize: '10px', flex: 1 }} 
+                />
+                <button 
+                  type="button" 
+                  onClick={handleAutoFetchLabour}
+                  style={{ padding: '6px 10px', backgroundColor: '#166534', color: '#ffffff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  ⚡ Fetch Labour
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Direct Labor Cost (₹)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="0" 
+                    value={directLaborCost} 
+                    onChange={e => setDirectLaborCost(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Machinery & Overheads (₹)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="0" 
+                    value={machineryOverheads} 
+                    onChange={e => setMachineryOverheads(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right', fontSize: '11px', fontWeight: '800', color: '#15803d' }}>
+                Total Production Cost: ₹{totalProductionCost.toFixed(2)}
+              </div>
+            </div>
+
+            {/* STEP 3: Output Finished Product & Auto Valuation */}
+            <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '8px' }}>
+                📦 Step 3: Output Finished Product & Auto Valuation
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '6px' }}>
+                <SearchableStockDropdown 
+                  firm={firm}
+                  label="Output Item (From Inventory) *"
+                  value={outputItem}
+                  onChange={val => setOutputItem(val)}
+                  placeholder="-- Select Output Item (e.g. Int 1 Number) --"
+                />
+                <div>
+                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#1e40af' }}>Produced Qty *</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="e.g. 30000" 
+                    value={producedQty} 
+                    onChange={e => setProducedQty(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
+              </div>
+
+              {Number(producedQty) > 0 && (
+                <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#1e40af', marginTop: '6px' }}>
+                  Auto Valued Rate: <strong>₹{unitValuation} / Unit</strong> (₹{(unitValuation * 1000).toFixed(0)} / 1000 Pcs)
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                type="submit" 
+                style={{ flex: 1, padding: '12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+              >
+                {editingBatchId ? '✓ Update Production Batch' : '⚡ Save Production & Update Cost Valuation'}
+              </button>
+              {editingBatchId && (
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setEditingBatchId(null);
+                    setUseForLocation('');
+                    setConsumedMaterials([]);
+                    setDirectLaborCost('');
+                    setMachineryOverheads('');
+                    setOutputItem('');
+                    setProducedQty('');
+                  }}
+                  style={{ padding: '12px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+
+          </form>
+
+          {/* Scrollable Production Batches Register */}
+          <div style={{ marginTop: '16px' }}>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
+              Production Batches Register ({activeFY}) - ({batchesList.length})
+            </h3>
+
+            {batchesList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '11px' }}>
+                Koi production record darj nahi hai.
+              </div>
+            ) : (
+              <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {batchesList.map(batch => (
+                  <div key={batch.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#0f172a' }}>
+                        {batch.date} | Location: {batch.location} {batch.stage ? `[${batch.stage}]` : ''}
+                      </div>
+                      <div style={{ color: '#64748b' }}>
+                        Produced Qty: {batch.produced_qty} Units (Valued @ ₹{batch.unit_valuation}/unit) | <strong style={{ color: '#166534' }}>Cost: ₹{Number(batch.total_cost || 0).toFixed(2)}</strong>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => handleEditBatch(batch)} style={{ padding: '5px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Edit</button>
+                      <button onClick={() => handleDeleteBatch(batch.id)} style={{ padding: '5px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Delete</button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* STEP 2: Direct Labor & Overheads with AUTO-FETCH BUTTON */}
-          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>
-                👷 Step 2: Direct Labor & Overheads (Auto-Fetch by Dates)
-              </div>
-            </div>
-
-            {/* Date-Range Auto-Fetch Helper */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', alignItems: 'center', backgroundColor: '#ffffff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-              <input 
-                type="date" 
-                value={labourStartDate} 
-                onChange={e => setLabourStartDate(e.target.value)} 
-                style={{ ...inputStyle, padding: '4px 6px', fontSize: '10px', flex: 1 }} 
-              />
-              <span style={{ fontSize: '10px', color: '#64748b' }}>to</span>
-              <input 
-                type="date" 
-                value={labourEndDate} 
-                onChange={e => setLabourEndDate(e.target.value)} 
-                style={{ ...inputStyle, padding: '4px 6px', fontSize: '10px', flex: 1 }} 
-              />
-              <button 
-                type="button" 
-                onClick={handleAutoFetchLabour}
-                style={{ padding: '6px 10px', backgroundColor: '#166534', color: '#ffffff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
-              >
-                ⚡ Fetch Labour
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Direct Labor Cost (₹)</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="0" 
-                  value={directLaborCost} 
-                  onChange={e => setDirectLaborCost(e.target.value)} 
-                  style={inputStyle} 
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Machinery & Overheads (₹)</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="0" 
-                  value={machineryOverheads} 
-                  onChange={e => setMachineryOverheads(e.target.value)} 
-                  style={inputStyle} 
-                />
-              </div>
-            </div>
-
-            <div style={{ textAlign: 'right', fontSize: '11px', fontWeight: '800', color: '#15803d' }}>
-              Total Production Cost: ₹{totalProductionCost.toFixed(2)}
-            </div>
-          </div>
-
-          {/* STEP 3: Output Finished Product & Auto Valuation */}
-          <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '8px' }}>
-              📦 Step 3: Output Finished Product & Auto Valuation
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '6px' }}>
-              <SearchableStockDropdown 
-                firm={firm}
-                label="Output Item (From Inventory) *"
-                value={outputItem}
-                onChange={val => setOutputItem(val)}
-                placeholder="-- Select Output Item (e.g. Int 1 Number) --"
-              />
-              <div>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#1e40af' }}>Produced Qty *</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="e.g. 30000" 
-                  value={producedQty} 
-                  onChange={e => setProducedQty(e.target.value)} 
-                  style={inputStyle} 
-                />
-              </div>
-            </div>
-
-            {Number(producedQty) > 0 && (
-              <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#1e40af', marginTop: '6px' }}>
-                Auto Valued Rate: <strong>₹{unitValuation} / Unit</strong> (₹{(unitValuation * 1000).toFixed(0)} / 1000 Pcs)
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
-              type="submit" 
-              style={{ flex: 1, padding: '12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-            >
-              {editingBatchId ? '✓ Update Production Batch' : '⚡ Save Production & Update Cost Valuation'}
-            </button>
-            {editingBatchId && (
-              <button 
-                type="button" 
-                onClick={() => {
-                  setEditingBatchId(null);
-                  setUseForLocation('');
-                  setConsumedMaterials([]);
-                  setDirectLaborCost('');
-                  setMachineryOverheads('');
-                  setOutputItem('');
-                  setProducedQty('');
-                }}
-                style={{ padding: '12px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-
-        </form>
-      </div>
-
-      {/* Scrollable Production Batches Register */}
-      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
-          Production Batches Register ({activeFY}) - ({batchesList.length})
-        </h3>
-
-        {batchesList.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '11px' }}>
-            Koi production record darj nahi hai.
-          </div>
-        ) : (
-          <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {batchesList.map(batch => (
-              <div key={batch.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
-                <div>
-                  <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#0f172a' }}>
-                    {batch.date} | Location: {batch.location} {batch.stage ? `[${batch.stage}]` : ''}
-                  </div>
-                  <div style={{ color: '#64748b' }}>
-                    Produced Qty: {batch.produced_qty} Units (Valued @ ₹{batch.unit_valuation}/unit) | <strong style={{ color: '#166534' }}>Cost: ₹{Number(batch.total_cost || 0).toFixed(2)}</strong>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button onClick={() => handleEditBatch(batch)} style={{ padding: '5px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Edit</button>
-                  <button onClick={() => handleDeleteBatch(batch.id)} style={{ padding: '5px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Delete</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
     </div>
   );
