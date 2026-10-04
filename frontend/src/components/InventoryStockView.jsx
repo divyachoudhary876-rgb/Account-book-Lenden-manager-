@@ -1,520 +1,362 @@
-// frontend/src/components/InventoryStockView.jsx
-import React, { useState, useEffect, useMemo } from 'react';
-import { StorageService } from '../utils/storageSync';
-import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
+// frontend/src/components/InventoryManagerView.jsx
 
-export default function InventoryStockView({ firm, onClose }) {
-  const [inventoryList, setInventoryList] = useState([]);
-  const [searchFilter, setSearchFilter] = useState('');
-  
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItemId, setEditingItemId] = useState(null);
+import React, { useState, useEffect, useCallback } from 'react';
+import { getFirmInventoryItems, saveFirmInventoryItem, deleteFirmInventoryItem } from '../utils/inventoryItemEngine';
+import { getCleanFirmId } from '../utils/firmIsolationEngine';
+
+export default function InventoryManagerView({ firm, onClose }) {
+  const activeFirmId = getCleanFirmId(firm) || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+
+  const [items, setItems] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingItem, setEditingItem] = useState(null);
+
+  // Form State
   const [itemName, setItemName] = useState('');
-  const [unit, setUnit] = useState('Quintal');
-  const [openingStock, setOpeningStock] = useState('0');
-  const [purchaseRate, setPurchaseRate] = useState('0');
+  const [unit, setUnit] = useState('Pcs');
+  const [itemType, setItemType] = useState('GOODS');
+  const [openingStock, setOpeningStock] = useState('');
+  const [purchasePrice, setPurchasePrice] = useState('');
+  const [sellingPrice, setSellingPrice] = useState('');
+  const [hsnSac, setHsnSac] = useState('');
+  const [statusMessage, setStatusMessage] = useState(null);
 
-  const loadInventory = () => {
+  const loadStockItems = useCallback(() => {
     try {
-      if (!firm) return;
-      const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
-      
-      const scopedKey = `inventory_items_${activeFirmId}`;
-      let items = loadFirmData('inventory_items', firm, []);
-      if (!Array.isArray(items) || items.length === 0) {
-        items = StorageService.getItem(scopedKey) || StorageService.getItem('inventory_items') || [];
-      }
-
-      const rawVouchers = [
-        ...(StorageService.getItem('account_book_vouchers') || []),
-        ...(StorageService.getItem(`account_book_vouchers_${activeFirmId}`) || []),
-        ...(StorageService.getItem(`app_vouchers_${activeFirmId}`) || [])
-      ];
-
-      const uniqueVouchersMap = new Map();
-      rawVouchers.forEach(v => {
-        if (v && (v.firm_id === activeFirmId || v.firm_id === 'FIRM-001' || !v.firm_id)) {
-          const key = v.id || v.reference_no || JSON.stringify(v);
-          uniqueVouchersMap.set(key, v);
-        }
-      });
-      const allVouchers = Array.from(uniqueVouchersMap.values());
-
-      const productionBatches = loadFirmData('production_batches', firm, []);
-      const consumptionRecords = loadFirmData('material_consumption_records', firm, []);
-
-      const normalized = items.map(item => {
-        if (!item) return null;
-        const itemId = String(item.id || '').trim();
-        const itemNameClean = String(item.item_name || item.itemName || item.name || '').trim().toLowerCase();
-
-        let totalPurQty = 0;
-        let totalPurAmt = 0;
-        let totalSaleQty = 0;
-        let totalSaleAmt = 0;
-        let totalProdQty = 0;
-        let totalProdAmt = 0;
-        let totalConsQty = 0;
-        let totalConsAmt = 0;
-
-        const isStrictItemMatch = (vId, vName) => {
-          const cleanVId = String(vId || '').trim();
-          const cleanVName = String(vName || '').trim().toLowerCase();
-          if (itemId && cleanVId && itemId === cleanVId) return true;
-          if (itemNameClean && cleanVName && itemNameClean === cleanVName) return true;
-          return false;
-        };
-
-        allVouchers.forEach(v => {
-          if (!v) return;
-          const vType = String(v.voucher_type || v.type || '').toUpperCase();
-          const vId = v.itemId || v.item_id || '';
-          const vName = v.itemName || v.item_name || v.name || '';
-
-          if (vType === 'PURCHASE') {
-            if (isStrictItemMatch(vId, vName)) {
-              const q = Number(v.qty || v.quantity || 0);
-              const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
-              totalPurQty += q;
-              totalPurAmt += a;
-            }
-          } else if (vType === 'SALES') {
-            const vItems = Array.isArray(v.items) ? v.items : [];
-            if (vItems.length > 0) {
-              vItems.forEach(ci => {
-                if (!ci) return;
-                const ciId = ci.itemId || ci.item_id || ci.id || '';
-                const ciName = ci.itemName || ci.name || ci.item_name || '';
-                if (isStrictItemMatch(ciId, ciName)) {
-                  const q = Number(ci.quantity || ci.qty || 0);
-                  const a = Number(ci.total || (q * Number(ci.rate || 0)) || 0);
-                  totalSaleQty += q;
-                  totalSaleAmt += a;
-                }
-              });
-            } else {
-              if (isStrictItemMatch(vId, vName)) {
-                const q = Number(v.qty || v.quantity || 0);
-                const a = Number(v.amount || v.total_amount || (q * Number(v.unit_rate || v.rate || 0)) || 0);
-                totalSaleQty += q;
-                totalSaleAmt += a;
-              }
-            }
-          }
-        });
-
-        productionBatches.forEach(batch => {
-          if (!batch) return;
-          const outId = batch.output_item_id || '';
-          if (isStrictItemMatch(outId, '')) {
-            const q = Number(batch.produced_qty || 0);
-            const a = Number(batch.total_cost || 0);
-            totalProdQty += q;
-            totalProdAmt += a;
-          }
-
-          const consumedMats = Array.isArray(batch.consumed_materials) ? batch.consumed_materials : [];
-          consumedMats.forEach(mat => {
-            if (!mat) return;
-            const mId = mat.itemId || mat.id || '';
-            const mName = mat.name || '';
-            if (isStrictItemMatch(mId, mName)) {
-              const q = Number(mat.qty || 0);
-              totalConsQty += q;
-              totalConsAmt += q * Number(item.unit_purchase_price || item.rate || 0);
-            }
-          });
-        });
-
-        consumptionRecords.forEach(rec => {
-          if (!rec) return;
-          const recItems = Array.isArray(rec.items) ? rec.items : [];
-          recItems.forEach(ri => {
-            if (!ri) return;
-            const rId = ri.itemId || ri.id || '';
-            const rName = ri.name || '';
-            if (isStrictItemMatch(rId, rName)) {
-              const q = Number(ri.qty || 0);
-              totalConsQty += q;
-              totalConsAmt += q * Number(ri.rate || item.unit_purchase_price || item.rate || 0);
-            }
-          });
-        });
-
-        const opStock = Number(item.opening_stock ?? item.stock ?? item.current_stock ?? 0);
-        const totalInflow = opStock + totalPurQty + totalProdQty;
-        const totalOutflow = totalSaleQty + totalConsQty;
-        const computedStock = totalInflow - totalOutflow;
-        const finalStock = computedStock >= 0 ? computedStock : 0;
-        
-        let rateVal = Number(item.unit_purchase_price ?? item.purchasePrice ?? item.rate ?? 0);
-        if ((totalPurQty + totalProdQty) > 0 && (totalPurAmt + totalProdAmt) > 0) {
-          rateVal = Number(((totalPurAmt + totalProdAmt) / (totalPurQty + totalProdQty)).toFixed(2));
-        }
-
-        return {
-          ...item,
-          current_stock: finalStock,
-          stock: finalStock,
-          qty: finalStock,
-          unit_purchase_price: rateVal,
-          rate: rateVal,
-          totalPurchaseQty: totalPurQty,
-          totalPurchaseAmount: totalPurAmt,
-          totalSaleQty: totalSaleQty,
-          totalSaleAmount: totalSaleAmt,
-          totalProdQty: totalProdQty,
-          totalProdAmount: totalProdAmt,
-          totalConsQty: totalConsQty,
-          totalConsAmount: totalConsAmt
-        };
-      }).filter(Boolean);
-
-      setInventoryList(normalized);
-    } catch (e) {
-      console.error("Error loading inventory:", e);
+      const stock = getFirmInventoryItems(firm);
+      setItems(Array.isArray(stock) ? stock : []);
+    } catch (err) {
+      console.error('Error loading inventory items:', err);
     }
-  };
-
-  useEffect(() => {
-    loadInventory();
-    window.addEventListener('app_state_updated', loadInventory);
-    window.addEventListener('app_storage_updated', loadInventory);
-    window.addEventListener('storage', loadInventory);
-    return () => {
-      window.removeEventListener('app_state_updated', loadInventory);
-      window.removeEventListener('app_storage_updated', loadInventory);
-      window.removeEventListener('storage', loadInventory);
-    };
   }, [firm]);
 
-  const processedInventory = useMemo(() => {
-    const sorted = [...inventoryList].sort((a, b) => {
-      const nameA = (a.item_name || a.itemName || a.name || '').toLowerCase();
-      const nameB = (b.item_name || b.itemName || b.name || '').toLowerCase();
-      return nameA.localeCompare(nameB, 'en', { sensitivity: 'base' });
-    });
+  useEffect(() => {
+    loadStockItems();
+    window.addEventListener('app_inventory_updated', loadStockItems);
+    window.addEventListener('app_storage_updated', loadStockItems);
+    window.addEventListener('storage', loadStockItems);
+    return () => {
+      window.removeEventListener('app_inventory_updated', loadStockItems);
+      window.removeEventListener('app_storage_updated', loadStockItems);
+      window.removeEventListener('storage', loadStockItems);
+    };
+  }, [loadStockItems]);
 
-    const cleanSearch = searchFilter.trim().toLowerCase();
-    if (!cleanSearch) return sorted;
-
-    return sorted.filter(item => {
-      const name = (item.item_name || item.itemName || item.name || '').toLowerCase();
-      const unitStr = (item.unit || '').toLowerCase();
-      return name.includes(cleanSearch) || unitStr.includes(cleanSearch);
-    });
-  }, [inventoryList, searchFilter]);
-
-  const handleOpenAddModal = () => {
-    setEditingItemId(null);
-    setItemName('');
-    setUnit('Quintal');
-    setOpeningStock('0');
-    setPurchaseRate('0');
-    setIsModalOpen(true);
-  };
-
-  const handleOpenEditModal = (item) => {
-    setEditingItemId(item.id);
-    setItemName(item.item_name || item.itemName || item.name || '');
-    setUnit(item.unit || 'Quintal');
-    const stock = item.opening_stock || item.current_stock || item.stock || 0;
-    const rate = item.unit_purchase_price || item.purchasePrice || item.rate || 0;
-    setOpeningStock(String(stock));
-    setPurchaseRate(String(rate));
-    setIsModalOpen(true);
-  };
-
-  const handleSaveItem = (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!itemName.trim()) return alert('कृपया आइटम का नाम दर्ज करें।');
+    setStatusMessage(null);
+
+    const cleanName = itemName.trim();
+    if (!cleanName) {
+      setStatusMessage({ type: 'error', text: 'Kripya Item Name darj karein!' });
+      return;
+    }
 
     try {
-      const currentItems = loadFirmData('inventory_items', firm, []);
-      const stockNum = Number(openingStock || 0);
-      const rateNum = Number(purchaseRate || 0);
-      const firmKey = typeof firm === 'object' ? (firm.firm_id || firm.id || firm.legal_name || 'default_firm') : (firm || 'default_firm');
-      
-      let updated = [];
-      if (editingItemId) {
-        updated = currentItems.map(i => {
-          if (String(i.id) === String(editingItemId)) {
-            return {
-              ...i,
-              item_name: itemName.trim(),
-              itemName: itemName.trim(),
-              name: itemName.trim(),
-              unit: unit,
-              opening_stock: stockNum,
-              current_stock: stockNum,
-              stock: stockNum,
-              qty: stockNum,
-              unit_purchase_price: rateNum,
-              purchasePrice: rateNum,
-              rate: rateNum,
-              updated_at: new Date().toISOString()
-            };
-          }
-          return i;
-        });
-        alert('✓ Item Updated Successfully!');
-      } else {
-        const newItem = {
-          id: `ITEM-${Date.now()}`,
-          firm_id: firmKey,
-          item_name: itemName.trim(),
-          itemName: itemName.trim(),
-          name: itemName.trim(),
-          item_type: 'PHYSICAL',
-          unit: unit,
-          opening_stock: stockNum,
-          current_stock: stockNum,
-          stock: stockNum,
-          qty: stockNum,
-          unit_purchase_price: rateNum,
-          purchasePrice: rateNum,
-          rate: rateNum,
-          created_at: new Date().toISOString()
-        };
-        updated = [newItem, ...currentItems];
-        alert('✓ Item Created Successfully in Master!');
-      }
+      saveFirmInventoryItem(firm, {
+        id: editingItem ? editingItem.id : undefined,
+        name: cleanName,
+        unit: unit.trim() || 'Pcs',
+        item_type: itemType,
+        is_service: itemType === 'SERVICE',
+        current_stock: editingItem ? editingItem.current_stock : (parseFloat(openingStock) || 0),
+        unit_purchase_price: parseFloat(purchasePrice) || 0,
+        unit_selling_price: parseFloat(sellingPrice) || 0,
+        hsn_sac: hsnSac.trim()
+      });
 
-      saveFirmData('inventory_items', firm, updated);
-      StorageService.setItem('inventory_items', updated);
-      StorageService.setItem(`inventory_items_${firmKey}`, updated);
+      setStatusMessage({
+        type: 'success',
+        text: editingItem 
+          ? `✓ "${cleanName}" aur uska Stock Ledger update ho gaya!` 
+          : `✓ "${cleanName}" inventory me save ho gaya aur "${cleanName} Stock Account" ledger auto-create ho gaya!`
+      });
 
-      window.dispatchEvent(new Event('app_storage_updated'));
-      window.dispatchEvent(new Event('app_state_updated'));
-
+      // Reset Form
+      setEditingItem(null);
       setItemName('');
-      setOpeningStock('0');
-      setPurchaseRate('0');
-      setEditingItemId(null);
-      setIsModalOpen(false);
-      loadInventory();
+      setOpeningStock('');
+      setPurchasePrice('');
+      setSellingPrice('');
+      setHsnSac('');
+      loadStockItems();
     } catch (err) {
-      alert('Error saving item: ' + err.message);
+      setStatusMessage({ type: 'error', text: `Failed: ${err.message}` });
     }
   };
 
-  const totalValuation = inventoryList.reduce((sum, item) => {
-    const stock = Number(item.current_stock || item.stock || item.qty || 0);
-    const rate = Number(item.unit_purchase_price || item.purchasePrice || item.rate || 0);
-    return sum + (stock * rate);
-  }, 0);
+  const handleEdit = (item) => {
+    setEditingItem(item);
+    setItemName(item.name || item.item_name || '');
+    setUnit(item.unit || 'Pcs');
+    setItemType(item.item_type || (item.is_service ? 'SERVICE' : 'GOODS'));
+    setOpeningStock(String(item.current_stock || item.stock || 0));
+    setPurchasePrice(String(item.unit_purchase_price || item.purchase_price || ''));
+    setSellingPrice(String(item.unit_selling_price || item.selling_price || ''));
+    setHsnSac(item.hsn_sac || '');
+    setStatusMessage(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDelete = (item) => {
+    const name = item.name || item.item_name;
+    if (!window.confirm(`Kya aap "${name}" ko inventory se delete karna chahte hain?`)) return;
+
+    deleteFirmInventoryItem(firm, item.id);
+    loadStockItems();
+  };
+
+  const filteredItems = items.filter(i => {
+    const q = searchQuery.toLowerCase();
+    const name = (i.name || i.item_name || '').toLowerCase();
+    const hsn = (i.hsn_sac || '').toLowerCase();
+    return name.includes(q) || hsn.includes(q);
+  });
 
   return (
-    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
+    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
-        
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+      {/* Header */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '800' }}>Perpetual Valuation</div>
-            <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>📦 Live Stock & Inventory</h2>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
+              {editingItem ? '✏️ Edit Stock Item' : '📦 Inventory & Stock Items Master'}
+            </h3>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>Item bante hi uska Stock Asset Ledger automatic ban jayega</span>
           </div>
-          {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
+          {onClose && (
+            <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+              Close
+            </button>
+          )}
         </div>
+      </div>
 
-        <div style={{ marginBottom: '14px' }}>
-          <button 
-            onClick={handleOpenAddModal} 
-            style={{ width: '100%', padding: '11px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}
-          >
-            + Add New Item to Master
-          </button>
+      {statusMessage && (
+        <div style={{
+          backgroundColor: statusMessage.type === 'error' ? '#fef2f2' : '#ecfdf5',
+          border: `1px solid ${statusMessage.type === 'error' ? '#fecaca' : '#a7f3d0'}`,
+          color: statusMessage.type === 'error' ? '#991b1b' : '#065f46',
+          padding: '10px 14px',
+          borderRadius: '10px',
+          fontSize: '12px',
+          fontWeight: 'bold'
+        }}>
+          {statusMessage.text}
         </div>
+      )}
 
-        {/* Search Filter Bar */}
-        <div style={{ marginBottom: '14px' }}>
-          <input
-            type="text"
-            placeholder="🔍 Search stock items by name..."
-            value={searchFilter}
-            onChange={e => setSearchFilter(e.target.value)}
-            style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', outline: 'none', backgroundColor: '#f8fafc', color: '#0f172a' }}
+      {/* Creation / Edit Form */}
+      <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div>
+          <label style={labelStyle}>ITEM NAME *</label>
+          <input 
+            type="text" 
+            placeholder="e.g. Kitchen Accessories, Mitti Grade A, Diesel" 
+            value={itemName} 
+            onChange={e => setItemName(e.target.value)} 
+            style={inputStyle} 
+            required 
           />
         </div>
 
-        <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: '#166534', textTransform: 'uppercase' }}>Total Portfolio Value</div>
-            <div style={{ fontSize: '10px', color: '#15803d', marginTop: '1px' }}>Real-time stock valuation</div>
+            <label style={labelStyle}>UNIT OF MEASURE *</label>
+            <input 
+              type="text" 
+              placeholder="Pcs, Quintal, Litres, Bags" 
+              value={unit} 
+              onChange={e => setUnit(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
           </div>
-          <div style={{ fontSize: '18px', fontWeight: '900', color: '#15803d' }}>
-            ₹{totalValuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <div>
+            <label style={labelStyle}>ITEM TYPE</label>
+            <select 
+              value={itemType} 
+              onChange={e => setItemType(e.target.value)} 
+              style={inputStyle}
+            >
+              <option value="GOODS">Goods / Stock Item</option>
+              <option value="SERVICE">Service (Non-Stock)</option>
+            </select>
           </div>
         </div>
-      </div>
 
-      {/* Scrollable Inventory Items List */}
-      <div style={{ maxHeight: '500px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
-        {processedInventory.length === 0 ? (
-          <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '30px 20px', borderRadius: '12px', color: '#94a3b8', fontSize: '11px', border: '1px solid #e2e8f0' }}>
-            No stock items found matching your search.
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>{editingItem ? 'CURRENT STOCK' : 'OPENING STOCK'}</label>
+            <input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={openingStock} 
+              onChange={e => setOpeningStock(e.target.value)} 
+              style={{ ...inputStyle, backgroundColor: editingItem ? '#f8fafc' : '#ffffff' }}
+              disabled={Boolean(editingItem)} 
+            />
           </div>
-        ) : (
-          processedInventory.map((item, idx) => {
-            const stock = Number(item.current_stock || item.stock || item.qty || 0);
-            const rate = Number(item.unit_purchase_price || item.purchasePrice || item.rate || 0);
-            const val = stock * rate;
-            const displayName = item.item_name || item.itemName || item.name || 'Item';
+          <div>
+            <label style={labelStyle}>DEFAULT PURCHASE RATE (₹)</label>
+            <input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={purchasePrice} 
+              onChange={e => setPurchasePrice(e.target.value)} 
+              style={inputStyle} 
+            />
+          </div>
+        </div>
 
-            const purQty = Number(item.totalPurchaseQty || 0);
-            const purAmt = Number(item.totalPurchaseAmount || 0);
-            const saleQty = Number(item.totalSaleQty || 0);
-            const saleAmt = Number(item.totalSaleAmount || 0);
-            const prodQty = Number(item.totalProdQty || 0);
-            const prodAmt = Number(item.totalProdAmount || 0);
-            const consQty = Number(item.totalConsQty || 0);
-            const consAmt = Number(item.totalConsAmount || 0);
+        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+          <button 
+            type="submit" 
+            style={{ 
+              flex: 1, 
+              backgroundColor: '#059669', 
+              color: '#ffffff', 
+              border: 'none', 
+              padding: '12px', 
+              borderRadius: '8px', 
+              fontSize: '12px', 
+              fontWeight: 'bold', 
+              cursor: 'pointer' 
+            }}
+          >
+            {editingItem ? `✓ Update Item & Ledger` : `💾 Save Item & Auto-Create Stock Ledger`}
+          </button>
 
-            return (
-              <div key={item.id || idx} style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          {editingItem && (
+            <button 
+              type="button" 
+              onClick={() => {
+                setEditingItem(null);
+                setItemName('');
+                setOpeningStock('');
+                setPurchasePrice('');
+                setStatusMessage(null);
+              }} 
+              style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+
+      {/* Stock Items List */}
+      <div style={cardStyle}>
+        <div style={{ marginBottom: '10px' }}>
+          <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+            📋 All Stock Items ({filteredItems.length})
+          </strong>
+        </div>
+
+        <input 
+          type="text" 
+          placeholder="🔍 Search items by name..." 
+          value={searchQuery} 
+          onChange={e => setSearchQuery(e.target.value)} 
+          style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '10px' }} 
+        />
+
+        <div style={{ maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {filteredItems.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '12px' }}>
+              No inventory stock items found.
+            </div>
+          ) : (
+            filteredItems.map((item) => {
+              const stockQty = parseFloat(item.current_stock || item.stock || 0);
+              const rate = parseFloat(item.unit_purchase_price || item.purchase_price || 0);
+
+              return (
+                <div 
+                  key={item.id} 
+                  style={{ 
+                    backgroundColor: '#f8fafc', 
+                    border: '1px solid #e2e8f0', 
+                    borderRadius: '8px', 
+                    padding: '10px 12px', 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center' 
+                  }}
+                >
                   <div>
-                    <div style={{ fontWeight: '800', fontSize: '14px', color: '#0f172a' }}>{displayName}</div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span>Stock: <strong style={{ color: stock < 0 ? '#dc2626' : '#059669' }}>{stock.toFixed(2)} {item.unit || 'Pcs'}</strong></span>
-                      <span>•</span>
-                      <span>Rate: ₹{rate.toFixed(2)}</span>
+                    <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+                      {item.name || item.item_name}
+                    </strong>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                      Unit: {item.unit || 'Pcs'} | Default Rate: ₹{rate.toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#059669', fontWeight: 'bold', marginTop: '1px' }}>
+                      🔗 Linked Ledger: {item.name || item.item_name} Stock Account
                     </div>
                   </div>
-                  <button 
-                    onClick={() => handleOpenEditModal(item)}
-                    style={{ padding: '5px 12px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}
-                  >
-                    Edit
-                  </button>
-                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: '#f8fafc', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
-                  {purQty > 0 && (
-                    <div>
-                      <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Purchase:</span>
-                      <strong style={{ color: '#0284c7' }}>{purQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
-                      <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{purAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '900', color: stockQty > 0 ? '#0284c7' : '#94a3b8' }}>
+                      {stockQty} {item.unit || 'Pcs'}
+                    </span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button 
+                        type="button" 
+                        onClick={() => handleEdit(item)} 
+                        style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => handleDelete(item)} 
+                        style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Delete
+                      </button>
                     </div>
-                  )}
-                  {prodQty > 0 && (
-                    <div>
-                      <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Production:</span>
-                      <strong style={{ color: '#059669' }}>{prodQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
-                      <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{prodAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
-                    </div>
-                  )}
-                  {saleQty > 0 && (
-                    <div>
-                      <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Sale:</span>
-                      <strong style={{ color: '#9333ea' }}>{saleQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
-                      <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{saleAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
-                    </div>
-                  )}
-                  {consQty > 0 && (
-                    <div>
-                      <span style={{ color: '#64748b', fontWeight: '700', display: 'block' }}>Total Consumption:</span>
-                      <strong style={{ color: '#dc2626' }}>{consQty.toFixed(2)} {item.unit || 'Pcs'}</strong> 
-                      <span style={{ color: '#475569', fontSize: '10px', display: 'block' }}>(₹{consAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>
-                    </div>
-                  )}
-                  {purQty === 0 && prodQty === 0 && saleQty === 0 && consQty === 0 && (
-                    <div style={{ gridColumn: 'span 2', color: '#94a3b8', fontStyle: 'italic' }}>No movement recorded yet.</div>
-                  )}
+                  </div>
                 </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Total Valuation</span>
-                  <span style={{ fontSize: '15px', fontWeight: '900', color: '#0f172a' }}>₹{val.toFixed(2)}</span>
-                </div>
-
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {isModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px' }}>
-          <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', boxSizing: 'border-box' }}>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
-                {editingItemId ? '✏️ Edit Item' : '📦 Create New Item'}
-              </h3>
-              <button onClick={() => setIsModalOpen(false)} style={{ background: '#f1f5f9', border: 'none', width: '28px', height: '28px', borderRadius: '50%', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', color: '#64748b' }}>✕</button>
-            </div>
-
-            <form onSubmit={handleSaveItem} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Item Name *</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Coal, Husk, Diesel, Bricks" 
-                  value={itemName} 
-                  onChange={e => setItemName(e.target.value)} 
-                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }}
-                  required 
-                  autoFocus 
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Measurement Unit *</label>
-                <select 
-                  value={unit} 
-                  onChange={e => setUnit(e.target.value)} 
-                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', backgroundColor: '#fff', fontSize: '12px', outline: 'none', color: '#0f172a' }}
-                >
-                  <option value="Quintal">Quintal (क्विंटल)</option>
-                  <option value="Tonnes">Tonnes (टन)</option>
-                  <option value="Kg">Kg (किलो)</option>
-                  <option value="Pcs">Pcs (पीस)</option>
-                  <option value="Liters">Liters (लीटर)</option>
-                  <option value="Truck">Truck (ट्रक)</option>
-                  <option value="Trolley">Trolley (ट्रॉली)</option>
-                  <option value="Thousands">Thousands (हजार)</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Opening Stock</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    value={openingStock} 
-                    onChange={e => setOpeningStock(e.target.value)} 
-                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box',fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Purchase Rate (₹)</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    value={purchaseRate} 
-                    onChange={e => setPurchaseRate(e.target.value)} 
-                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '12px', outline: 'none', backgroundColor: '#fff', color: '#0f172a' }} 
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button type="submit" style={{ flex: 1, padding: '11px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
-                  {editingItemId ? '✓ Update Item' : '+ Save Item'}
-                </button>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '11px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-
-          </div>
+              );
+            })
+          )}
         </div>
-      )}
+      </div>
 
     </div>
   );
 }
+
+const cardStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '12px',
+  padding: '14px',
+  border: '1px solid #cbd5e1',
+  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
+  boxSizing: 'border-box',
+  width: '100%'
+};
+
+const labelStyle = {
+  display: 'block',
+  fontSize: '11px',
+  fontWeight: 'bold',
+  color: '#334155',
+  marginBottom: '4px'
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '9px 10px',
+  borderRadius: '8px',
+  border: '1px solid #cbd5e1',
+  fontSize: '12px',
+  boxSizing: 'border-box',
+  backgroundColor: '#ffffff',
+  color: '#0f172a',
+  outline: 'none'
+};
