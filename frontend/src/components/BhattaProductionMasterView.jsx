@@ -16,6 +16,11 @@ export default function SmartProductionView({ firm, onClose }) {
   const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
   const [useForLocation, setUseForLocation] = useState('');
   
+  // Production Stage Routing (Pathai, Pakai, Nikasi)
+  const [productionStage, setProductionStage] = useState('STAGE_3_NIKASI');
+  const [labourStartDate, setLabourStartDate] = useState('');
+  const [labourEndDate, setLabourEndDate] = useState(new Date().toISOString().slice(0, 10));
+
   const [inventoryItems, setInventoryItems] = useState([]);
   const [selectedMaterial, setSelectedMaterial] = useState('');
   const [materialQty, setMaterialQty] = useState('');
@@ -34,12 +39,13 @@ export default function SmartProductionView({ firm, onClose }) {
   const loadData = () => {
     if (!firm) return;
     const rawItems = loadFirmData('inventory_items', firm, []);
-    const validItems = rawItems.filter(i => i && (i.name || i.item_name));
+    const validItems = (Array.isArray(rawItems) ? rawItems : []).filter(i => i && (i.name || i.item_name));
     setInventoryItems(validItems);
 
     const savedBatches = loadFirmData('production_batches', firm, []);
-    savedBatches.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-    setBatchesList(savedBatches);
+    const safeBatches = Array.isArray(savedBatches) ? savedBatches : [];
+    safeBatches.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    setBatchesList(safeBatches);
   };
 
   useEffect(() => {
@@ -51,6 +57,62 @@ export default function SmartProductionView({ firm, onClose }) {
       window.removeEventListener('app_state_updated', loadData);
     };
   }, [firm, activeFirmId]);
+
+  // AUTO-FETCH LABOUR EXPENSES FROM PAYROLL VOUCHERS ACCORDING TO STAGE & DATES
+  const handleAutoFetchLabour = () => {
+    try {
+      const payrollEntries = loadFirmData('app_payroll_entries', firm, []);
+      let totalFetchedLabour = 0;
+      let totalFetchedOverheads = 0;
+      let matchedCount = 0;
+
+      (Array.isArray(payrollEntries) ? payrollEntries : []).forEach(ent => {
+        if (!ent) return;
+        const eDate = ent.date || ent.timestamp?.slice(0, 10) || '';
+        if (labourStartDate && eDate < labourStartDate) return;
+        if (labourEndDate && eDate > labourEndDate) return;
+
+        const ledger = (ent.expense_ledger || '').toLowerCase();
+        const amt = Number(ent.total_amount || 0);
+
+        if (productionStage === 'STAGE_1_PATHAI') {
+          if (ledger.includes('pathai') || ledger.includes('labor') || ledger.includes('labour')) {
+            totalFetchedLabour += amt;
+            matchedCount++;
+          }
+        } else if (productionStage === 'STAGE_2_PAKAI') {
+          if (ledger.includes('bharai') || ledger.includes('jhonkai') || ledger.includes('mistri') || ledger.includes('pakai')) {
+            totalFetchedLabour += amt;
+            matchedCount++;
+          } else if (ledger.includes('diesel') || ledger.includes('tractor')) {
+            totalFetchedOverheads += amt;
+          }
+        } else if (productionStage === 'STAGE_3_NIKASI') {
+          if (ledger.includes('nikasi') || ledger.includes('loading')) {
+            totalFetchedLabour += amt;
+            matchedCount++;
+          } else if (ledger.includes('diesel') || ledger.includes('tractor')) {
+            totalFetchedOverheads += amt;
+          }
+        } else {
+          totalFetchedLabour += amt;
+          matchedCount++;
+        }
+      });
+
+      setDirectLaborCost(String(round2(totalFetchedLabour)));
+      if (totalFetchedOverheads > 0) {
+        setMachineryOverheads(String(round2(totalFetchedOverheads)));
+      }
+
+      setFeedback({
+        type: 'success',
+        message: `✓ ${matchedCount} payroll entries se ₹${totalFetchedLabour.toLocaleString('en-IN')} Labour Cost auto-fetch ho gayi!`
+      });
+    } catch (err) {
+      alert('Error fetching labour: ' + err.message);
+    }
+  };
 
   const handleAddMaterial = () => {
     if (!selectedMaterial || !materialQty || Number(materialQty) <= 0) {
@@ -124,6 +186,7 @@ export default function SmartProductionView({ firm, onClose }) {
         id: batchId,
         fiscal_year: activeFY,
         date: productionDate,
+        stage: productionStage,
         location: useForLocation,
         consumed_materials: consumedMaterials,
         direct_labor: Number(directLaborCost) || 0,
@@ -208,7 +271,7 @@ export default function SmartProductionView({ firm, onClose }) {
         cr_account: wipLedger,
         amount: totalProductionCost,
         total_amount: totalProductionCost,
-        narration: `Production Batch #${batchId}: Produced ${producedQty} ${outputItemObj?.unit || 'Units'} of ${finishedName} @ ₹${unitValuation}/unit at ${useForLocation}. Total batch cost: ₹${totalProductionCost}`,
+        narration: `Production Batch #${batchId} [${productionStage}]: Produced ${producedQty} ${outputItemObj?.unit || 'Units'} of ${finishedName} @ ₹${unitValuation}/unit at ${useForLocation}. Total batch cost: ₹${totalProductionCost}`,
         is_compound: true,
         entries: [
           { account_name: finishedInventoryLedger, party: finishedInventoryLedger, type: 'DR', debit: totalProductionCost, credit: 0, amount: totalProductionCost },
@@ -220,7 +283,12 @@ export default function SmartProductionView({ firm, onClose }) {
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
 
-      setFeedback({ type: 'success', message: editingBatchId ? '✓ Production batch updated & accounting JV synced!' : '✓ Production saved & double-entry JV posted successfully!' });
+      setFeedback({ 
+        type: 'success', 
+        message: editingBatchId 
+          ? '✓ Production batch updated & accounting JV synced!' 
+          : '✓ Production saved & double-entry JV posted successfully!' 
+      });
 
       setEditingBatchId(null);
       setUseForLocation('');
@@ -239,6 +307,7 @@ export default function SmartProductionView({ firm, onClose }) {
     if (!batch) return;
     setEditingBatchId(batch.id);
     setProductionDate(batch.date || new Date().toISOString().slice(0, 10));
+    setProductionStage(batch.stage || 'STAGE_3_NIKASI');
     setUseForLocation(batch.location || '');
     setConsumedMaterials(batch.consumed_materials || []);
     setDirectLaborCost(batch.direct_labor ? String(batch.direct_labor) : '');
@@ -321,13 +390,30 @@ export default function SmartProductionView({ firm, onClose }) {
         </div>
 
         {feedback && (
-          <div style={{ padding: '10px', marginBottom: '12px', borderRadius: '8px', backgroundColor: '#f0fdf4', color: '#166534', fontWeight: 'bold', fontSize: '11px', border: '1px solid #bbf7d0' }}>
+          <div style={{ padding: '10px', marginBottom: '12px', borderRadius: '8px', backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#f0fdf4', color: feedback.type === 'error' ? '#991b1b' : '#166534', fontWeight: 'bold', fontSize: '11px', border: `1px solid ${feedback.type === 'error' ? '#fecaca' : '#bbf7d0'}` }}>
             {feedback.message}
           </div>
         )}
 
         <form onSubmit={handleSaveProduction}>
           
+          {/* PRODUCTION STAGE SELECTOR */}
+          <div style={{ marginBottom: '12px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#0f172a' }}>
+              🏭 Production Stage (उत्पादन चरण) *
+            </label>
+            <select 
+              value={productionStage} 
+              onChange={e => setProductionStage(e.target.value)} 
+              style={{ ...inputStyle, fontWeight: '700', backgroundColor: '#ffffff' }}
+            >
+              <option value="STAGE_1_PATHAI">Stage 1: Pathai (मिट्टी ➔ कच्ची ईंट निर्माण)</option>
+              <option value="STAGE_2_PAKAI">Stage 2: Bharai & Pakai (कच्ची ईंट + कोयला ➔ भट्टी पकाई)</option>
+              <option value="STAGE_3_NIKASI">Stage 3: Nikasi & Grading (पकाई ➔ पक्की ईंट 1-No / 2-No)</option>
+              <option value="STAGE_GENERAL">General / Single-Stage Manufacturing</option>
+            </select>
+          </div>
+
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
@@ -407,13 +493,36 @@ export default function SmartProductionView({ firm, onClose }) {
             )}
           </div>
 
-          {/* STEP 2: Direct Labor & Overheads (Optional) */}
+          {/* STEP 2: Direct Labor & Overheads with AUTO-FETCH BUTTON */}
           <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', marginBottom: '12px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534', marginBottom: '2px' }}>
-              👷 Step 2: Direct Labor & Overheads (Optional)
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>
+                👷 Step 2: Direct Labor & Overheads (Auto-Fetch by Dates)
+              </div>
             </div>
-            <div style={{ fontSize: '10px', color: '#15803d', marginBottom: '8px' }}>
-              *(खर्चे अलग से जर्नल/वाउचर में दर्ज होने पर इसे 0 छोड़ सकते हैं)*
+
+            {/* Date-Range Auto-Fetch Helper */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', alignItems: 'center', backgroundColor: '#ffffff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+              <input 
+                type="date" 
+                value={labourStartDate} 
+                onChange={e => setLabourStartDate(e.target.value)} 
+                style={{ ...inputStyle, padding: '4px 6px', fontSize: '10px', flex: 1 }} 
+              />
+              <span style={{ fontSize: '10px', color: '#64748b' }}>to</span>
+              <input 
+                type="date" 
+                value={labourEndDate} 
+                onChange={e => setLabourEndDate(e.target.value)} 
+                style={{ ...inputStyle, padding: '4px 6px', fontSize: '10px', flex: 1 }} 
+              />
+              <button 
+                type="button" 
+                onClick={handleAutoFetchLabour}
+                style={{ padding: '6px 10px', backgroundColor: '#166534', color: '#ffffff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                ⚡ Fetch Labour
+              </button>
             </div>
 
             <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -458,7 +567,7 @@ export default function SmartProductionView({ firm, onClose }) {
                 label="Output Item (From Inventory) *"
                 value={outputItem}
                 onChange={val => setOutputItem(val)}
-                placeholder="-- Select Output Item --"
+                placeholder="-- Select Output Item (e.g. Int 1 Number) --"
               />
               <div>
                 <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#1e40af' }}>Produced Qty *</label>
@@ -475,7 +584,7 @@ export default function SmartProductionView({ firm, onClose }) {
 
             {Number(producedQty) > 0 && (
               <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#1e40af', marginTop: '6px' }}>
-                Auto Valued Rate: <strong>₹{unitValuation} / Unit</strong>
+                Auto Valued Rate: <strong>₹{unitValuation} / Unit</strong> (₹{(unitValuation * 1000).toFixed(0)} / 1000 Pcs)
               </div>
             )}
           </div>
@@ -525,7 +634,7 @@ export default function SmartProductionView({ firm, onClose }) {
               <div key={batch.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
                 <div>
                   <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#0f172a' }}>
-                    {batch.date} | Location: {batch.location}
+                    {batch.date} | Location: {batch.location} {batch.stage ? `[${batch.stage}]` : ''}
                   </div>
                   <div style={{ color: '#64748b' }}>
                     Produced Qty: {batch.produced_qty} Units (Valued @ ₹{batch.unit_valuation}/unit) | <strong style={{ color: '#166534' }}>Cost: ₹{Number(batch.total_cost || 0).toFixed(2)}</strong>
