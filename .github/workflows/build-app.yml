@@ -16,15 +16,7 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-
-      - name: Install Frontend Dependencies
-        working-directory: frontend
-        run: npm install
-
-      - name: Build Web Application
-        working-directory: frontend
-        run: npm run build
+          node-version: 20
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -32,36 +24,28 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Gradle Environment
-        uses: gradle/actions/setup-gradle@v3
-
-      # -------------------------------------------------------------
-      # ONLY SYNC CAPACITOR ASSETS
-      # -------------------------------------------------------------
-      - name: Sync Capacitor Android
-        working-directory: frontend
-        run: npx cap sync android
-
-      # -------------------------------------------------------------
-      # LOCATE REAL ANDROID DIR & ENSURE KEYSTORE
-      # -------------------------------------------------------------
-      - name: Prepare Keystore and Target Path
-        id: setup-target
+      - name: Install Frontend Dependencies
         run: |
-          if [ -d "frontend/android/app" ]; then
-            TARGET="frontend/android"
-          elif [ -d "android/app" ]; then
-            TARGET="android"
-          else
-            TARGET=$(find . -name "build.gradle" -not -path "*/node_modules/*" | grep "/app/" | head -n 1 | sed 's#/app/build.gradle##')
-          fi
-          echo "Target directory is: $TARGET"
-          echo "target_dir=$TARGET" >> $GITHUB_OUTPUT
+          cd frontend
+          npm install
 
-          mkdir -p "$TARGET/app"
-          cd "$TARGET/app"
+      - name: Build Web Application
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Sync Capacitor Android Platform
+        run: |
+          cd frontend
+          npx cap sync android
+
+      # -------------------------------------------------------------
+      # PERMANENT STATIC KEYSTORE WITH FIXED EPOCH (PREVENTS RE-SIGN CONFLICT)
+      # -------------------------------------------------------------
+      - name: Setup Deterministic Keystore
+        run: |
+          cd frontend/android/app
           if [ ! -f "permanent-release.keystore" ]; then
-            echo "Generating static release keystore..."
             keytool -genkeypair -v \
               -keystore permanent-release.keystore \
               -alias accountbookkey \
@@ -73,34 +57,17 @@ jobs:
           fi
 
       # -------------------------------------------------------------
-      # BUILD SIGNED RELEASE APK (NATIVE GRADLE DIRECT EXECUTION)
+      # NATIVE ANDROID WRAPPER ASSEMBLY (ZERO EXTERNAL GRADLE CLI OVERHEAD)
       # -------------------------------------------------------------
-      - name: Assemble Release APK
+      - name: Build Release APK via Gradlew
         run: |
-          TARGET="${{ steps.setup-target.outputs.target_dir }}"
-          cd "$TARGET"
-          echo "Running build inside: $(pwd)"
-
-          # Generate gradle wrapper if missing
-          if [ ! -f "gradlew" ]; then
-            echo "Generating wrapper via gradle CLI..."
-            gradle wrapper || true
-          fi
-          chmod +x ./gradlew || true
-
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleRelease \
-              -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
-              -Pandroid.injected.signing.store.password=AccountBookPass2026 \
-              -Pandroid.injected.signing.key.alias=accountbookkey \
-              -Pandroid.injected.signing.key.password=AccountBookPass2026
-          else
-            gradle assembleRelease \
-              -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
-              -Pandroid.injected.signing.store.password=AccountBookPass2026 \
-              -Pandroid.injected.signing.key.alias=accountbookkey \
-              -Pandroid.injected.signing.key.password=AccountBookPass2026
-          fi
+          cd frontend/android
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/permanent-release.keystore \
+            -Pandroid.injected.signing.store.password=AccountBookPass2026 \
+            -Pandroid.injected.signing.key.alias=accountbookkey \
+            -Pandroid.injected.signing.key.password=AccountBookPass2026
 
       # -------------------------------------------------------------
       # UPLOAD ARTIFACT V4
@@ -109,6 +76,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Android-APK-App
-          path: |
-            **/build/outputs/apk/release/*.apk
+          path: frontend/android/app/build/outputs/apk/release/*.apk
           retention-days: 7
