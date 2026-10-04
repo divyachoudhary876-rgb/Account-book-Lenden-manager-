@@ -14,8 +14,8 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
   const activeFY = getCurrentActiveFY();
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
-  // Toggle Tab: Stage-Wise Daily Batch vs Full Round Cost Audit
-  const [activeTab, setActiveTab] = useState('STAGE_PROD');
+  // Toggle Tab
+  const [activeTab, setActiveTab] = useState('STAGE_PROD'); // 'STAGE_PROD' | 'ROUND_AUDIT'
 
   const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
   const [useForLocation, setUseForLocation] = useState('');
@@ -61,6 +61,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     };
   }, [firm, activeFirmId]);
 
+  // AUTO-FETCH LABOUR ACCORDING TO STAGE & DATE RANGE
   const handleAutoFetchLabour = () => {
     try {
       const payrollEntries = loadFirmData('app_payroll_entries', firm, []);
@@ -118,7 +119,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
   const handleAddMaterial = () => {
     if (!selectedMaterial || !materialQty || Number(materialQty) <= 0) {
-      return alert('Kripya material chunein aur maatra (Qty) darj karein.');
+      return alert('Kripya material chunein aur valid quantity darj karein.');
     }
     const itemObj = inventoryItems.find(i => String(i.id) === String(selectedMaterial));
     if (!itemObj) return alert('Selected inventory item not found.');
@@ -205,6 +206,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       setBatchesList(updatedBatches);
       saveFirmData('production_batches', firm, updatedBatches);
 
+      // Inventory Quantities Commit
       const finalInventory = workingInventory.map(inv => {
         const invId = String(inv.id);
         const consumedMatch = consumedMaterials.find(m => String(m.itemId) === invId);
@@ -236,6 +238,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       setInventoryItems(finalInventory);
       saveFirmData('inventory_items', firm, finalInventory);
 
+      // Double-Entry Posting
       const accounts = getFirmMasterAccounts(activeFirmId);
       const finishedInventoryLedger = `${finishedName} Stock Account`;
       const wipLedger = 'Manufacturing / Work-in-Progress (WIP)';
@@ -372,71 +375,67 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
   };
 
   return (
-    <div style={{ padding: '10px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
+    <div style={{ padding: '8px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
       
-      {/* Top Toggle Switch Bar */}
-      <div style={{ backgroundColor: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {onClose && (
-            <button 
-              onClick={onClose} 
-              style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
-            >
-              ← Dashboard
-            </button>
-          )}
-          <span style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
-            🧱 Bhatta Manufacturing & Costing Center
-          </span>
-        </div>
+      {/* Top Touch-Friendly Segmented Control Bar */}
+      <div style={{ backgroundColor: '#ffffff', padding: '6px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', display: 'flex', gap: '6px' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('STAGE_PROD')}
+          style={{
+            flex: 1,
+            padding: '10px 8px',
+            borderRadius: '8px',
+            border: 'none',
+            backgroundColor: activeTab === 'STAGE_PROD' ? '#0f172a' : 'transparent',
+            color: activeTab === 'STAGE_PROD' ? '#ffffff' : '#64748b',
+            fontSize: '11px',
+            fontWeight: '800',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <span>⚙️</span>
+          <span>Daily Stage Production</span>
+        </button>
 
-        {/* Tab Buttons */}
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('STAGE_PROD')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: '1px solid',
-              borderColor: activeTab === 'STAGE_PROD' ? '#0f172a' : '#cbd5e1',
-              backgroundColor: activeTab === 'STAGE_PROD' ? '#0f172a' : '#f8fafc',
-              color: activeTab === 'STAGE_PROD' ? '#ffffff' : '#475569',
-              fontSize: '11px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            ⚙️ Daily Stage Production
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('ROUND_AUDIT')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: '1px solid',
-              borderColor: activeTab === 'ROUND_AUDIT' ? '#0284c7' : '#cbd5e1',
-              backgroundColor: activeTab === 'ROUND_AUDIT' ? '#0284c7' : '#f8fafc',
-              color: activeTab === 'ROUND_AUDIT' ? '#ffffff' : '#475569',
-              fontSize: '11px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            🎯 Round Audit & Real Cost
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('ROUND_AUDIT')}
+          style={{
+            flex: 1,
+            padding: '10px 8px',
+            borderRadius: '8px',
+            border: 'none',
+            backgroundColor: activeTab === 'ROUND_AUDIT' ? '#0284c7' : 'transparent',
+            color: activeTab === 'ROUND_AUDIT' ? '#ffffff' : '#64748b',
+            fontSize: '11px',
+            fontWeight: '800',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <span>🎯</span>
+          <span>Round Audit & Real Cost</span>
+        </button>
       </div>
 
       {activeTab === 'ROUND_AUDIT' ? (
         <BhattaCostAuditView firm={firm} onClose={onClose} />
       ) : (
-        <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', marginBottom: '16px' }}>
+        <div style={{ backgroundColor: '#fff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
-              {editingBatchId ? '✏️ Edit Production Batch' : `⚙️ Smart Production & Auto-Valuation (${activeFY})`}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h2 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
+              {editingBatchId ? '✏️️ Edit Production Batch' : `⚙️ Smart Production & Auto-Valuation (${activeFY})`}
             </h2>
           </div>
 
@@ -448,7 +447,8 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
           <form onSubmit={handleSaveProduction}>
             
-            <div style={{ marginBottom: '12px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+            {/* PRODUCTION STAGE SELECTOR */}
+            <div style={{ marginBottom: '10px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#0f172a' }}>
                 🏭 Production Stage (उत्पादन चरण) *
               </label>
@@ -464,8 +464,8 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               </select>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <div style={{ flex: 1 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+              <div>
                 <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
                   Production Date *
                 </label>
@@ -477,7 +477,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                   required 
                 />
               </div>
-              <div style={{ flex: 1 }}>
+              <div>
                 <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
                   Use For / Location *
                 </label>
@@ -492,12 +492,13 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               </div>
             </div>
 
-            <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
-              <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '8px' }}>
+            {/* STEP 1: Consumed Raw Materials */}
+            <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '10px', borderRadius: '10px', marginBottom: '10px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '6px' }}>
                 🔥 Step 1: Consumed Raw Materials & Fuels (From Inventory)
               </div>
               
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <SearchableStockDropdown 
                   firm={firm}
                   label=""
@@ -506,7 +507,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                   placeholder="-- Select Inventory --"
                 />
 
-                <div style={{ display: 'flex', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+                <div style={{ display: 'flex', gap: '6px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <input 
                       type="number" 
@@ -520,7 +521,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                   <button 
                     type="button" 
                     onClick={handleAddMaterial} 
-                    style={{ padding: '9px 16px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                    style={{ padding: '8px 14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                   >
                     + Add Item
                   </button>
@@ -530,7 +531,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               {consumedMaterials.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
                   {consumedMaterials.map(mat => (
-                    <div key={mat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #fef3c7', fontSize: '11px' }}>
+                    <div key={mat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '5px 8px', borderRadius: '6px', border: '1px solid #fef3c7', fontSize: '11px' }}>
                       <span><strong>{mat.name}</strong> - {mat.qty} {mat.unit}</span>
                       <span>
                         Est: ₹{mat.estimatedCost.toFixed(2)}
@@ -542,39 +543,39 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               )}
             </div>
 
-            <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534' }}>
-                  👷 Step 2: Direct Labor & Overheads (Auto-Fetch by Dates)
-                </div>
+            {/* STEP 2: Direct Labor & Overheads with Responsive Auto-Fetch Layout */}
+            <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '10px', marginBottom: '10px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534', marginBottom: '6px' }}>
+                👷 Step 2: Direct Labor & Overheads (Auto-Fetch by Dates)
               </div>
 
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', alignItems: 'center', backgroundColor: '#ffffff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                <input 
-                  type="date" 
-                  value={labourStartDate} 
-                  onChange={e => setLabourStartDate(e.target.value)} 
-                  style={{ ...inputStyle, padding: '4px 6px', fontSize: '10px', flex: 1 }} 
-                />
-                <span style={{ fontSize: '10px', color: '#64748b' }}>to</span>
-                <input 
-                  type="date" 
-                  value={labourEndDate} 
-                  onChange={e => setLabourEndDate(e.target.value)} 
-                  style={{ ...inputStyle, padding: '4px 6px', fontSize: '10px', flex: 1 }} 
-                />
+              <div style={{ backgroundColor: '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '6px' }}>
+                  <input 
+                    type="date" 
+                    value={labourStartDate} 
+                    onChange={e => setLabourStartDate(e.target.value)} 
+                    style={{ ...inputStyle, padding: '6px' }} 
+                  />
+                  <input 
+                    type="date" 
+                    value={labourEndDate} 
+                    onChange={e => setLabourEndDate(e.target.value)} 
+                    style={{ ...inputStyle, padding: '6px' }} 
+                  />
+                </div>
                 <button 
                   type="button" 
                   onClick={handleAutoFetchLabour}
-                  style={{ padding: '6px 10px', backgroundColor: '#166534', color: '#ffffff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  style={{ width: '100%', padding: '8px', backgroundColor: '#166534', color: '#ffffff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
-                  ⚡ Fetch Labour
+                  ⚡ Fetch Accrued Labour Wages
                 </button>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Direct Labor Cost (₹)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '6px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px', color: '#166534' }}>Direct Labor (₹)</label>
                   <input 
                     type="number" 
                     step="0.01" 
@@ -584,8 +585,8 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                     style={inputStyle} 
                   />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>Machinery & Overheads (₹)</label>
+                <div>
+                  <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px', color: '#166534' }}>Overheads / Diesel (₹)</label>
                   <input 
                     type="number" 
                     step="0.01" 
@@ -598,16 +599,17 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               </div>
 
               <div style={{ textAlign: 'right', fontSize: '11px', fontWeight: '800', color: '#15803d' }}>
-                Total Production Cost: ₹{totalProductionCost.toFixed(2)}
+                Total Cost: ₹{totalProductionCost.toFixed(2)}
               </div>
             </div>
 
-            <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '10px', marginBottom: '14px' }}>
-              <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '8px' }}>
+            {/* STEP 3: Output Finished Product & Auto Valuation */}
+            <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px', borderRadius: '10px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '6px' }}>
                 📦 Step 3: Output Finished Product & Auto Valuation
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <SearchableStockDropdown 
                   firm={firm}
                   label="Output Item (From Inventory) *"
@@ -616,7 +618,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                   placeholder="-- Select Output Item (e.g. Int 1 Number) --"
                 />
                 <div>
-                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', color: '#1e40af' }}>Produced Qty *</label>
+                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '3px', color: '#1e40af' }}>Produced Qty *</label>
                   <input 
                     type="number" 
                     step="0.01" 
@@ -630,7 +632,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
               {Number(producedQty) > 0 && (
                 <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#1e40af', marginTop: '6px' }}>
-                  Auto Valued Rate: <strong>₹{unitValuation} / Unit</strong> (₹{(unitValuation * 1000).toFixed(0)} / 1000 Pcs)
+                  Valued Rate: <strong>₹{unitValuation} / Unit</strong> (₹{(unitValuation * 1000).toFixed(0)} / 1000 Pcs)
                 </div>
               )}
             </div>
@@ -663,30 +665,31 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
           </form>
 
-          <div style={{ marginTop: '16px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
+          {/* Batches History List */}
+          <div style={{ marginTop: '14px' }}>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>
               Production Batches Register ({activeFY}) - ({batchesList.length})
             </h3>
 
             {batchesList.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '11px' }}>
+              <div style={{ textAlign: 'center', padding: '16px', color: '#94a3b8', fontSize: '11px' }}>
                 Koi production record darj nahi hai.
               </div>
             ) : (
-              <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ maxHeight: '350px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {batchesList.map(batch => (
-                  <div key={batch.id} style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
+                  <div key={batch.id} style={{ padding: '8px 10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box' }}>
                     <div>
                       <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#0f172a' }}>
                         {batch.date} | Location: {batch.location} {batch.stage ? `[${batch.stage}]` : ''}
                       </div>
                       <div style={{ color: '#64748b' }}>
-                        Produced Qty: {batch.produced_qty} Units (Valued @ ₹{batch.unit_valuation}/unit) | <strong style={{ color: '#166534' }}>Cost: ₹{Number(batch.total_cost || 0).toFixed(2)}</strong>
+                        Qty: {batch.produced_qty} Units | <strong style={{ color: '#166534' }}>Cost: ₹{Number(batch.total_cost || 0).toFixed(2)}</strong>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => handleEditBatch(batch)} style={{ padding: '5px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Edit</button>
-                      <button onClick={() => handleDeleteBatch(batch.id)} style={{ padding: '5px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Delete</button>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button onClick={() => handleEditBatch(batch)} style={{ padding: '4px 6px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', fontWeight: '700' }}>Edit</button>
+                      <button onClick={() => handleDeleteBatch(batch.id)} style={{ padding: '4px 6px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', fontWeight: '700' }}>Delete</button>
                     </div>
                   </div>
                 ))}
