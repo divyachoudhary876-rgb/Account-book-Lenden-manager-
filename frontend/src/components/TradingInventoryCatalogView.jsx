@@ -1,170 +1,217 @@
 // frontend/src/components/TradingInventoryCatalogView.jsx
 
 import React, { useState, useEffect } from 'react';
-import { StorageService } from '../utils/storageSync';
+import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine.js';
+import { STANDARD_SUGGESTED_ITEMS } from '../utils/inventoryItemEngine.js';
 
-export default function TradingInventoryCatalogView({ firm, selectedFY }) {
-  const firmId = firm?.id || 'FIRM-001';
-  const storageKey = `trading_catalog_${firmId}_${selectedFY}`;
-
+export default function TradingInventoryCatalogView({ firm, onClose }) {
   const [items, setItems] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  
   const [itemName, setItemName] = useState('');
-  const [category, setCategory] = useState('General');
   const [unit, setUnit] = useState('Pcs');
-  const [purchasePrice, setPurchasePrice] = useState('');
-  const [sellingPrice, setSellingPrice] = useState('');
+  const [rate, setRate] = useState('');
   const [openingStock, setOpeningStock] = useState('');
+  const [hsn, setHsn] = useState('69010010');
+  
+  const [feedback, setFeedback] = useState(null);
+
+  const loadItems = () => {
+    if (!firm) return;
+    const list = loadFirmData('inventory_items', firm, []) || [];
+    setItems(Array.isArray(list) ? list : []);
+  };
 
   useEffect(() => {
-    try {
-      const saved = StorageService.getItem ? StorageService.getItem(storageKey) : JSON.parse(localStorage.getItem(storageKey) || '[]');
-      if (Array.isArray(saved)) setItems(saved);
-    } catch (e) {
-      console.error("Error loading trading catalog:", e);
-    }
-  }, [storageKey]);
+    loadItems();
+    window.addEventListener('app_storage_updated', loadItems);
+    return () => window.removeEventListener('app_storage_updated', loadItems);
+  }, [firm]);
+
+  const handleApplySuggestion = (sug) => {
+    setItemName(sug.item_name);
+    setUnit(sug.unit);
+    setRate(String(sug.rate));
+    setHsn(sug.hsn);
+  };
 
   const handleSaveItem = (e) => {
     e.preventDefault();
-    if (!itemName || !sellingPrice) {
-      alert("Kripya Item Name aur Selling Price bharein!");
-      return;
-    }
+    if (!itemName.trim()) return alert('Item name darj karein.');
 
     const newItem = {
-      id: 'ITEM-' + Date.now(),
-      itemName: itemName.trim(),
-      category: category.trim(),
-      unit,
-      purchasePrice: Number(purchasePrice) || 0,
-      sellingPrice: Number(sellingPrice) || 0,
-      stockQty: Number(openingStock) || 0,
-      selectedFY
+      id: `ITEM-${Date.now()}`,
+      name: itemName.trim(),
+      item_name: itemName.trim(),
+      unit: unit || 'Pcs',
+      purchase_price: Number(rate) || 0,
+      unit_purchase_price: Number(rate) || 0,
+      rate: Number(rate) || 0,
+      current_stock: Number(openingStock) || 0,
+      stock: Number(openingStock) || 0,
+      qty: Number(openingStock) || 0,
+      opening_stock: Number(openingStock) || 0,
+      hsn_code: hsn,
+      created_at: new Date().toISOString()
     };
 
     const updated = [newItem, ...items];
     setItems(updated);
-    StorageService.setItem(storageKey, updated);
+    saveFirmData('inventory_items', firm, updated);
     window.dispatchEvent(new Event('app_storage_updated'));
 
-    // Reset Form
+    setFeedback({ type: 'success', text: `✓ Item "${newItem.name}" successfully add ho gaya!` });
     setItemName('');
-    setCategory('General');
-    setPurchasePrice('');
-    setSellingPrice('');
+    setRate('');
     setOpeningStock('');
-    alert("✓ Trading Item successfully added to catalog!");
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm("Kya aap is item ko catalog se hatana chahte hain?")) {
-      const updated = items.filter(i => i.id !== id);
-      setItems(updated);
-      StorageService.setItem(storageKey, updated);
-      window.dispatchEvent(new Event('app_storage_updated'));
-    }
-  };
+  const filteredItems = items.filter(i => 
+    (i.name || i.item_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div style={{ padding: '10px', maxWidth: '900px', margin: '0 auto', fontFamily: 'sans-serif' }}>
-      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '20px' }}>
-        <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          📦 Trading Item Catalog & Stock Master ({selectedFY})
+    <div style={{ padding: '10px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      
+      {/* Header */}
+      <div style={{ backgroundColor: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>📦 Inventory & Stock Items Catalog</h2>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Eent, Koyla, Mitti aur raw material stock management</span>
+        </div>
+        {onClose && (
+          <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+            ← Dashboard
+          </button>
+        )}
+      </div>
+
+      {feedback && (
+        <div style={{ padding: '8px 12px', borderRadius: '8px', backgroundColor: '#ecfdf5', color: '#065f46', fontSize: '11px', fontWeight: 'bold', border: '1px solid #a7f3d0', marginBottom: '10px' }}>
+          {feedback.text}
+        </div>
+      )}
+
+      {/* Add New Item Form with Standard Suggestions */}
+      <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '14px' }}>
+        <h3 style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>
+          ⚡ Quick Add Standard Bhatta Items (Click to Auto-Fill):
         </h3>
 
-        <form onSubmit={handleSaveItem} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
-          <div style={{ gridColumn: 'span 2' }}>
-            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Item Name / Product *</label>
-            <input type="text" value={itemName} onChange={e => setItemName(e.target.value)} placeholder="e.g. Cement Bag / Hardware Item" style={inputStyle} required />
-          </div>
-
-          <div>
-            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Category / Group</label>
-            <input type="text" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Hardware / Grocery" style={inputStyle} />
-          </div>
-
-          <div>
-            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Unit</label>
-            <select value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle}>
-              <option value="Pcs">Pcs (नग)</option>
-              <option value="Kg">Kg (किलोग्राम)</option>
-              <option value="Bags">Bags (कट्टे)</option>
-              <option value="Boxes">Boxes (डब्बे)</option>
-              <option value="Meters">Meters (मीटर)</option>
-            </select>
-          </div>
-
-          <div>
-            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Purchase Price (₹)</label>
-            <input type="number" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} placeholder="0.00" style={inputStyle} />
-          </div>
-
-          <div>
-            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Selling Price (₹) *</label>
-            <input type="number" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} placeholder="0.00" style={inputStyle} required />
-          </div>
-
-          <div>
-            <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Opening Stock Qty</label>
-            <input type="number" value={openingStock} onChange={e => setOpeningStock(e.target.value)} placeholder="0" style={inputStyle} />
-          </div>
-
-          <div style={{ gridColumn: '1 / -1', marginTop: '6px' }}>
-            <button type="submit" style={{ backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}>
-              💾 Save Item to Catalog
+        {/* Suggestion Chips */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+          {STANDARD_SUGGESTED_ITEMS.map((sug, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleApplySuggestion(sug)}
+              style={{
+                backgroundColor: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: '700',
+                color: '#0369a1',
+                cursor: 'pointer'
+              }}
+            >
+              + {sug.item_name}
             </button>
+          ))}
+        </div>
+
+        <form onSubmit={handleSaveItem}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginBottom: '10px' }}>
+            <div>
+              <label style={labelStyle}>Item Name *</label>
+              <input type="text" placeholder="e.g. Int 1 Number" value={itemName} onChange={e => setItemName(e.target.value)} style={inputStyle} required />
+            </div>
+            <div>
+              <label style={labelStyle}>Unit *</label>
+              <select value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle}>
+                <option value="Pcs">Pcs (हज़ार/संख्या)</option>
+                <option value="Trolley">Trolley (ट्रॉली)</option>
+                <option value="MT">MT (टन / Metric Ton)</option>
+                <option value="Litre">Litre (लीटर)</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Rate / Price (₹)</label>
+              <input type="number" step="0.01" placeholder="e.g. 7500" value={rate} onChange={e => setRate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Opening Stock Qty</label>
+              <input type="number" step="1" placeholder="e.g. 50000" value={openingStock} onChange={e => setOpeningStock(e.target.value)} style={inputStyle} />
+            </div>
           </div>
+
+          <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+            ✓ Save Item into Inventory Stock
+          </button>
         </form>
       </div>
 
-      {/* Item Catalog List Table */}
-      <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#334155' }}>Active Stock Catalog ({selectedFY})</h4>
-        {items.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '12px' }}>Koi trading item darj nahi hai.</div>
+      {/* Stock Items List */}
+      <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <h3 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
+            Stock Register ({filteredItems.length})
+          </h3>
+          <input 
+            type="text" 
+            placeholder="Search stock..." 
+            value={searchTerm} 
+            onChange={e => setSearchTerm(e.target.value)} 
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none' }} 
+          />
+        </div>
+
+        {filteredItems.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '11px' }}>
+            Koi stock item darj nahi hai. Upar diye gaye buttons se turant standard items jodein.
+          </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                  <th style={{ padding: '8px' }}>Item Name</th>
-                  <th style={{ padding: '8px' }}>Category</th>
-                  <th style={{ padding: '8px' }}>Purchase Rate</th>
-                  <th style={{ padding: '8px' }}>Selling Rate</th>
-                  <th style={{ padding: '8px' }}>Stock Qty</th>
-                  <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map(item => (
-                  <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.itemName}</td>
-                    <td style={{ padding: '8px', color: '#64748b' }}>{item.category}</td>
-                    <td style={{ padding: '8px' }}>₹{item.purchasePrice}</td>
-                    <td style={{ padding: '8px', fontWeight: 'bold', color: '#166534' }}>₹{item.sellingPrice}</td>
-                    <td style={{ padding: '8px', fontWeight: 'bold', color: '#0369a1' }}>{item.stockQty} {item.unit}</td>
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <button onClick={() => handleDelete(item.id)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {filteredItems.map(item => (
+              <div key={item.id} style={{ padding: '8px 10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                <div>
+                  <strong style={{ color: '#0f172a' }}>{item.name || item.item_name}</strong>
+                  <div style={{ color: '#64748b', fontSize: '10px' }}>Rate: ₹{item.purchase_price || item.rate || 0} / {item.unit || 'Unit'}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontWeight: '800', color: '#059669', fontSize: '12px' }}>
+                    {Number(item.current_stock || item.stock || 0).toLocaleString('en-IN')} {item.unit || 'Pcs'}
+                  </span>
+                  <div style={{ fontSize: '9px', color: '#64748b' }}>Available Stock</div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
+
     </div>
   );
 }
 
+const labelStyle = {
+  display: 'block',
+  fontSize: '10px',
+  fontWeight: 'bold',
+  color: '#475569',
+  marginBottom: '3px',
+  textTransform: 'uppercase'
+};
+
 const inputStyle = {
   width: '100%',
-  padding: '8px',
+  padding: '7px 8px',
   borderRadius: '6px',
   border: '1px solid #cbd5e1',
-  fontSize: '12px',
+  fontSize: '11px',
   boxSizing: 'border-box',
-  marginTop: '4px'
+  backgroundColor: '#ffffff',
+  color: '#0f172a',
+  outline: 'none'
 };
