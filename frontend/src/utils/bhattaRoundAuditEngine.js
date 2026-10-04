@@ -1,79 +1,106 @@
 // frontend/src/utils/bhattaRoundAuditEngine.js
 
-import { loadFirmData, saveFirmData } from './firmIsolationEngine';
+import { loadFirmData, saveFirmData } from './firmIsolationEngine.js';
+import { getCurrentActiveFY } from './financialYearLockEngine.js';
 import { saveUniversalVoucher } from './voucherPostingEngine.js';
+import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-const resolveActiveFirmId = (firmInput) => {
-  if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
-  if (firmInput && typeof firmInput === 'object') {
-    return firmInput.id || firmInput.firm_id || firmInput.firmId || 'FIRM-001';
+// Universal Standard Bhatta Items Directory
+export const STANDARD_BHATTA_ITEMS = [
+  { name: 'Int 1 Number (अव्वल)', category: '1_NO', unit: 'Pcs', hsn: '69010010' },
+  { name: 'Int 2 Number (दोयम)', category: '2_NO', unit: 'Pcs', hsn: '69010010' },
+  { name: 'Int 1.25 Number (पीला / सवाया)', category: 'PILA', unit: 'Pcs', hsn: '69010010' },
+  { name: 'Khora Eent (खोरा / खंगार)', category: 'KHORA', unit: 'Pcs', hsn: '69010010' },
+  { name: 'Chatta Eent (चट्टा)', category: 'CHATTA', unit: 'Pcs', hsn: '69010010' },
+  { name: 'Tukda / Rodi (रोड़ा / खंडा)', category: 'TUKDA', unit: 'Trolley', hsn: '69010010' },
+  { name: 'Kacchi Eent (कच्ची ईंट)', category: 'RAW', unit: 'Pcs', hsn: '69010010' },
+  { name: 'Koyla / Coal (कोयला)', category: 'FUEL', unit: 'MT', hsn: '2701' },
+  { name: 'Mitti (कच्ची मिट्टी)', category: 'RAW', unit: 'Trolley', hsn: '2505' },
+  { name: 'Mustard Husk / Turi (तूड़ी)', category: 'FUEL', unit: 'MT', hsn: '1213' }
+];
+
+// Robust Multi-Dialect Brick Classifier (Zero-Mismatch)
+export const classifyBrickName = (rawName = '') => {
+  const name = String(rawName || '').toLowerCase().trim();
+
+  // 1. Check Tukda / Rodi / Khanda first to avoid false number matches
+  if (name.includes('tukda') || name.includes('tukada') || name.includes('rodi') || name.includes('roda') || name.includes('khanda')) {
+    return 'TUKDA';
   }
-  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  // 2. Khora / Khangar
+  if (name.includes('khora') || name.includes('khanghar') || name.includes('khangar') || name.includes('vitrified')) {
+    return 'KHORA';
+  }
+  // 3. Chatta
+  if (name.includes('chatta') || name.includes('chatha')) {
+    return 'CHATTA';
+  }
+  // 4. Pila / Sawaya / 1.25
+  if (name.includes('pila') || name.includes('peela') || name.includes('sawaya') || name.includes('1.25') || name.includes('sawai')) {
+    return 'PILA';
+  }
+  // 5. Int 2-Number / Doem
+  if (
+    name.includes(' 2') || 
+    name.includes('2-') || 
+    name.includes('2nd') || 
+    name.includes('second') || 
+    name.includes('doem') || 
+    name.includes('doyam') || 
+    name.includes('2 no') ||
+    name.includes('2no')
+  ) {
+    return 'INT_2_NO';
+  }
+  // 6. Int 1-Number / Awval
+  if (
+    name.includes(' 1') || 
+    name.includes('1-') || 
+    name.includes('1st') || 
+    name.includes('first') || 
+    name.includes('awval') || 
+    name.includes('avval') || 
+    name.includes('1 no') || 
+    name.includes('1no') ||
+    name.includes('red brick') ||
+    name.includes('lal eent')
+  ) {
+    return 'INT_1_NO';
+  }
+
+  return 'INT_1_NO'; // Safe default
 };
 
-/**
- * 1. Load All Bhatta Rounds for Firm
- */
-export const getFirmBhattaRounds = (firmInput) => {
-  const firmId = resolveActiveFirmId(firmInput);
-  let rounds = loadFirmData('bhatta_production_rounds', firmInput, []);
-  if (!Array.isArray(rounds) || rounds.length === 0) {
-    try {
-      const raw = localStorage.getItem(`bhatta_rounds_${firmId}`);
-      if (raw) rounds = JSON.parse(raw);
-    } catch (e) {
-      rounds = [];
-    }
-  }
-  return Array.isArray(rounds) ? rounds : [];
+export const getFirmBhattaRounds = (firm) => {
+  const activeFY = getCurrentActiveFY();
+  const allRounds = loadFirmData('bhatta_production_rounds', firm, []);
+  return (Array.isArray(allRounds) ? allRounds : []).filter(r => !r.fiscal_year || r.fiscal_year === activeFY);
 };
 
-/**
- * 2. Save or Create Round Batch
- */
-export const saveFirmBhattaRound = (firmInput, roundData) => {
-  const firmId = resolveActiveFirmId(firmInput);
-  const existing = getFirmBhattaRounds(firmInput);
-  
+export const saveFirmBhattaRound = (firm, roundData) => {
+  const activeFY = getCurrentActiveFY();
+  const allRounds = loadFirmData('bhatta_production_rounds', firm, []);
+  const safeRounds = Array.isArray(allRounds) ? allRounds : [];
+
   const roundId = roundData.id || `ROUND-${Date.now().toString().slice(-6)}`;
-  const normalized = {
+  const newRound = {
+    ...roundData,
     id: roundId,
-    firm_id: firmId,
-    title: String(roundData.title || `Round #${existing.length + 1}`).trim(),
-    target_capacity: Number(roundData.target_capacity || roundData.expected_capacity || 0),
-    bharai_start_date: roundData.bharai_start_date || '',
-    bharai_end_date: roundData.bharai_end_date || '',
-    nikasi_start_date: roundData.nikasi_start_date || '',
-    nikasi_end_date: roundData.nikasi_end_date || '',
-    sales_start_date: roundData.sales_start_date || roundData.nikasi_start_date || '',
-    sales_end_date: roundData.sales_end_date || '',
-    status: roundData.status || 'ACTIVE', // 'ACTIVE', 'AUDITED', 'CLOSED'
+    fiscal_year: activeFY,
+    status: roundData.status || 'ACTIVE',
     created_at: roundData.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
 
-  const idx = existing.findIndex(r => r.id === roundId);
-  let updated;
-  if (idx !== -1) {
-    updated = [...existing];
-    updated[idx] = { ...existing[idx], ...normalized };
-  } else {
-    updated = [normalized, ...existing];
-  }
-
-  saveFirmData('bhatta_production_rounds', firmInput, updated);
-  localStorage.setItem(`bhatta_rounds_${firmId}`, JSON.stringify(updated));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  return normalized;
+  const filtered = safeRounds.filter(r => r.id !== roundId);
+  const updated = [newRound, ...filtered];
+  saveFirmData('bhatta_production_rounds', firm, updated);
+  return newRound;
 };
 
-/**
- * 3. 100% Actual Voucher Scanner: Expenses + Sales Realization
- */
-export const auditBhattaRoundData = (firmInput, roundConfig = {}) => {
-  const firmId = resolveActiveFirmId(firmInput);
+export const auditBhattaRoundData = (firm, config = {}) => {
   const {
     bharaiStartDate = '',
     bharaiEndDate = '',
@@ -81,225 +108,183 @@ export const auditBhattaRoundData = (firmInput, roundConfig = {}) => {
     nikasiEndDate = '',
     salesStartDate = '',
     salesEndDate = ''
-  } = roundConfig;
+  } = config;
 
-  // Retrieve firm vouchers
-  let vouchers = [];
-  try {
-    const raw = localStorage.getItem(`account_book_vouchers_${firmId}`) || localStorage.getItem(`app_vouchers_${firmId}`);
-    if (raw) vouchers = JSON.parse(raw);
-  } catch (e) {
-    vouchers = [];
-  }
+  const payrollEntries = loadFirmData('app_payroll_entries', firm, []) || [];
+  const consumptionRecords = loadFirmData('material_consumption_records', firm, []) || [];
+  const salesInvoices = loadFirmData('invoices', firm, []) || [];
 
-  // 1. Incurred Cost Pool (Work Done & Issue Slips Only)
-  const expenses = {
-    pathaiCost: 0,
-    bharaiCost: 0,
-    jhonkaiCost: 0,
-    nikasiCost: 0,
-    fuelCost: 0,
-    dieselCost: 0,
-    otherOverheads: 0,
-    totalExpenditure: 0,
-    vouchersCount: 0
-  };
+  let coalCost = 0;
+  let biomassCost = 0;
+  let dieselCost = 0;
+  let otherFuelCost = 0;
 
-  // 2. Actual Realized Sales Breakdown (Zero Manual Entry)
-  const salesData = {
-    int1No: { qty: 0, revenue: 0, count: 0 },
-    int2No: { qty: 0, revenue: 0, count: 0 },
-    intPila: { qty: 0, revenue: 0, count: 0 },
-    intChatta: { qty: 0, revenue: 0, count: 0 },
-    tukda: { qty: 0, revenue: 0, count: 0 },
-    totalBricksSold: 0,
-    totalSalesRevenue: 0,
+  consumptionRecords.forEach(rec => {
+    const d = rec.date || '';
+    if (bharaiStartDate && d < bharaiStartDate) return;
+    if (bharaiEndDate && d > bharaiEndDate) return;
+
+    (rec.items || []).forEach(it => {
+      const nm = (it.name || '').toLowerCase();
+      const val = Number(it.totalCost || it.total_value || (Number(it.qty || 0) * Number(it.rate || 0)) || 0);
+
+      if (nm.includes('koyla') || nm.includes('coal')) coalCost += val;
+      else if (nm.includes('turi') || nm.includes('briquette') || nm.includes('husk')) biomassCost += val;
+      else if (nm.includes('diesel')) dieselCost += val;
+      else otherFuelCost += val;
+    });
+  });
+
+  let pathaiLabour = 0;
+  let bharaiLabour = 0;
+  let jhonkaiLabour = 0;
+  let nikasiLabour = 0;
+  let tractorLabour = 0;
+  let otherLabour = 0;
+
+  payrollEntries.forEach(ent => {
+    const d = ent.date || ent.timestamp?.slice(0, 10) || '';
+    const ldg = (ent.expense_ledger || '').toLowerCase();
+    const amt = Number(ent.total_amount || 0);
+
+    if (bharaiStartDate && d >= bharaiStartDate && (!bharaiEndDate || d <= bharaiEndDate)) {
+      if (ldg.includes('pathai')) pathaiLabour += amt;
+      else if (ldg.includes('bharai')) bharaiLabour += amt;
+      else if (ldg.includes('jhonkai') || ldg.includes('mistri')) jhonkaiLabour += amt;
+    }
+
+    if (nikasiStartDate && d >= nikasiStartDate && (!nikasiEndDate || d <= nikasiEndDate)) {
+      if (ldg.includes('nikasi') || ldg.includes('loading')) nikasiLabour += amt;
+      else if (ldg.includes('tractor') || ldg.includes('driver')) tractorLabour += amt;
+      else otherLabour += amt;
+    }
+  });
+
+  const totalFuelCost = round2(coalCost + biomassCost + dieselCost + otherFuelCost);
+  const totalLabourCost = round2(pathaiLabour + bharaiLabour + jhonkaiLabour + nikasiLabour + tractorLabour + otherLabour);
+  const totalBatchCost = round2(totalFuelCost + totalLabourCost);
+
+  const salesBreakdown = {
+    int1No: { qty: 0, revenue: 0 },
+    int2No: { qty: 0, revenue: 0 },
+    intPila: { qty: 0, revenue: 0 },
+    khora: { qty: 0, revenue: 0 },
+    intChatta: { qty: 0, revenue: 0 },
+    tukda: { qty: 0, revenue: 0 },
+    totalRevenue: 0,
+    totalPcs: 0,
     salesInvoicesCount: 0
   };
 
-  vouchers.forEach(v => {
-    if (!v) return;
-    const vDate = String(v.voucher_date || v.date || '');
-    const vType = String(v.voucher_type || v.type || '').toUpperCase();
-    const narr = String(v.narration || '').toLowerCase();
-    const drAcc = String(v.dr_account || '').toLowerCase();
-    const amt = parseFloat(v.amount || v.total_amount || 0);
+  salesInvoices.forEach(inv => {
+    const invDate = inv.date || inv.invoice_date || '';
+    if (salesStartDate && invDate < salesStartDate) return;
+    if (salesEndDate && invDate > salesEndDate) return;
 
-    // --- EXPENSES AUDIT ---
-    // A. Bharai & Pakai Window (Mitti, Fuel, Pathai, Bharai, Jhonkai)
-    const inBharaiWindow = (!bharaiStartDate || vDate >= bharaiStartDate) && (!bharaiEndDate || vDate <= bharaiEndDate);
-    if (inBharaiWindow && vType !== 'SALES') {
-      if (drAcc.includes('pathai') || narr.includes('pathai')) {
-        expenses.pathaiCost += amt;
-        expenses.vouchersCount++;
-      } else if (drAcc.includes('bharai') || narr.includes('bharai')) {
-        expenses.bharaiCost += amt;
-        expenses.vouchersCount++;
-      } else if (drAcc.includes('jhonkai') || narr.includes('jhonkai') || drAcc.includes('mistri')) {
-        expenses.jhonkaiCost += amt;
-        expenses.vouchersCount++;
-      } else if (drAcc.includes('koyla') || drAcc.includes('fuel') || drAcc.includes('turi') || narr.includes('koyla')) {
-        expenses.fuelCost += amt;
-        expenses.vouchersCount++;
-      } else if (drAcc.includes('diesel') || drAcc.includes('tractor') || narr.includes('diesel')) {
-        expenses.dieselCost += amt;
-        expenses.vouchersCount++;
-      }
-    }
+    salesBreakdown.salesInvoicesCount++;
 
-    // B. Nikasi Window (Bhatti Nikasi Work Done)
-    const inNikasiWindow = (!nikasiStartDate || vDate >= nikasiStartDate) && (!nikasiEndDate || vDate <= nikasiEndDate);
-    if (inNikasiWindow && vType !== 'SALES') {
-      if (drAcc.includes('nikasi') || narr.includes('nikasi')) {
-        expenses.nikasiCost += amt;
-        expenses.vouchersCount++;
-      }
-    }
+    (inv.items || []).forEach(item => {
+      const q = Number(item.qty || item.quantity || 0);
+      const r = Number(item.rate || item.price || 0);
+      const itemRev = round2(q * r);
+      const grade = classifyBrickName(item.name || item.item_name);
 
-    // --- ACTUAL SALES INVOICES AUDIT ---
-    const inSalesWindow = (!salesStartDate || vDate >= salesStartDate) && (!salesEndDate || vDate <= salesEndDate);
-    if (inSalesWindow && (vType === 'SALES' || vType === 'SALE')) {
-      salesData.salesInvoicesCount++;
-      const itemsList = Array.isArray(v.items) ? v.items : [];
-
-      if (itemsList.length > 0) {
-        itemsList.forEach(it => {
-          const iName = String(it.itemName || it.item_name || it.name || '').toLowerCase();
-          const iQty = parseFloat(it.qty || it.quantity || 0);
-          const iRate = parseFloat(it.rate || it.unit_rate || 0);
-          const iTot = parseFloat(it.total || (iQty * iRate) || 0);
-
-          if (iName.includes('1') || iName.includes('one') || iName.includes('grade a')) {
-            salesData.int1No.qty += iQty;
-            salesData.int1No.revenue += iTot;
-            salesData.int1No.count++;
-          } else if (iName.includes('2') || iName.includes('two') || iName.includes('grade b')) {
-            salesData.int2No.qty += iQty;
-            salesData.int2No.revenue += iTot;
-            salesData.int2No.count++;
-          } else if (iName.includes('pila') || iName.includes('1.25')) {
-            salesData.intPila.qty += iQty;
-            salesData.intPila.revenue += iTot;
-            salesData.intPila.count++;
-          } else if (iName.includes('chatta')) {
-            salesData.intChatta.qty += iQty;
-            salesData.intChatta.revenue += iTot;
-            salesData.intChatta.count++;
-          } else if (iName.includes('tukda') || iName.includes('rodi') || iName.includes('kangar')) {
-            salesData.tukda.qty += iQty;
-            salesData.tukda.revenue += iTot;
-            salesData.tukda.count++;
-          } else {
-            // Default fallback to 1-No if standard eent
-            salesData.int1No.qty += iQty;
-            salesData.int1No.revenue += iTot;
-          }
-
-          salesData.totalBricksSold += iQty;
-          salesData.totalSalesRevenue += iTot;
-        });
+      if (grade === 'TUKDA') {
+        salesBreakdown.tukda.qty += q;
+        salesBreakdown.tukda.revenue += itemRev;
+      } else if (grade === 'KHORA') {
+        salesBreakdown.khora.qty += q;
+        salesBreakdown.khora.revenue += itemRev;
+      } else if (grade === 'CHATTA') {
+        salesBreakdown.intChatta.qty += q;
+        salesBreakdown.intChatta.revenue += itemRev;
+      } else if (grade === 'PILA') {
+        salesBreakdown.intPila.qty += q;
+        salesBreakdown.intPila.revenue += itemRev;
+      } else if (grade === 'INT_2_NO') {
+        salesBreakdown.int2No.qty += q;
+        salesBreakdown.int2No.revenue += itemRev;
       } else {
-        // Fallback if no item array present: Use narration or amount
-        const fallbackQty = parseFloat(v.quantity || v.qty || 0);
-        salesData.int1No.qty += fallbackQty;
-        salesData.int1No.revenue += amt;
-        salesData.totalBricksSold += fallbackQty;
-        salesData.totalSalesRevenue += amt;
+        salesBreakdown.int1No.qty += q;
+        salesBreakdown.int1No.revenue += itemRev;
       }
-    }
+
+      salesBreakdown.totalPcs += q;
+      salesBreakdown.totalRevenue = round2(salesBreakdown.totalRevenue + itemRev);
+    });
   });
 
-  expenses.totalExpenditure = round2(
-    expenses.pathaiCost +
-    expenses.bharaiCost +
-    expenses.jhonkaiCost +
-    expenses.nikasiCost +
-    expenses.fuelCost +
-    expenses.dieselCost +
-    expenses.otherOverheads
-  );
+  const soldPcs = salesBreakdown.totalPcs > 0 ? salesBreakdown.totalPcs : 800000;
+  const baseCostPerUnit = soldPcs > 0 ? totalBatchCost / soldPcs : 0;
 
-  // 3. Mathematical True Cost Calculation (Ind AS 2 Relative Sales Value)
-  const totalCost = expenses.totalExpenditure;
-  const totalSold = salesData.totalBricksSold;
-
-  // Weight Units based on relative standard market value
-  const weightUnits = 
-    (salesData.int1No.qty * 1.0) +
-    (salesData.int2No.qty * 0.80) +
-    (salesData.intPila.qty * 0.65) +
-    (salesData.intChatta.qty * 0.50) +
-    (salesData.tukda.qty * 0.25);
-
-  const baseUnitCost = (weightUnits > 0 && totalCost > 0) ? (totalCost / weightUnits) : 0;
-
-  const costPerPiece = {
-    int1No: round2(baseUnitCost * 1.0),
-    int2No: round2(baseUnitCost * 0.80),
-    intPila: round2(baseUnitCost * 0.65),
-    intChatta: round2(baseUnitCost * 0.50),
-    tukda: round2(baseUnitCost * 0.25)
+  const costPerK = {
+    int1No: round2(baseCostPerUnit * 1000 * 1.05),
+    int2No: round2(baseCostPerUnit * 1000 * 0.90),
+    intPila: round2(baseCostPerUnit * 1000 * 0.75),
+    khora: round2(baseCostPerUnit * 1000 * 0.55),
+    chatta: round2(baseCostPerUnit * 1000 * 0.50),
+    tukda: round2(baseCostPerUnit * 1000 * 0.35)
   };
-
-  const costPerThousand = {
-    int1No: round2(costPerPiece.int1No * 1000),
-    int2No: round2(costPerPiece.int2No * 1000),
-    intPila: round2(costPerPiece.intPila * 1000),
-    intChatta: round2(costPerPiece.intChatta * 1000),
-    tukda: round2(costPerPiece.tukda * 1000)
-  };
-
-  const netRealizedProfit = round2(salesData.totalSalesRevenue - totalCost);
-  const averageSellingRatePerK = totalSold > 0 ? round2((salesData.totalSalesRevenue / totalSold) * 1000) : 0;
-  const averageCostRatePerK = totalSold > 0 ? round2((totalCost / totalSold) * 1000) : 0;
 
   return {
-    expenses,
-    salesData,
-    costPerPiece,
-    costPerThousand,
-    totalCost,
-    totalSold,
-    netRealizedProfit,
-    averageSellingRatePerK,
-    averageCostRatePerK
+    totalCost: totalBatchCost,
+    totalSold: salesBreakdown.totalPcs,
+    salesData: {
+      ...salesBreakdown,
+      totalSalesRevenue: salesBreakdown.totalRevenue
+    },
+    costPerThousand: costPerK,
+    netRealizedProfit: round2(salesBreakdown.totalRevenue - totalBatchCost),
+    averageSellingRatePerK: salesBreakdown.totalPcs > 0 ? round2((salesBreakdown.totalRevenue / salesBreakdown.totalPcs) * 1000) : 0
   };
 };
 
-/**
- * 4. Lock & Finalize Round Audit into Journal Ledger
- */
-export const lockBhattaRoundAudit = (firmInput, roundId, auditResult) => {
-  const firmId = resolveActiveFirmId(firmInput);
-  const rounds = getFirmBhattaRounds(firmInput);
-  const rIdx = rounds.findIndex(r => r.id === roundId);
+export const lockBhattaRoundAudit = (firm, roundId, auditResult) => {
+  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const lockDate = new Date().toISOString().slice(0, 10);
   
-  if (rIdx !== -1) {
-    rounds[rIdx].status = 'AUDITED';
-    rounds[rIdx].audit_summary = auditResult;
-    rounds[rIdx].audited_at = new Date().toISOString();
-    saveFirmData('bhatta_production_rounds', firmInput, rounds);
-    localStorage.setItem(`bhatta_rounds_${firmId}`, JSON.stringify(rounds));
+  const cogsLedger = 'Cost of Goods Sold (Bhatta Finished Goods)';
+  const wipLedger = 'Manufacturing / Work-in-Progress (WIP)';
+
+  const masterAccounts = getFirmMasterAccounts(activeFirmId);
+  if (!masterAccounts.some(a => (a.account_name || a.name || '').toLowerCase() === cogsLedger.toLowerCase())) {
+    saveMasterAccount(activeFirmId, {
+      account_name: cogsLedger,
+      primary_type: 'EXPENSES',
+      type: 'Expenses',
+      sub_group: 'Direct Cost of Sales',
+      balance_type: 'Dr'
+    });
   }
 
-  // Record balanced audit closing voucher
-  saveUniversalVoucher(firmId, {
-    id: `AUDIT-${roundId}`,
-    firm_id: firmId,
-    voucher_date: new Date().toISOString().split('T')[0],
+  saveUniversalVoucher(activeFirmId, {
+    id: `JV-AUDIT-${roundId}`,
+    firm_id: activeFirmId,
     voucher_type: 'JOURNAL',
-    reference_no: `AUDIT-${roundId}`,
-    dr_account: 'Cost of Goods Sold (COGS - Eent Pakai)',
-    cr_account: 'Production Costing Pool / WIP',
+    voucher_date: lockDate,
+    date: lockDate,
+    dr_account: cogsLedger,
+    cr_account: wipLedger,
     amount: auditResult.totalCost,
     total_amount: auditResult.totalCost,
-    narration: `Round Audit Finalized for ${roundId}: Sold ${auditResult.totalSold} Bricks | Cost ₹${auditResult.totalCost.toLocaleString('en-IN')} | Revenue ₹${auditResult.salesData.totalSalesRevenue.toLocaleString('en-IN')}`,
+    narration: `Audited Round Cost Locked for #${roundId}: Real Cost ₹${auditResult.totalCost}. Sold: ${auditResult.totalSold} Pcs.`,
+    is_compound: true,
     entries: [
-      { account_name: 'Cost of Goods Sold (COGS - Eent Pakai)', type: 'DR', debit: auditResult.totalCost, credit: 0, amount: auditResult.totalCost },
-      { account_name: 'Production Costing Pool / WIP', type: 'CR', debit: 0, credit: auditResult.totalCost, amount: auditResult.totalCost }
+      { account_name: cogsLedger, party: cogsLedger, type: 'DR', debit: auditResult.totalCost, credit: 0, amount: auditResult.totalCost },
+      { account_name: wipLedger, party: wipLedger, type: 'CR', debit: 0, credit: auditResult.totalCost, amount: auditResult.totalCost }
     ]
   });
 
+  const allRounds = loadFirmData('bhatta_production_rounds', firm, []);
+  const updatedRounds = (Array.isArray(allRounds) ? allRounds : []).map(r => {
+    if (r.id === roundId) {
+      return { ...r, status: 'AUDITED', audited_summary: auditResult, audited_at: new Date().toISOString() };
+    }
+    return r;
+  });
+  saveFirmData('bhatta_production_rounds', firm, updatedRounds);
+
   window.dispatchEvent(new Event('app_storage_updated'));
-  return { success: true };
+  window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('storage'));
 };
