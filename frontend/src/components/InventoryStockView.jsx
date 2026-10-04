@@ -17,6 +17,7 @@ const resolveActiveFirmId = (firmInput) => {
 
 /**
  * Self-Contained Helper: Auto-creates Stock Asset Ledger in Master Accounts
+ * Aligns perfectly with 'Raw Material Inventory (कच्चा माल)' & 'ASSETS'
  */
 const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) => {
   if (!firmId || !rawItemName) return null;
@@ -27,30 +28,42 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
   try {
     const masterAccounts = getFirmMasterAccounts(firmId) || [];
     
-    const existingIndex = masterAccounts.findIndex(acc => 
-      (acc.account_name || acc.name || '').trim().toLowerCase() === targetAccountName.toLowerCase() ||
-      (existingAccountName && (acc.account_name || acc.name || '').trim().toLowerCase() === existingAccountName.toLowerCase())
-    );
+    const existingIndex = masterAccounts.findIndex(acc => {
+      const name = (acc.account_name || acc.name || '').trim().toLowerCase();
+      return name === targetAccountName.toLowerCase() ||
+        (existingAccountName && name === existingAccountName.toLowerCase());
+    });
 
     if (existingIndex !== -1) {
       const matchedAcc = masterAccounts[existingIndex];
+      let needsUpdate = false;
+
       if ((matchedAcc.account_name || matchedAcc.name) !== targetAccountName) {
         matchedAcc.account_name = targetAccountName;
         matchedAcc.name = targetAccountName;
+        needsUpdate = true;
+      }
+      if (matchedAcc.sub_group !== 'Raw Material Inventory (कच्चा माल)') {
+        matchedAcc.sub_group = 'Raw Material Inventory (कच्चा माल)';
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
         matchedAcc.updated_at = new Date().toISOString();
         saveMasterAccount(firmId, matchedAcc);
       }
       return matchedAcc;
     }
 
+    // Create New Master Account Entry matching Accounting Standard Chart of Accounts
     const newAccountObj = {
-      id: `ACC-STK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: `ACC-STK-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
       firm_id: firmId,
       account_name: targetAccountName,
       name: targetAccountName,
       primary_type: 'ASSETS',
       type: 'Assets',
-      sub_group: 'Inventory / Current Assets',
+      sub_group: 'Raw Material Inventory (कच्चा माल)',
       group: 'Current Assets',
       balance_type: 'Dr',
       opening_balance: 0,
@@ -59,10 +72,6 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
     };
 
     saveMasterAccount(firmId, newAccountObj);
-
-    window.dispatchEvent(new Event('app_accounts_updated'));
-    window.dispatchEvent(new Event('app_storage_updated'));
-
     return newAccountObj;
   } catch (err) {
     console.error('Error auto-syncing stock ledger account:', err);
@@ -147,6 +156,7 @@ const saveFirmInventory = (firmInput, itemData) => {
     autoEnsureStockLedger(firmId, cleanName, oldItemName ? `${oldItemName} Stock Account` : null);
   }
 
+  window.dispatchEvent(new Event('app_accounts_updated'));
   window.dispatchEvent(new Event('app_inventory_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('storage'));
@@ -194,14 +204,37 @@ export default function InventoryStockView({ firm, onClose }) {
   const [hsnSac, setHsnSac] = useState('');
   const [statusMessage, setStatusMessage] = useState(null);
 
+  // Automated Batch Synchronizer: Scans all items and guarantees master ledgers exist
+  const syncAllStockLedgers = useCallback(() => {
+    try {
+      const currentList = loadFirmInventory(firm);
+      let createdOrUpdatedCount = 0;
+      currentList.forEach(it => {
+        const itName = it.name || it.item_name;
+        if (itName && it.item_type !== 'SERVICE' && !it.is_service) {
+          const res = autoEnsureStockLedger(activeFirmId, itName);
+          if (res) createdOrUpdatedCount++;
+        }
+      });
+      window.dispatchEvent(new Event('app_accounts_updated'));
+      window.dispatchEvent(new Event('app_storage_updated'));
+      return createdOrUpdatedCount;
+    } catch (err) {
+      console.error('Error during auto batch sync of stock ledgers:', err);
+      return 0;
+    }
+  }, [firm, activeFirmId]);
+
   const loadStockItems = useCallback(() => {
     try {
       const stock = loadFirmInventory(firm);
       setItems(Array.isArray(stock) ? stock : []);
+      // Self-healing: auto ensure all stock accounts exist in Account Master
+      syncAllStockLedgers();
     } catch (err) {
       console.error('Error loading inventory items:', err);
     }
-  }, [firm]);
+  }, [firm, syncAllStockLedgers]);
 
   useEffect(() => {
     loadStockItems();
@@ -214,6 +247,14 @@ export default function InventoryStockView({ firm, onClose }) {
       window.removeEventListener('storage', loadStockItems);
     };
   }, [loadStockItems]);
+
+  const handleManualSync = () => {
+    const count = syncAllStockLedgers();
+    setStatusMessage({
+      type: 'success',
+      text: `✓ Sabhi ${count} Stock Items ke Asset Accounts "Account Master" me successfully synchronize ho gaye hain!`
+    });
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -315,11 +356,20 @@ export default function InventoryStockView({ firm, onClose }) {
             </h3>
             <span style={{ fontSize: '11px', color: '#64748b' }}>Item bante hi uska Stock Asset Ledger automatic ban jayega</span>
           </div>
-          {onClose && (
-            <button type="button" onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
-              Close
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button 
+              type="button" 
+              onClick={handleManualSync}
+              style={{ padding: '6px 10px', backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #7dd3fc', borderRadius: '8px', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}
+            >
+              🔄 Sync All Ledgers
             </button>
-          )}
+            {onClose && (
+              <button type="button" onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                Close
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
