@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { loadFirmData } from '../utils/firmIsolationEngine';
-import { downloadJournalRegisterPDF } from '../utils/pdfDownloadEngine.js';
+import { downloadJournalRegisterPDF, cleanTypographySpacing } from '../utils/pdfDownloadEngine.js';
 
 export default function JournalRegisterView({ firm, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
@@ -32,7 +32,7 @@ export default function JournalRegisterView({ firm, onClose }) {
       });
 
       let rawTx = [];
-      // STRICT FIRM ISOLATION: No global keys scanned
+      // STRICT FIRM ISOLATION: Scoped keys only
       const keysToScan = [
         `account_book_vouchers_${activeFirmId}`,
         `app_vouchers_${activeFirmId}`,
@@ -110,11 +110,13 @@ export default function JournalRegisterView({ firm, onClose }) {
             }];
           }
 
+          const rawRef = String(tx.reference_no || tx.voucher_number || (tx.id ? tx.id.slice(-6) : '1001')).replace(/^#/, '');
+
           uniqueMap.set(uId, {
             ...tx,
             voucher_date: tx.voucher_date || tx.date || todayMaxDate,
             voucher_type: String(tx.voucher_type || tx.type || 'JV').toUpperCase(),
-            reference_no: tx.reference_no || tx.voucher_number || (tx.id ? tx.id.slice(-6) : '1001'),
+            reference_no: rawRef,
             dr_account: drAcc,
             cr_account: crAcc,
             amount: totalAmt,
@@ -203,150 +205,219 @@ export default function JournalRegisterView({ firm, onClose }) {
     }
   };
 
+  // Color helper for badges
+  const getTypeBadgeStyle = (vType) => {
+    switch (vType) {
+      case 'PURCHASE':
+        return { backgroundColor: '#059669', color: '#ffffff' };
+      case 'SALES':
+        return { backgroundColor: '#2563eb', color: '#ffffff' };
+      case 'PAYMENT':
+      case 'PAY':
+        return { backgroundColor: '#dc2626', color: '#ffffff' };
+      case 'RECEIPT':
+      case 'REC':
+        return { backgroundColor: '#16a34a', color: '#ffffff' };
+      case 'CONTRA':
+        return { backgroundColor: '#9333ea', color: '#ffffff' };
+      default:
+        return { backgroundColor: '#0284c7', color: '#ffffff' };
+    }
+  };
+
   return (
-    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto', boxSizing: 'border-box' }}>
+    <div style={{ padding: '12px 10px 40px 10px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
       
-      <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
-        <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800', marginBottom: '2px' }}>CHRONOLOGICAL AUDIT BOOK</div>
+      {/* Top Filter Card */}
+      <div style={{ backgroundColor: '#fff', padding: '14px', borderRadius: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginBottom: '12px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+        <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.5px', marginBottom: '4px' }}>
+          CHRONOLOGICAL AUDIT BOOK
+        </div>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📖 General Journal / Daybook</h2>
+        <h2 style={{ margin: '0 0 12px 0', fontSize: '17px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>📖</span> General Journal / Daybook
+        </h2>
 
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button
-              onClick={() => setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC')}
-              style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              {sortOrder === 'ASC' ? '📅 Oldest ➔ Newest' : '📅 Newest ➔ Oldest'}
-            </button>
+        {/* Action Buttons Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr auto', gap: '8px', marginBottom: '12px' }}>
+          <button
+            onClick={() => setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC')}
+            style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '10px 8px', borderRadius: '8px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap', textAlign: 'center' }}
+          >
+            {sortOrder === 'ASC' ? '📅 Oldest ➔ Newest' : '📅 Newest ➔ Oldest'}
+          </button>
 
-            <button
-              onClick={handleExportPDF}
-              disabled={isExporting || filteredEntries.length === 0}
-              style={{ backgroundColor: '#059669', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+          <button
+            onClick={handleExportPDF}
+            disabled={isExporting || filteredEntries.length === 0}
+            style={{ backgroundColor: '#059669', color: '#fff', border: 'none', padding: '10px 8px', borderRadius: '8px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+          >
+            <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
+          </button>
+
+          {onClose && (
+            <button 
+              onClick={onClose} 
+              style={{ padding: '10px 14px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '11px', fontWeight: '600', color: '#334155' }}
             >
-              <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
+              Close
             </button>
-            {onClose && <button onClick={onClose} style={{ padding: '8px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>Close</button>}
-          </div>
+          )}
         </div>
 
         {statusNotification && (
-          <div style={{ padding: '10px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', marginBottom: '12px', backgroundColor: statusNotification.type === 'error' ? '#fef2f2' : statusNotification.type === 'success' ? '#ecfdf5' : '#f0f9ff', color: statusNotification.type === 'error' ? '#991b1b' : statusNotification.type === 'success' ? '#065f46' : '#0369a1', border: `1px solid ${statusNotification.type === 'error' ? '#fecaca' : statusNotification.type === 'success' ? '#a7f3d0' : '#bae6fd'}` }}>
+          <div style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', marginBottom: '10px', backgroundColor: statusNotification.type === 'error' ? '#fef2f2' : statusNotification.type === 'success' ? '#ecfdf5' : '#f0f9ff', color: statusNotification.type === 'error' ? '#991b1b' : statusNotification.type === 'success' ? '#065f46' : '#0369a1', border: `1px solid ${statusNotification.type === 'error' ? '#fecaca' : statusNotification.type === 'success' ? '#a7f3d0' : '#bae6fd'}` }}>
             {statusNotification.message}
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', boxSizing: 'border-box' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>From Date (से)</label>
-              <input 
-                type="date" 
-                max={todayMaxDate}
-                value={fromDate} 
-                onChange={e => setFromDate(e.target.value)} 
-                style={{ width: '100%', padding: '10px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>To Date (तक)</label>
-              <input 
-                type="date" 
-                max={todayMaxDate}
-                value={toDate} 
-                onChange={e => setToDate(e.target.value)} 
-                style={{ width: '100%', padding: '10px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
-              />
-            </div>
-          </div>
-
+        {/* Date Filter Inputs */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>Voucher Type</label>
-            <select 
-              value={filterType} 
-              onChange={e => setFilterType(e.target.value)} 
-              style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', backgroundColor: '#f8fafc', color: '#0f172a', fontWeight: '700', boxSizing: 'border-box' }}
-            >
-              <option value="ALL">All Types (सभी वाउचर)</option>
-              <option value="JV">JV - Journal (रोज़नामचा)</option>
-              <option value="PAY">PAY - Payment (भुगतान)</option>
-              <option value="REC">REC - Receipt (प्राप्ति)</option>
-              <option value="CONTRA">CONTRA - Contra (कोंट्रा)</option>
-              <option value="PURCHASE">PURCHASE (खरीद)</option>
-              <option value="SALES">SALES (बिक्री)</option>
-            </select>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '3px', textTransform: 'uppercase' }}>From Date (से)</label>
+            <input 
+              type="date" 
+              max={todayMaxDate}
+              value={fromDate} 
+              onChange={e => setFromDate(e.target.value)} 
+              style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '3px', textTransform: 'uppercase' }}>To Date (तक)</label>
+            <input 
+              type="date" 
+              max={todayMaxDate}
+              value={toDate} 
+              onChange={e => setToDate(e.target.value)} 
+              style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#f8fafc', fontWeight: '600' }} 
+            />
           </div>
         </div>
 
-        <div style={{ marginBottom: '12px' }}>
+        {/* Voucher Type Dropdown */}
+        <div style={{ marginBottom: '8px' }}>
+          <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '3px', textTransform: 'uppercase' }}>Voucher Type</label>
+          <select 
+            value={filterType} 
+            onChange={e => setFilterType(e.target.value)} 
+            style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', backgroundColor: '#f8fafc', color: '#0f172a', fontWeight: '700', boxSizing: 'border-box', outline: 'none' }}
+          >
+            <option value="ALL">All Types (सभी वाउचर)</option>
+            <option value="JV">JV - Journal (रोज़नामचा)</option>
+            <option value="PAY">PAY - Payment (भुगतान)</option>
+            <option value="REC">REC - Receipt (प्राप्ति)</option>
+            <option value="CONTRA">CONTRA - Contra (कोंट्रा)</option>
+            <option value="PURCHASE">PURCHASE (खरीद)</option>
+            <option value="SALES">SALES (बिक्री)</option>
+          </select>
+        </div>
+
+        {/* Search Bar */}
+        <div style={{ marginBottom: '10px' }}>
           <input 
             type="text" 
             placeholder="🔍 Search account, ref no, narration, item..." 
             value={searchQuery} 
             onChange={e => setSearchQuery(e.target.value)}
-            style={{ width: '100%', padding: '11px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box', backgroundColor: '#f8fafc' }}
+            style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', boxSizing: 'border-box', backgroundColor: '#f8fafc' }}
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px' }}>
+        {/* Total Debit / Credit Summary Box */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 12px', borderRadius: '8px' }}>
           <div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase' }}>TOTAL DEBIT (नामे)</div>
-            <div style={{ fontSize: '15px', fontWeight: '900', color: '#059669', marginTop: '2px' }}>₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div style={{ fontSize: '9px', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>TOTAL DEBIT (नामे)</div>
+            <div style={{ fontSize: '14px', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
+              ₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase' }}>TOTAL CREDIT (जमा)</div>
-            <div style={{ fontSize: '15px', fontWeight: '900', color: '#dc2626', marginTop: '2px' }}>₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div style={{ fontSize: '9px', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>TOTAL CREDIT (जमा)</div>
+            <div style={{ fontSize: '14px', fontWeight: '900', color: '#dc2626', marginTop: '2px' }}>
+              ₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Scrollable Journal Entries Container */}
-      <div style={{ maxHeight: '500px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
+      {/* Clean Journal Entries List */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
         {filteredEntries.length === 0 ? (
-          <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '40px', borderRadius: '16px', color: '#94a3b8', fontSize: '13px', border: '1px solid #e2e8f0' }}>
+          <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '36px 16px', borderRadius: '12px', color: '#94a3b8', fontSize: '12px', border: '1px solid #e2e8f0' }}>
             No journal entries found for this firm.
           </div>
         ) : (
           filteredEntries.map((entry, idx) => {
             const amt = Number(entry.amount || 0);
             const vType = String(entry.voucher_type || 'JV').toUpperCase();
+            const badgeStyle = getTypeBadgeStyle(vType);
             const itemsList = Array.isArray(entry.items) ? entry.items : [];
+            const cleanNarrationText = cleanTypographySpacing ? cleanTypographySpacing(entry.narration) : (entry.narration || '');
 
             return (
-              <div key={entry.id || idx} style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', boxSizing: 'border-box' }}>
-                <div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '10px', backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', color: '#475569' }}>{entry.voucher_date}</span>
-                    <span style={{ fontSize: '10px', backgroundColor: '#059669', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontWeight: '800' }}>{vType}</span>
-                    <strong style={{ fontSize: '12px', color: '#0f172a' }}>#{entry.reference_no}</strong>
+              <div 
+                key={entry.id || idx} 
+                style={{ 
+                  backgroundColor: '#ffffff', 
+                  padding: '12px 14px', 
+                  borderRadius: '12px', 
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.03)', 
+                  border: '1px solid #e2e8f0', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: '6px', 
+                  boxSizing: 'border-box' 
+                }}
+              >
+                {/* Top Row: Meta Tags on Left | Standalone Bold Amount on Right */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                    <span style={{ fontSize: '10px', backgroundColor: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                      {entry.voucher_date}
+                    </span>
+                    <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', fontWeight: '800', letterSpacing: '0.4px', whiteSpace: 'nowrap', ...badgeStyle }}>
+                      {vType}
+                    </span>
+                    <strong style={{ fontSize: '11px', color: '#0f172a', whiteSpace: 'nowrap' }}>
+                      #{entry.reference_no}
+                    </strong>
                   </div>
 
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '2px' }}>
+                  <div style={{ textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <span style={{ fontSize: '14px', fontWeight: '900', color: '#0f172a' }}>
+                      ₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Account Details Row */}
+                <div style={{ marginTop: '2px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#0f172a', lineHeight: '1.4' }}>
                     Dr: <span style={{ color: '#059669' }}>{entry.dr_account}</span>
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#0f172a', lineHeight: '1.4', marginTop: '1px' }}>
                     Cr: <span style={{ color: '#dc2626' }}>{entry.cr_account}</span>
                   </div>
-
-                  {itemsList.length > 0 && (
-                    <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', marginBottom: '6px', fontSize: '11px' }}>
-                      {itemsList.map((it, iIdx) => (
-                        <div key={iIdx} style={{ fontWeight: '700', color: '#0284c7' }}>
-                          📦 {it.itemName} — Qty: <strong style={{ color: '#0f172a' }}>{it.qty} {it.unit}</strong> @ ₹{Number(it.rate || 0).toFixed(2)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {entry.narration && (
-                    <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>{entry.narration}</div>
-                  )}
                 </div>
 
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '15px', fontWeight: '900', color: '#0f172a' }}>₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                </div>
+                {/* Items Row (If Any) */}
+                {itemsList.length > 0 && (
+                  <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '6px 10px', marginTop: '2px', fontSize: '11px' }}>
+                    {itemsList.map((it, iIdx) => (
+                      <div key={iIdx} style={{ fontWeight: '600', color: '#0369a1', lineHeight: '1.4' }}>
+                        📦 {it.itemName} — Qty: <strong style={{ color: '#0f172a' }}>{it.qty} {it.unit}</strong> @ ₹{Number(it.rate || 0).toFixed(2)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Clean Narration Row */}
+                {cleanNarrationText && (
+                  <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', lineHeight: '1.3', marginTop: '2px' }}>
+                    {cleanNarrationText}
+                  </div>
+                )}
               </div>
             );
           })
