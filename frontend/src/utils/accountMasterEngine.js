@@ -66,9 +66,9 @@ export const ACCOUNT_HIERARCHY = {
   }
 };
 
-// Clean Industry-Specific Suggestion Directory
+// Universal Suggestions Directory by Industry Sector
 export const INDUSTRY_SUGGESTION_BANKS = {
-  // 1. Brick Kiln (ईंट भट्ठा उद्योग)
+  // 1. Brick Kiln (ईंट भट्ठा)
   BRICK_KILN: [
     { name: 'Koyla / Coal Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
     { name: 'Mitti / Soil Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
@@ -85,27 +85,27 @@ export const INDUSTRY_SUGGESTION_BANKS = {
     { name: 'Bhatta Maintenance & Repair A/c', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Machinery Maintenance & Repairs', balanceType: 'Dr' }
   ],
 
-  // 2. Building Material, Cement & Steel / Hardware (हार्डवेयर, सीमेंट व सरिया)
+  // 2. Building Material, Cement & Steel (हार्डवेयर व बिल्डिंग मटेरियल)
   BUILDING_MATERIAL: [
     { name: 'Cement Manufacturer / Depot Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
     { name: 'Steel TMT Rebar Distributor (सरिया)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
     { name: 'Sanitary & Hardware Wholesale Dealer', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Reti / Bajri / Grit Quarry Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Reti / Bajri / Quarry Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
     { name: 'Godown & Loading Labour Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
     { name: 'Pickup / Delivery Vehicle Driver', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Delivery Commercial Vehicle (Bolero/Pickup)', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Delivery Commercial Vehicle (Pickup/Bolero)', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
     { name: 'Shop & Godown Infrastructure Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Freight Inward (सीमेंट/सरिया गाड़ी भाड़ा)', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
+    { name: 'Freight Inward (गाड़ी भाड़ा)', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
     { name: 'Shop & Godown Rent A/c', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
     { name: 'Loading / Unloading Labor Expense', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Labor & Wages (मजदूरी)', balanceType: 'Dr' }
   ],
 
-  // 3. General Trading / Retail / Kirana / Shop (व्यापार व दुकान)
+  // 3. Trading / Retail / Kirana / General Shop (दुकान व व्यापार)
   TRADING: [
-    { name: 'Wholesale Goods Supplier (डिस्ट्रीब्यूटर)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Wholesale Goods Supplier (एजेंसी/सप्लायर)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
     { name: 'Shop Staff / Salesman Salary', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
     { name: 'Shop Rent Account', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
-    { name: 'Freight & Cartage Inward (माल भाड़ा)', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
+    { name: 'Freight Inward (माल भाड़ा)', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
     { name: 'Shop Electricity & Power Bill', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
     { name: 'Shop Furniture & Counter Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
   ],
@@ -117,10 +117,29 @@ export const INDUSTRY_SUGGESTION_BANKS = {
     { name: 'Truck Driver & Helper Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
     { name: 'Toll Tax & Fastag Recharge', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Production & Factory Expenses', balanceType: 'Dr' },
     { name: 'Vehicle Insurance & RTO Tax', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
-    { name: 'Commercial Truck Asset A/c', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
+    { name: 'Commercial Truck Fleet Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
   ],
 
-  // 5. Universal Defaults (All Firms)
+  // 5. Manufacturing / Factory (कारखाना व उत्पादन)
+  MANUFACTURING: [
+    { name: 'Raw Material Bulk Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Packaging Material Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Factory Production Labor Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Plant Machinery & Generator Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Factory Power & Electricity Bill', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Production & Factory Expenses', balanceType: 'Dr' },
+    { name: 'Machine Maintenance & Repairs', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Machinery Maintenance & Repairs', balanceType: 'Dr' }
+  ],
+
+  // 6. Agriculture / Mandi Arhat (कृषि व आढ़त)
+  AGRICULTURE: [
+    { name: 'Kisaan / Farmer Purchase Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Seeds & Fertilizer Company', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Pallehdar & Mandi Labour Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Mandi Samiti Tax & Cess Expense', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Trading Purchases (व्यापारिक खरीद)', balanceType: 'Dr' },
+    { name: 'Tractor & Agricultural Implements Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
+  ],
+
+  // 7. Universal Common Defaults (Har business me available)
   UNIVERSAL_COMMON: [
     { name: 'Cash in Hand (रोकड़)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Cash in Hand (रोकड़)', balanceType: 'Dr' },
     { name: 'State Bank of India (Current A/c)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
@@ -134,23 +153,33 @@ export const INDUSTRY_SUGGESTION_BANKS = {
   ]
 };
 
-// Retrieve industry-specific suggestions dynamically
-export const getIndustrySuggestions = (firmCategory = '') => {
-  const cat = String(firmCategory || '').toUpperCase();
-  let sectorList = INDUSTRY_SUGGESTION_BANKS.BRICK_KILN;
-
-  if (cat.includes('BUILDING') || cat.includes('CEMENT') || cat.includes('STEEL') || cat.includes('HARDWARE')) {
-    sectorList = INDUSTRY_SUGGESTION_BANKS.BUILDING_MATERIAL;
-  } else if (cat.includes('TRANSPORT') || cat.includes('LOGISTIC') || cat.includes('FLEET')) {
-    sectorList = INDUSTRY_SUGGESTION_BANKS.TRANSPORT;
-  } else if (cat.includes('TRADING') || cat.includes('RETAIL') || cat.includes('WHOLESALE') || cat.includes('SHOP') || cat.includes('STORE')) {
-    sectorList = INDUSTRY_SUGGESTION_BANKS.TRADING;
-  } else if (cat.includes('BRICK') || cat.includes('BHATTA')) {
-    sectorList = INDUSTRY_SUGGESTION_BANKS.BRICK_KILN;
-  } else {
-    sectorList = INDUSTRY_SUGGESTION_BANKS.BUILDING_MATERIAL;
+// Smart Business Classifier Helper
+export const resolveIndustryKey = (rawCat = '') => {
+  const cat = String(rawCat || '').toUpperCase();
+  if (cat.includes('BUILDING') || cat.includes('CEMENT') || cat.includes('STEEL') || cat.includes('HARDWARE') || cat.includes('IRON')) {
+    return 'BUILDING_MATERIAL';
   }
+  if (cat.includes('TRANSPORT') || cat.includes('LOGISTIC') || cat.includes('FLEET')) {
+    return 'TRANSPORT';
+  }
+  if (cat.includes('TRADING') || cat.includes('RETAIL') || cat.includes('WHOLESALE') || cat.includes('SHOP') || cat.includes('STORE') || cat.includes('KIRANA')) {
+    return 'TRADING';
+  }
+  if (cat.includes('AGRICULTURE') || cat.includes('MANDI') || cat.includes('ARHAT') || cat.includes('KRISHI')) {
+    return 'AGRICULTURE';
+  }
+  if (cat.includes('MANUFACTURING') || cat.includes('FACTORY') || cat.includes('PRODUCTION')) {
+    return 'MANUFACTURING';
+  }
+  if (cat.includes('BRICK') || cat.includes('BHATTA') || cat.includes('KILN')) {
+    return 'BRICK_KILN';
+  }
+  return 'TRADING'; // Safe universal default
+};
 
+export const getIndustrySuggestions = (firmCategory = '') => {
+  const industryKey = resolveIndustryKey(firmCategory);
+  const sectorList = INDUSTRY_SUGGESTION_BANKS[industryKey] || INDUSTRY_SUGGESTION_BANKS.TRADING;
   return [...sectorList, ...INDUSTRY_SUGGESTION_BANKS.UNIVERSAL_COMMON];
 };
 
@@ -260,8 +289,8 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', businessCategory: 'BANK_CASH', is_system_locked: true, isSystemLocked: true },
       { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', businessCategory: 'BANK_CASH', is_system_locked: false, isSystemLocked: false },
       { id: `ACC-${activeFirmId}-003`, account_name: 'Sales Revenue Account', name: 'Sales Revenue Account', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', businessCategory: 'INCOME', is_system_locked: true, isSystemLocked: true },
-      { id: `ACC-${activeFirmId}-004`, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production & Factory Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: true, isSystemLocked: true },
-      { id: `ACC-${activeFirmId}-005`, account_name: 'Labor & Pathai Expense (मजदूरी/लेबर)', name: 'Labor & Pathai Expense (मजदूरी/लेबर)', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Wages (मजदूरी)', group: 'Direct Labor & Wages (मज़दूर)', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: false, isSystemLocked: false },
+      { id: `ACC-${activeFirmId}-004`, account_name: 'Purchase Goods / Materials Account', name: 'Purchase Goods / Materials Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production & Factory Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: true, isSystemLocked: true },
+      { id: `ACC-${activeFirmId}-005`, account_name: 'Labor, Wages & Staff Salary', name: 'Labor, Wages & Staff Salary', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Wages (मजदूरी)', group: 'Direct Labor & Wages (मज़दूर)', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: false, isSystemLocked: false },
       { id: `ACC-${activeFirmId}-006`, account_name: 'Capital Account (स्वामी की पूंजी)', name: 'Capital Account (स्वामी की पूंजी)', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', businessCategory: 'EQUITY', is_system_locked: false, isSystemLocked: false }
     ];
 
@@ -464,4 +493,10 @@ export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
 
   const updated = accounts.filter(a => a.id !== accountId);
   localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(updated));
-  localStorage.setItem
+  localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(updated));
+
+  window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('storage'));
+  return true;
+};
