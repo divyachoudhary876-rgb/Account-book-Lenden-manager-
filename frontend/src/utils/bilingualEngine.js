@@ -1,8 +1,6 @@
 // frontend/src/utils/bilingualEngine.js
 
-// सामान्य अकाउंटिंग एवं व्यापारिक शीर्षकों का मानक द्विभाषी शब्दकोश
 export const DICTIONARY_PAIRS = {
-  // Primary & Standard Heads
   'assets': 'संपत्तियां',
   'liabilities': 'देनदारियां',
   'equity': 'पूंजी / स्वामित्व',
@@ -24,8 +22,6 @@ export const DICTIONARY_PAIRS = {
   'bank interest': 'बैंक ब्याज',
   'security deposit': 'धरोहर / सिक्योरिटी',
   'mining security': 'माइनिंग सिक्योरिटी',
-
-  // Bhatta & Manufacturing Specifics
   'coal': 'कोयला',
   'koyla': 'कोयला',
   'soil': 'मिट्टी',
@@ -69,7 +65,7 @@ const DEV_TO_ROMAN = {
 const ROMAN_CONSONANTS = {
   'k': 'क', 'kh': 'ख', 'g': 'ग', 'gh': 'घ',
   'ch': 'च', 'chh': 'छ', 'j': 'ज', 'jh': 'झ',
-  't': 'त', 'th': 'थ', 'd': 'द', 'dh': 'ध', 'n': 'न',
+  't': 'त', 'th': 'थ', 'd': 'द', 'dh': 'dh', 'n': 'न',
   'p': 'प', 'ph': 'फ', 'f': 'फ', 'b': 'ब', 'bh': 'भ', 'm': 'म',
   'y': 'य', 'r': 'र', 'l': 'ल', 'v': 'व', 'w': 'व',
   'sh': 'श', 's': 'स', 'h': 'ह'
@@ -77,26 +73,20 @@ const ROMAN_CONSONANTS = {
 
 export const isDevanagari = (str) => /[\u0900-\u097F]/.test(str);
 
-/**
- * अंग्रेजी अथवा हिंग्लिश शब्द को देवनागरी में लिप्यंतरित करता है
- */
 export const transliterateEnglishToHindi = (text = '') => {
   if (!text) return '';
   const clean = text.trim();
   const lower = clean.toLowerCase();
 
-  // प्रत्यक्ष शब्दकोश परीक्षण
   if (DICTIONARY_PAIRS[lower]) {
     return DICTIONARY_PAIRS[lower];
   }
 
-  // शब्दों के आधार पर आंशिक प्रतिस्थापन
   const words = clean.split(/\s+/);
   const convertedWords = words.map(w => {
     const lw = w.toLowerCase().replace(/[^a-z0-9]/g, '');
     if (DICTIONARY_PAIRS[lw]) return DICTIONARY_PAIRS[lw];
 
-    // फोनेटिक मिलान
     let res = '';
     let i = 0;
     while (i < lw.length) {
@@ -132,14 +122,10 @@ export const transliterateEnglishToHindi = (text = '') => {
   return convertedWords.join(' ');
 };
 
-/**
- * देवनागरी को रोमन/अंग्रेजी में लिप्यंतरित करता है
- */
 export const transliterateHindiToEnglish = (text = '') => {
   if (!text) return '';
   const clean = text.trim();
 
-  // विपरीत शब्दकोश मिलान
   for (const [en, hi] of Object.entries(DICTIONARY_PAIRS)) {
     if (clean === hi) {
       return en.charAt(0).toUpperCase() + en.slice(1);
@@ -156,38 +142,49 @@ export const transliterateHindiToEnglish = (text = '') => {
 };
 
 /**
- * मुख्य बाइलिंगुअल फ़ॉर्मेटर: किसी भी इनपुट से "English (हिन्दी)" फ़ॉर्मेट बनाता है
+ * किसी भी नेस्टेड, करप्टेड अथवा लूप हुए ब्रैकेट को साफ़ कर ओरिजिनल नाम निकालता है
+ */
+export const stripNestedBrackets = (raw = '') => {
+  if (!raw) return '';
+  let str = String(raw).trim();
+  
+  // सभी प्रकार के नेस्टेड और लूप हुए ब्रैकेट्स को पूरी तरह साफ़ करें
+  while (/\([^()]*\)/.test(str)) {
+    str = str.replace(/\([^()]*\)/g, '').trim();
+  }
+  // बचे हुए खुले ब्रैकेट्स को हटाएं
+  str = str.replace(/[()[\]{}]/g, '').replace(/\s{2,}/g, ' ').trim();
+  return str;
+};
+
+/**
+ * 100% Idempotent बाइलिंगुअल फ़ॉर्मेटर (कभी भी नाम को बार-बार रिपीट नहीं करेगा)
  */
 export const makeBilingualName = (rawInput = '', existingHi = '') => {
   if (!rawInput) return { primary: '', secondary: '', display: '' };
-  const str = rawInput.trim();
-
-  // यदि पहले से ही "Name (नाम)" प्रारूप में मौजूद है
-  const bracketMatch = str.match(/^(.+?)\s*\(([\u0900-\u097F\s]+)\)$/);
-  if (bracketMatch) {
-    const en = bracketMatch[1].trim();
-    const hi = bracketMatch[2].trim();
-    return {
-      primary: en,
-      secondary: hi,
-      display: `${en} (${hi})`
-    };
-  }
+  
+  // 1. सबसे पहले अगर स्ट्रिंग में पहले से कोई ब्रैकेट या नेस्टेड ब्रैकेट है, तो क्लीन नाम निकालें
+  const cleanBase = stripNestedBrackets(rawInput);
+  const targetStr = cleanBase || String(rawInput).trim();
 
   let enName = '';
-  let hiName = existingHi ? existingHi.trim() : '';
+  let hiName = existingHi ? stripNestedBrackets(existingHi) : '';
 
-  if (isDevanagari(str)) {
-    hiName = str;
-    enName = transliterateHindiToEnglish(str);
+  if (isDevanagari(targetStr)) {
+    hiName = targetStr;
+    enName = transliterateHindiToEnglish(targetStr);
   } else {
-    enName = str;
+    enName = targetStr;
     if (!hiName) {
-      hiName = transliterateEnglishToHindi(str);
+      hiName = transliterateEnglishToHindi(targetStr);
     }
   }
 
-  const display = hiName ? `${enName} (${hiName})` : enName;
+  // यदि दोनों नाम समान बन रहे हों तो ब्रैकेट न जोड़ें
+  const display = (hiName && hiName.toLowerCase() !== enName.toLowerCase())
+    ? `${enName} (${hiName})`
+    : enName;
+
   return {
     primary: enName,
     secondary: hiName,
