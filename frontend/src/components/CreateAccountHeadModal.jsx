@@ -14,7 +14,7 @@ const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 
 export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true, onClose }) {
   const firmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   
-  // High-Precision Multi-Key Industry Resolution from Firm Profile
+  // Real-time Firm Category Resolution
   const rawCat = useMemo(() => {
     return String(
       firm?.category || 
@@ -22,7 +22,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       firm?.firmType || 
       firm?.industry || 
       localStorage.getItem(`app_firm_category_${firmId}`) || 
-      'BUILDING_MATERIAL'
+      ''
     ).toUpperCase();
   }, [firm, firmId]);
 
@@ -46,28 +46,23 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
   
   const dropdownRef = useRef(null);
 
-  // Dynamic Multi-Industry Intent Cards Configuration (Strictly adapts to Business Category)
+  // Dynamic Multi-Industry Intent Cards Configuration
   const businessCategories = useMemo(() => {
     const isBuilding = industryKey === 'BUILDING_MATERIAL';
     const isTransport = industryKey === 'TRANSPORT';
     const isBhatta = industryKey === 'BRICK_KILN';
-    const isAgri = industryKey === 'AGRICULTURE';
-    const isMfg = industryKey === 'MANUFACTURING';
+    const isTrading = industryKey === 'TRADING';
 
     return [
       {
         id: 'DEBTOR',
         title: 'Customer / Grahak',
-        subtitle: isBuilding
+        subtitle: isBhatta
+          ? 'ईंट व माल खरीदने वाला ग्राहक'
+          : isBuilding
           ? 'सीमेंट, सरिया व हार्डवेयर ग्राहक (Builder/Party)'
           : isTransport
           ? 'पार्टी / फ्रेट बिलिंग ग्राहक'
-          : isBhatta
-          ? 'ईंट व माल खरीदने वाला ग्राहक'
-          : isAgri
-          ? 'अनाज / जिंस खरीदार (Mandi Buyer)'
-          : isMfg
-          ? 'डिस्ट्रीब्यूटर व थोक खरीदार'
           : 'दुकानदार व रिटेल ग्राहक (Customer)',
         icon: '🛒',
         color: '#0284c7',
@@ -79,16 +74,12 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       {
         id: 'CREDITOR',
         title: 'Supplier / Vyapari',
-        subtitle: isBuilding
+        subtitle: isBhatta
+          ? 'कोयला, मिट्टी, सीमेंट सप्लायर'
+          : isBuilding
           ? 'सीमेंट कंपनी, स्टील प्लांट व सप्लायर'
           : isTransport
           ? 'डीजल पम्प, टायर व पार्ट्स सप्लायर'
-          : isBhatta
-          ? 'कोयला, मिट्टी, सीमेंट सप्लायर'
-          : isAgri
-          ? 'किसान / बीज-खाद कंपनी (Supplier)'
-          : isMfg
-          ? 'कच्चा माल व पैकेजिंग सप्लायर'
           : 'होलसेलर व माल सप्लायर (Vendor)',
         icon: '🚚',
         color: '#b45309',
@@ -99,15 +90,13 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       },
       {
         id: 'THEKEDAR',
-        title: isBuilding ? 'Staff & Labour' : isTransport ? 'Driver & Staff' : isBhatta ? 'Thekedar / Worker' : 'Staff / Worker',
-        subtitle: isBuilding
+        title: isBhatta ? 'Thekedar / Worker' : isBuilding ? 'Staff & Labour' : isTransport ? 'Driver & Staff' : 'Staff / Worker',
+        subtitle: isBhatta
+          ? 'पथाई, भराई, निकासी व लेबर ठेका'
+          : isBuilding
           ? 'दुकान/गोदाम स्टाफ, लोडिंग मजदूर व ड्राइवर'
           : isTransport
           ? 'गाड़ी चालक, हेल्पर व स्टाफ वेतन'
-          : isBhatta
-          ? 'पथाई, भराई, निकासी व लेबर ठेका'
-          : isAgri
-          ? 'पल्लेदार, मुनीम व मंडी मजदूर'
           : 'कर्मचारी, स्टाफ व मजदूर वेतन',
         icon: '👷',
         color: '#166534',
@@ -119,7 +108,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       {
         id: 'BANK_CASH',
         title: 'Bank & Cash',
-        subtitle: 'SBI, PNB, Cash in Hand, UPI QR',
+        subtitle: 'SBI, PNB, Cash in Hand, UPI',
         icon: '🏦',
         color: '#0f766e',
         primaryType: 'ASSETS',
@@ -129,17 +118,15 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       },
       {
         id: 'ASSET',
-        title: isBuilding ? 'Shop & Vehicles' : isTransport ? 'Fleet & Vehicles' : isBhatta ? 'Machine & Kiln' : 'Machine & Property',
-        subtitle: isBuilding
-          ? 'दुकान, गोदाम (Godown), पिकअप/लोडर वाहन'
+        title: isBhatta ? 'Machine & Property' : isBuilding ? 'Shop & Vehicles' : isTransport ? 'Fleet & Vehicles' : 'Machine & Property',
+        subtitle: isBhatta
+          ? 'ट्रैक्टर, जमीन, चिमनी, झोपड़ी'
+          : isBuilding
+          ? 'दुकान, गोदाम (Godown), पिकअप वाहन'
           : isTransport
           ? 'ट्रक, ट्रेलर, ऑफिस व जमीन संपत्ति'
-          : isBhatta
-          ? 'ट्रैक्टर, जमीन, चिमनी, झोपड़ी संपत्ति'
-          : isAgri
-          ? 'ट्रैक्टर, कल्टीवेटर, गोदाम संपत्ति'
-          : 'मशीनरी, दुकान शोरूम व वाहन संपत्ति',
-        icon: isBuilding ? '🏗️' : isTransport ? '🚛' : isBhatta ? '🚜' : '🏢',
+          : 'दुकान, शोरूम व वाहन संपत्ति',
+        icon: isBhatta ? '🚜' : isBuilding ? '🏗️' : isTransport ? '🚛' : '🏢',
         color: '#4338ca',
         primaryType: 'ASSETS',
         subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)',
@@ -149,19 +136,17 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       {
         id: 'EXPENSE',
         title: 'Kharcha (Expense)',
-        subtitle: isBuilding
+        subtitle: isBhatta
+          ? 'डीजल, मरम्मत, फैक्ट्री खर्च'
+          : isBuilding
           ? 'दुकान/गोदाम किराया, गाड़ी भाड़ा व बिजली'
           : isTransport
           ? 'टोल टैक्स, डीजल, आरटीओ खर्च'
-          : isBhatta
-          ? 'डीजल, मरम्मत, फैक्ट्री खर्च'
-          : isAgri
-          ? 'मंडी सेस, बारदाना व ढुलाई खर्च'
           : 'दुकान किराया, बिजली, भाड़ा खर्च',
         icon: '📉',
         color: '#be123c',
         primaryType: 'EXPENSES',
-        subGroup: isBuilding ? 'Freight & Cartage Inward (भाड़ा)' : 'Administrative & Office Expenses',
+        subGroup: isBuilding ? 'Freight & Cartage Inward (भाड़ा)' : isTrading ? 'Administrative & Office Expenses' : 'Direct Production & Factory Expenses',
         defaultBalanceType: 'Dr',
         isParty: false
       }
@@ -357,14 +342,14 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     <div style={overlayStyle}>
       <div style={modalCardStyle}>
         
-        {/* Header Displaying Active Firm Name & Correct Industry */}
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px', marginBottom: '14px' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
-              {editingId ? '✏️ Edit Account Head' : `✨ Naya Khata Banayein (${firm?.legal_name || firm?.trade_name || 'Active Firm'})`}
+              {editingId ? '✏️ Edit Account Head' : `✨ Naya Khata Banayein (${firm?.legal_name || firm?.trade_name || 'Business'})`}
             </h3>
-            <span style={{ fontSize: '11px', color: '#0369a1', fontWeight: '700' }}>
-              🏢 {industryKey === 'BUILDING_MATERIAL' ? 'Building Material, Cement & Steel (हार्डवेयर)' : industryKey === 'TRANSPORT' ? 'Transport & Fleet Logistics' : industryKey === 'AGRICULTURE' ? 'Agriculture & Mandi Arhat' : industryKey === 'BRICK_KILN' ? 'Brick Kiln (ईंट भट्ठा)' : 'Trading & General Enterprise'}
+            <span style={{ fontSize: '11px', color: '#64748b' }}>
+              Multi-Firm Indian Accounting Standards (Ind AS / GAAP) Compliant
             </span>
           </div>
           {onClose && (
@@ -395,7 +380,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
 
         <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           
-          {/* 1. Category Intent Selector (Dynamically Styled According to Active Firm) */}
+          {/* 1. Category Intent Selector */}
           <div>
             <label style={labelStyle}>1. KHATE KI CATEGORY CHUNEIN (SELECT TYPE) *</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
@@ -439,16 +424,16 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
               type="text" 
               placeholder={
                 selectedCatId === 'DEBTOR' 
-                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Ramesh Builder / Jai Shree Balaji Construction' : industryKey === 'TRANSPORT' ? 'e.g. Freight Booking Consignor' : 'e.g. Retail Counter Grahak')
+                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Ramesh Builder / Jai Shree Balaji Construction' : industryKey === 'TRANSPORT' ? 'e.g. Freight Booking Consignor' : 'e.g. Ramlal (Customer)')
                   : selectedCatId === 'CREDITOR' 
-                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. UltraTech Cement Depot / Tata Tiscon Steel' : industryKey === 'TRANSPORT' ? 'e.g. HPCL Diesel Station / Tyre Agency' : 'e.g. Wholesale Supplier')
+                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. UltraTech Cement Depot / Tata Tiscon Steel' : industryKey === 'TRANSPORT' ? 'e.g. HPCL Diesel Station / Tyre Agency' : 'e.g. Coal / Material Supplier')
                   : selectedCatId === 'THEKEDAR' 
-                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Godown Loading Labour / Pickup Driver' : industryKey === 'TRANSPORT' ? 'e.g. Sonu Driver / Fleet Helper' : 'e.g. Staff / Salesman Salary')
+                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Godown Loading Labour / Pickup Driver' : industryKey === 'TRANSPORT' ? 'e.g. Sonu Driver / Fleet Helper' : 'e.g. Balram driver birkali / Ramesh Mistri')
                   : selectedCatId === 'BANK_CASH' 
                   ? 'e.g. SBI Current A/c 5421 / Tijori Cash'
                   : selectedCatId === 'ASSET' 
-                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Bolero Pickup Loader / Godown Shed' : industryKey === 'TRANSPORT' ? 'e.g. Commercial Truck Asset' : 'e.g. Shop Furniture / Counter Asset')
-                  : (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Godown Rent / Cement Gadi Bhada' : industryKey === 'TRANSPORT' ? 'e.g. Toll Tax / Fastag Recharge' : 'e.g. Shop Rent / Electricity Bill')
+                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Bolero Pickup Loader / Godown Shed' : industryKey === 'TRANSPORT' ? 'e.g. Commercial Truck Asset' : 'e.g. Tractor 575 DI / JCB')
+                  : (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Godown Rent / Cement Gadi Bhada' : industryKey === 'TRANSPORT' ? 'e.g. Toll Tax / Fastag Recharge' : 'e.g. Diesel / Maintenance')
               }
               value={accountName} 
               onChange={e => {
