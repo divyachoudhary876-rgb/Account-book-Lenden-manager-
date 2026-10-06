@@ -3,7 +3,7 @@
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
-import { getFirmMasterAccounts, saveMasterAccount, upgradeAndNormalizeAccount } from './accountMasterEngine.js';
+import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
 
 const resolveFirmNameString = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
@@ -179,7 +179,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: { 
         app: "AccountBook", 
         firm: cleanFirm, 
-        version: "3.4.0", 
+        version: "3.3.0", 
         export_timestamp: now.toISOString(),
         active_firm_id: activeFirmId 
       },
@@ -221,7 +221,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH AUTO BILINGUAL UPGRADE & HEALING)
+ * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH AUTO-HEALING & BACKWARD-COMPATIBILITY)
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -261,8 +261,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
     // ========================================================
-    // C. CONSOLIDATE & AUTO-BILINGUAL UPGRADE ACCOUNTS
-    // (Restores legacy English accounts and converts to "English (हिन्दी)")
+    // C. CONSOLIDATE ACCOUNTS (Zero-Loss Master Recovery)
     // ========================================================
     const consolidatedAccountsMap = new Map();
     
@@ -272,18 +271,33 @@ export const restoreUniversalBackup = async (rawInput) => {
         if (Array.isArray(raw)) {
           raw.forEach(acc => {
             if (!acc) return;
-            const normalizedAcc = upgradeAndNormalizeAccount(acc);
-            if (normalizedAcc && normalizedAcc.account_name) {
-              const uniqueKey = (normalizedAcc.name_en || normalizedAcc.account_name).toLowerCase();
+            const name = (acc.account_name || acc.name || '').trim();
+            if (name) {
+              const uniqueKey = name.toLowerCase();
               if (!consolidatedAccountsMap.has(uniqueKey)) {
-                consolidatedAccountsMap.set(uniqueKey, normalizedAcc);
+                consolidatedAccountsMap.set(uniqueKey, {
+                  ...acc,
+                  id: acc.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                  name: name,
+                  account_name: name,
+                  primary_type: acc.primary_type || acc.type || 'Expenses',
+                  type: acc.type || acc.primary_type || 'Expenses',
+                  sub_group: acc.sub_group || acc.group || 'General Ledger',
+                  group: acc.group || acc.sub_group || 'General Ledger',
+                  opening_balance: Number(acc.opening_balance || acc.openingBalance || 0),
+                  openingBalance: Number(acc.opening_balance || acc.openingBalance || 0),
+                  balance_type: acc.balance_type || acc.balanceType || 'Dr',
+                  balanceType: acc.balance_type || acc.balanceType || 'Dr'
+                });
               } else {
                 const existing = consolidatedAccountsMap.get(uniqueKey);
                 consolidatedAccountsMap.set(uniqueKey, {
                   ...existing,
-                  ...normalizedAcc,
-                  opening_balance: Number(normalizedAcc.opening_balance || existing.opening_balance || 0),
-                  openingBalance: Number(normalizedAcc.openingBalance || existing.openingBalance || 0)
+                  ...acc,
+                  name: name,
+                  account_name: name,
+                  opening_balance: Number(acc.opening_balance || acc.openingBalance || existing.opening_balance || 0),
+                  openingBalance: Number(acc.opening_balance || acc.openingBalance || existing.openingBalance || 0)
                 });
               }
             }
