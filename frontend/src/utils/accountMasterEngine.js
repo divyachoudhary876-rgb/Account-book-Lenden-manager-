@@ -304,3 +304,174 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
 
   let oldName = '';
   if (existingIdx !== -1) {
+    oldName = accounts[existingIdx].account_name || accounts[existingIdx].name || '';
+  }
+
+  const payload = {
+    id: accountData.id || (existingIdx !== -1 ? accounts[existingIdx].id : `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`),
+    account_name: cleanName,
+    name: cleanName,
+    primary_type: accountData.primary_type || accountData.type || 'EXPENSES',
+    type: accountData.type || accountData.primary_type || 'Expenses',
+    sub_group: accountData.sub_group || accountData.group || 'Direct Production & Factory Expenses',
+    group: accountData.group || accountData.sub_group || 'Direct Production & Factory Expenses',
+    opening_balance: parseFloat(accountData.opening_balance || accountData.openingBalance || 0),
+    openingBalance: parseFloat(accountData.opening_balance || accountData.openingBalance || 0),
+    balance_type: accountData.balance_type || accountData.balanceType || 'Dr',
+    balanceType: accountData.balance_type || accountData.balanceType || 'Dr',
+    phone: accountData.phone || '',
+    mobile: accountData.phone || '',
+    address: accountData.address || '',
+    gstin: accountData.gstin || '',
+    businessCategory: accountData.businessCategory || '',
+    createdAtFY: accountData.createdAtFY || '',
+    is_system_locked: Boolean(accountData.is_system_locked || accountData.isSystemLocked),
+    isSystemLocked: Boolean(accountData.is_system_locked || accountData.isSystemLocked),
+    updated_at: new Date().toISOString()
+  };
+
+  if (existingIdx !== -1) {
+    if ((accounts[existingIdx].is_system_locked || accounts[existingIdx].isSystemLocked) && accounts[existingIdx].account_name !== payload.account_name) {
+      throw new Error(`System core account "${accounts[existingIdx].account_name}" ka naam nahi badla ja sakta.`);
+    }
+    accounts[existingIdx] = { ...accounts[existingIdx], ...payload };
+  } else {
+    accounts.push(payload);
+  }
+
+  // Strictly firm-scoped keys only
+  localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(accounts));
+  localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(accounts));
+
+  // Multi-bucket Cascade Rename Engine
+  if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
+    const oldTarget = oldName.trim().toLowerCase();
+
+    const firmTargetKeys = [
+      `app_vouchers_${activeFirmId}`,
+      `account_book_vouchers_${activeFirmId}`,
+      `sales_invoices_${activeFirmId}`,
+      `app_sales_invoices_${activeFirmId}`,
+      `app_invoices_${activeFirmId}`,
+      `purchase_bills_${activeFirmId}`,
+      `app_purchase_bills_${activeFirmId}`,
+      `bill_settlements_${activeFirmId}`,
+      `party_transactions_${activeFirmId}`,
+      `transport_trips_${activeFirmId}`,
+      `app_payroll_entries_${activeFirmId}`,
+      `payroll_entries_${activeFirmId}`,
+      `material_consumptions_${activeFirmId}`
+    ];
+
+    const matchFields = [
+      'dr_account', 'cr_account', 'dr_party', 'cr_party',
+      'account_name', 'accountName', 'name', 'party',
+      'party_name', 'partyName', 'customer_name', 'customerName',
+      'supplier_name', 'supplierName', 'customer_account', 'supplier_account',
+      'customerParty', 'supplierParty', 'customerId', 'supplierId',
+      'worker', 'worker_name', 'expense_ledger', 'linked_ledger_account', 
+      'ledger_account', 'debit_account', 'credit_account'
+    ];
+
+    firmTargetKeys.forEach(storageKey => {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) return;
+        let data = JSON.parse(raw);
+        let modified = false;
+
+        const deepReplace = (node) => {
+          if (!node) return;
+          if (Array.isArray(node)) {
+            node.forEach(item => deepReplace(item));
+          } else if (typeof node === 'object') {
+            matchFields.forEach(field => {
+              if (typeof node[field] === 'string' && node[field].trim().toLowerCase() === oldTarget) {
+                node[field] = cleanName;
+                modified = true;
+              }
+            });
+
+            if (Array.isArray(node.entries)) {
+              node.entries.forEach(entry => deepReplace(entry));
+              if (modified) {
+                node.dr_account = node.entries
+                  .filter(e => e.type === 'Dr' || e.type === 'DR')
+                  .map(e => e.account_name || e.party || cleanName)
+                  .join(', ');
+                node.cr_account = node.entries
+                  .filter(e => e.type === 'Cr' || e.type === 'CR')
+                  .map(e => e.account_name || e.party || cleanName)
+                  .join(', ');
+              }
+            }
+
+            if (Array.isArray(node.items)) {
+              node.items.forEach(it => deepReplace(it));
+            }
+
+            Object.keys(node).forEach(key => {
+              if (typeof node[key] === 'object' && node[key] !== null) {
+                deepReplace(node[key]);
+              }
+            });
+          }
+        };
+
+        deepReplace(data);
+
+        if (modified) {
+          localStorage.setItem(storageKey, JSON.stringify(data));
+        }
+      } catch (err) {
+        console.error(`[CASCADE RENAME ERROR] Failed updating bucket ${storageKey}:`, err);
+      }
+    });
+  }
+
+  window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('storage'));
+
+  return payload;
+};
+
+export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
+  const activeFirmId = resolveFirmId(firmId);
+  const accounts = getFirmMasterAccounts(activeFirmId);
+  const target = accounts.find(a => a.id === accountId);
+
+  if (!target) return false;
+
+  if (target.is_system_locked || target.isSystemLocked) {
+    throw new Error(`Core statutory ledger account "${target.account_name || target.name}" ko delete nahi kiya ja sakta.`);
+  }
+
+  const targetName = (target.account_name || target.name || '').trim().toLowerCase();
+
+  const existingVouchers = getUniversalVouchersByFirm(activeFirmId) || [];
+  const hasActiveTransactions = existingVouchers.some(v => {
+    if (!v) return false;
+    const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
+    const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim().toLowerCase();
+    if (dr === targetName || cr === targetName) return true;
+
+    if (Array.isArray(v.entries)) {
+      return v.entries.some(e => (e.account_name || e.party || '').trim().toLowerCase() === targetName);
+    }
+    return false;
+  });
+
+  if (hasActiveTransactions) {
+    throw new Error(`⚠️ Is account "${target.account_name || target.name}" par purane transactions (vouchers/bills) darj hain. Pehle iske vouchers delete ya adjust karein.`);
+  }
+
+  const updated = accounts.filter(a => a.id !== accountId);
+  localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(updated));
+  localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(updated));
+
+  window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('storage'));
+  return true;
+};
