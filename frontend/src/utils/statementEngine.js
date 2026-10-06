@@ -2,6 +2,32 @@
 import { getFirmScopedStorageKey, getActiveFirmId } from './firmIsolationEngine';
 
 /**
+ * Helper to strip parenthetical Hindi/Devanagari script to get core base name
+ * e.g., "Ramlal (रामलाल)" -> "ramlal", "Coal / Fuel (कोयला)" -> "coal / fuel"
+ */
+const getBaseName = (str = '') => {
+  return String(str || '')
+    .replace(/\s*\([\u0900-\u097F\s]+\)/g, '')
+    .trim()
+    .toLowerCase();
+};
+
+/**
+ * Resilient bilingual matcher comparing legacy English, Hindi, and composite names
+ */
+const normalizeMatch = (target = '', candidate = '') => {
+  if (!target || !candidate) return false;
+  const t = String(target).trim().toLowerCase();
+  const c = String(candidate).trim().toLowerCase();
+  if (t === c) return true;
+
+  const tBase = getBaseName(t);
+  const cBase = getBaseName(c);
+
+  return tBase !== '' && tBase === cBase;
+};
+
+/**
  * Helper to resolve exact sanitized firmId
  */
 const resolveFirmId = (firmInput) => {
@@ -101,6 +127,8 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
           ...acc,
           account_name: name,
           name: name,
+          name_en: acc.name_en || getBaseName(name),
+          name_hi: acc.name_hi || '',
           opening_balance: parseFloat(acc.opening_balance || acc.openingBalance || 0),
           balance_type: acc.balance_type || acc.balanceType || 'Dr'
         });
@@ -114,7 +142,7 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
 };
 
 /**
- * Generate Double-Entry Account Milan Ledger Statement (Supports Compound & Itemized Lines)
+ * Generate Double-Entry Account Milan Ledger Statement (Supports Bilingual, Compound & Itemized Lines)
  */
 export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccountName = '') => {
   const cleanTarget = (targetAccountName || '').trim();
@@ -134,186 +162,18 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
   const firmId = resolveFirmId(firmIdInput);
   const accounts = getAccountHeads(firmId);
   const vouchers = getAllUniversalVouchers(firmId);
-  const targetLower = cleanTarget.toLowerCase();
 
-  const matchedAccount = accounts.find(
-    a => (a.account_name || a.name || '').trim().toLowerCase() === targetLower
-  );
+  // Resilient bilingual account head lookup
+  const matchedAccount = accounts.find(a => {
+    const aName = a.account_name || a.name || '';
+    const aEn = a.name_en || '';
+    return normalizeMatch(cleanTarget, aName) || normalizeMatch(cleanTarget, aEn);
+  });
 
+  const displayAccountName = matchedAccount?.account_name || cleanTarget;
   const openingBal = parseFloat(matchedAccount?.opening_balance || matchedAccount?.openingBalance || 0);
   const balanceType = matchedAccount?.balance_type || matchedAccount?.balanceType || 'Dr';
 
   let runningBalance = balanceType === 'Dr' ? openingBal : -openingBal;
   let totalDebit = 0;
-  let totalCredit = 0;
-
-  // Filter vouchers where account participates (in simple Dr/Cr OR inside compound entries array)
-  const relevantVouchers = vouchers
-    .filter(v => {
-      if (!v) return false;
-      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
-      const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim().toLowerCase();
-      
-      if (dr === targetLower || cr === targetLower) return true;
-
-      // Check compound entries array
-      if (Array.isArray(v.entries) && v.entries.length > 0) {
-        return v.entries.some(e => (e.account_name || e.party || '').trim().toLowerCase() === targetLower);
-      }
-
-      // Check worker/contractor field
-      if (v.worker && String(v.worker).trim().toLowerCase() === targetLower) return true;
-      if (v.expense_ledger && String(v.expense_ledger).trim().toLowerCase() === targetLower) return true;
-
-      return false;
-    })
-    .sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
-
-  const ledgerEntries = [];
-
-  relevantVouchers.forEach((v, index) => {
-    let debitAmount = 0;
-    let creditAmount = 0;
-    let counterParty = '';
-
-    // A. Compound entries evaluation
-    if (Array.isArray(v.entries) && v.entries.length > 0) {
-      let isMatched = false;
-      const otherParties = [];
-
-      v.entries.forEach(e => {
-        const accName = (e.account_name || e.party || '').trim();
-        const amt = parseFloat(e.amount || e.debit || e.credit || 0);
-        const type = (e.type || '').toUpperCase();
-
-        if (accName.toLowerCase() === targetLower) {
-          isMatched = true;
-          if (type === 'DR' || parseFloat(e.debit || 0) > 0) debitAmount += amt;
-          if (type === 'CR' || parseFloat(e.credit || 0) > 0) creditAmount += amt;
-        } else if (accName) {
-          otherParties.push(accName);
-        }
-      });
-
-      if (isMatched) {
-        counterParty = otherParties.join(', ') || 'Various Account';
-      }
-    } 
-    // B. Worker wage entry evaluation
-    else if (v.worker && (String(v.worker).toLowerCase() === targetLower || String(v.expense_ledger).toLowerCase() === targetLower)) {
-      const amt = parseFloat(v.total_amount || v.amount || 0);
-      if (String(v.worker).toLowerCase() === targetLower) {
-        creditAmount = amt;
-        counterParty = v.expense_ledger || 'Wages Expense';
-      } else {
-        debitAmount = amt;
-        counterParty = v.worker || 'Labour Party';
-      }
-    }
-    // C. Simple Dr/Cr evaluation
-    else {
-      const drName = (v.dr_account || v.debit_account || v.dr_party || '').trim();
-      const crName = (v.cr_account || v.credit_account || v.cr_party || '').trim();
-      const amt = parseFloat(v.amount || v.total_amount || 0);
-
-      if (drName.toLowerCase() === targetLower) {
-        debitAmount = amt;
-        counterParty = crName || 'Various Account';
-      }
-      if (crName.toLowerCase() === targetLower) {
-        creditAmount = amt;
-        counterParty = drName || 'Various Account';
-      }
-    }
-
-    if (debitAmount > 0 || creditAmount > 0) {
-      totalDebit += debitAmount;
-      totalCredit += creditAmount;
-      runningBalance += (debitAmount - creditAmount);
-
-      let itemNote = '';
-      if (Array.isArray(v.items) && v.items.length > 0) {
-        itemNote = v.items.map(it => `${it.itemName || it.name || 'Item'} (${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
-      }
-
-      const finalParticulars = [
-        debitAmount > 0 ? `To ${counterParty}` : `By ${counterParty}`,
-        itemNote,
-        v.narration || v.notes || ''
-      ].filter(Boolean).join(' | ');
-
-      ledgerEntries.push({
-        index: ledgerEntries.length + 1,
-        id: v.id,
-        date: v.voucher_date || v.date || '2026-04-01',
-        voucher_type: (v.voucher_type || v.type || 'JOURNAL').toUpperCase(),
-        voucher_no: v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : `REF-${index + 1}`),
-        particulars: finalParticulars,
-        opposite_account: counterParty,
-        debit: debitAmount,
-        credit: creditAmount,
-        running_balance: Math.abs(runningBalance),
-        balance_type: runningBalance >= 0 ? 'Dr' : 'Cr',
-        narration: v.narration || v.notes || ''
-      });
-    }
-  });
-
-  return {
-    accountName: cleanTarget,
-    primaryType: matchedAccount?.primary_type || matchedAccount?.type || 'ASSETS',
-    subGroup: matchedAccount?.sub_group || matchedAccount?.group || 'General Ledger',
-    openingBalance: openingBal,
-    openingBalanceType: balanceType,
-    entries: ledgerEntries,
-    totalDebit: parseFloat(totalDebit.toFixed(2)),
-    totalCredit: parseFloat(totalCredit.toFixed(2)),
-    closingBalance: parseFloat(Math.abs(runningBalance).toFixed(2)),
-    closingBalanceType: runningBalance >= 0 ? 'Dr' : 'Cr'
-  };
-};
-
-/**
- * Export account statement to CSV format
- */
-export const downloadCSVStatement = (statement, firmName = 'Firm') => {
-  if (!statement || !statement.entries) return;
-
-  const headers = ['#', 'Date', 'Voucher Type', 'Ref No', 'Particulars', 'Debit (Rs)', 'Credit (Rs)', 'Balance', 'Type', 'Narration'];
-  const rows = statement.entries.map(e => [
-    e.index,
-    e.date,
-    e.voucher_type,
-    e.voucher_no,
-    `"${(e.particulars || '').replace(/"/g, '""')}"`,
-    e.debit.toFixed(2),
-    e.credit.toFixed(2),
-    e.running_balance.toFixed(2),
-    e.balance_type,
-    `"${(e.narration || '').replace(/"/g, '""')}"`
-  ]);
-
-  const csvContent = [
-    `"Account Statement: ${statement.accountName}"`,
-    `"Firm: ${firmName}"`,
-    `"Opening Balance: Rs. ${statement.openingBalance.toFixed(2)} ${statement.openingBalanceType}"`,
-    '',
-    headers.join(','),
-    ...rows.map(r => r.join(',')),
-    '',
-    `"Total Debit",${statement.totalDebit.toFixed(2)},"Total Credit",${statement.totalCredit.toFixed(2)}`,
-    `"Closing Balance",Rs. ${statement.closingBalance.toFixed(2)} ${statement.closingBalanceType}`
-  ].join('\n');
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `${statement.accountName.replace(/\s+/g, '_')}_Statement.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
-// Aliases for backwards compatibility
-export const getAccountStatement = getAccountLedgerStatement;
+  let
