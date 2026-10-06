@@ -674,4 +674,73 @@ const overlayStyle = {
   right: 0,
   bottom: 0,
   backgroundColor: 'rgba(15, 23, 42, 0.65)',
-  backdropFilter: 'blur(3
+  backdropFilter: 'blur(3px)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 99999,
+  padding: '10px',
+  boxSizing: 'border-box'
+};
+
+const modalCardStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '16px',
+  padding: '16px',
+  width: '100%',
+  maxWidth: '560px',
+  maxHeight: '94vh',
+  overflowY: 'auto',
+  border: '1px solid #e2e8f0',
+  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+  boxSizing: 'border-box',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+};
+
+const labelStyle = {
+  display: 'block',
+  fontSize: '10px',
+  fontWeight: '800',
+  color: '#475569',
+  marginBottom: '3px',
+  letterSpacing: '0.3px',
+  textTransform: 'uppercase'
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '8px 10px',
+  borderRadius: '6px',
+  border: '1px solid #cbd5e1',
+  fontSize: '11px',
+  boxSizing: 'border-box',
+  backgroundColor: '#ffffff',
+  color: '#0f172a',
+  outline: 'none'
+};
+
+const autocompleteBoxStyle = {
+  position: 'absolute',
+  top: '100%',
+  left: 0,
+  right: 0,
+  backgroundColor: '#ffffff',
+  border: '1px solid #cbd5e1',
+  borderRadius: '8px',
+  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+  zIndex: 100,
+  marginTop: '2px',
+  overflow: 'hidden'
+};
+
+const autocompleteItemStyle = {
+  padding: '8px 10px',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  cursor: 'pointer',
+  borderBottom: '1px solid #f8fafc',
+  fontSize: '11px',
+  transition: 'background-color 0.1s ease',
+  backgroundColor: '#ffffff'
+};
