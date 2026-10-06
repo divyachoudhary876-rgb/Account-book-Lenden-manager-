@@ -6,6 +6,52 @@ import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 
 /**
+ * Ultra-Robust Typography & Spacing Normalizer
+ */
+export const cleanTypographySpacing = (rawText) => {
+  if (!rawText) return '';
+  let str = String(rawText);
+
+  // Normalize colon spacing
+  str = str.replace(/\s*:\s*/g, ': ');
+
+  // Normalize rate symbol spacing
+  str = str.replace(/\s*@\s*(?:rs\.?|₹)?\s*/gi, ' @ Rs ');
+
+  // Normalize commas and hyphens
+  str = str.replace(/\s*,\s*/g, ', ');
+  str = str.replace(/\s*-\s*/g, ' - ');
+
+  // Clean brackets inner spacing
+  str = str.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+
+  // Collapse multiple whitespaces/tabs into a single neat space
+  str = str.replace(/\s{2,}/g, ' ');
+
+  return str.trim();
+};
+
+/**
+ * Strips unsupported non-ASCII / Devanagari Unicode characters for standard jsPDF core fonts
+ */
+export const cleanPdfText = (rawText) => {
+  if (!rawText) return '';
+  let str = String(rawText);
+
+  // Remove parenthetical Hindi/Devanagari scripts
+  str = str.replace(/\s*\([\u0900-\u097F\s\/,-]+\)/g, '');
+  str = str.replace(/\s*\[[\u0900-\u097F\s\/,-]+\]/g, '');
+
+  // Strip standalone Devanagari characters
+  str = str.replace(/[\u0900-\u097F]/g, '');
+
+  // Replace Indian Rupee symbol with 'Rs '
+  str = str.replace(/₹/g, 'Rs ');
+
+  return cleanTypographySpacing(str);
+};
+
+/**
  * Universal safe firm name resolver
  */
 const getCleanFirmName = (firmInput) => {
@@ -20,65 +66,16 @@ const getCleanFirmName = (firmInput) => {
 };
 
 /**
- * Strips unsupported non-ASCII / Devanagari Unicode characters for standard jsPDF core fonts
- * Example: "Ramlal (रामलाल)" -> "Ramlal", "Int 1 Number (अव्वल)" -> "Int 1 Number"
- */
-export const cleanPdfText = (rawText) => {
-  if (!rawText) return '';
-  let str = String(rawText);
-
-  // 1. Remove parenthetical Hindi/Devanagari scripts
-  str = str.replace(/\s*\([\u0900-\u097F\s\/,-]+\)/g, '');
-  str = str.replace(/\s*\[[\u0900-\u097F\s\/,-]+\]/g, '');
-
-  // 2. Strip any standalone Devanagari characters
-  str = str.replace(/[\u0900-\u097F]/g, '');
-
-  // 3. Replace Indian Rupee symbol with 'Rs ' for standard font safety
-  str = str.replace(/₹/g, 'Rs ');
-
-  return cleanTypographySpacing(str);
-};
-
-/**
- * Ultra-Robust Typography & Spacing Normalizer
- */
-export const cleanTypographySpacing = (rawText) => {
-  if (!rawText) return '';
-  let str = String(rawText);
-
-  // Normalize colon spacing: "Issue : 100" -> "Issue: 100"
-  str = str.replace(/\s*:\s*/g, ': ');
-
-  // Normalize rate symbol spacing: "@ 102" or "@Rs 102" -> " @ Rs "
-  str = str.replace(/\s*@\s*(?:rs\.?|₹)?\s*/gi, ' @ Rs ');
-
-  // Normalize commas and hyphens
-  str = str.replace(/\s*,\s*/g, ', ');
-  str = str.replace(/\s*-\s*/g, ' - ');
-
-  // Clean brackets inner spacing: "( 141 Liters )" -> "(141 Liters)"
-  str = str.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
-
-  // Collapse multiple whitespaces/tabs into a single neat space
-  str = str.replace(/\s{2,}/g, ' ');
-
-  return str.trim();
-};
-
-/**
- * Ultra-Robust Account Name Sanitizer (Eliminates '(OK !<)', legacy badges, and unsupported Devanagari)
+ * Account Name Sanitizer (Eliminates '(OK !<)', legacy badges, and unsupported Devanagari)
  */
 const cleanAccountTitle = (rawName) => {
   if (!rawName) return '';
   let str = String(rawName).trim();
 
-  // Special case: Normalize cash in hand
   if (/cash\s*in\s*hand/i.test(str) || /^cash$/i.test(str)) {
     return 'Cash in Hand';
   }
 
-  // Remove any bracket containing 'OK', exclamation marks, or comparison symbols
   str = str.replace(/\s*\([^)]*OK[^)]*\)/gi, '');
   str = str.replace(/\s*\[[^\]]*OK[^\]]*\]/gi, '');
   str = str.replace(/\s*\([^)]*![^)]*\)/gi, '');
@@ -103,7 +100,7 @@ const arrayBufferToBase64 = (buffer) => {
 };
 
 /**
- * 100% Corruption-Free True PDF Exporter (ArrayBuffer Binary Stream)
+ * True PDF Exporter (ArrayBuffer Binary Stream)
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -112,7 +109,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   try {
     const pdfArrayBuffer = doc.output('arraybuffer');
 
-    // 1. Mobile Capacitor Native Environment (Android/iOS)
+    // 1. Mobile Capacitor Native Environment
     if (Capacitor.isNativePlatform()) {
       const base64Data = arrayBufferToBase64(pdfArrayBuffer);
       const writeResult = await Filesystem.writeFile({
@@ -132,7 +129,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
-    // 2. Standard Web Browser Download via Blob
+    // 2. Browser Blob Download
     const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
     const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
@@ -181,7 +178,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     y += 5;
 
     doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} \vert{} Page${pageNum}`, 14, y);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
     y += 6;
 
     doc.setFillColor(15, 23, 42);
@@ -201,7 +198,9 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   printHeader();
 
   txs.forEach((t, index) => {
-    const rawTitle = cleanPdfText(`${t.voucher_type \vert{}\vert{} 'TX'} #${t.voucher_number || t.reference_no || ''}`);
+    const vType = t.voucher_type || 'TX';
+    const vNum = t.voucher_number || t.reference_no || '';
+    const rawTitle = cleanPdfText(`${vType} #${vNum}`);
     const descText = cleanPdfText(t.narration || '');
 
     const splitTitle = doc.splitTextToSize(rawTitle, 68);
@@ -235,7 +234,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.text(deb > 0 ? deb.toFixed(2) : '-', 132, y, { align: 'right' });
     doc.text(cr > 0 ? cr.toFixed(2) : '-', 162, y, { align: 'right' });
     doc.setFont('helvetica', 'bold');
-    doc.text(`${runBal.toFixed(2)}${t.balanceType || 'Dr'}`, 193, y, { align: 'right' });
+    doc.text(`${runBal.toFixed(2)} ${t.balanceType || 'Dr'}`, 193, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
     if (splitDesc.length > 0) {
@@ -305,7 +304,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
     y += 5;
 
     doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} \vert{} Page${pageNum}`, 14, y);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
     y += 6;
   };
 
@@ -491,7 +490,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     y += 5;
 
     doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} \vert{} Page${pageNum}`, 14, y);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
     y += 6;
 
     doc.setFillColor(15, 23, 42);
@@ -513,7 +512,8 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   printJournalHeader();
 
   rows.forEach((vch, idx) => {
-    const rawRef = cleanPdfText(String(vch.reference_no || vch.voucher_number || vch.id || '-'));
+    const vRef = vch.reference_no || vch.voucher_number || vch.id || '-';
+    const rawRef = cleanPdfText(String(vRef));
     const vType = String(vch.voucher_type || vch.type || 'JOURNAL');
 
     const drName = cleanAccountTitle(vch.dr_account || vch.dr_party || 'Dr Account');
@@ -525,13 +525,13 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
       const iQty = it.qty || it.quantity || 0;
       const iUnit = cleanPdfText((it.unit || 'Pcs').trim());
       const iRate = parseFloat(it.rate || it.price || 0);
-      return cleanTypographySpacing(`${iName} (Qty:${iQty} ${iUnit} @ Rs ${iRate.toFixed(2)})`);
+      return cleanTypographySpacing(`${iName} (Qty: ${iQty} ${iUnit} @ Rs ${iRate.toFixed(2)})`);
     }).join(', ');
 
     const rawNote = vch.narration || vch.remarks || vch.description || '';
     const cleanNote = cleanPdfText(rawNote);
     const noteText = cleanNote 
-      ? (itemStr ? `${itemStr} -${cleanNote}` : cleanNote) 
+      ? (itemStr ? `${itemStr} - ${cleanNote}` : cleanNote) 
       : itemStr;
 
     const splitDr = doc.splitTextToSize(drName, 54);
