@@ -1,12 +1,30 @@
 // frontend/src/utils/financialYearLockEngine.js
 
+import { performFinancialYearRollover } from './autoRolloverEngine.js';
+
 export const getCurrentActiveFY = () => {
   return localStorage.getItem('active_financial_year') || '2026-2027';
 };
 
-export const setActiveFY = (fyLabel) => {
+/**
+ * Sets active financial year and automatically ensures opening balances
+ * are rolled over from the previous financial year.
+ */
+export const setActiveFY = (fyLabel, explicitFirmId = null) => {
   localStorage.setItem('active_financial_year', fyLabel);
+  
+  const firmId = explicitFirmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+
+  // Automatically trigger balance rollover for the newly selected FY
+  try {
+    performFinancialYearRollover(firmId, fyLabel);
+  } catch (err) {
+    console.warn('Auto rollover execution skipped:', err);
+  }
+
   window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('fy_state_updated'));
 };
 
 export const isTransactionDateLocked = (transactionDate) => {
