@@ -5,6 +5,14 @@ import { StorageService } from './storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
+// Helper to strip parenthetical Hindi text for resilient matching
+const getBaseName = (str = '') => {
+  return String(str || '')
+    .replace(/\s*\([\u0900-\u097F\s]+\)/g, '')
+    .trim()
+    .toLowerCase();
+};
+
 // Helper to get sanitized Date range for selected FY (handles 'FY 2026-27' & '2026-27')
 const getFYDateRange = (fyString = '2026-27') => {
   try {
@@ -70,7 +78,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
     const vDate = v.voucher_date || v.date || '';
     if (vDate && (vDate < startDate || vDate > endDate)) return;
 
-    // Robust deduplication ID
     const uniqueId = v.id || v.reference_no || v.voucher_number || `${vDate}-${v.amount || v.total_amount || 0}`;
     if (!uniqueVoucherMap.has(uniqueId)) {
       uniqueVoucherMap.set(uniqueId, v);
@@ -121,39 +128,56 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
   const flatLines = getNormalizedLedgerLines(firmId, selectedFY);
 
   const accountTotals = {};
+  const baseKeyLookup = new Map();
 
-  // Load opening balances strictly from master accounts of this firm
+  // 1. Initialize master accounts and build bilingual lookup maps
   masterAccounts.forEach((acc) => {
-    const name = (acc.account_name || acc.name || '').trim();
-    if (!name) return;
+    const displayName = (acc.account_name || acc.name || '').trim();
+    if (!displayName) return;
+    
     const opening = parseFloat(acc.opening_balance || acc.openingBalance || 0);
     const isDebitOpening = (acc.balance_type || acc.balanceType || 'Dr') === 'Dr';
 
-    accountTotals[name] = {
-      account_name: name,
+    accountTotals[displayName] = {
+      account_name: displayName,
       primary_type: (acc.primary_type || acc.type || 'ASSETS').toUpperCase(),
       sub_group: acc.sub_group || acc.group || '',
       debit: isDebitOpening ? opening : 0,
       credit: !isDebitOpening ? opening : 0
     };
+
+    const baseName = getBaseName(displayName);
+    if (baseName) baseKeyLookup.set(baseName, displayName);
+    if (acc.name_en) baseKeyLookup.set(String(acc.name_en).trim().toLowerCase(), displayName);
+    baseKeyLookup.set(displayName.toLowerCase(), displayName);
   });
 
+  // 2. Aggregate transactions using bilingual base-name normalization
   flatLines.forEach((line) => {
-    const name = line.account_name.trim();
-    if (!accountTotals[name]) {
+    const rawName = line.account_name.trim();
+    const rawLower = rawName.toLowerCase();
+    const baseName = getBaseName(rawName);
+
+    // Find target master account key
+    let targetKey = baseKeyLookup.get(rawLower) || baseKeyLookup.get(baseName);
+
+    if (!targetKey) {
+      targetKey = rawName;
       let inferredType = 'EXPENSES';
-      const lower = name.toLowerCase();
+      const lower = rawName.toLowerCase();
       if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor') || lower.includes('stock')) inferredType = 'ASSETS';
-      else if (lower.includes('sale') || lower.includes('income') || lower.includes('revenue')) inferredType = 'INCOME';
+      else if (lower.includes('sale') || lower.includes('income') || lower.includes('revenue') || lower.includes('discount received')) inferredType = 'INCOME';
       else if (lower.includes('capital') || lower.includes('creditor') || lower.includes('loan')) inferredType = 'LIABILITIES';
 
-      accountTotals[name] = { account_name: name, primary_type: inferredType, sub_group: 'General', debit: 0, credit: 0 };
+      accountTotals[targetKey] = { account_name: targetKey, primary_type: inferredType, sub_group: 'General', debit: 0, credit: 0 };
+      baseKeyLookup.set(rawLower, targetKey);
+      if (baseName) baseKeyLookup.set(baseName, targetKey);
     }
 
     if (line.entry_type === 'Dr') {
-      accountTotals[name].debit += line.amount;
+      accountTotals[targetKey].debit += line.amount;
     } else {
-      accountTotals[name].credit += line.amount;
+      accountTotals[targetKey].credit += line.amount;
     }
   });
 
