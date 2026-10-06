@@ -2,32 +2,6 @@
 import { getFirmScopedStorageKey, getActiveFirmId } from './firmIsolationEngine';
 
 /**
- * Helper to strip parenthetical Hindi/Devanagari script to get core base name
- * e.g., "Ramlal (रामलाल)" -> "ramlal", "Coal / Fuel (कोयला)" -> "coal / fuel"
- */
-const getBaseName = (str = '') => {
-  return String(str || '')
-    .replace(/\s*\([\u0900-\u097F\s]+\)/g, '')
-    .trim()
-    .toLowerCase();
-};
-
-/**
- * Resilient bilingual matcher comparing legacy English, Hindi, and composite names
- */
-const normalizeMatch = (target = '', candidate = '') => {
-  if (!target || !candidate) return false;
-  const t = String(target).trim().toLowerCase();
-  const c = String(candidate).trim().toLowerCase();
-  if (t === c) return true;
-
-  const tBase = getBaseName(t);
-  const cBase = getBaseName(c);
-
-  return tBase !== '' && tBase === cBase;
-};
-
-/**
  * Helper to resolve exact sanitized firmId
  */
 const resolveFirmId = (firmInput) => {
@@ -127,8 +101,6 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
           ...acc,
           account_name: name,
           name: name,
-          name_en: acc.name_en || getBaseName(name),
-          name_hi: acc.name_hi || '',
           opening_balance: parseFloat(acc.opening_balance || acc.openingBalance || 0),
           balance_type: acc.balance_type || acc.balanceType || 'Dr'
         });
@@ -142,7 +114,7 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
 };
 
 /**
- * Generate Double-Entry Account Milan Ledger Statement (Supports Bilingual, Compound & Itemized Lines)
+ * Generate Double-Entry Account Milan Ledger Statement (Supports Compound & Itemized Lines)
  */
 export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccountName = '') => {
   const cleanTarget = (targetAccountName || '').trim();
@@ -162,15 +134,12 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
   const firmId = resolveFirmId(firmIdInput);
   const accounts = getAccountHeads(firmId);
   const vouchers = getAllUniversalVouchers(firmId);
+  const targetLower = cleanTarget.toLowerCase();
 
-  // Resilient bilingual account head lookup
-  const matchedAccount = accounts.find(a => {
-    const aName = a.account_name || a.name || '';
-    const aEn = a.name_en || '';
-    return normalizeMatch(cleanTarget, aName) || normalizeMatch(cleanTarget, aEn);
-  });
+  const matchedAccount = accounts.find(
+    a => (a.account_name || a.name || '').trim().toLowerCase() === targetLower
+  );
 
-  const displayAccountName = matchedAccount?.account_name || cleanTarget;
   const openingBal = parseFloat(matchedAccount?.opening_balance || matchedAccount?.openingBalance || 0);
   const balanceType = matchedAccount?.balance_type || matchedAccount?.balanceType || 'Dr';
 
@@ -178,23 +147,23 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
   let totalDebit = 0;
   let totalCredit = 0;
 
-  // Filter vouchers where account participates using bilingual matching
+  // Filter vouchers where account participates (in simple Dr/Cr OR inside compound entries array)
   const relevantVouchers = vouchers
     .filter(v => {
       if (!v) return false;
-      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim();
-      const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim();
+      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
+      const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim().toLowerCase();
       
-      if (normalizeMatch(cleanTarget, dr) || normalizeMatch(cleanTarget, cr)) return true;
+      if (dr === targetLower || cr === targetLower) return true;
 
       // Check compound entries array
       if (Array.isArray(v.entries) && v.entries.length > 0) {
-        return v.entries.some(e => normalizeMatch(cleanTarget, e.account_name || e.party || ''));
+        return v.entries.some(e => (e.account_name || e.party || '').trim().toLowerCase() === targetLower);
       }
 
-      // Check worker/contractor and expense ledger fields
-      if (v.worker && normalizeMatch(cleanTarget, v.worker)) return true;
-      if (v.expense_ledger && normalizeMatch(cleanTarget, v.expense_ledger)) return true;
+      // Check worker/contractor field
+      if (v.worker && String(v.worker).trim().toLowerCase() === targetLower) return true;
+      if (v.expense_ledger && String(v.expense_ledger).trim().toLowerCase() === targetLower) return true;
 
       return false;
     })
@@ -217,7 +186,7 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
         const amt = parseFloat(e.amount || e.debit || e.credit || 0);
         const type = (e.type || '').toUpperCase();
 
-        if (normalizeMatch(cleanTarget, accName)) {
+        if (accName.toLowerCase() === targetLower) {
           isMatched = true;
           if (type === 'DR' || parseFloat(e.debit || 0) > 0) debitAmount += amt;
           if (type === 'CR' || parseFloat(e.credit || 0) > 0) creditAmount += amt;
@@ -227,13 +196,13 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
       });
 
       if (isMatched) {
-        counterParty = otherParties.join(', ') || 'Various Accounts';
+        counterParty = otherParties.join(', ') || 'Various Account';
       }
     } 
     // B. Worker wage entry evaluation
-    else if (v.worker && (normalizeMatch(cleanTarget, v.worker) || normalizeMatch(cleanTarget, v.expense_ledger))) {
+    else if (v.worker && (String(v.worker).toLowerCase() === targetLower || String(v.expense_ledger).toLowerCase() === targetLower)) {
       const amt = parseFloat(v.total_amount || v.amount || 0);
-      if (normalizeMatch(cleanTarget, v.worker)) {
+      if (String(v.worker).toLowerCase() === targetLower) {
         creditAmount = amt;
         counterParty = v.expense_ledger || 'Wages Expense';
       } else {
@@ -247,13 +216,13 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
       const crName = (v.cr_account || v.credit_account || v.cr_party || '').trim();
       const amt = parseFloat(v.amount || v.total_amount || 0);
 
-      if (normalizeMatch(cleanTarget, drName)) {
+      if (drName.toLowerCase() === targetLower) {
         debitAmount = amt;
-        counterParty = crName || 'Various Accounts';
+        counterParty = crName || 'Various Account';
       }
-      if (normalizeMatch(cleanTarget, crName)) {
+      if (crName.toLowerCase() === targetLower) {
         creditAmount = amt;
-        counterParty = drName || 'Various Accounts';
+        counterParty = drName || 'Various Account';
       }
     }
 
@@ -264,7 +233,7 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
 
       let itemNote = '';
       if (Array.isArray(v.items) && v.items.length > 0) {
-        itemNote = v.items.map(it => `${it.itemName || it.name || 'Item'} (${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
+        itemNote = v.items.map(it => `${it.itemName || it.name || 'Item'} (${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ â‚¹${it.rate || 0})`).join(', ');
       }
 
       const finalParticulars = [
@@ -291,7 +260,7 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
   });
 
   return {
-    accountName: displayAccountName,
+    accountName: cleanTarget,
     primaryType: matchedAccount?.primary_type || matchedAccount?.type || 'ASSETS',
     subGroup: matchedAccount?.sub_group || matchedAccount?.group || 'General Ledger',
     openingBalance: openingBal,
