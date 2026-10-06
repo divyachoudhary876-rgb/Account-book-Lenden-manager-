@@ -1,8 +1,7 @@
 // frontend/src/components/BillSettlementView.jsx
-
 import React, { useState, useEffect } from 'react';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
-import { saveUniversalVoucher } from '../utils/voucherPostingEngine.js';
+import { saveUniversalVoucher, normalizeLedgerAccountMatch } from '../utils/voucherPostingEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
@@ -80,12 +79,15 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
     setFeedback(null);
     const amt = round2(amountReceived);
 
-    if (!selectedParty || amt <= 0) {
-      setFeedback({ type: 'error', message: 'Kripya valid party aur amount (>0) darj karein!' });
+    const partyClean = (typeof selectedParty === 'object' ? (selectedParty.account_name || selectedParty.name) : selectedParty || '').trim();
+    const bankClean = (typeof receivingAccount === 'object' ? (receivingAccount.account_name || receivingAccount.name) : receivingAccount || '').trim();
+
+    if (!partyClean || amt <= 0) {
+      setFeedback({ type: 'error', message: 'कृपया पार्टी और वैध राशि दर्ज करें!' });
       return;
     }
-    if (!receivingAccount) {
-      setFeedback({ type: 'error', message: 'Kripya Cash ya Bank account chunein!' });
+    if (!bankClean) {
+      setFeedback({ type: 'error', message: 'कृपया Cash या Bank खाता चुनें!' });
       return;
     }
 
@@ -93,11 +95,11 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
       const vNum = 'SETT-' + Math.floor(1000 + Math.random() * 9000);
       const isReceipt = settlementType === 'RECEIPT';
 
-      // Ind AS Double-Entry:
+      // Ind AS / Indian GAAP Double-Entry:
       // RECEIPT: Dr Cash/Bank, Cr Party
       // PAYMENT: Dr Party, Cr Cash/Bank
-      const drAccount = isReceipt ? receivingAccount : selectedParty;
-      const crAccount = isReceipt ? selectedParty : receivingAccount;
+      const drAccount = isReceipt ? bankClean : partyClean;
+      const crAccount = isReceipt ? partyClean : bankClean;
 
       const voucherPayload = {
         id: (isReceipt ? 'REC-' : 'PAY-') + Date.now(),
@@ -113,7 +115,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
         cr_account: crAccount,
         amount: amt,
         total_amount: amt,
-        narration: narration.trim() || `Bill settlement ${isReceipt ? 'received from' : 'paid to'} ${selectedParty}`,
+        narration: narration.trim() || `Bill settlement ${isReceipt ? 'received from' : 'paid to'} ${partyClean}`,
         is_compound: true,
         entries: [
           { account_name: drAccount, party: drAccount, type: 'DR', debit: amt, credit: 0, amount: amt },
@@ -121,7 +123,6 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
         ]
       };
 
-      // Save atomically through Universal Engine (syncs app_vouchers_ and account_book_vouchers_)
       saveUniversalVoucher(activeFirmId, voucherPayload);
 
       window.dispatchEvent(new Event('app_storage_updated'));
@@ -130,7 +131,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
 
       setFeedback({ 
         type: 'success', 
-        message: `✓ ₹${amt.toLocaleString('en-IN')} settlement voucher (#${vNum}) successfully recorded for ${selectedParty}!` 
+        message: `✓ ₹${amt.toLocaleString('en-IN')} सेटलमेंट वाउचर (#${vNum}) सफलतापूर्वक दर्ज हुआ!` 
       });
 
       setAmountReceived('');
@@ -266,7 +267,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
             <label style={{ display: 'block', fontWeight: 'bold', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Narration / Remarks</label>
             <input 
               type="text" 
-              placeholder="e.g. Cleared invoice via NEFT / UPI / Cash" 
+              placeholder="उदा. RTGS / Cash / GPay के माध्यम से चुकता" 
               value={narration}
               onChange={(e) => setNarration(e.target.value)}
               style={inputStyle}
