@@ -8,13 +8,13 @@ import {
   getIndustrySuggestions,
   resolveIndustryKey 
 } from '../utils/accountMasterEngine.js';
+import { makeBilingualName } from '../utils/bilingualEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true, onClose }) {
   const firmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
   
-  // Real-time Firm Category Resolution
   const rawCat = useMemo(() => {
     return String(
       firm?.category || 
@@ -31,7 +31,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
   const [accounts, setAccounts] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
-  // Form States
+  // फॉर्म स्टेट्स (केवल एक नाम इनपुट)
   const [selectedCatId, setSelectedCatId] = useState('DEBTOR');
   const [accountName, setAccountName] = useState('');
   const [phone, setPhone] = useState('');
@@ -39,31 +39,24 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
   const [openingBalance, setOpeningBalance] = useState('');
   const [balanceDirection, setBalanceDirection] = useState('LE_NA_HAI');
 
-  // Autocomplete / Search States
+  // सर्च एवं ऑटो-कंप्लीट स्टेट्स
   const [showDropdownSuggestions, setShowDropdownSuggestions] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [statusMessage, setStatusMessage] = useState(null);
   
   const dropdownRef = useRef(null);
 
-  // Dynamic Multi-Industry Intent Cards Configuration
+  // 6 ऑल-इंक्लूसिव द्विभाषी इंटेंट कार्ड्स
   const businessCategories = useMemo(() => {
+    const isBhatta = industryKey === 'BRICK_KILN';
     const isBuilding = industryKey === 'BUILDING_MATERIAL';
     const isTransport = industryKey === 'TRANSPORT';
-    const isBhatta = industryKey === 'BRICK_KILN';
-    const isTrading = industryKey === 'TRADING';
 
     return [
       {
         id: 'DEBTOR',
-        title: 'Customer / Grahak',
-        subtitle: isBhatta
-          ? 'ईंट व माल खरीदने वाला ग्राहक'
-          : isBuilding
-          ? 'सीमेंट, सरिया व हार्डवेयर ग्राहक (Builder/Party)'
-          : isTransport
-          ? 'पार्टी / फ्रेट बिलिंग ग्राहक'
-          : 'दुकानदार व रिटेल ग्राहक (Customer)',
+        title: 'Customer / Grahak (ग्राहक)',
+        subtitle: isBhatta ? 'ईंट व माल खरीदने वाला (बाकी लेनदार ग्राहक)' : isBuilding ? 'सीमेंट, सरिया व हार्डवेयर ग्राहक' : 'दुकानदार व रिटेल ग्राहक',
         icon: '🛒',
         color: '#0284c7',
         primaryType: 'ASSETS',
@@ -73,14 +66,8 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       },
       {
         id: 'CREDITOR',
-        title: 'Supplier / Vyapari',
-        subtitle: isBhatta
-          ? 'कोयला, मिट्टी, सीमेंट सप्लायर'
-          : isBuilding
-          ? 'सीमेंट कंपनी, स्टील प्लांट व सप्लायर'
-          : isTransport
-          ? 'डीजल पम्प, टायर व पार्ट्स सप्लायर'
-          : 'होलसेलर व माल सप्लायर (Vendor)',
+        title: 'Supplier / Vyapari / Loan (सप्लायर व ऋण)',
+        subtitle: isBhatta ? 'कोयला, मिट्टी सप्लायर, बैंक लोन व पूंजी' : isBuilding ? 'सीमेंट कंपनी, सप्लायर, बैंक लोन व पूंजी' : 'होलसेलर सप्लायर, बैंक लोन व पूंजी',
         icon: '🚚',
         color: '#b45309',
         primaryType: 'LIABILITIES',
@@ -90,14 +77,8 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       },
       {
         id: 'THEKEDAR',
-        title: isBhatta ? 'Thekedar / Worker' : isBuilding ? 'Staff & Labour' : isTransport ? 'Driver & Staff' : 'Staff / Worker',
-        subtitle: isBhatta
-          ? 'पथाई, भराई, निकासी व लेबर ठेका'
-          : isBuilding
-          ? 'दुकान/गोदाम स्टाफ, लोडिंग मजदूर व ड्राइवर'
-          : isTransport
-          ? 'गाड़ी चालक, हेल्पर व स्टाफ वेतन'
-          : 'कर्मचारी, स्टाफ व मजदूर वेतन',
+        title: 'Thekedar / Worker (ठेकेदार व वर्कर)',
+        subtitle: isBhatta ? 'पथाई, भराई, निकासी ठेकेदार, ड्राइवर व मुनीम' : 'दुकान स्टाफ, लोडिंग मजदूर व ड्राइवर',
         icon: '👷',
         color: '#166534',
         primaryType: 'LIABILITIES',
@@ -107,8 +88,8 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       },
       {
         id: 'BANK_CASH',
-        title: 'Bank & Cash',
-        subtitle: 'SBI, PNB, Cash in Hand, UPI',
+        title: 'Bank & Cash (बैंक व रोकड़)',
+        subtitle: 'गल्ला रोकड़, बैंक करंट/सेविंग व QR स्कैनर',
         icon: '🏦',
         color: '#0f766e',
         primaryType: 'ASSETS',
@@ -118,15 +99,9 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       },
       {
         id: 'ASSET',
-        title: isBhatta ? 'Machine & Property' : isBuilding ? 'Shop & Vehicles' : isTransport ? 'Fleet & Vehicles' : 'Machine & Property',
-        subtitle: isBhatta
-          ? 'ट्रैक्टर, जमीन, चिमनी, झोपड़ी'
-          : isBuilding
-          ? 'दुकान, गोदाम (Godown), पिकअप वाहन'
-          : isTransport
-          ? 'ट्रक, ट्रेलर, ऑफिस व जमीन संपत्ति'
-          : 'दुकान, शोरूम व वाहन संपत्ति',
-        icon: isBhatta ? '🚜' : isBuilding ? '🏗️' : isTransport ? '🚛' : '🏢',
+        title: 'Machine, Asset & Security (संपत्ति व धरोहर)',
+        subtitle: isBhatta ? 'ट्रैक्टर, जमीन, चिमनी, झोपड़ी व माइनिंग सिक्योरिटी' : 'दुकान, गोदाम, वाहन व सिक्योरिटी डिपॉजिट',
+        icon: isBhatta ? '🚜' : '🏢',
         color: '#4338ca',
         primaryType: 'ASSETS',
         subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)',
@@ -135,18 +110,12 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       },
       {
         id: 'EXPENSE',
-        title: 'Kharcha (Expense)',
-        subtitle: isBhatta
-          ? 'डीजल, मरम्मत, फैक्ट्री खर्च'
-          : isBuilding
-          ? 'दुकान/गोदाम किराया, गाड़ी भाड़ा व बिजली'
-          : isTransport
-          ? 'टोल टैक्स, डीजल, आरटीओ खर्च'
-          : 'दुकान किराया, बिजली, भाड़ा खर्च',
+        title: 'Kharcha & Income (खर्च व आय)',
+        subtitle: 'डीजल, मरम्मत, ऑफिस खर्च, छूट (Discount) व ब्याज',
         icon: '📉',
         color: '#be123c',
         primaryType: 'EXPENSES',
-        subGroup: isBuilding ? 'Freight & Cartage Inward (भाड़ा)' : isTrading ? 'Administrative & Office Expenses' : 'Direct Production & Factory Expenses',
+        subGroup: isBuilding ? 'Freight & Cartage Inward (भाड़ा)' : 'Direct Production & Factory Expenses',
         defaultBalanceType: 'Dr',
         isParty: false
       }
@@ -157,7 +126,11 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     return businessCategories.find(c => c.id === selectedCatId) || businessCategories[0];
   }, [selectedCatId, businessCategories]);
 
-  // Industry-Aware Suggestions List
+  // रियल-टाइम बाइलिंगुअल प्रिव्यू
+  const livePreview = useMemo(() => {
+    return makeBilingualName(accountName);
+  }, [accountName]);
+
   const industrySuggestions = useMemo(() => {
     return getIndustrySuggestions(rawCat);
   }, [rawCat]);
@@ -179,11 +152,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
 
   useEffect(() => {
     if (!editingId) {
-      if (activeCategory.defaultBalanceType === 'Dr') {
-        setBalanceDirection('LE_NA_HAI');
-      } else {
-        setBalanceDirection('DE_NA_HAI');
-      }
+      setBalanceDirection(activeCategory.defaultBalanceType === 'Dr' ? 'LE_NA_HAI' : 'DE_NA_HAI');
     }
   }, [selectedCatId, activeCategory, editingId]);
 
@@ -202,25 +171,24 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     if (!q) return [];
     return industrySuggestions.filter(s => 
       s.categoryId === selectedCatId &&
-      s.name.toLowerCase().includes(q) && 
+      (s.name.toLowerCase().includes(q) || (s.name_hi && s.name_hi.includes(q))) && 
       s.name.toLowerCase() !== q
     ).slice(0, 5);
   }, [accountName, selectedCatId, industrySuggestions]);
 
   const handleApplySuggestion = (sug) => {
-    setAccountName(sug.name);
+    setAccountName(sug.name_hi ? `${sug.name} (${sug.name_hi})` : sug.name);
     setBalanceDirection(sug.balanceType === 'Dr' ? 'LE_NA_HAI' : 'DE_NA_HAI');
     setShowDropdownSuggestions(false);
-    setStatusMessage(null);
   };
 
   const handleSaveAccount = (e) => {
     e.preventDefault();
     setStatusMessage(null);
 
-    const cleanName = accountName.trim();
-    if (!cleanName) {
-      setStatusMessage({ type: 'error', text: 'Kripya khate ka naam darj karein!' });
+    const cleanInput = accountName.trim();
+    if (!cleanInput) {
+      setStatusMessage({ type: 'error', text: 'कृपया खाता नाम दर्ज करें!' });
       return;
     }
 
@@ -230,8 +198,8 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
 
       saveMasterAccount(firmId, {
         id: editingId || undefined,
-        account_name: cleanName,
-        name: cleanName,
+        account_name: cleanInput,
+        name: cleanInput,
         primary_type: activeCategory.primaryType,
         type: activeCategory.primaryType,
         sub_group: activeCategory.subGroup,
@@ -248,9 +216,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
 
       setStatusMessage({
         type: 'success',
-        text: editingId 
-          ? `✓ Khata "${cleanName}" aur purani entries successfully update ho gayi!` 
-          : `✓ Naya khata "${cleanName}" safaltapoorvak jod diya gaya!`
+        text: editingId ? '✓ खाता सफलतापूर्वक अपडेट हुआ!' : '✓ नया खाता English (हिन्दी) प्रारूप में सुरक्षित हुआ!'
       });
 
       setEditingId(null);
@@ -273,20 +239,19 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     setAddress(acc.address || '');
 
     const grp = (acc.sub_group || acc.group || '').toLowerCase();
-    const pType = (acc.primary_type || acc.type || '').toUpperCase();
     const bCat = (acc.businessCategory || '').toUpperCase();
 
     if (bCat && businessCategories.some(c => c.id === bCat)) {
       setSelectedCatId(bCat);
-    } else if (grp.includes('debtor') || grp.includes('customer') || (acc.name || '').toLowerCase().includes('grahak')) {
+    } else if (grp.includes('debtor') || grp.includes('customer')) {
       setSelectedCatId('DEBTOR');
     } else if (grp.includes('creditor') || grp.includes('supplier')) {
       setSelectedCatId('CREDITOR');
-    } else if (grp.includes('labor') || grp.includes('wages') || grp.includes('thekedar') || grp.includes('driver')) {
+    } else if (grp.includes('labor') || grp.includes('thekedar') || grp.includes('payable')) {
       setSelectedCatId('THEKEDAR');
-    } else if (grp.includes('cash') || grp.includes('bank') || (acc.name || '').toLowerCase().includes('रोकड़')) {
+    } else if (grp.includes('cash') || grp.includes('bank')) {
       setSelectedCatId('BANK_CASH');
-    } else if (pType === 'ASSETS' && (grp.includes('fixed') || grp.includes('machinery') || grp.includes('vehicle') || grp.includes('truck'))) {
+    } else if (acc.primary_type === 'ASSETS') {
       setSelectedCatId('ASSET');
     } else {
       setSelectedCatId('EXPENSE');
@@ -301,10 +266,10 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
 
   const handleDelete = (id, isLocked) => {
     if (isLocked) {
-      alert("⚠️ System core baseline accounts ko delete nahi kiya ja sakta.");
+      alert("⚠️ कोर बेसलाइन खातों को हटाया नहीं जा सकता।");
       return;
     }
-    if (window.confirm("Kya aap is account head ko delete karna chahte hain?")) {
+    if (window.confirm("क्या आप इस खाते को हटाना चाहते हैं?")) {
       try {
         deleteMasterAccount(firmId, id);
         if (editingId === id) {
@@ -342,14 +307,14 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     <div style={overlayStyle}>
       <div style={modalCardStyle}>
         
-        {/* Header */}
+        {/* शीर्ष हेडर */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px', marginBottom: '14px' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
-              {editingId ? '✏️ Edit Account Head' : `✨ Naya Khata Banayein (${firm?.legal_name || firm?.trade_name || 'Business'})`}
+              {editingId ? '✏️ खाता सम्पादित करें (Edit Account)' : `✨ नया खाता बनाएं (${firm?.legal_name || 'Active Firm'})`}
             </h3>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>
-              Multi-Firm Indian Accounting Standards (Ind AS / GAAP) Compliant
+            <span style={{ fontSize: '11px', color: '#0369a1', fontWeight: '700' }}>
+              Bilingual Auto-Mapping | English (हिन्दी)
             </span>
           </div>
           {onClose && (
@@ -380,9 +345,9 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
 
         <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           
-          {/* 1. Category Intent Selector */}
+          {/* 1. कैटेगरी चयन (द्विभाषी कार्ड्स) */}
           <div>
-            <label style={labelStyle}>1. KHATE KI CATEGORY CHUNEIN (SELECT TYPE) *</label>
+            <label style={labelStyle}>1. खाते की कैटेगरी चुनें (SELECT TYPE) *</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
               {businessCategories.map(cat => {
                 const isSelected = selectedCatId === cat.id;
@@ -417,23 +382,28 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
             </div>
           </div>
 
-          {/* 2. Account Name with Context-Aware Predictive Typeahead */}
+          {/* 2. खाता नाम (सिंगल इनपुट - ऑटोमैटिक द्विभाषी मैपिंग) */}
           <div style={{ position: 'relative' }} ref={dropdownRef}>
-            <label style={labelStyle}>2. KHATE KA NAAM (ACCOUNT NAME) *</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={labelStyle}>2. खाते का नाम (ACCOUNT NAME) *</label>
+              <span style={{ fontSize: '9px', color: '#0284c7', fontWeight: 'bold' }}>
+                English या हिन्दी किसी भी भाषा में लिखें
+              </span>
+            </div>
             <input 
               type="text" 
               placeholder={
                 selectedCatId === 'DEBTOR' 
-                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Ramesh Builder / Jai Shree Balaji Construction' : industryKey === 'TRANSPORT' ? 'e.g. Freight Booking Consignor' : 'e.g. Ramlal (Customer)')
+                  ? 'उदा. Ramlal (या रामलाल)'
                   : selectedCatId === 'CREDITOR' 
-                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. UltraTech Cement Depot / Tata Tiscon Steel' : industryKey === 'TRANSPORT' ? 'e.g. HPCL Diesel Station / Tyre Agency' : 'e.g. Coal / Material Supplier')
+                  ? 'उदा. Sharma Coal Agency (या Capital Account)'
                   : selectedCatId === 'THEKEDAR' 
-                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Godown Loading Labour / Pickup Driver' : industryKey === 'TRANSPORT' ? 'e.g. Sonu Driver / Fleet Helper' : 'e.g. Balram driver birkali / Ramesh Mistri')
+                  ? 'उदा. Balram Driver (या रमेश मिस्त्री)'
                   : selectedCatId === 'BANK_CASH' 
-                  ? 'e.g. SBI Current A/c 5421 / Tijori Cash'
+                  ? 'उदा. State Bank of India (या रोकड़)'
                   : selectedCatId === 'ASSET' 
-                  ? (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Bolero Pickup Loader / Godown Shed' : industryKey === 'TRANSPORT' ? 'e.g. Commercial Truck Asset' : 'e.g. Tractor 575 DI / JCB')
-                  : (industryKey === 'BUILDING_MATERIAL' ? 'e.g. Godown Rent / Cement Gadi Bhada' : industryKey === 'TRANSPORT' ? 'e.g. Toll Tax / Fastag Recharge' : 'e.g. Diesel / Maintenance')
+                  ? 'उदा. Mahindra Tractor (या Mining Security)'
+                  : 'उदा. Tractor Diesel (या Discount Received)'
               }
               value={accountName} 
               onChange={e => {
@@ -445,11 +415,11 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
               required 
             />
 
-            {/* Smart Auto-Complete Dropdown for Active Category Only */}
+            {/* सुझाव ड्रॉपडाउन */}
             {showDropdownSuggestions && filteredSuggestions.length > 0 && (
               <div style={autocompleteBoxStyle}>
-                <div style={{ padding: '4px 8px', fontSize: '9px', fontWeight: '800', color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
-                  MATCHING SUGGESTIONS (Click to select):
+                <div style={{ padding: '4px 8px', fontSize: '9px', fontWeight: '800', color: '#64748b' }}>
+                  MATCHING HEADS:
                 </div>
                 {filteredSuggestions.map((sug, idx) => (
                   <div
@@ -459,22 +429,19 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
                   >
                     <div>
                       <strong style={{ color: '#0f172a' }}>{sug.name}</strong>
-                      <span style={{ fontSize: '9px', color: '#64748b', marginLeft: '6px' }}>({sug.subGroup})</span>
+                      {sug.name_hi && <span style={{ color: '#0284c7', marginLeft: '6px' }}>({sug.name_hi})</span>}
                     </div>
-                    <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#0284c7' }}>
-                      {sug.balanceType === 'Dr' ? 'Dr (Lena)' : 'Cr (Dena)'}
-                    </span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* DYNAMIC: Mobile & Address ONLY for Party Categories (Debtor, Creditor, Thekedar/Worker) */}
+          {/* गतिशील मोबाइल एवं पता इनपुट (केवल पार्टियों हेतु) */}
           {activeCategory.isParty && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <div>
-                <label style={labelStyle}>MOBILE NUMBER (ऐच्छिक)</label>
+                <label style={labelStyle}>मोबाइल नंबर (ऐच्छिक)</label>
                 <input 
                   type="tel" 
                   placeholder="e.g. 9876543210" 
@@ -484,10 +451,10 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
                 />
               </div>
               <div>
-                <label style={labelStyle}>SHAHAR / GAON / ADDRESS</label>
+                <label style={labelStyle}>शहर / गाँव / पता</label>
                 <input 
                   type="text" 
-                  placeholder="e.g. Hanumangarh Town" 
+                  placeholder="उदा. हनुमानगढ़" 
                   value={address} 
                   onChange={e => setAddress(e.target.value)} 
                   style={inputStyle} 
@@ -496,17 +463,17 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
             </div>
           )}
 
-          {/* 3. Opening Balance & Direction */}
+          {/* 3. पुराना बकाया बैलेंस */}
           <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <label style={{ ...labelStyle, color: '#0f172a' }}>
-              3. PICHHLA PURANA BAKI HISAB (OPENING BALANCE - AGAR HO TOH)
+              3. पिछला पुराना बाकी हिसाब (OPENING BALANCE - यदि हो तो)
             </label>
 
             <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
               <input 
                 type="number" 
                 step="0.01" 
-                placeholder="0.00 (Agar koi purana baki na ho toh khali chhod dein)" 
+                placeholder="0.00 (खाली छोड़ सकते हैं)" 
                 value={openingBalance} 
                 onChange={e => setOpeningBalance(e.target.value)} 
                 style={{ ...inputStyle, fontSize: '13px', fontWeight: '800', color: '#059669', flex: 1 }} 
@@ -530,7 +497,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
                     cursor: 'pointer'
                   }}
                 >
-                  🟢 Baki Lena Hai (Receivable / Dr)
+                  🟢 बाकी लेना है (Receivable / Dr)
                 </button>
 
                 <button
@@ -548,13 +515,13 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
                     cursor: 'pointer'
                   }}
                 >
-                  🔴 Humein Dena Hai (Payable / Cr)
+                  🔴 हमें देना है (Payable / Cr)
                 </button>
               </div>
             )}
           </div>
 
-          {/* 4. Live Confirmation Preview */}
+          {/* 4. लाइव पुष्टि प्रीव्यू */}
           <div style={{
             backgroundColor: '#f0fdf4',
             border: '1px solid #bbf7d0',
@@ -564,17 +531,15 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
             color: '#166534',
             lineHeight: '1.4'
           }}>
-            <strong>✓ Pushti (Summary):</strong> Aap <strong>"{accountName || 'Naya Khata'}"</strong> ko{' '}
-            <strong style={{ color: activeCategory.color }}>[{activeCategory.title}]</strong> category me save kar rahe hain.
+            <strong>✓ पुष्टि (Live Bilingual Preview):</strong> खाता सुरक्षित होगा:{' '}
+            <strong style={{ color: '#0f172a' }}>"{livePreview.display || 'नया खाता'}"</strong> ➔{' '}
+            <strong style={{ color: activeCategory.color }}>[{activeCategory.title}]</strong>
             {Number(openingBalance) > 0 && (
-              <span>
-                {' '}Pichhla balance: <strong>₹{Number(openingBalance).toLocaleString('en-IN')}</strong>{' '}
-                ({balanceDirection === 'LE_NA_HAI' ? 'Humein lena baki hai / Dr' : 'Humein dena baki hai / Cr'}).
-              </span>
+              <span> | बकाया: <strong>₹{Number(openingBalance).toLocaleString('en-IN')}</strong> ({balanceDirection === 'LE_NA_HAI' ? 'Dr' : 'Cr'})</span>
             )}
           </div>
 
-          {/* Action Buttons */}
+          {/* एक्शन बटन */}
           <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
             <button 
               type="submit" 
@@ -591,7 +556,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
                 boxShadow: '0 2px 4px rgba(2, 132, 199, 0.2)'
               }}
             >
-              {editingId ? '✓ Update Account Head' : '💾 Save & Create Account'}
+              {editingId ? '✓ Update Account Head' : '💾 Save Account [English (हिन्दी)]'}
             </button>
 
             {editingId && (
@@ -622,7 +587,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
 
         </form>
 
-        {/* Existing Accounts Table with Search */}
+        {/* पंजीकृत खाते (रजिस्टर एवं खोज) */}
         <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
             <strong style={{ fontSize: '12px', color: '#0f172a' }}>
@@ -630,7 +595,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
             </strong>
             <input 
               type="text" 
-              placeholder="🔍 Search accounts..." 
+              placeholder="🔍 Search English / हिन्दी..." 
               value={searchFilter} 
               onChange={e => setSearchFilter(e.target.value)} 
               style={{ ...inputStyle, width: '160px', padding: '5px 8px', fontSize: '10px' }} 
@@ -769,6 +734,5 @@ const autocompleteItemStyle = {
   cursor: 'pointer',
   borderBottom: '1px solid #f8fafc',
   fontSize: '11px',
-  transition: 'background-color 0.1s ease',
   backgroundColor: '#ffffff'
 };
