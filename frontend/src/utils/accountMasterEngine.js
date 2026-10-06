@@ -66,95 +66,95 @@ export const ACCOUNT_HIERARCHY = {
   }
 };
 
-// Universal Suggestions Directory by Industry Sector
+// Clean Industry-Specific Suggestion Directory
 export const INDUSTRY_SUGGESTION_BANKS = {
   // 1. Brick Kiln (ईंट भट्ठा उद्योग)
   BRICK_KILN: [
-    { name: 'Ramlal (Eent Grahak)', categoryId: 'DEBTOR', type: 'ASSETS', subGroup: 'Sundry Debtors (Customer / देनदार)', balanceType: 'Dr' },
-    { name: 'Jai Shree Ram Builders (Grahak)', categoryId: 'DEBTOR', type: 'ASSETS', subGroup: 'Sundry Debtors (Customer / देनदार)', balanceType: 'Dr' },
-    { name: 'Sharma Coal & Fuel Agency', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Agarwal Cement & Building Material', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Mitti Supplier (Bhatta Soil)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Mustard Husk / Turi Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Ramesh Mistri (Pathai Thekedar)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Sonu Mistri (Bharai & Pakai)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Nikasi & Loading Labour Thekedar', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Mahindra Tractor Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Jhughi Construction A/c (Labour Sheds)', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Koyla / Coal Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Mitti / Soil Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Turi / Husk Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Pathai Mistri Thekedar (लेबर)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Bharai & Pakai Mistri (लेबर)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Nikasi & Loading Thekedar (लेबर)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Tractor Driver Wages A/c', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Tractor Asset Account', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Jhughi Construction A/c', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Bhatta Chimney & Kothi Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
     { name: 'Tractor Diesel & Fuel Expense', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Operating Fuel Costs (Tractor / Generator Diesel)', balanceType: 'Dr' },
-    { name: 'Bhatta Repair & Maintenance A/c', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Machinery Maintenance & Repairs', balanceType: 'Dr' }
+    { name: 'Kiln Coal Consumption (कोयला खर्च)', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Kiln Burning Fuel (Coal / Briquette / Husk)', balanceType: 'Dr' },
+    { name: 'Bhatta Maintenance & Repair A/c', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Machinery Maintenance & Repairs', balanceType: 'Dr' }
   ],
 
-  // 2. Trading / Retail / Wholesale Shop (दुकान व व्यापार)
+  // 2. Building Material, Cement & Steel / Hardware (हार्डवेयर, सीमेंट व सरिया)
+  BUILDING_MATERIAL: [
+    { name: 'Cement Manufacturer / Depot Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Steel TMT Rebar Distributor (सरिया)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Sanitary & Hardware Wholesale Dealer', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Reti / Bajri / Grit Quarry Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Godown & Loading Labour Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Pickup / Delivery Vehicle Driver', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Delivery Commercial Vehicle (Bolero/Pickup)', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Shop & Godown Infrastructure Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Freight Inward (सीमेंट/सरिया गाड़ी भाड़ा)', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
+    { name: 'Shop & Godown Rent A/c', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
+    { name: 'Loading / Unloading Labor Expense', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Labor & Wages (मजदूरी)', balanceType: 'Dr' }
+  ],
+
+  // 3. General Trading / Retail / Kirana / Shop (व्यापार व दुकान)
   TRADING: [
-    { name: 'Walk-in Retail Customer (दुकान ग्राहक)', categoryId: 'DEBTOR', type: 'ASSETS', subGroup: 'Sundry Debtors (Customer / देनदार)', balanceType: 'Dr' },
-    { name: 'Sharma Traders (Wholesale Grahak)', categoryId: 'DEBTOR', type: 'ASSETS', subGroup: 'Sundry Debtors (Customer / देनदार)', balanceType: 'Dr' },
-    { name: 'National Distributors (Supplier)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Direct Factory Goods Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Wholesale Goods Supplier (डिस्ट्रीब्यूटर)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
     { name: 'Shop Staff / Salesman Salary', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Shop Rent & Maintenance A/c', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
-    { name: 'Transport & Freight Inward (भाड़ा)', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
-    { name: 'Electricity & Shop Power Bill', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
-    { name: 'Shop Furniture & Display Counter Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
+    { name: 'Shop Rent Account', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
+    { name: 'Freight & Cartage Inward (माल भाड़ा)', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
+    { name: 'Shop Electricity & Power Bill', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
+    { name: 'Shop Furniture & Counter Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
   ],
 
-  // 3. Transport & Logistics (ट्रांसपोर्ट व फ्लीट)
+  // 4. Transport & Logistics (ट्रांसपोर्ट व फ्लीट)
   TRANSPORT: [
-    { name: 'Consignor / Freight Booking Party', categoryId: 'DEBTOR', type: 'ASSETS', subGroup: 'Sundry Debtors (Customer / देनदार)', balanceType: 'Dr' },
-    { name: 'Fleet Truck / Dumper Owner (Market Vehicle)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Diesel Fuel Station (Fuel Creditor)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Diesel Fuel Station A/c', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
     { name: 'Tyre & Spare Parts Dealer', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
     { name: 'Truck Driver & Helper Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Toll Tax & Fastag Recharge Expense', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Production & Factory Expenses', balanceType: 'Dr' },
-    { name: 'Vehicle Insurance & Fitness RTO Fees', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
-    { name: 'Heavy Commercial Truck Fleet Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
+    { name: 'Toll Tax & Fastag Recharge', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Production & Factory Expenses', balanceType: 'Dr' },
+    { name: 'Vehicle Insurance & RTO Tax', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
+    { name: 'Commercial Truck Asset A/c', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
   ],
 
-  // 4. Manufacturing / Factory (कारखाना व उत्पादन)
-  MANUFACTURING: [
-    { name: 'Commercial Buyer / Distributor', categoryId: 'DEBTOR', type: 'ASSETS', subGroup: 'Sundry Debtors (Customer / देनदार)', balanceType: 'Dr' },
-    { name: 'Raw Material Bulk Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Packaging Material Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Factory Production Labor & Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Plant Machinery & Generator Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Factory Electricity & Power Cost', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Production & Factory Expenses', balanceType: 'Dr' },
-    { name: 'Plant Maintenance & Breakdown Repairs', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Machinery Maintenance & Repairs', balanceType: 'Dr' }
-  ],
-
-  // 5. Universal Defaults (Har Business me shamil)
+  // 5. Universal Defaults (All Firms)
   UNIVERSAL_COMMON: [
-    { name: 'Cash in Hand (रोकड़ / गल्ला)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Cash in Hand (रोकड़)', balanceType: 'Dr' },
+    { name: 'Cash in Hand (रोकड़)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Cash in Hand (रोकड़)', balanceType: 'Dr' },
     { name: 'State Bank of India (Current A/c)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
-    { name: 'Punjab National Bank (PNB)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
-    { name: 'HDFC Bank Current Account', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
-    { name: 'Business QR Code / UPI Account', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
+    { name: 'Punjab National Bank (Current A/c)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
     { name: 'Bank Overdraft / CC Limit A/c', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Bank Overdraft / CC Accounts', balanceType: 'Cr' },
-    { name: 'Proprietor Capital Account (स्वामी की पूंजी)', categoryId: 'CREDITOR', type: 'EQUITY', subGroup: 'Proprietor / Partner Capital Account', balanceType: 'Cr' },
-    { name: 'Partner / Owner Drawings (निजी आहरण)', categoryId: 'DEBTOR', type: 'EQUITY', subGroup: 'Drawings Account (आहरण)', balanceType: 'Dr' },
-    { name: 'GST Output Tax Payable (CGST + SGST)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Duties & Taxes (GST / TDS Payable)', balanceType: 'Cr' },
-    { name: 'TDS Tax Payable Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Duties & Taxes (GST / TDS Payable)', balanceType: 'Cr' },
-    { name: 'Chai-Pani, Guest & Office Refreshment', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
-    { name: 'Stationery, Printing & CA Audit Fees', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' }
+    { name: 'Proprietor Capital Account (स्वामी पूंजी)', categoryId: 'CREDITOR', type: 'EQUITY', subGroup: 'Proprietor / Partner Capital Account', balanceType: 'Cr' },
+    { name: 'Owner Personal Drawings (आहरण)', categoryId: 'DEBTOR', type: 'EQUITY', subGroup: 'Drawings Account (आहरण)', balanceType: 'Dr' },
+    { name: 'GST Output Tax Payable', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Duties & Taxes (GST / TDS Payable)', balanceType: 'Cr' },
+    { name: 'Office Refreshment & Chai-Pani', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
+    { name: 'Electricity & Power Expense', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' }
   ]
 };
 
 // Retrieve industry-specific suggestions dynamically
-export const getIndustrySuggestions = (firmCategory = 'BRICK_KILN') => {
+export const getIndustrySuggestions = (firmCategory = '') => {
   const cat = String(firmCategory || '').toUpperCase();
   let sectorList = INDUSTRY_SUGGESTION_BANKS.BRICK_KILN;
 
-  if (cat.includes('TRANSPORT') || cat.includes('LOGISTIC') || cat.includes('FLEET')) {
+  if (cat.includes('BUILDING') || cat.includes('CEMENT') || cat.includes('STEEL') || cat.includes('HARDWARE')) {
+    sectorList = INDUSTRY_SUGGESTION_BANKS.BUILDING_MATERIAL;
+  } else if (cat.includes('TRANSPORT') || cat.includes('LOGISTIC') || cat.includes('FLEET')) {
     sectorList = INDUSTRY_SUGGESTION_BANKS.TRANSPORT;
-  } else if (cat.includes('TRADING') || cat.includes('RETAIL') || cat.includes('WHOLESALE') || cat.includes('SHOP')) {
+  } else if (cat.includes('TRADING') || cat.includes('RETAIL') || cat.includes('WHOLESALE') || cat.includes('SHOP') || cat.includes('STORE')) {
     sectorList = INDUSTRY_SUGGESTION_BANKS.TRADING;
-  } else if (cat.includes('MANUFACTURING') || cat.includes('FACTORY') || cat.includes('PRODUCTION')) {
-    sectorList = INDUSTRY_SUGGESTION_BANKS.MANUFACTURING;
+  } else if (cat.includes('BRICK') || cat.includes('BHATTA')) {
+    sectorList = INDUSTRY_SUGGESTION_BANKS.BRICK_KILN;
+  } else {
+    sectorList = INDUSTRY_SUGGESTION_BANKS.BUILDING_MATERIAL;
   }
 
   return [...sectorList, ...INDUSTRY_SUGGESTION_BANKS.UNIVERSAL_COMMON];
 };
 
-export const STANDARD_ACCOUNT_SUGGESTIONS = getIndustrySuggestions('BRICK_KILN');
+export const STANDARD_ACCOUNT_SUGGESTIONS = getIndustrySuggestions('BUILDING_MATERIAL');
 
 const resolveFirmId = (firmId) => {
   if (firmId && typeof firmId === 'string' && firmId.trim()) {
@@ -163,7 +163,6 @@ const resolveFirmId = (firmId) => {
   return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 };
 
-// Robust Auto-Normalizer for Existing & Restored Accounts
 export const upgradeAndNormalizeAccount = (acc) => {
   if (!acc) return null;
   const name = (acc.account_name || acc.name || '').trim();
@@ -172,7 +171,6 @@ export const upgradeAndNormalizeAccount = (acc) => {
   let sGroup = String(acc.sub_group || acc.group || 'General Ledger').trim();
   let bCat = acc.businessCategory || '';
 
-  // Smart detect Capital & Drawings
   if (lowerName.includes('capital') || lowerName.includes('poonji') || lowerName.includes('पूंजी') || lowerName.includes('partner')) {
     bCat = 'CREDITOR';
     pType = 'EQUITY';
@@ -339,11 +337,9 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     accounts.push(payload);
   }
 
-  // Strictly firm-scoped keys only
   localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(accounts));
 
-  // Multi-bucket Cascade Rename Engine
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
 
@@ -463,15 +459,9 @@ export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
   });
 
   if (hasActiveTransactions) {
-    throw new Error(`⚠️ Is account "${target.account_name || target.name}" par purane transactions (vouchers/bills) darj hain. Pehle iske vouchers delete ya adjust karein.`);
+    throw new Error(`⚠️ Is account "${target.account_name || target.name}" par purane transactions darj hain. Pehle iske vouchers delete ya adjust karein.`);
   }
 
   const updated = accounts.filter(a => a.id !== accountId);
   localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(updated));
-  localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(updated));
-
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  window.dispatchEvent(new Event('storage'));
-  return true;
-};
+  localStorage.setItem
