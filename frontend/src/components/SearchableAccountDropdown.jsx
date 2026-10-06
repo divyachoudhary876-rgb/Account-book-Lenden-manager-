@@ -2,9 +2,16 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 
-// Bracket-free clean name resolver for universal matching
+/**
+ * Strips all bracketed parenthetical text (Devanagari, Latin, punctuation, numbers)
+ * to yield a clean, canonical comparison key for legacy and bilingual reconciliation.
+ */
 const getBaseName = (str = '') => {
-  return String(str || '').replace(/\s*\([\u0900-\u097F\s]+\)/g, '').trim().toLowerCase();
+  return String(str || '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s*\[[^\]]*\]/g, '')
+    .trim()
+    .toLowerCase();
 };
 
 export default function SearchableAccountDropdown({
@@ -15,7 +22,8 @@ export default function SearchableAccountDropdown({
   placeholder = '-- Search or Select Account --',
   required = false,
   colorAccent = '#0284c7',
-  onAddNew = null
+  onAddNew = null,
+  disabled = false
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,11 +44,12 @@ export default function SearchableAccountDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Auto-focus search input when opened
+  // Manage focus and reset search term on visibility change
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => searchInputRef.current?.focus(), 50);
+      const timer = setTimeout(() => searchInputRef.current?.focus(), 40);
       setHighlightedIndex(0);
+      return () => clearTimeout(timer);
     } else {
       setSearchTerm('');
     }
@@ -48,7 +57,9 @@ export default function SearchableAccountDropdown({
 
   // A to Z (Ascending Order) Sorting & Bilingual Real-Time Search Filtering
   const processedAccounts = useMemo(() => {
-    const sortedList = [...accounts].sort((a, b) => {
+    const validAccounts = Array.isArray(accounts) ? accounts.filter(Boolean) : [];
+
+    const sortedList = [...validAccounts].sort((a, b) => {
       const nameA = a.account_name || a.name || '';
       const nameB = b.account_name || b.name || '';
       return nameA.localeCompare(nameB, 'en', { sensitivity: 'base' });
@@ -57,41 +68,68 @@ export default function SearchableAccountDropdown({
     const cleanSearch = searchTerm.trim().toLowerCase();
     if (!cleanSearch) return sortedList;
 
+    const baseSearch = getBaseName(cleanSearch);
+
     return sortedList.filter(acc => {
-      const nameStr = (acc.account_name || acc.name || '').toLowerCase();
-      const nameHi = (acc.name_hi || '').toLowerCase();
-      const groupMatch = (acc.sub_group || acc.group || '').toLowerCase();
-      return nameStr.includes(cleanSearch) || nameHi.includes(cleanSearch) || groupMatch.includes(cleanSearch);
+      const nameStr = String(acc.account_name || acc.name || '').toLowerCase();
+      const nameEn = String(acc.name_en || '').toLowerCase();
+      const nameHi = String(acc.name_hi || '').toLowerCase();
+      const groupMatch = String(acc.sub_group || acc.group || acc.primary_type || '').toLowerCase();
+      const baseAccName = getBaseName(nameStr);
+
+      return (
+        nameStr.includes(cleanSearch) ||
+        nameEn.includes(cleanSearch) ||
+        nameHi.includes(cleanSearch) ||
+        groupMatch.includes(cleanSearch) ||
+        (baseSearch && baseAccName.includes(baseSearch))
+      );
     });
   }, [accounts, searchTerm]);
 
-  // Robust Selection Matching: Supports both legacy "Ramlal" and bilingual "Ramlal (रामलाल)"
+  // Robust Selection Matching: Resolves Object values, legacy strings, and bilingual names
   const selectedAccount = useMemo(() => {
     if (!value) return null;
-    const cleanVal = String(value).trim().toLowerCase();
+
+    // Support when value is passed as an Account Object
+    const rawVal = typeof value === 'object' 
+      ? (value.account_name || value.name || value.id || '') 
+      : String(value);
+
+    const cleanVal = String(rawVal).trim().toLowerCase();
     const baseVal = getBaseName(cleanVal);
 
     return accounts.find(a => {
+      if (!a) return false;
+      const aId = String(a.id || '').trim().toLowerCase();
       const aName = String(a.account_name || a.name || '').trim().toLowerCase();
       const aEn = String(a.name_en || '').trim().toLowerCase();
       const aBase = getBaseName(aName);
 
-      return aName === cleanVal || 
-             aEn === cleanVal || 
-             aBase === cleanVal || 
-             aBase === baseVal || 
-             a.id === value;
+      return (
+        aId === cleanVal ||
+        aName === cleanVal ||
+        aEn === cleanVal ||
+        aBase === cleanVal ||
+        (baseVal && aBase === baseVal)
+      );
     });
   }, [accounts, value]);
 
+  // Unified Handler: Returns targetName as 1st arg and full account as 2nd arg
   const handleSelect = (acc) => {
+    if (!acc) return;
     const targetName = acc.account_name || acc.name || '';
-    if (onChange) onChange(targetName);
+    if (typeof onChange === 'function') {
+      onChange(targetName, acc);
+    }
     setIsOpen(false);
   };
 
   // Keyboard navigation
   const handleKeyDown = (e) => {
+    if (disabled) return;
+
     if (!isOpen) {
       if (e.key === 'Enter' || e.key === 'ArrowDown') {
         setIsOpen(true);
@@ -134,21 +172,22 @@ export default function SearchableAccountDropdown({
         </label>
       )}
 
-      {/* Selected Box / Open Trigger */}
+      {/* Selected Box / Trigger */}
       <div
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
         style={{
           width: '100%',
           padding: '10px 12px',
           borderRadius: '8px',
           border: `1px solid ${isOpen ? colorAccent : '#cbd5e1'}`,
-          backgroundColor: '#ffffff',
+          backgroundColor: disabled ? '#f8fafc' : '#ffffff',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
           boxSizing: 'border-box',
           boxShadow: isOpen ? `0 0 0 2px ${colorAccent}25` : 'none',
+          opacity: disabled ? 0.7 : 1,
           transition: 'all 0.15s ease'
         }}
       >
@@ -163,14 +202,18 @@ export default function SearchableAccountDropdown({
               </span>
             </div>
           ) : (
-            <span style={{ color: '#94a3b8', fontSize: '12px' }}>{value || placeholder}</span>
+            <span style={{ color: '#94a3b8', fontSize: '12px' }}>
+              {typeof value === 'string' && value.trim() ? value : placeholder}
+            </span>
           )}
         </div>
-        <span style={{ fontSize: '10px', color: '#64748b', marginLeft: '6px' }}>{isOpen ? '\u25b2' : '\u25bc'}</span>
+        <span style={{ fontSize: '10px', color: '#64748b', marginLeft: '6px' }}>
+          {isOpen ? '\u25b2' : '\u25bc'}
+        </span>
       </div>
 
       {/* Dropdown Floating Panel */}
-      {isOpen && (
+      {isOpen && !disabled && (
         <div style={{
           position: 'absolute',
           top: '100%',
@@ -184,7 +227,7 @@ export default function SearchableAccountDropdown({
           zIndex: 9999,
           overflow: 'hidden'
         }}>
-          {/* TOP BILINGUAL SEARCH BAR */}
+          {/* Top Search Bar */}
           <div style={{ padding: '8px 10px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '6px', alignItems: 'center' }}>
             <span style={{ fontSize: '13px', color: '#64748b' }}>{'\uD83D\uDD0D'}</span>
             <input
@@ -220,7 +263,7 @@ export default function SearchableAccountDropdown({
             )}
           </div>
 
-          {/* ASCENDING ORDER LIST ITEMS */}
+          {/* Sorted List Items */}
           <div ref={listContainerRef} style={{ maxHeight: '220px', overflowY: 'auto' }}>
             {processedAccounts.length === 0 ? (
               <div style={{ padding: '16px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
@@ -229,12 +272,15 @@ export default function SearchableAccountDropdown({
             ) : (
               processedAccounts.map((acc, index) => {
                 const accFullName = acc.account_name || acc.name || '';
-                const isSelected = selectedAccount && (selectedAccount.id === acc.id || selectedAccount.account_name === accFullName);
+                const isSelected = selectedAccount && (
+                  (selectedAccount.id && acc.id && selectedAccount.id === acc.id) ||
+                  (selectedAccount.account_name && selectedAccount.account_name === accFullName)
+                );
                 const isHighlighted = index === highlightedIndex;
 
                 return (
                   <div
-                    key={acc.id || accFullName}
+                    key={acc.id || `${accFullName}-${index}`}
                     onClick={() => handleSelect(acc)}
                     style={{
                       padding: '10px 14px',
@@ -257,9 +303,9 @@ export default function SearchableAccountDropdown({
                       </div>
                     </div>
 
-                    {acc.opening_balance !== undefined && (
-                      <span style={{ fontSize: '11px', fontWeight: 'bold', color: acc.balance_type === 'Dr' ? '#059669' : '#dc2626' }}>
-                        {'\u20b9'}{parseFloat(acc.opening_balance || 0).toLocaleString('en-IN')} {acc.balance_type}
+                    {(acc.opening_balance !== undefined || acc.openingBalance !== undefined) && (
+                      <span style={{ fontSize: '11px', fontWeight: 'bold', color: (acc.balance_type || acc.balanceType) === 'Dr' ? '#059669' : '#dc2626' }}>
+                        {'\u20b9'}{parseFloat(acc.opening_balance || acc.openingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {(acc.balance_type || acc.balanceType || 'Dr')}
                       </span>
                     )}
                   </div>
@@ -268,10 +314,13 @@ export default function SearchableAccountDropdown({
             )}
           </div>
 
-          {/* INLINE ADD NEW ACCOUNT ACTION */}
+          {/* Inline Add Action */}
           {onAddNew && (
             <div
-              onClick={() => { setIsOpen(false); onAddNew(searchTerm); }}
+              onClick={() => { 
+                setIsOpen(false); 
+                onAddNew(searchTerm); 
+              }}
               style={{
                 padding: '10px 14px',
                 backgroundColor: '#f0fdf4',
