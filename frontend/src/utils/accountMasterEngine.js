@@ -66,7 +66,7 @@ export const ACCOUNT_HIERARCHY = {
   }
 };
 
-// Universal Suggestions Directory by Industry Sector
+// Generic & Clean Industry Standard Heads (Zero Dummy Personal Names)
 export const INDUSTRY_SUGGESTION_BANKS = {
   // 1. Brick Kiln (ईंट भट्ठा)
   BRICK_KILN: [
@@ -120,26 +120,7 @@ export const INDUSTRY_SUGGESTION_BANKS = {
     { name: 'Commercial Truck Fleet Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
   ],
 
-  // 5. Manufacturing / Factory (कारखाना व उत्पादन)
-  MANUFACTURING: [
-    { name: 'Raw Material Bulk Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Packaging Material Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Factory Production Labor Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Plant Machinery & Generator Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Factory Power & Electricity Bill', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Production & Factory Expenses', balanceType: 'Dr' },
-    { name: 'Machine Maintenance & Repairs', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Machinery Maintenance & Repairs', balanceType: 'Dr' }
-  ],
-
-  // 6. Agriculture / Mandi Arhat (कृषि व आढ़त)
-  AGRICULTURE: [
-    { name: 'Kisaan / Farmer Purchase Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Seeds & Fertilizer Company', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Pallehdar & Mandi Labour Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Mandi Samiti Tax & Cess Expense', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Direct Trading Purchases (व्यापारिक खरीद)', balanceType: 'Dr' },
-    { name: 'Tractor & Agricultural Implements Asset', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
-  ],
-
-  // 7. Universal Common Defaults (Har business me available)
+  // 5. Universal Defaults (All Firms)
   UNIVERSAL_COMMON: [
     { name: 'Cash in Hand (रोकड़)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Cash in Hand (रोकड़)', balanceType: 'Dr' },
     { name: 'State Bank of India (Current A/c)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
@@ -165,25 +146,19 @@ export const resolveIndustryKey = (rawCat = '') => {
   if (cat.includes('TRADING') || cat.includes('RETAIL') || cat.includes('WHOLESALE') || cat.includes('SHOP') || cat.includes('STORE') || cat.includes('KIRANA')) {
     return 'TRADING';
   }
-  if (cat.includes('AGRICULTURE') || cat.includes('MANDI') || cat.includes('ARHAT') || cat.includes('KRISHI')) {
-    return 'AGRICULTURE';
-  }
-  if (cat.includes('MANUFACTURING') || cat.includes('FACTORY') || cat.includes('PRODUCTION')) {
-    return 'MANUFACTURING';
-  }
-  if (cat.includes('BRICK') || cat.includes('BHATTA') || cat.includes('KILN')) {
+  if (cat.includes('BRICK') || cat.includes('BHATTA') || cat.includes('KILN') || cat.includes('NEELKANTH')) {
     return 'BRICK_KILN';
   }
-  return 'TRADING'; // Safe universal default
+  return 'BRICK_KILN'; // Default to Bhatta
 };
 
 export const getIndustrySuggestions = (firmCategory = '') => {
   const industryKey = resolveIndustryKey(firmCategory);
-  const sectorList = INDUSTRY_SUGGESTION_BANKS[industryKey] || INDUSTRY_SUGGESTION_BANKS.TRADING;
+  const sectorList = INDUSTRY_SUGGESTION_BANKS[industryKey] || INDUSTRY_SUGGESTION_BANKS.BRICK_KILN;
   return [...sectorList, ...INDUSTRY_SUGGESTION_BANKS.UNIVERSAL_COMMON];
 };
 
-export const STANDARD_ACCOUNT_SUGGESTIONS = getIndustrySuggestions('BUILDING_MATERIAL');
+export const STANDARD_ACCOUNT_SUGGESTIONS = getIndustrySuggestions('BRICK_KILN');
 
 const resolveFirmId = (firmId) => {
   if (firmId && typeof firmId === 'string' && firmId.trim()) {
@@ -289,7 +264,7 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
       { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', businessCategory: 'BANK_CASH', is_system_locked: true, isSystemLocked: true },
       { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', businessCategory: 'BANK_CASH', is_system_locked: false, isSystemLocked: false },
       { id: `ACC-${activeFirmId}-003`, account_name: 'Sales Revenue Account', name: 'Sales Revenue Account', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', businessCategory: 'INCOME', is_system_locked: true, isSystemLocked: true },
-      { id: `ACC-${activeFirmId}-004`, account_name: 'Purchase Goods / Materials Account', name: 'Purchase Goods / Materials Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production & Factory Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: true, isSystemLocked: true },
+      { id: `ACC-${activeFirmId}-004`, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production & Factory Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: true, isSystemLocked: true },
       { id: `ACC-${activeFirmId}-005`, account_name: 'Labor, Wages & Staff Salary', name: 'Labor, Wages & Staff Salary', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Wages (मजदूरी)', group: 'Direct Labor & Wages (मज़दूर)', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: false, isSystemLocked: false },
       { id: `ACC-${activeFirmId}-006`, account_name: 'Capital Account (स्वामी की पूंजी)', name: 'Capital Account (स्वामी की पूंजी)', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', businessCategory: 'EQUITY', is_system_locked: false, isSystemLocked: false }
     ];
