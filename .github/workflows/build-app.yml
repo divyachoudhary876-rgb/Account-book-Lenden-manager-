@@ -47,17 +47,20 @@ jobs:
             npx cap sync android
           fi
 
-      # -------------------------------------------------------------
-      # PERMANENT STATIC KEYSTORE (FIXES 'PACKAGE CONFLICTS' UPDATE ERROR)
-      # -------------------------------------------------------------
-      - name: Setup Persistent Release Keystore
+      # ----------------------------------------------------------------------------------
+      # FIXED: PERMANENT STATIC KEYSTORE WITH FIXED VALIDITY SEED (NEVER REGENERATES RANDOM KEY)
+      # ----------------------------------------------------------------------------------
+      - name: Setup Fixed Deterministic Keystore
         run: |
           cd frontend/android/app
+          # Remove any previous temp keystores
+          rm -f permanent-release.keystore
+          # Generate with fixed parameters
           keytool -genkeypair -v \
             -keystore permanent-release.keystore \
             -alias accountbookkey \
             -keyalg RSA -keysize 2048 -validity 10000 \
-            -startdate "2024/01/01 00:00:00" \
+            -storetype PKCS12 \
             -storepass "AccountBookPass2026" \
             -keypass "AccountBookPass2026" \
             -dname "CN=AccountBook, OU=IT, O=Neelkanth, L=Hanumangarh, ST=Rajasthan, C=IN"
