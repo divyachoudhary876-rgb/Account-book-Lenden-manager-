@@ -1,7 +1,8 @@
 // frontend/src/components/BillSettlementView.jsx
+
 import React, { useState, useEffect } from 'react';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
-import { saveUniversalVoucher, normalizeLedgerAccountMatch } from '../utils/voucherPostingEngine.js';
+import { saveUniversalVoucher } from '../utils/voucherPostingEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
@@ -15,7 +16,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
   const [bankCashAccounts, setBankCashAccounts] = useState([]);
   
   const [selectedParty, setSelectedParty] = useState('');
-  const [receivingAccount, setReceivingAccount] = useState('Cash in Hand (रोकड़)');
+  const [receivingAccount, setReceivingAccount] = useState('Cash in Hand (à¤°à¥‹à¤•à¤¡à¤¼)');
   const [settlementType, setSettlementType] = useState('RECEIPT'); // RECEIPT (Inflow) or PAYMENT (Outflow)
   const [amountReceived, setAmountReceived] = useState('');
   const [settlementDate, setSettlementDate] = useState(todayMaxDate);
@@ -57,7 +58,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
       setBankCashAccounts(cashBank);
       if (cashBank.length > 0 && !receivingAccount) {
         const defaultCash = cashBank.find(c => (c.account_name || c.name || '').toLowerCase().includes('cash')) || cashBank[0];
-        setReceivingAccount(defaultCash.account_name || defaultCash.name || 'Cash in Hand (रोकड़)');
+        setReceivingAccount(defaultCash.account_name || defaultCash.name || 'Cash in Hand (à¤°à¥‹à¤•à¤¡à¤¼)');
       }
     } catch (e) {
       console.error('Failed loading accounts for settlement:', e);
@@ -79,15 +80,12 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
     setFeedback(null);
     const amt = round2(amountReceived);
 
-    const partyClean = (typeof selectedParty === 'object' ? (selectedParty.account_name || selectedParty.name) : selectedParty || '').trim();
-    const bankClean = (typeof receivingAccount === 'object' ? (receivingAccount.account_name || receivingAccount.name) : receivingAccount || '').trim();
-
-    if (!partyClean || amt <= 0) {
-      setFeedback({ type: 'error', message: 'कृपया पार्टी और वैध राशि दर्ज करें!' });
+    if (!selectedParty || amt <= 0) {
+      setFeedback({ type: 'error', message: 'Kripya valid party aur amount (>0) darj karein!' });
       return;
     }
-    if (!bankClean) {
-      setFeedback({ type: 'error', message: 'कृपया Cash या Bank खाता चुनें!' });
+    if (!receivingAccount) {
+      setFeedback({ type: 'error', message: 'Kripya Cash ya Bank account chunein!' });
       return;
     }
 
@@ -95,11 +93,11 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
       const vNum = 'SETT-' + Math.floor(1000 + Math.random() * 9000);
       const isReceipt = settlementType === 'RECEIPT';
 
-      // Ind AS / Indian GAAP Double-Entry:
+      // Ind AS Double-Entry:
       // RECEIPT: Dr Cash/Bank, Cr Party
       // PAYMENT: Dr Party, Cr Cash/Bank
-      const drAccount = isReceipt ? bankClean : partyClean;
-      const crAccount = isReceipt ? partyClean : bankClean;
+      const drAccount = isReceipt ? receivingAccount : selectedParty;
+      const crAccount = isReceipt ? selectedParty : receivingAccount;
 
       const voucherPayload = {
         id: (isReceipt ? 'REC-' : 'PAY-') + Date.now(),
@@ -115,7 +113,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
         cr_account: crAccount,
         amount: amt,
         total_amount: amt,
-        narration: narration.trim() || `Bill settlement ${isReceipt ? 'received from' : 'paid to'} ${partyClean}`,
+        narration: narration.trim() || `Bill settlement ${isReceipt ? 'received from' : 'paid to'} ${selectedParty}`,
         is_compound: true,
         entries: [
           { account_name: drAccount, party: drAccount, type: 'DR', debit: amt, credit: 0, amount: amt },
@@ -123,6 +121,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
         ]
       };
 
+      // Save atomically through Universal Engine (syncs app_vouchers_ and account_book_vouchers_)
       saveUniversalVoucher(activeFirmId, voucherPayload);
 
       window.dispatchEvent(new Event('app_storage_updated'));
@@ -131,7 +130,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
 
       setFeedback({ 
         type: 'success', 
-        message: `✓ ₹${amt.toLocaleString('en-IN')} सेटलमेंट वाउचर (#${vNum}) सफलतापूर्वक दर्ज हुआ!` 
+        message: `âœ“ â‚¹${amt.toLocaleString('en-IN')} settlement voucher (#${vNum}) successfully recorded for ${selectedParty}!` 
       });
 
       setAmountReceived('');
@@ -149,7 +148,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <div>
             <div style={{ fontSize: '10px', color: '#0284c7', fontWeight: '800', textTransform: 'uppercase' }}>TREASURY & SETTLEMENTS</div>
-            <h3 style={{ margin: '2px 0 0 0', color: '#0f172a', fontSize: '16px', fontWeight: '800' }}>💳 Bill Settlement & Party Knock-Off</h3>
+            <h3 style={{ margin: '2px 0 0 0', color: '#0f172a', fontSize: '16px', fontWeight: '800' }}>ðŸ’³ Bill Settlement & Party Knock-Off</h3>
           </div>
           {onClose && (
             <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
@@ -181,7 +180,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
               cursor: 'pointer'
             }}
           >
-            📥 Receipt (रुपये मिले - From Customer)
+            ðŸ“¥ Receipt (à¤°à¥à¤ªà¤¯à¥‡ à¤®à¤¿à¤²à¥‡ - From Customer)
           </button>
           <button
             type="button"
@@ -198,7 +197,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
               cursor: 'pointer'
             }}
           >
-            📤 Payment (रुपये दिए - To Supplier/Worker)
+            ðŸ“¤ Payment (à¤°à¥à¤ªà¤¯à¥‡ à¤¦à¤¿à¤ - To Supplier/Worker)
           </button>
         </div>
 
@@ -228,7 +227,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
                 required
               >
                 {bankCashAccounts.length === 0 ? (
-                  <option value="Cash in Hand (रोकड़)">Cash in Hand (रोकड़)</option>
+                  <option value="Cash in Hand (à¤°à¥‹à¤•à¤¡à¤¼)">Cash in Hand (à¤°à¥‹à¤•à¤¡à¤¼)</option>
                 ) : (
                   bankCashAccounts.map((b, idx) => (
                     <option key={idx} value={b.account_name || b.name}>{b.account_name || b.name}</option>
@@ -251,7 +250,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
           </div>
 
           <div style={{ marginBottom: '12px' }}>
-            <label style={{ display: 'block', fontWeight: 'bold', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Amount (₹) *</label>
+            <label style={{ display: 'block', fontWeight: 'bold', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Amount (â‚¹) *</label>
             <input 
               type="number" 
               step="0.01"
@@ -267,7 +266,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
             <label style={{ display: 'block', fontWeight: 'bold', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Narration / Remarks</label>
             <input 
               type="text" 
-              placeholder="उदा. RTGS / Cash / GPay के माध्यम से चुकता" 
+              placeholder="e.g. Cleared invoice via NEFT / UPI / Cash" 
               value={narration}
               onChange={(e) => setNarration(e.target.value)}
               style={inputStyle}
@@ -289,7 +288,7 @@ export default function BillSettlementView({ firm, selectedFY, onClose }) {
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
           >
-            💾 Post Double-Entry Settlement Voucher
+            ðŸ’¾ Post Double-Entry Settlement Voucher
           </button>
         </form>
       </div>
