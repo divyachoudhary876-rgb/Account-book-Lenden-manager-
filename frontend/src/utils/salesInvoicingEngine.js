@@ -2,10 +2,23 @@
 
 import { getStockItemsByFirm, updateStockItemQuantity } from './stockInventoryEngine.js';
 import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
-import { saveUniversalVoucher } from './voucherPostingEngine.js';
+import { saveUniversalVoucher, normalizeLedgerAccountMatch } from './voucherPostingEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
+/**
+ * Helper to strip parenthetical Devanagari text for stock comparison
+ */
+const getBaseName = (str = '') => {
+  return String(str || '')
+    .replace(/\s*\([\u0900-\u097F\s]+\)/g, '')
+    .trim()
+    .toLowerCase();
+};
+
+/**
+ * Processes sales invoice posting with bilingual resilience and double-entry accuracy
+ */
 export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {}) => {
   const activeFirmId = String(payload?.firmId || payload?.firm_id || firmId || 'FIRM-001').trim();
   const { customer_account, item_name, quantity, unit_rate, voucher_date, invoice_number, narration, vehicle_no, gst_rate } = payload;
@@ -26,9 +39,18 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
     throw new Error("Customer Account, Quantity (>0) aur Selling Rate (>0) darj karna anivarya hai.");
   }
 
-  // 1. Stock Validation & Reduction
+  // 1. Resilient Stock Item Lookup (Supports Roman, Hindi, and Composite Bilingual Strings)
   const stockList = getStockItemsByFirm(activeFirmId);
-  const stockItem = stockList.find(s => (s.item_name || s.name || '').trim().toLowerCase() === cleanItem.toLowerCase());
+  const cleanItemBase = getBaseName(cleanItem);
+
+  const stockItem = stockList.find(s => {
+    const sName = (s.item_name || s.name || '').trim();
+    const sEn = (s.name_en || '').trim();
+    return sName.toLowerCase() === cleanItem.toLowerCase() ||
+           getBaseName(sName) === cleanItemBase ||
+           (sEn && sEn.toLowerCase() === cleanItem.toLowerCase());
+  });
+
   if (!stockItem) {
     throw new Error(`Item "${cleanItem}" inventory me uplabdh nahi hai.`);
   }
@@ -38,14 +60,24 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
     throw new Error(`Insufficient Stock! Uplabdh Stock: ${currentStockQty} ${stockItem.unit || 'Pcs'}`);
   }
 
-  const updatedItem = updateStockItemQuantity(activeFirmId, cleanItem, -qty, 0);
+  // Update physical stock balance (-OUT)
+  const updatedItem = updateStockItemQuantity(activeFirmId, stockItem.item_name, -qty, 0);
 
-  // 2. Prepare Structured Balanced Double-Entry Compound Entries
+  // 2. Resolve Master Customer Account Name
+  const accounts = getFirmMasterAccounts(activeFirmId);
+  const matchedCustomerAccount = accounts.find(a => 
+    normalizeLedgerAccountMatch(cleanCustomer, a.account_name || a.name || '')
+  );
+  
+  // Use official registered bilingual name if already present in ledger master
+  const resolvedCustomerName = matchedCustomerAccount?.account_name || cleanCustomer;
+
+  // 3. Prepare Structured Balanced Double-Entry Compound Entries
   const voucherEntries = [
     { 
       type: 'Dr', 
-      account_name: cleanCustomer, 
-      party: cleanCustomer,
+      account_name: resolvedCustomerName, 
+      party: resolvedCustomerName,
       amount: totalAmount, 
       debit: totalAmount, 
       credit: 0 
@@ -87,14 +119,16 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
     amount: totalAmount,
     total_amount: totalAmount,
     total_taxable: taxableAmount,
-    narration: narration || `Sales Invoice #${invNumber}: ${cleanItem} (${qty} ${updatedItem?.unit || 'Pcs'} @ ₹${rate})${vehicle_no ? ' - Vehicle: ' + vehicle_no : ''}`,
+    dr_account: resolvedCustomerName,
+    cr_account: 'Sales & Revenue',
+    narration: narration || `Sales Invoice #${invNumber}: ${updatedItem?.item_name || cleanItem} (${qty} ${updatedItem?.unit || 'Pcs'} @ ₹${rate})${vehicle_no ? ' - Vehicle: ' + vehicle_no : ''}`,
     is_compound: true,
     entries: voucherEntries,
     items: [
       {
         itemId: stockItem.id || `ITEM-${Date.now()}`,
-        itemName: cleanItem,
-        item_name: cleanItem,
+        itemName: updatedItem?.item_name || stockItem.item_name,
+        item_name: updatedItem?.item_name || stockItem.item_name,
         unit: stockItem.unit || 'Pcs',
         quantity: qty,
         qty: qty,
@@ -110,10 +144,10 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
     vehicle_no: vehicle_no || ''
   };
 
-  // 3. Post Atomically Through Master Posting Engine
+  // 4. Post Atomically Through Master Posting Engine
   const savedVoucher = saveUniversalVoucher(activeFirmId, voucherPayload);
 
-  // 4. Also Ensure Sales Invoice Bucket is Synced
+  // 5. Sync to Sales Invoice Storage Bucket
   const salesKey = `sales_invoices_${activeFirmId}`;
   const existingSales = JSON.parse(localStorage.getItem(salesKey) || '[]');
   const filteredSales = existingSales.filter(s => s && s.id !== invoiceId && s.reference_no !== invNumber);
@@ -121,9 +155,8 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
   localStorage.setItem(salesKey, JSON.stringify(filteredSales));
   localStorage.setItem(`app_invoices_${activeFirmId}`, JSON.stringify(filteredSales));
 
-  // 5. Ensure Master Accounts are Registered
-  const accounts = getFirmMasterAccounts(activeFirmId);
-  if (!accounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === cleanCustomer.toLowerCase())) {
+  // 6. Ensure Master Account Exists Without Generating Redundant Duplicates
+  if (!matchedCustomerAccount) {
     saveMasterAccount(activeFirmId, { 
       account_name: cleanCustomer, 
       primary_type: 'ASSETS', 
@@ -141,6 +174,6 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
     voucherId: savedVoucher.id, 
     totalAmount, 
     updatedStock: updatedItem?.current_stock || 0, 
-    party: cleanCustomer 
+    party: resolvedCustomerName 
   };
 };
