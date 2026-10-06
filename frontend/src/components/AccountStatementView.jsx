@@ -1,8 +1,8 @@
 // frontend/src/components/AccountStatementView.jsx
+
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
-import { normalizeLedgerAccountMatch } from '../utils/voucherPostingEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
 
@@ -10,9 +10,10 @@ const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 
 
 export default function AccountStatementView({ firm, selectedFY }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
-  const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Enterprise Business';
+  const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
+  // Derive FY boundary dates
   const cleanFY = String(selectedFY || localStorage.getItem(`app_active_fy_${activeFirmId}`) || '2026-27').replace(/FY\s*/i, '').trim();
   const fyParts = cleanFY.split('-');
   const fyStart = fyParts.length === 2 ? `${parseInt(fyParts[0], 10) < 100 ? 2000 + parseInt(fyParts[0], 10) : parseInt(fyParts[0], 10)}-04-01` : '2026-04-01';
@@ -32,7 +33,7 @@ export default function AccountStatementView({ firm, selectedFY }) {
       setAccounts(accList);
       
       if (accList.length > 0) {
-        if (!selectedParty || !accList.some(a => normalizeLedgerAccountMatch(selectedParty, a.account_name || a.name))) {
+        if (!selectedParty || !accList.some(a => (a.account_name || a.name) === selectedParty)) {
           setSelectedParty(accList[0].account_name || accList[0].name || '');
         }
       }
@@ -60,14 +61,14 @@ export default function AccountStatementView({ firm, selectedFY }) {
     }
 
     try {
-      const targetClean = String(selectedParty).trim();
+      const targetClean = String(selectedParty).trim().toLowerCase();
 
-      // 1. Master Opening Balance strictly for active firm using bilingual lookup
+      // 1. Master Opening Balance strictly for active firm
       let masterOpeningAmt = 0;
       let masterOpeningSign = 'Dr';
       
       const firmAccounts = getFirmMasterAccounts(activeFirmId) || [];
-      const foundHead = firmAccounts.find(a => normalizeLedgerAccountMatch(targetClean, a.account_name || a.name || ''));
+      const foundHead = firmAccounts.find(a => String(a.account_name || a.name || '').trim().toLowerCase() === targetClean);
       if (foundHead) {
         masterOpeningAmt = Number(foundHead.opening_balance || foundHead.openingBalance || 0);
         masterOpeningSign = foundHead.balance_type || foundHead.balanceType || 'Dr';
@@ -75,13 +76,11 @@ export default function AccountStatementView({ firm, selectedFY }) {
 
       let initialOpeningSum = masterOpeningSign === 'Cr' ? -masterOpeningAmt : masterOpeningAmt;
 
-      // 2. Fetch vouchers from firm-scoped buckets strictly
+      // 2. Fetch vouchers from primary ledger buckets strictly for activeFirmId
       let rawTx = [];
       const keysToScan = [
         `app_vouchers_${activeFirmId}`,
-        `account_book_vouchers_${activeFirmId}`,
-        `sales_invoices_${activeFirmId}`,
-        `purchase_bills_${activeFirmId}`
+        `account_book_vouchers_${activeFirmId}`
       ];
 
       keysToScan.forEach(k => {
@@ -91,7 +90,7 @@ export default function AccountStatementView({ firm, selectedFY }) {
         } catch (e) {}
       });
 
-      // Deduplicate vouchers
+      // Deduplicate vouchers by unique voucher ID
       const uniqueVoucherMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
@@ -125,7 +124,7 @@ export default function AccountStatementView({ firm, selectedFY }) {
             const amt = Number(e.amount || e.debit || e.credit || 0);
             const type = (e.type || (Number(e.debit) > 0 ? 'DR' : 'CR')).toUpperCase();
             
-            if (normalizeLedgerAccountMatch(targetClean, accName)) {
+            if (accName.toLowerCase() === targetClean) {
               isMatch = true;
               if (type === 'DR' || Number(e.debit || 0) > 0) partyDebit += amt;
               if (type === 'CR' || Number(e.credit || 0) > 0) partyCredit += amt;
@@ -137,7 +136,7 @@ export default function AccountStatementView({ firm, selectedFY }) {
           if (isMatch) {
             let itemDisplayInfo = '';
             if (Array.isArray(v.items) && v.items.length > 0) {
-              itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
+              itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ â‚¹${it.rate || 0})`).join(', ');
             }
 
             const opposingName = otherParties.length > 0 ? (partyDebit > 0 ? `To ${otherParties.join(', ')}` : `By ${otherParties.join(', ')}`) : '';
@@ -161,21 +160,21 @@ export default function AccountStatementView({ firm, selectedFY }) {
         const amt = Number(v.amount || v.total_amount || 0);
         if (amt <= 0) return;
 
-        const isDrMatch = normalizeLedgerAccountMatch(targetClean, drAcc);
-        const isCrMatch = normalizeLedgerAccountMatch(targetClean, crAcc);
+        const isDrMatch = drAcc.toLowerCase() === targetClean;
+        const isCrMatch = crAcc.toLowerCase() === targetClean;
 
         if (isDrMatch || isCrMatch) {
           let opposingParty = isDrMatch ? (crAcc ? `To ${crAcc}` : '') : (drAcc ? `By ${drAcc}` : '');
           
           let itemDisplayInfo = '';
           if (Array.isArray(v.items) && v.items.length > 0) {
-            itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
+            itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ â‚¹${it.rate || 0})`).join(', ');
           } else if (v.itemName || v.item_name || v.qty || v.quantity) {
             const itName = v.itemName || v.item_name || 'Item';
             const itQty = v.qty || v.quantity || 0;
             const itUnit = v.unit || 'Pcs';
             const itRate = v.rate || v.unit_rate || 0;
-            itemDisplayInfo = `${itName} (Qty: ${itQty} ${itUnit} @ ₹${itRate})`;
+            itemDisplayInfo = `${itName} (Qty: ${itQty} ${itUnit} @ â‚¹${itRate})`;
           }
 
           let descParts = [];
@@ -205,7 +204,7 @@ export default function AccountStatementView({ firm, selectedFY }) {
         if (fromDate && t.date < fromDate) {
           runningBal += (t.debit - t.credit);
         } else if (toDate && t.date > toDate) {
-          // Beyond period
+          // Exclude transactions beyond specified date range
         } else {
           filteredTransactions.push(t);
         }
@@ -228,7 +227,6 @@ export default function AccountStatementView({ firm, selectedFY }) {
         : { runningBalance: finalOpeningBalance, balanceType: finalOpeningType };
 
       setStatementData({
-        accountName: foundHead?.account_name || targetClean,
         openingBalance: finalOpeningBalance,
         openingType: finalOpeningType,
         closingBalance: lastClosing.runningBalance,
@@ -243,20 +241,20 @@ export default function AccountStatementView({ firm, selectedFY }) {
 
   const handleExportPDF = async () => {
     if (!statementData || statementData.transactions.length === 0) {
-      alert("⚠️ No transactions found to export.");
+      alert("âš ï¸ No transactions found to export.");
       return;
     }
 
     setIsExporting(true);
-    setStatusNotification({ type: 'info', message: '⏳ Generating PDF document...' });
+    setStatusNotification({ type: 'info', message: 'â³ Generating PDF document...' });
 
     try {
       const res = await downloadAccountStatementPDF(statementData, selectedParty, firm);
       if (res?.success) {
-        setStatusNotification({ type: 'success', message: '✓ PDF downloaded successfully!' });
+        setStatusNotification({ type: 'success', message: 'âœ“ PDF downloaded successfully!' });
       }
     } catch (e) {
-      setStatusNotification({ type: 'error', message: `❌ Export Failed: ${e.message}` });
+      setStatusNotification({ type: 'error', message: `âŒ Export Failed: ${e.message}` });
     } finally {
       setIsExporting(false);
       setTimeout(() => setStatusNotification(null), 4000);
@@ -270,7 +268,7 @@ export default function AccountStatementView({ firm, selectedFY }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
-              📖 खाता मिलान (Account Statement)
+              ðŸ“– à¤–à¤¾à¤¤à¤¾ à¤®à¤¿à¤²à¤¾à¤¨ (Account Statement)
             </h3>
             <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry General Ledger & Real-Time Balance</span>
           </div>
@@ -281,7 +279,7 @@ export default function AccountStatementView({ firm, selectedFY }) {
             disabled={isExporting || !statementData || statementData.transactions.length === 0}
             style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '7px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
           >
-            <span>📄</span> {isExporting ? 'Saving...' : 'Save PDF'}
+            <span>ðŸ“„</span> {isExporting ? 'Saving...' : 'Save PDF'}
           </button>
         </div>
       </div>
@@ -294,18 +292,18 @@ export default function AccountStatementView({ firm, selectedFY }) {
 
       <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <SearchableAccountDropdown
-          label="खाता चुनें (Select Party/Account) *"
+          label="à¤–à¤¾à¤¤à¤¾ à¤šà¥à¤¨à¥‡à¤‚ (Select Party/Account) *"
           accounts={accounts}
           value={selectedParty}
           onChange={val => setSelectedParty(val)}
-          placeholder="पार्टी का नाम खोजें..."
+          placeholder="à¤ªà¤¾à¤°à¥à¤Ÿà¥€ à¤•à¤¾ à¤¨à¤¾à¤® à¤–à¥‹à¤œà¥‡à¤‚..."
           colorAccent="#0284c7"
           required
         />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (से)</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (à¤¸à¥‡)</label>
             <input 
               type="date" 
               value={fromDate} 
@@ -314,7 +312,7 @@ export default function AccountStatementView({ firm, selectedFY }) {
             />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (तक)</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (à¤¤à¤•)</label>
             <input 
               type="date" 
               max={todayMaxDate}
@@ -331,36 +329,36 @@ export default function AccountStatementView({ firm, selectedFY }) {
           <div style={{ ...cardStyle, backgroundColor: '#f8fafc' }}>
             <div style={labelStyle}>OPENING BALANCE</div>
             <strong style={{ fontSize: '15px', color: '#0f172a' }}>
-              ₹{statementData.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.openingType}
+              â‚¹{statementData.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.openingType}
             </strong>
           </div>
           <div style={{ ...cardStyle, backgroundColor: statementData.closingType === 'Dr' ? '#eff6ff' : '#fef2f2' }}>
             <div style={labelStyle}>NET CLOSING BALANCE</div>
             <strong style={{ fontSize: '15px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
-              ₹{statementData.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.closingType}
+              â‚¹{statementData.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.closingType}
             </strong>
           </div>
         </div>
       )}
 
-      {/* Statement Table Container */}
+      {/* Scrollable Statement Table Container */}
       <div style={{ ...cardStyle, padding: '12px' }}>
         <div style={{ maxHeight: '480px', overflowY: 'auto', overflowX: 'auto', width: '100%' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left', minWidth: '450px' }}>
             <thead>
               <tr style={{ backgroundColor: '#0f172a', color: '#ffffff', position: 'sticky', top: 0, zIndex: 1 }}>
-                <th style={thStyle}>तारीख</th>
-                <th style={thStyle}>विवरण (Particulars)</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>नामे (Dr ₹)</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>जमा (Cr ₹)</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>बाकी (Balance ₹)</th>
+                <th style={thStyle}>à¤¤à¤¾à¤°à¥€à¤–</th>
+                <th style={thStyle}>à¤µà¤¿à¤µà¤°à¤£ (Particulars)</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>à¤¨à¤¾à¤®à¥‡ (Dr â‚¹)</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>à¤œà¤®à¤¾ (Cr â‚¹)</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>à¤¬à¤¾à¤•à¥€ (Balance â‚¹)</th>
               </tr>
             </thead>
             <tbody>
               {!statementData || statementData.transactions.length === 0 ? (
                 <tr>
                   <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
-                    इस खाते में कोई लेन-देन दर्ज नहीं है।
+                    à¤‡à¤¸ à¤–à¤¾à¤¤à¥‡ à¤®à¥‡à¤‚ à¤•à¥‹à¤ˆ à¤²à¥‡à¤¨-à¤¦à¥‡à¤¨ à¤¦à¤°à¥à¤œ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤
                   </td>
                 </tr>
               ) : (
