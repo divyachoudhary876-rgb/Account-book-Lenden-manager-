@@ -160,13 +160,16 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
   const loadData = useCallback(() => {
     try {
-      // 1. Supplier / Creditor / Capital Accounts Load
+      // 1. Supplier / Creditor / Capital / Cash / Bank Accounts Load (Nagad Kharid Supported)
       const allAccounts = getFirmMasterAccounts(activeFirmId) || [];
       const suppliers = allAccounts.filter(a => {
         if (!a) return false;
         const type = String(a.primary_type || a.type || '').toUpperCase();
         const grp = String(a.sub_group || a.group || '').toLowerCase();
-        return (
+        const name = String(a.account_name || a.name || '').toLowerCase();
+
+        // Allow Sundry Creditors, Suppliers, Capital, Vendor, AND Cash / Bank Accounts for Cash Purchases
+        const isCreditorOrSupplier = (
           type === 'LIABILITIES' ||
           grp.includes('creditor') ||
           grp.includes('supplier') ||
@@ -174,6 +177,17 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
           grp.includes('capital') ||
           grp.includes('vendor')
         );
+
+        const isCashOrBank = (
+          name.includes('cash') ||
+          name.includes('bank') ||
+          name.includes('रोकड़') ||
+          name.includes('बैंक') ||
+          grp.includes('cash') ||
+          grp.includes('bank')
+        );
+
+        return isCreditorOrSupplier || isCashOrBank;
       });
       setSupplierAccounts(suppliers.length > 0 ? suppliers : allAccounts);
 
@@ -274,7 +288,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                 }
 
                 if (!isAlreadyPresent && bNum) {
-                  // Resolve unit from nested items or narration
                   let resolvedUnit = 'Pcs';
                   if (Array.isArray(v.items) && v.items[0]?.unit) {
                     resolvedUnit = v.items[0].unit;
@@ -351,7 +364,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
     return round2((Number(quantity) || 0) * (Number(purchaseRate) || 0));
   }, [quantity, purchaseRate]);
 
-  // Main Submit Handler (Handles both Save and Atomic Update without Stock Corruption)
+  // Main Submit Handler
   const handleSubmit = (e) => {
     e.preventDefault();
     setStatusMessage(null);
@@ -361,7 +374,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       : selectedSupplier).trim();
 
     if (!supplierName) {
-      setStatusMessage({ type: 'error', text: 'Kripya Supplier / Vendor / Capital Account chunein!' });
+      setStatusMessage({ type: 'error', text: 'Kripya Supplier / Cash / Bank Account chunein!' });
       return;
     }
     if (!selectedStockId) {
@@ -558,7 +571,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
     setStatusMessage(null);
   };
 
-  // 100% BULLETPROOF DELETE & REVERSAL ENGINE
   const handleDeleteBill = (e, bill) => {
     if (e) {
       e.preventDefault();
@@ -573,7 +585,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
     }
 
     try {
-      // 1. ATOMIC STOCK REVERSION
       let currentStock = [...inventoryItems];
       currentStock = revertStockForBill(bill, currentStock);
       saveFirmData('inventory_items', firm, currentStock);
@@ -581,7 +592,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       localStorage.setItem('inventory_items', JSON.stringify(currentStock));
       setInventoryItems(currentStock);
 
-      // 2. PURGE FROM ALL PURCHASE STORAGE BUCKETS
       const filterOutBill = (list) => {
         if (!Array.isArray(list)) return [];
         return list.filter(b => {
@@ -611,7 +621,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         } catch (e) {}
       });
 
-      // 3. PURGE MATCHING VOUCHERS ACROSS ALL KEYS
       const candidateKeys = [
         bill.id,
         `JV-${bill.id}`,
@@ -653,7 +662,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         } catch (e) {}
       });
 
-      // 4. REACTIVE STATE BROADCAST
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('app_inventory_updated'));
@@ -751,11 +759,11 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
         <div>
           <SearchableAccountDropdown
-            label="Supplier / Vendor Party * *"
+            label="Supplier / Vendor / Cash / Bank Party * *"
             accounts={supplierAccounts}
             value={selectedSupplier}
             onChange={val => setSelectedSupplier(val)}
-            placeholder="Search supplier, vendor or capital account..."
+            placeholder="Search supplier, cash or bank account..."
             colorAccent="#dc2626"
             required
           />
