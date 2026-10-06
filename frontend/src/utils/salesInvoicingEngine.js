@@ -2,7 +2,7 @@
 
 import { getStockItemsByFirm, updateStockItemQuantity } from './stockInventoryEngine.js';
 import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
-import { saveUniversalVoucher, normalizeLedgerAccountMatch } from './voucherPostingEngine.js';
+import { saveUniversalVoucher } from './voucherPostingEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
@@ -87,7 +87,7 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
     amount: totalAmount,
     total_amount: totalAmount,
     total_taxable: taxableAmount,
-    narration: narration || `Sales Invoice #${invNumber}: ${cleanItem} (${qty} ${updatedItem?.unit || 'Pcs'} @ ₹${rate})${vehicle_no ? ' - Vehicle: ' + vehicle_no : ''}`,
+    narration: narration || `Sales Invoice #${invNumber}: ${cleanItem} (${qty} ${updatedItem?.unit || 'Pcs'} @ â‚¹${rate})${vehicle_no ? ' - Vehicle: ' + vehicle_no : ''}`,
     is_compound: true,
     entries: voucherEntries,
     items: [
@@ -113,7 +113,7 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
   // 3. Post Atomically Through Master Posting Engine
   const savedVoucher = saveUniversalVoucher(activeFirmId, voucherPayload);
 
-  // 4. Ensure Sales Invoice Bucket is Synced
+  // 4. Also Ensure Sales Invoice Bucket is Synced
   const salesKey = `sales_invoices_${activeFirmId}`;
   const existingSales = JSON.parse(localStorage.getItem(salesKey) || '[]');
   const filteredSales = existingSales.filter(s => s && s.id !== invoiceId && s.reference_no !== invNumber);
@@ -121,16 +121,14 @@ export const processSalesInvoiceSubmission = (firmId = 'FIRM-001', payload = {})
   localStorage.setItem(salesKey, JSON.stringify(filteredSales));
   localStorage.setItem(`app_invoices_${activeFirmId}`, JSON.stringify(filteredSales));
 
-  // 5. Ensure Master Accounts are Registered (With Resilient Bilingual Matcher)
+  // 5. Ensure Master Accounts are Registered
   const accounts = getFirmMasterAccounts(activeFirmId);
-  const exists = accounts.some(a => normalizeLedgerAccountMatch(cleanCustomer, a.account_name || a.name || ''));
-
-  if (!exists) {
+  if (!accounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === cleanCustomer.toLowerCase())) {
     saveMasterAccount(activeFirmId, { 
       account_name: cleanCustomer, 
       primary_type: 'ASSETS', 
       type: 'Assets',
-      sub_group: 'Sundry Debtors (Customer / देनदार)', 
+      sub_group: 'Sundry Debtors (Customer / à¤¦à¥‡à¤¨à¤¦à¤¾à¤°)', 
       balance_type: 'Dr' 
     });
   }
