@@ -6,23 +6,37 @@ import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 
 /**
+ * Universal safe firm name resolver
+ */
+const getCleanFirmName = (firmInput) => {
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') {
+    return firmInput.trim();
+  }
+  if (firmInput && typeof firmInput === 'object') {
+    return firmInput.legal_name || firmInput.trade_name || firmInput.name || firmInput.firm_name || 'Neelkanth Groups';
+  }
+  return 'Neelkanth Groups';
+};
+
+/**
  * Ultra-Robust Typography & Spacing Normalizer
+ * Eliminates weird spacing around colons, rates, parentheses, and multiple spaces
  */
 export const cleanTypographySpacing = (rawText) => {
   if (!rawText) return '';
   let str = String(rawText);
 
-  // Normalize colon spacing
+  // Normalize colon spacing: "Issue : 100" -> "Issue: 100"
   str = str.replace(/\s*:\s*/g, ': ');
 
-  // Normalize rate symbol spacing
-  str = str.replace(/\s*@\s*(?:rs\.?|₹)?\s*/gi, ' @ Rs ');
+  // Normalize rate symbol spacing: "@ 102" or "@Rs 102" -> " @ Rs "
+  str = str.replace(/\s*@\s*(?:rs\.?|â‚¹)?\s*/gi, ' @ Rs ');
 
   // Normalize commas and hyphens
   str = str.replace(/\s*,\s*/g, ', ');
   str = str.replace(/\s*-\s*/g, ' - ');
 
-  // Clean brackets inner spacing
+  // Clean brackets inner spacing: "( 141 Liters )" -> "(141 Liters)"
   str = str.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
 
   // Collapse multiple whitespaces/tabs into a single neat space
@@ -32,50 +46,18 @@ export const cleanTypographySpacing = (rawText) => {
 };
 
 /**
- * Strips unsupported non-ASCII / Devanagari Unicode characters for standard jsPDF core fonts
- */
-export const cleanPdfText = (rawText) => {
-  if (!rawText) return '';
-  let str = String(rawText);
-
-  // Remove parenthetical Hindi/Devanagari scripts
-  str = str.replace(/\s*\([\u0900-\u097F\s\/,-]+\)/g, '');
-  str = str.replace(/\s*\[[\u0900-\u097F\s\/,-]+\]/g, '');
-
-  // Strip standalone Devanagari characters
-  str = str.replace(/[\u0900-\u097F]/g, '');
-
-  // Replace Indian Rupee symbol with 'Rs '
-  str = str.replace(/₹/g, 'Rs ');
-
-  return cleanTypographySpacing(str);
-};
-
-/**
- * Universal safe firm name resolver
- */
-const getCleanFirmName = (firmInput) => {
-  if (typeof firmInput === 'string' && firmInput.trim() !== '') {
-    return cleanPdfText(firmInput.trim());
-  }
-  if (firmInput && typeof firmInput === 'object') {
-    const raw = firmInput.legal_name || firmInput.trade_name || firmInput.name || firmInput.firm_name || 'Neelkanth Groups';
-    return cleanPdfText(raw);
-  }
-  return 'Neelkanth Groups';
-};
-
-/**
- * Account Name Sanitizer (Eliminates '(OK !<)', legacy badges, and unsupported Devanagari)
+ * Ultra-Robust Account Name Sanitizer (Completely eliminates '(OK !<)', '(OK !-)', etc.)
  */
 const cleanAccountTitle = (rawName) => {
   if (!rawName) return '';
   let str = String(rawName).trim();
 
+  // Special case: Cash account ko hamesha pure 'Cash in Hand' me convert karein
   if (/cash\s*in\s*hand/i.test(str) || /^cash$/i.test(str)) {
     return 'Cash in Hand';
   }
 
+  // Remove any bracket containing 'OK', exclamation marks, or comparison symbols
   str = str.replace(/\s*\([^)]*OK[^)]*\)/gi, '');
   str = str.replace(/\s*\[[^\]]*OK[^\]]*\]/gi, '');
   str = str.replace(/\s*\([^)]*![^)]*\)/gi, '');
@@ -83,7 +65,7 @@ const cleanAccountTitle = (rawName) => {
   str = str.replace(/\s*\(OK\s*!?.*$/gi, '');
   str = str.replace(/\s*\[OK\s*!?.*$/gi, '');
 
-  return cleanPdfText(str) || 'Account';
+  return cleanTypographySpacing(str) || 'Account';
 };
 
 /**
@@ -100,7 +82,7 @@ const arrayBufferToBase64 = (buffer) => {
 };
 
 /**
- * True PDF Exporter (ArrayBuffer Binary Stream)
+ * 100% Corruption-Free True PDF Exporter (ArrayBuffer Binary Stream)
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -109,7 +91,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   try {
     const pdfArrayBuffer = doc.output('arraybuffer');
 
-    // 1. Mobile Capacitor Native Environment
+    // 1. Mobile Capacitor Native Environment (Android/iOS)
     if (Capacitor.isNativePlatform()) {
       const base64Data = arrayBufferToBase64(pdfArrayBuffer);
       const writeResult = await Filesystem.writeFile({
@@ -129,7 +111,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
-    // 2. Browser Blob Download
+    // 2. Standard Web Browser Download via Blob
     const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
     const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
@@ -198,10 +180,8 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   printHeader();
 
   txs.forEach((t, index) => {
-    const vType = t.voucher_type || 'TX';
-    const vNum = t.voucher_number || t.reference_no || '';
-    const rawTitle = cleanPdfText(`${vType} #${vNum}`);
-    const descText = cleanPdfText(t.narration || '');
+    const rawTitle = cleanTypographySpacing(`${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`);
+    const descText = cleanTypographySpacing(t.narration || '');
 
     const splitTitle = doc.splitTextToSize(rawTitle, 68);
     const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
@@ -351,7 +331,7 @@ export const downloadFinancialStatementsReport = async (param1, param2, param3) 
       doc.setFontSize(7.5);
       doc.setTextColor(15, 23, 42);
       doc.text(accName, 16, y);
-      doc.text(cleanPdfText(String(row.category || row.primary_type || 'General')), 95, y);
+      doc.text(String(row.category || row.primary_type || 'General'), 95, y);
       doc.text(deb > 0 ? deb.toFixed(2) : '-', 150, y, { align: 'right' });
       doc.text(cr > 0 ? cr.toFixed(2) : '-', 193, y, { align: 'right' });
       y += 6;
@@ -472,6 +452,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
   const rows = Array.isArray(vouchers) ? vouchers : [];
 
+  // A4 Landscape: width = 297mm, height = 210mm
   const doc = new jsPDF('l', 'mm', 'a4');
   let y = 16;
   let pageNum = 1;
@@ -493,6 +474,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
     y += 6;
 
+    // Header Bar: Total Width 269mm (x=14 to x=283)
     doc.setFillColor(15, 23, 42);
     doc.rect(14, y, 269, 7, 'F');
     doc.setTextColor(255, 255, 255);
@@ -512,24 +494,25 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   printJournalHeader();
 
   rows.forEach((vch, idx) => {
-    const vRef = vch.reference_no || vch.voucher_number || vch.id || '-';
-    const rawRef = cleanPdfText(String(vRef));
+    const rawRef = cleanTypographySpacing(String(vch.reference_no || vch.voucher_number || vch.id || '-'));
     const vType = String(vch.voucher_type || vch.type || 'JOURNAL');
 
+    // Strict cleaning for both Dr & Cr accounts
     const drName = cleanAccountTitle(vch.dr_account || vch.dr_party || 'Dr Account');
     const crName = cleanAccountTitle(vch.cr_account || vch.cr_party || 'Cr Account');
 
+    // Clean narration and material issue string
     const itemsList = Array.isArray(vch.items) ? vch.items : [];
     let itemStr = itemsList.map(it => {
-      const iName = cleanPdfText(it.itemName || it.name || 'Item');
+      const iName = cleanTypographySpacing(it.itemName || it.name || 'Item');
       const iQty = it.qty || it.quantity || 0;
-      const iUnit = cleanPdfText((it.unit || 'Pcs').trim());
+      const iUnit = (it.unit || 'Pcs').trim();
       const iRate = parseFloat(it.rate || it.price || 0);
       return cleanTypographySpacing(`${iName} (Qty: ${iQty} ${iUnit} @ Rs ${iRate.toFixed(2)})`);
     }).join(', ');
 
     const rawNote = vch.narration || vch.remarks || vch.description || '';
-    const cleanNote = cleanPdfText(rawNote);
+    const cleanNote = cleanTypographySpacing(rawNote);
     const noteText = cleanNote 
       ? (itemStr ? `${itemStr} - ${cleanNote}` : cleanNote) 
       : itemStr;
@@ -542,6 +525,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.2) : 0;
     const rowHeight = Math.max(6.5, 3.5 + namesHeight + noteHeight);
 
+    // Landscape height = 210mm, safe break at 190mm
     if (y + rowHeight > 190) {
       doc.addPage();
       pageNum += 1;
@@ -593,8 +577,8 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
  */
 export const generateProfessionalInvoicePDF = async (firmInput, invoice = {}) => {
   const firmName = getCleanFirmName(firmInput);
-  const invNumber = cleanPdfText(invoice?.invoice_number || invoice?.reference_no || ('INV-' + Date.now()));
-  const grandTotal = parseFloat(invoice?.grand_total || invoice?.total_amount || invoice?.amount || 0);
+  const invNumber = cleanTypographySpacing(invoice?.invoice_number || ('INV-' + Date.now()));
+  const grandTotal = parseFloat(invoice?.grand_total || invoice?.total_amount || 0);
 
   const doc = new jsPDF('p', 'mm', 'a4');
   let y = 18;
