@@ -125,21 +125,28 @@ export const upgradeAndNormalizeAccount = (acc) => {
     if (sGroup.toLowerCase().includes('debtor') || lowerName.includes('customer') || lowerName.includes('grahak')) {
       bCat = 'DEBTOR';
       pType = 'ASSETS';
+      sGroup = 'Sundry Debtors (Customer / देनदार)';
     } else if (sGroup.toLowerCase().includes('creditor') || lowerName.includes('supplier') || lowerName.includes('vendor')) {
       bCat = 'CREDITOR';
       pType = 'LIABILITIES';
+      sGroup = 'Sundry Creditors (Suppliers / लेनदार)';
     } else if (sGroup.toLowerCase().includes('labor') || sGroup.toLowerCase().includes('payable') || lowerName.includes('mistri') || lowerName.includes('thekedar')) {
       bCat = 'THEKEDAR';
       pType = 'LIABILITIES';
+      sGroup = 'Outstanding Expenses Payable';
     } else if (lowerName.includes('cash') || lowerName.includes('bank') || lowerName.includes('रोकड़')) {
       bCat = 'BANK_CASH';
       pType = 'ASSETS';
+      sGroup = lowerName.includes('cash') || lowerName.includes('रोकड़') ? 'Cash in Hand (रोकड़)' : 'Bank Accounts (बैंक खाते)';
     } else if (pType === 'ASSETS' && (lowerName.includes('tractor') || lowerName.includes('jcb') || lowerName.includes('asset') || lowerName.includes('jhughi'))) {
       bCat = 'ASSET';
+      sGroup = 'Fixed Assets (Machinery / Vehicles / Land)';
     } else if (pType === 'INCOME' || lowerName.includes('sale') || lowerName.includes('revenue')) {
       bCat = 'INCOME';
+      sGroup = 'Direct Sales Revenue (बिक्री)';
     } else {
       bCat = 'EXPENSE';
+      if (!sGroup || sGroup === 'General Ledger') sGroup = 'Direct Production Expenses';
     }
   }
 
@@ -269,11 +276,11 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     accounts.push(payload);
   }
 
-  // Strictly firm-scoped keys only
+  // 1. Strictly firm-scoped keys only
   localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(accounts));
 
-  // Multi-bucket Cascade Rename Engine
+  // 2. ULTIMATE MULTI-BUCKET CASCADE RENAME ENGINE
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
 
