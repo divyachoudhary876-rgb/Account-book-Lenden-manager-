@@ -334,4 +334,65 @@ export default function AccountStatementView({ firm, selectedFY }) {
               ₹{statementData.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.openingType}
             </strong>
           </div>
-          <div style={{ ...cardStyle, backgroundColor: statementData.closingType ===
+          <div style={{ ...cardStyle, backgroundColor: statementData.closingType === 'Dr' ? '#eff6ff' : '#fef2f2' }}>
+            <div style={labelStyle}>NET CLOSING BALANCE</div>
+            <strong style={{ fontSize: '15px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
+              ₹{statementData.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.closingType}
+            </strong>
+          </div>
+        </div>
+      )}
+
+      {/* Statement Table Container */}
+      <div style={{ ...cardStyle, padding: '12px' }}>
+        <div style={{ maxHeight: '480px', overflowY: 'auto', overflowX: 'auto', width: '100%' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left', minWidth: '450px' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#0f172a', color: '#ffffff', position: 'sticky', top: 0, zIndex: 1 }}>
+                <th style={thStyle}>तारीख</th>
+                <th style={thStyle}>विवरण (Particulars)</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>नामे (Dr ₹)</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>जमा (Cr ₹)</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>बाकी (Balance ₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!statementData || statementData.transactions.length === 0 ? (
+                <tr>
+                  <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+                    इस खाते में कोई लेन-देन दर्ज नहीं है।
+                  </td>
+                </tr>
+              ) : (
+                statementData.transactions.map((t, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                    <td style={tdStyle}>{t.date}</td>
+                    <td style={tdStyle}>
+                      <strong>{t.voucher_type}</strong> #{t.voucher_number}
+                      {t.narration && <div style={{ color: '#0284c7', fontSize: '11px', fontWeight: '600', marginTop: '2px' }}>{t.narration}</div>}
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: t.debit > 0 ? '#059669' : '#94a3b8', fontWeight: t.debit > 0 ? 'bold' : 'normal' }}>
+                      {t.debit > 0 ? t.debit.toFixed(2) : '-'}
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: t.credit > 0 ? '#dc2626' : '#94a3b8', fontWeight: t.credit > 0 ? 'bold' : 'normal' }}>
+                      {t.credit > 0 ? t.credit.toFixed(2) : '-'}
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: t.balanceType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
+                      {t.runningBalance.toFixed(2)} {t.balanceType}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+const cardStyle = { backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' };
+const labelStyle = { fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' };
+const thStyle = { padding: '8px', fontWeight: 'bold' };
+const tdStyle = { padding: '8px', verticalAlign: 'top' };
