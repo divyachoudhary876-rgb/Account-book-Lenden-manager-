@@ -4,24 +4,24 @@ import { getUniversalVouchersByFirm } from './voucherPostingEngine.js';
 
 export const ACCOUNT_HIERARCHY = {
   ASSETS: {
-    label: 'ASSETS (à¤¸à¤‚à¤ªà¤¤à¥à¤¤à¤¿à¤¯à¤¾à¤‚)',
+    label: 'ASSETS (संपत्तियां)',
     normalBalance: 'Dr',
     subGroups: [
-      'Cash in Hand (à¤°à¥‹à¤•à¤¡à¤¼)',
-      'Bank Accounts (à¤¬à¥ˆà¤‚à¤• à¤–à¤¾à¤¤à¥‡)',
-      'Sundry Debtors (Customer / à¤¦à¥‡à¤¨à¤¦à¤¾à¤°)',
-      'Raw Material Inventory (à¤•à¤šà¥à¤šà¤¾ à¤®à¤¾à¤²)',
-      'Finished Goods Inventory (à¤¤à¥ˆà¤¯à¤¾à¤° à¤®à¤¾à¤²)',
-      'Consumables & Fuel Stock (à¤ˆà¤‚à¤§à¤¨/à¤¡à¥€à¤œà¤² à¤¸à¥à¤Ÿà¥‰à¤•)',
+      'Cash in Hand (रोकड़)',
+      'Bank Accounts (बैंक खाते)',
+      'Sundry Debtors (Customer / देनदार)',
+      'Raw Material Inventory (कच्चा माल)',
+      'Finished Goods Inventory (तैयार माल)',
+      'Consumables & Fuel Stock (ईंधन/डीजल/स्टॉक)',
       'Loans & Advances (Given)',
       'Fixed Assets (Machinery / Vehicles / Land)'
     ]
   },
   LIABILITIES: {
-    label: 'LIABILITIES (à¤¦à¥‡à¤¨à¤¦à¤¾à¤°à¤¿à¤¯à¤¾à¤‚ / à¤¦à¤¾à¤¯à¤¿à¤¤à¥à¤µ)',
+    label: 'LIABILITIES (देनदारियां / दायित्व)',
     normalBalance: 'Cr',
     subGroups: [
-      'Sundry Creditors (Suppliers / à¤²à¥‡à¤¨à¤¦à¤¾à¤°)',
+      'Sundry Creditors (Suppliers / लेनदार)',
       'Duties & Taxes (GST / TDS Payable)',
       'Bank Overdraft / CC Accounts',
       'Secured & Unsecured Loans',
@@ -29,35 +29,35 @@ export const ACCOUNT_HIERARCHY = {
     ]
   },
   EQUITY: {
-    label: 'EQUITY & CAPITAL (à¤ªà¥‚à¤‚à¤œà¥€ / à¤¸à¥à¤µà¤¾à¤®à¤¿à¤¤à¥à¤µ)',
+    label: 'EQUITY & CAPITAL (पूंजी / स्वामित्व)',
     normalBalance: 'Cr',
     subGroups: [
       'Proprietor / Partner Capital Account',
-      'Drawings Account (à¤†à¤¹à¤°à¤£)',
+      'Drawings Account (आहरण)',
       'Retained Earnings / Reserves'
     ]
   },
   EXPENSES: {
-    label: 'EXPENSES (à¤–à¤°à¥à¤š / à¤²à¤¾à¤—à¤¤)',
+    label: 'EXPENSES (खर्च / लागत)',
     normalBalance: 'Dr',
     subGroups: [
       'Direct Production & Factory Expenses',
       'Direct Production Expenses',
       'Operating Fuel Costs (Tractor / Generator Diesel)',
       'Kiln Burning Fuel (Coal / Briquette / Husk)',
-      'Direct Labor & Pathai Expenses (à¤®à¤œà¤¦à¥‚à¤°à¥€)',
+      'Direct Labor & Pathai Expenses (मजदूरी)',
       'Machinery Maintenance & Repairs',
-      'Freight & Cartage Inward (à¤­à¤¾à¤¡à¤¼à¤¾)',
+      'Freight & Cartage Inward (भाड़ा)',
       'Administrative & Office Expenses',
       'Selling & Distribution Expenses',
       'Financial Charges & Bank Interest'
     ]
   },
   INCOME: {
-    label: 'INCOME / REVENUE (à¤†à¤¯ à¤µ à¤¬à¤¿à¤•à¥à¤°à¥€)',
+    label: 'INCOME / REVENUE (आय व बिक्री)',
     normalBalance: 'Cr',
     subGroups: [
-      'Direct Sales Revenue (à¤¬à¤¿à¤•à¥à¤°à¥€)',
+      'Direct Sales Revenue (बिक्री)',
       'Contract & Manufacturing Receipts',
       'Discount & Rebate Received',
       'Other Indirect Operating Income'
@@ -74,11 +74,9 @@ const resolveFirmId = (firmId) => {
 
 export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
   const activeFirmId = resolveFirmId(firmId);
-
   try {
     const primaryKey = `app_accounts_${activeFirmId}`;
     const primaryRaw = localStorage.getItem(primaryKey);
-
     if (primaryRaw) {
       const parsed = JSON.parse(primaryRaw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -102,13 +100,19 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
     }
 
     const defaultAccounts = [
-      { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand (à¤°à¥‹à¤•à¤¡à¤¼)', name: 'Cash in Hand (à¤°à¥‹à¤•à¤¡à¤¼)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (à¤°à¥‹à¤•à¤¡à¤¼)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
-      { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India (à¤¬à¥ˆà¤‚à¤•)', name: 'State Bank of India (à¤¬à¥ˆà¤‚à¤•)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (à¤¬à¥ˆà¤‚à¤• à¤–à¤¾à¤¤à¥‡)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
-      { id: `ACC-${activeFirmId}-003`, account_name: 'Sales Revenue Account', name: 'Sales Revenue Account', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (à¤¬à¤¿à¤•à¥à¤°à¥€)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', is_system_locked: true, isSystemLocked: true },
+      { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
+      { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
+      { id: `ACC-${activeFirmId}-003`, account_name: 'Sales Revenue Account', name: 'Sales Revenue Account', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', is_system_locked: true, isSystemLocked: true },
       { id: `ACC-${activeFirmId}-004`, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', is_system_locked: true, isSystemLocked: true },
-      { id: `ACC-${activeFirmId}-005`, account_name: 'Labor & Pathai Expense (à¤®à¤œà¤¦à¥‚à¤°à¥€/à¤ªà¤¥à¤¾à¤ˆ)', name: 'Labor & Pathai Expense (à¤®à¤œà¤¦à¥‚à¤°à¥€/à¤ªà¤¥à¤¾à¤ˆ)', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Pathai Expenses (à¤®à¤œà¤¦à¥‚à¤°à¥€)', group: 'Direct Labor & Wages (à¤®à¤œà¤¼à¤¦à¥‚à¤°)', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
-      { id: `ACC-${activeFirmId}-006`, account_name: 'Capital Account (à¤¸à¥à¤µà¤¾à¤®à¥€ à¤•à¥€ à¤ªà¥‚à¤‚à¤œà¥€)', name: 'Capital Account (à¤¸à¥à¤µà¤¾à¤®à¥€ à¤•à¥€ à¤ªà¥‚à¤‚à¤œà¥€)', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', is_system_locked: false, isSystemLocked: false }
-    ];
+      { id: `ACC-${activeFirmId}-005`, account_name: 'Labor & Pathai Expense (मजदूरी/पथाई)', name: 'Labor & Pathai Expense (मजदूरी/पथाई)', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Pathai Expenses (मजदूरी)', group: 'Direct Labor & Wages (मज़दूर)', opening_balance: 0, balance_type: 'Dr', is_system_locked: false, isSystemLocked: false },
+      { id: `ACC-${activeFirmId}-006`, account_name: 'Capital Account (स्वामी की पूंजी)', name: 'Capital Account (स्वामी की पूंजी)', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', is_system_locked: false, isSystemLocked: false }
+    ].map(acc => ({
+      ...acc,
+      opening_balance: Number(acc.opening_balance || 0),
+      openingBalance: Number(acc.opening_balance || 0),
+      balance_type: acc.balance_type || 'Dr',
+      balanceType: acc.balance_type || 'Dr'
+    }));
 
     localStorage.setItem(primaryKey, JSON.stringify(defaultAccounts));
     localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(defaultAccounts));
@@ -180,11 +184,9 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     accounts.push(payload);
   }
 
-  // 1. Strictly firm-scoped keys only
   localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(accounts));
 
-  // 2. ULTIMATE MULTI-BUCKET CASCADE RENAME ENGINE
   if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
 
@@ -277,9 +279,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   return payload;
 };
 
-/**
- * Delete an Account Head with Foreign Key Dependency Check (Prevents Broken Orphan Vouchers)
- */
 export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
   const activeFirmId = resolveFirmId(firmId);
   const accounts = getFirmMasterAccounts(activeFirmId);
@@ -287,14 +286,12 @@ export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
 
   if (!target) return false;
 
-  // 1. Guard core statutory accounts
   if (target.is_system_locked || target.isSystemLocked) {
     throw new Error(`Core statutory ledger account "${target.account_name || target.name}" ko delete nahi kiya ja sakta.`);
   }
 
   const targetName = (target.account_name || target.name || '').trim().toLowerCase();
 
-  // 2. Guard against orphan vouchers / active transaction dependency
   const existingVouchers = getUniversalVouchersByFirm(activeFirmId) || [];
   const hasActiveTransactions = existingVouchers.some(v => {
     if (!v) return false;
@@ -309,7 +306,7 @@ export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
   });
 
   if (hasActiveTransactions) {
-    throw new Error(`âš ï¸ Is account "${target.account_name || target.name}" par purane transactions (vouchers/bills) darj hain. Account delete karne se pehle iske sabhi vouchers delete ya adjust karein, taaki Balance Sheet tally rahe.`);
+    throw new Error(`⚠️ Is account "${target.account_name || target.name}" par purane transactions darj hain. Pehle iske vouchers delete ya adjust karein.`);
   }
 
   const updated = accounts.filter(a => a.id !== accountId);
