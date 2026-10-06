@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
-import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine.js';
+import { saveUniversalVoucher, deleteUniversalVoucher, normalizeLedgerAccountMatch } from '../utils/voucherPostingEngine.js';
 import { getAllUniversalVouchers } from '../utils/statementEngine.js';
 import SearchableAccountDropdown from './SearchableAccountDropdown';
 
@@ -47,7 +47,6 @@ export default function PayrollManagementView({ firm, onClose }) {
     entries.sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0));
     setPayrollEntries(entries);
 
-    // Fetch all vouchers of active firm strictly
     const allVchs = getAllUniversalVouchers(activeFirmId) || [];
     setFirmVouchers(allVchs);
   };
@@ -102,7 +101,7 @@ export default function PayrollManagementView({ firm, onClose }) {
 
     // 1. Ensure Worker & Expense Ledgers Exist in Master
     const currentAccounts = getFirmMasterAccounts(activeFirmId);
-    if (!currentAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === workerName.toLowerCase())) {
+    if (!currentAccounts.some(a => normalizeLedgerAccountMatch(workerName, a.account_name || a.name || ''))) {
       saveMasterAccount(activeFirmId, {
         account_name: workerName,
         primary_type: 'LIABILITIES',
@@ -131,7 +130,7 @@ export default function PayrollManagementView({ firm, onClose }) {
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 3. Post Dual-Key Synchronized Double-Entry Journal Voucher
+    // 3. Post Double-Entry Journal Voucher
     try {
       const voucherId = 'JV-' + entryId;
       saveUniversalVoucher(activeFirmId, {
@@ -195,7 +194,6 @@ export default function PayrollManagementView({ firm, onClose }) {
       setPayrollEntries(filteredEntries);
       saveFirmData('app_payroll_entries', firm, filteredEntries);
 
-      // Delete corresponding JV voucher
       try {
         deleteUniversalVoucher(activeFirmId, 'JV-' + entryId);
       } catch (e) {}
@@ -219,40 +217,36 @@ export default function PayrollManagementView({ firm, onClose }) {
   };
 
   // -------------------------------------------------------------
-  // ACCURATE RECONCILIATION CALCULATION (KUL, PAID, BAKI)
+  // RESILIENT BILINGUAL RECONCILIATION (KUL, PAID, BAKI)
   // -------------------------------------------------------------
-  const resolvedActiveWorker = (typeof selectedWorker === 'object' 
+  const rawSelectedWorker = (typeof selectedWorker === 'object' 
     ? (selectedWorker.account_name || selectedWorker.name || '') 
-    : selectedWorker || '').trim().toLowerCase();
+    : selectedWorker || '').trim();
 
-  // 1. Worker entries filter
-  const workerEntries = payrollEntries.filter(e => !resolvedActiveWorker || String(e.worker || '').trim().toLowerCase() === resolvedActiveWorker);
+  // 1. Worker entries filter with bilingual matching
+  const workerEntries = payrollEntries.filter(e => {
+    if (!rawSelectedWorker) return true;
+    return normalizeLedgerAccountMatch(rawSelectedWorker, e.worker || '');
+  });
   const totalEarned = round2(workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0));
-
-  // Set of target workers (either single worker or all payroll workers)
-  const targetWorkerNames = new Set();
-  if (resolvedActiveWorker) {
-    targetWorkerNames.add(resolvedActiveWorker);
-  } else {
-    payrollEntries.forEach(e => {
-      if (e.worker) targetWorkerNames.add(String(e.worker).trim().toLowerCase());
-    });
-  }
 
   // 2. Scan vouchers for all payments/debits made to target workers
   let totalPaid = 0;
   firmVouchers.forEach(v => {
     if (!v) return;
 
-    // A. Check compound entries
+    // Check compound entries
     if (Array.isArray(v.entries) && v.entries.length > 0) {
       v.entries.forEach(e => {
-        const acc = String(e.account_name || e.party || '').trim().toLowerCase();
+        const acc = (e.account_name || e.party || '').trim();
         const isDebit = String(e.type || '').toUpperCase() === 'DR' || Number(e.debit || 0) > 0;
         const amt = Number(e.amount || e.debit || 0);
 
-        if (targetWorkerNames.has(acc) && isDebit && amt > 0) {
-          // Do not count wage accrual itself as payment
+        const isTarget = rawSelectedWorker 
+          ? normalizeLedgerAccountMatch(rawSelectedWorker, acc)
+          : payrollEntries.some(pe => normalizeLedgerAccountMatch(pe.worker, acc));
+
+        if (isTarget && isDebit && amt > 0) {
           const isWageVoucher = String(v.id || '').startsWith('JV-PAY-') || String(v.narration || '').toLowerCase().includes('wages credited to');
           if (!isWageVoucher) {
             totalPaid += amt;
@@ -260,12 +254,16 @@ export default function PayrollManagementView({ firm, onClose }) {
         }
       });
     } 
-    // B. Check standard simple vouchers
+    // Check standard simple vouchers
     else {
-      const dr = String(v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
+      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim();
       const amt = Number(v.amount || v.total_amount || 0);
 
-      if (targetWorkerNames.has(dr) && amt > 0) {
+      const isTarget = rawSelectedWorker 
+        ? normalizeLedgerAccountMatch(rawSelectedWorker, dr)
+        : payrollEntries.some(pe => normalizeLedgerAccountMatch(pe.worker, dr));
+
+      if (isTarget && amt > 0) {
         const isWageVoucher = String(v.id || '').startsWith('JV-PAY-') || String(v.narration || '').toLowerCase().includes('wages credited to');
         if (!isWageVoucher) {
           totalPaid += amt;
@@ -390,7 +388,7 @@ export default function PayrollManagementView({ firm, onClose }) {
 
       {/* Scrollable Ledger Statement Register */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800 }}>
+        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight 800 }}>
           📖 Ledger Statement Register ({workerEntries.length})
         </h3>
         {workerEntries.length === 0 ? (
