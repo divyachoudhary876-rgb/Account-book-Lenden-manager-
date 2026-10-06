@@ -65,6 +65,51 @@ export const ACCOUNT_HIERARCHY = {
   }
 };
 
+// Industry Suggestion Banks for CreateAccountHeadModal quick chips
+export const INDUSTRY_SUGGESTION_BANKS = {
+  BRICK_KILN: [
+    { name: 'Koyla / Coal Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Mitti / Soil Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Turi / Husk Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Pathai Mistri Thekedar (लेबर)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Bharai & Pakai Mistri (लेबर)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Nikasi & Loading Thekedar (लेबर)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Tractor Driver Wages A/c', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' }
+  ],
+  BUILDING_MATERIAL: [
+    { name: 'Cement Manufacturer / Depot Supplier', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Steel TMT Rebar Distributor (सरिया)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Godown & Loading Labour Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' }
+  ],
+  TRADING: [
+    { name: 'Wholesale Goods Supplier (एजेंसी/सप्लायर)', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Shop Staff / Salesman Salary', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' }
+  ],
+  TRANSPORT: [
+    { name: 'Diesel Fuel Station A/c', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Truck Driver & Helper Wages', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' }
+  ],
+  UNIVERSAL_COMMON: [
+    { name: 'Cash in Hand (रोकड़)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Cash in Hand (रोकड़)', balanceType: 'Dr' },
+    { name: 'State Bank of India (Current A/c)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
+    { name: 'Proprietor Capital Account (स्वामी पूंजी)', categoryId: 'CREDITOR', type: 'EQUITY', subGroup: 'Proprietor / Partner Capital Account', balanceType: 'Cr' }
+  ]
+};
+
+export const resolveIndustryKey = (rawCat = '') => {
+  const cat = String(rawCat || '').toUpperCase();
+  if (cat.includes('BUILDING') || cat.includes('CEMENT') || cat.includes('STEEL') || cat.includes('HARDWARE')) return 'BUILDING_MATERIAL';
+  if (cat.includes('TRANSPORT') || cat.includes('LOGISTIC')) return 'TRANSPORT';
+  if (cat.includes('TRADING') || cat.includes('RETAIL') || cat.includes('SHOP')) return 'TRADING';
+  return 'BRICK_KILN';
+};
+
+export const getIndustrySuggestions = (firmCategory = '') => {
+  const industryKey = resolveIndustryKey(firmCategory);
+  const sectorList = INDUSTRY_SUGGESTION_BANKS[industryKey] || INDUSTRY_SUGGESTION_BANKS.BRICK_KILN;
+  return [...sectorList, ...INDUSTRY_SUGGESTION_BANKS.UNIVERSAL_COMMON];
+};
+
 const resolveFirmId = (firmId) => {
   if (firmId && typeof firmId === 'string' && firmId.trim()) {
     return firmId.trim();
