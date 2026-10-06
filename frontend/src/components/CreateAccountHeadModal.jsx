@@ -32,72 +32,77 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
   
   const dropdownRef = useRef(null);
 
-  // Dynamic Multi-Industry Intent Cards Configuration
+  // 6 Intent-Driven Categories (Professional Labels)
   const businessCategories = useMemo(() => {
     const isTransport = firmCat.includes('TRANSPORT') || firmCat.includes('LOGISTIC');
     const isTrading = firmCat.includes('TRADING') || firmCat.includes('RETAIL') || firmCat.includes('SHOP');
-    const isMfg = firmCat.includes('MANUFACTURING') || firmCat.includes('FACTORY');
 
     return [
       {
         id: 'DEBTOR',
         title: 'Customer / Grahak',
-        subtitle: isTransport ? 'पार्टी / फ्रेट बिलिंग ग्राहक' : isTrading ? 'दुकानदार / रिटेल व होलसेल ग्राहक' : 'ईंट व माल खरीदने वाला ग्राहक',
+        subtitle: isTransport ? 'पार्टी / फ्रेट बिलिंग ग्राहक' : isTrading ? 'दुकानदार / रिटेल ग्राहक' : 'ईंट व माल खरीदने वाला ग्राहक',
         icon: '🛒',
         color: '#0284c7',
         primaryType: 'ASSETS',
         subGroup: 'Sundry Debtors (Customer / देनदार)',
-        defaultBalanceType: 'Dr'
+        defaultBalanceType: 'Dr',
+        isParty: true
       },
       {
         id: 'CREDITOR',
         title: 'Supplier / Vyapari',
-        subtitle: isTransport ? 'डीजल पम्प, टायर व पार्ट्स सप्लायर' : isTrading ? 'होलसेलर व एजेंसी माल सप्लायर' : 'कोयला, मिट्टी, सीमेंट सप्लायर',
+        subtitle: isTransport ? 'डीजल पम्प, टायर व पार्ट्स सप्लायर' : isTrading ? 'होलसेलर व एजेंसी सप्लायर' : 'कोयला, मिट्टी, सीमेंट सप्लायर',
         icon: '🚚',
         color: '#b45309',
         primaryType: 'LIABILITIES',
         subGroup: 'Sundry Creditors (Suppliers / लेनदार)',
-        defaultBalanceType: 'Cr'
+        defaultBalanceType: 'Cr',
+        isParty: true
       },
       {
         id: 'THEKEDAR',
         title: isTransport ? 'Driver & Staff' : isTrading ? 'Staff / Salesman' : 'Thekedar / Mazdoor',
-        subtitle: isTransport ? 'गाड़ी चालक व हेल्पर वेतन/भाड़ा' : isTrading ? 'दुकान सेल्समैन वेतन व भत्ता' : 'पथाई, भराई, निकासी व लेबर ठेका',
+        subtitle: isTransport ? 'गाड़ी चालक व हेल्पर' : isTrading ? 'दुकान सेल्समैन व स्टाफ' : 'पथाई, भराई, निकासी व लेबर ठेका',
         icon: '👷',
         color: '#166534',
         primaryType: 'LIABILITIES',
         subGroup: 'Outstanding Expenses Payable',
-        defaultBalanceType: 'Cr'
+        defaultBalanceType: 'Cr',
+        isParty: true
       },
       {
         id: 'BANK_CASH',
         title: 'Bank & Cash',
-        subtitle: 'SBI, PNB, Cash in Hand, UPI QR',
+        subtitle: 'SBI, PNB, Cash in Hand, UPI',
         icon: '🏦',
         color: '#0f766e',
         primaryType: 'ASSETS',
         subGroup: 'Cash in Hand (रोकड़)',
-        defaultBalanceType: 'Dr'
+        defaultBalanceType: 'Dr',
+        isParty: false
       },
       {
         id: 'ASSET',
         title: isTransport ? 'Fleet & Property' : 'Machine & Property',
-        subtitle: isTransport ? 'ट्रक, ट्रेलर, ऑफिस व जमीन संपत्ति' : isTrading ? 'दुकान शोरूम, फर्नीचर व कंप्यूटर' : 'ट्रैक्टर, जमीन, चिमनी, झोपड़ी संपत्ति',
+        subtitle: isTransport ? 'ट्रक, ट्रेलर व जमीन' : isTrading ? 'दुकान, फर्नीचर व काउंटर' : 'ट्रैक्टर, जमीन, चिमनी, झोपड़ी',
         icon: isTransport ? '🚛' : isTrading ? '🏢' : '🚜',
         color: '#4338ca',
         primaryType: 'ASSETS',
         subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)',
-        defaultBalanceType: 'Dr'
+        defaultBalanceType: 'Dr',
+        isParty: false
       },
       {
         id: 'EXPENSE',
         title: 'Kharcha (Expense)',
-        subtitle: isTransport ? 'टोल टैक्स, डीजल, आरटीओ खर्च' : isTrading ? 'दुकान किराया, बिजली, भाड़ा खर्च' : 'डीजल, मरम्मत, फैक्ट्री खर्च',
+        subtitle: isTransport ? 'टोल, डीजल, आरटीओ खर्च' : isTrading ? 'किराया, बिजली, भाड़ा' : 'डीजल, मरम्मत, फैक्ट्री खर्च',
         icon: '📉',
         color: '#be123c',
         primaryType: 'EXPENSES',
         subGroup: isTrading ? 'Administrative & Office Expenses' : 'Operating Fuel Costs (Tractor / Generator Diesel)',
-        defaultBalanceType: 'Dr'
+        defaultBalanceType: 'Dr',
+        isParty: false
       }
     ];
   }, [firmCat]);
@@ -106,7 +111,6 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     return businessCategories.find(c => c.id === selectedCatId) || businessCategories[0];
   }, [selectedCatId, businessCategories]);
 
-  // Industry-Aware Suggestions List
   const industrySuggestions = useMemo(() => {
     return getIndustrySuggestions(firmCat);
   }, [firmCat]);
@@ -146,17 +150,19 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Filtered Suggestions: Category-matched & Relevant to User Query
   const filteredSuggestions = useMemo(() => {
     const q = accountName.trim().toLowerCase();
     if (!q) return [];
     return industrySuggestions.filter(s => 
-      s.name.toLowerCase().includes(q) && s.name.toLowerCase() !== q
+      s.categoryId === selectedCatId &&
+      s.name.toLowerCase().includes(q) && 
+      s.name.toLowerCase() !== q
     ).slice(0, 5);
-  }, [accountName, industrySuggestions]);
+  }, [accountName, selectedCatId, industrySuggestions]);
 
   const handleApplySuggestion = (sug) => {
     setAccountName(sug.name);
-    setSelectedCatId(sug.categoryId);
     setBalanceDirection(sug.balanceType === 'Dr' ? 'LE_NA_HAI' : 'DE_NA_HAI');
     setShowDropdownSuggestions(false);
     setStatusMessage(null);
@@ -290,8 +296,8 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     <div style={overlayStyle}>
       <div style={modalCardStyle}>
         
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px', marginBottom: '12px' }}>
+        {/* Clean Header (NO FALTU CHIPS) */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px', marginBottom: '14px' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
               {editingId ? '✏️ Edit Account Head' : `✨ Naya Khata Banayein (${firm?.legal_name || firm?.trade_name || 'Business'})`}
@@ -326,38 +332,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
           </div>
         )}
 
-        {/* Dynamic Quick Suggestion Chips based on Industry */}
-        {!editingId && (
-          <div style={{ marginBottom: '12px' }}>
-            <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>
-              ⚡ Popular Business Heads ({firmCat}):
-            </span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-              {industrySuggestions.slice(0, 7).map((tpl, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => handleApplySuggestion(tpl)}
-                  style={{
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '6px',
-                    padding: '3px 7px',
-                    fontSize: '10px',
-                    fontWeight: '700',
-                    color: '#0369a1',
-                    cursor: 'pointer'
-                  }}
-                >
-                  + {tpl.name.split(' (')[0]}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Form */}
-        <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           
           {/* 1. Category Intent Selector */}
           <div>
@@ -396,7 +371,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
             </div>
           </div>
 
-          {/* 2. Account Name with Predictive Typeahead */}
+          {/* 2. Account Name with Context-Aware Predictive Typeahead */}
           <div style={{ position: 'relative' }} ref={dropdownRef}>
             <label style={labelStyle}>2. KHATE KA NAAM (ACCOUNT NAME) *</label>
             <input 
@@ -419,7 +394,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
               required 
             />
 
-            {/* Smart Auto-Complete Dropdown */}
+            {/* Smart Auto-Complete Dropdown for Active Category Only */}
             {showDropdownSuggestions && filteredSuggestions.length > 0 && (
               <div style={autocompleteBoxStyle}>
                 <div style={{ padding: '4px 8px', fontSize: '9px', fontWeight: '800', color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
@@ -444,8 +419,8 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
             )}
           </div>
 
-          {/* Optional Phone & Address for Parties */}
-          {(selectedCatId === 'DEBTOR' || selectedCatId === 'CREDITOR' || selectedCatId === 'THEKEDAR') && (
+          {/* DYNAMIC: Mobile & Address ONLY for Party Categories (Debtor, Creditor, Thekedar) */}
+          {activeCategory.isParty && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <div>
                 <label style={labelStyle}>MOBILE NUMBER (ऐच्छिक)</label>
