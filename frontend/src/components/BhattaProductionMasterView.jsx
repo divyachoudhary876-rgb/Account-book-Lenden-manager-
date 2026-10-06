@@ -3,14 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
-import { saveUniversalVoucher } from '../utils/voucherPostingEngine';
+import { saveUniversalVoucher, normalizeLedgerAccountMatch } from '../utils/voucherPostingEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine';
 import SearchableStockDropdown from './SearchableStockDropdown';
 import BhattaCostAuditView from './BhattaCostAuditView';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-// Standard Brick Kiln Stock Grade Templates (Nikasi Only)
 const STANDARD_BRICK_GRADES = [
   { key: 'INT_1_NO', name: 'Int 1 Number (अव्वल)', unit: 'Pcs', costFactor: 1.05 },
   { key: 'INT_2_NO', name: 'Int 2 Number (दोयम)', unit: 'Pcs', costFactor: 0.90 },
@@ -24,32 +23,26 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
   const activeFY = getCurrentActiveFY();
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
-  // Toggle Tab: Stage Production vs Full Round Cost Audit
   const [activeTab, setActiveTab] = useState('STAGE_PROD');
 
   const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
   const [useForLocation, setUseForLocation] = useState('');
   
-  // Dynamic Production Stage Selector (Default Stage 1)
   const [productionStage, setProductionStage] = useState('STAGE_1_PATHAI');
   const [labourStartDate, setLabourStartDate] = useState('');
   const [labourEndDate, setLabourEndDate] = useState(new Date().toISOString().slice(0, 10));
 
-  // Raw Materials Consumption
   const [inventoryItems, setInventoryItems] = useState([]);
   const [selectedMaterial, setSelectedMaterial] = useState('');
   const [materialQty, setMaterialQty] = useState('');
   const [consumedMaterials, setConsumedMaterials] = useState([]);
 
-  // Direct Overheads
   const [directLaborCost, setDirectLaborCost] = useState('');
   const [machineryOverheads, setMachineryOverheads] = useState('');
 
-  // Single Item Output State (For Stage 1, Stage 2, General)
   const [outputItem, setOutputItem] = useState('');
   const [producedQty, setProducedQty] = useState('');
 
-  // Multi-Grade Output State (For Stage 3 Nikasi)
   const [isMultiGradeOutput, setIsMultiGradeOutput] = useState(true);
   const [multiGradeQuantities, setMultiGradeQuantities] = useState({
     INT_1_NO: '',
@@ -86,7 +79,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     };
   }, [firm, activeFirmId]);
 
-  // Stage Switch Handler with Intelligent Default Presets
   const handleStageChange = (newStage) => {
     setProductionStage(newStage);
     setConsumedMaterials([]);
@@ -103,19 +95,16 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     } else if (newStage === 'STAGE_2_PAKAI') {
       setIsMultiGradeOutput(false);
       setUseForLocation('Bhatti Chamber Bharai');
-      // Auto find or set Kacchi Eent
       const kacchi = inventoryItems.find(i => (i.name || i.item_name || '').toLowerCase().includes('kacchi'));
       if (kacchi) setSelectedMaterial(kacchi.id);
     } else if (newStage === 'STAGE_1_PATHAI') {
       setIsMultiGradeOutput(false);
       setUseForLocation('Pathai Maidan Ground');
-      // Auto find or set Mitti
       const mitti = inventoryItems.find(i => (i.name || i.item_name || '').toLowerCase().includes('mitti'));
       if (mitti) setSelectedMaterial(mitti.id);
     }
   };
 
-  // One-Click Helper: Ensure all Standard Bhatta Grades Exist in Inventory
   const handleSeedStandardItems = () => {
     let currentInventory = [...inventoryItems];
     let addedCount = 0;
@@ -161,7 +150,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     }
   };
 
-  // AUTO-FETCH LABOUR ACCORDING TO STAGE
   const handleAutoFetchLabour = () => {
     try {
       const payrollEntries = loadFirmData('app_payroll_entries', firm, []);
@@ -247,7 +235,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     setConsumedMaterials(consumedMaterials.filter(m => m.id !== id));
   };
 
-  // Cost Calculations
   const totalMaterialCost = round2(consumedMaterials.reduce((sum, m) => sum + (m.estimatedCost || 0), 0));
   const totalProductionCost = round2(totalMaterialCost + (Number(directLaborCost) || 0) + (Number(machineryOverheads) || 0));
 
@@ -279,7 +266,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       const batchId = editingBatchId || ('PROD-' + Date.now());
       let workingInventory = [...inventoryItems];
 
-      // Revert editing batch stock if any
       if (editingBatchId) {
         const oldBatch = batchesList.find(b => b.id === editingBatchId);
         if (oldBatch) {
@@ -427,11 +413,11 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       setBatchesList(updatedBatches);
       saveFirmData('production_batches', firm, updatedBatches);
 
-      // Post Balanced Double-Entry Journal Voucher (JV)
+      // Post Balanced Double-Entry Journal Voucher (JV) with Normalized Ledger Alignment
       const accounts = getFirmMasterAccounts(activeFirmId);
       const wipLedger = 'Manufacturing / Work-in-Progress (WIP)';
 
-      if (!accounts.some(a => (a.account_name || a.name || '').toLowerCase() === wipLedger.toLowerCase())) {
+      if (!accounts.some(a => normalizeLedgerAccountMatch(wipLedger, a.account_name || a.name || ''))) {
         saveMasterAccount(activeFirmId, {
           account_name: wipLedger,
           primary_type: 'EXPENSES',
@@ -446,7 +432,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
       finalOutputsList.forEach(out => {
         const finishedLedger = `${out.name} Stock Account`;
-        if (!accounts.some(a => (a.account_name || a.name || '').toLowerCase() === finishedLedger.toLowerCase())) {
+        if (!accounts.some(a => normalizeLedgerAccountMatch(finishedLedger, a.account_name || a.name || ''))) {
           saveMasterAccount(activeFirmId, {
             account_name: finishedLedger,
             primary_type: 'ASSETS',
@@ -610,7 +596,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
   return (
     <div style={{ padding: '8px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
       
-      {/* Top Touch-Friendly Segmented Control Bar */}
       <div style={{ backgroundColor: '#ffffff', padding: '6px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', display: 'flex', gap: '6px' }}>
         <button
           type="button"
@@ -685,7 +670,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
           <form onSubmit={handleSaveProduction}>
             
-            {/* DYNAMIC STAGE SELECTOR (DRIVES FORM BEHAVIOR) */}
             <div style={{ marginBottom: '10px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#0f172a' }}>
                 🏭 Select Production Stage (उत्पादन का चरण चुनें) *
@@ -734,7 +718,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               </div>
             </div>
 
-            {/* STEP 1: DYNAMIC RAW MATERIALS ACCORDING TO STAGE */}
+            {/* STEP 1: CONSUMED MATERIALS */}
             <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', padding: '10px', borderRadius: '10px', marginBottom: '10px' }}>
               <div style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', marginBottom: '4px' }}>
                 🔥 Step 1: Consumed Raw Materials & Fuels (लागत कच्चा माल)
@@ -793,7 +777,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               )}
             </div>
 
-            {/* STEP 2: DYNAMIC LABOUR & WAGES ACCORDING TO STAGE */}
+            {/* STEP 2: DIRECT LABOUR */}
             <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '10px', marginBottom: '10px' }}>
               <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534', marginBottom: '2px' }}>
                 👷 Step 2: Direct Labor & Overheads ({productionStage === 'STAGE_1_PATHAI' ? 'पथाई मजदूरी' : productionStage === 'STAGE_2_PAKAI' ? 'भराई व झोंकाई मिस्त्री' : 'निकासी लेबर'})
@@ -858,10 +842,10 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               </div>
             </div>
 
-            {/* STEP 3: DYNAMIC OUTPUT ITEMS (STAGE-DRIVEN) */}
+            {/* STEP 3: OUTPUT FINISHED PRODUCTS */}
             <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px', borderRadius: '10px', marginBottom: '12px' }}>
               
-              {/* STAGE 1 OUTPUT: KACCHI EENT ONLY */}
+              {/* STAGE 1: KACCHI EENT */}
               {productionStage === 'STAGE_1_PATHAI' && (
                 <div>
                   <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '4px' }}>
@@ -901,7 +885,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                 </div>
               )}
 
-              {/* STAGE 2 OUTPUT: PAKAI ADHEEN CHAMBER BATCH */}
+              {/* STAGE 2: PAKAI BATCH */}
               {productionStage === 'STAGE_2_PAKAI' && (
                 <div>
                   <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '4px' }}>
@@ -941,7 +925,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                 </div>
               )}
 
-              {/* STAGE 3 OUTPUT: MULTI-GRADE NIKASI SPLIT (1-NO, 2-NO, PILA, KHORA, CHATTA) */}
+              {/* STAGE 3: NIKASI & MULTI-GRADE SPLIT */}
               {(productionStage === 'STAGE_3_NIKASI' || productionStage === 'STAGE_GENERAL') && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -1014,7 +998,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
             </div>
 
-            {/* DYNAMIC ACTION BUTTON */}
+            {/* ACTION BUTTON */}
             <div style={{ display: 'flex', gap: '8px' }}>
               <button 
                 type="submit" 
