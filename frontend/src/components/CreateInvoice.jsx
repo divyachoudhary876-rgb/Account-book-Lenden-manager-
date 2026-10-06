@@ -7,6 +7,7 @@ import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 import { processSalesInvoicePosting, revertSalesStockOnDeletion } from '../utils/salesPostingEngine.js';
+import { normalizeLedgerAccountMatch } from '../utils/voucherPostingEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
@@ -42,7 +43,6 @@ export default function CreateInvoice({ firm, onClose }) {
       const accList = getFirmMasterAccounts(activeFirmId) || [];
       setAccountsList(accList);
 
-      // Strictly firm-scoped sales vouchers scan (No FIRM-001 fallback pollution)
       const scopedVouchersKey = `account_book_vouchers_${activeFirmId}`;
       const allVouchers = StorageService.getItem(scopedVouchersKey, []);
       
@@ -76,9 +76,10 @@ export default function CreateInvoice({ firm, onClose }) {
   const handleAddToCart = () => {
     if (!selectedItemId || !quantity || !rate) return alert('Kripya item, matra aur rate darj karein.');
     
+    const cleanSel = String(selectedItemId).trim().toLowerCase();
     const itemObj = allItems.find(i => 
-      String(i.id || i.item_id) === String(selectedItemId) || 
-      String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId).trim().toLowerCase()
+      String(i.id || i.item_id) === cleanSel || 
+      String(i.item_name || i.name || '').trim().toLowerCase() === cleanSel
     );
     
     if (!itemObj) return alert('Chayanit item nahi mila.');
@@ -108,7 +109,9 @@ export default function CreateInvoice({ firm, onClose }) {
       isService: itemObj.item_type === 'SERVICE' || String(cleanItemName).toLowerCase().includes('freight')
     }]);
 
-    setSelectedItemId(''); setQuantity(''); setRate('');
+    setSelectedItemId(''); 
+    setQuantity(''); 
+    setRate('');
   };
 
   const removeCartItem = (id) => setCart(cart.filter(c => c.id !== id));
@@ -129,18 +132,22 @@ export default function CreateInvoice({ firm, onClose }) {
         revertSalesStockOnDeletion(editingId, activeFirmId);
       }
 
+      // Resolve official master account name if already registered
+      const matchedAcc = accountsList.find(a => normalizeLedgerAccountMatch(customerParty, a.account_name || a.name || ''));
+      const resolvedPartyName = matchedAcc ? (matchedAcc.account_name || matchedAcc.name) : String(customerParty).trim();
+
       const invoicePayload = {
         id: editingId || `INV-${Date.now()}`,
         firmId: activeFirmId,
         firm_id: activeFirmId,
-        customer_id: customerParty,
+        customer_id: resolvedPartyName,
         invoiceDate: invoiceDate,
         taxable_amount: totalTaxable,
         gstRate: Number(gstRate),
         gst_amount: round2(totalCgst + totalSgst),
         reference_no: invoiceNo,
         vehicle_no: vehicleNo,
-        narration: `Sales Invoice ${invoiceNo} to ${customerParty}${vehicleNo ? ' - Vehicle: ' + vehicleNo : ''}`,
+        narration: `Sales Invoice ${invoiceNo} to ${resolvedPartyName}${vehicleNo ? ' - Vehicle: ' + vehicleNo : ''}`,
         items: cart.map(c => ({
           itemId: c.itemId,
           itemName: c.itemName,
@@ -204,7 +211,6 @@ export default function CreateInvoice({ firm, onClose }) {
     try {
       revertSalesStockOnDeletion(invId, activeFirmId);
 
-      // Strictly delete from both firm-scoped buckets
       const scopedVouchersKey = `account_book_vouchers_${activeFirmId}`;
       const scopedPrimaryVouchersKey = `app_vouchers_${activeFirmId}`;
       const scopedInvoicesKey = `app_invoices_${activeFirmId}`;
@@ -230,7 +236,10 @@ export default function CreateInvoice({ firm, onClose }) {
       loadData();
 
       if (editingId === invId) {
-        setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo('');
+        setEditingId(null); 
+        setCart([]); 
+        setCustomerParty(''); 
+        setVehicleNo('');
       }
       alert('✓ Invoice deleted & stock successfully restored.');
     } catch (err) {
@@ -346,7 +355,7 @@ export default function CreateInvoice({ firm, onClose }) {
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', boxSizing: 'border-box', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
-            {editingId ? '✏️️ Edit GST Sales Invoice' : '📄 Multi-Item GST Invoicing'}
+            {editingId ? '✏ Edit GST Sales Invoice' : '📄 Multi-Item GST Invoicing'}
           </h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
         </div>
@@ -463,7 +472,7 @@ export default function CreateInvoice({ firm, onClose }) {
         </form>
       </div>
 
-      {/* Saved Invoices Register with Scrollable Container */}
+      {/* Saved Invoices Register */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>📜 Recent Sales Invoices ({filteredInvoices.length})</h3>
