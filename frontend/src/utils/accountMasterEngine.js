@@ -67,6 +67,50 @@ export const ACCOUNT_HIERARCHY = {
   }
 };
 
+// Generic & Clean Industry Suggestion Bank (Zero Dummy Names)
+export const INDUSTRY_SUGGESTION_BANKS = {
+  BRICK_KILN: [
+    { name: 'Koyla / Coal Supplier Account', name_hi: 'कोयला सप्लायर खाता', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Mitti / Soil Supplier Account', name_hi: 'मिट्टी सप्लायर खाता', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Turi / Husk Supplier Account', name_hi: 'तूड़ी / बायोमास सप्लायर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Pathai Mistri Thekedar (Wages)', name_hi: 'पथाई ठेकेदार (मजदूरी)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Bharai & Pakai Mistri (Wages)', name_hi: 'भराई व पकाई मिस्त्री', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Nikasi & Loading Thekedar', name_hi: 'निकासी व लोडिंग ठेकेदार', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Tractor Driver Wages A/c', name_hi: 'ट्रैक्टर ड्राइवर मजदूरी', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Tractor Machinery Asset', name_hi: 'ट्रैक्टर मशीनरी संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Jhughi Labour Sheds Asset', name_hi: 'झोपड़ी व लेबर शेड संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Kiln Chimney & Pawa Asset', name_hi: 'चिमनी व पावा संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Tractor Diesel & Fuel Expense', name_hi: 'ट्रैक्टर डीजल व ईंधन खर्च', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Operating Fuel Costs (Tractor / Generator Diesel)', balanceType: 'Dr' },
+    { name: 'Kiln Coal Consumption', name_hi: 'कोयला झोंकाई खर्च', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Kiln Burning Fuel (Coal / Briquette / Husk)', balanceType: 'Dr' },
+    { name: 'Kiln Maintenance & Repairs', name_hi: 'भट्ठा मरम्मत व रख-रखाव', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Machinery Maintenance & Repairs', balanceType: 'Dr' }
+  ],
+  BUILDING_MATERIAL: [
+    { name: 'Cement Manufacturer Depot Supplier', name_hi: 'सीमेंट डिपो सप्लायर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Steel TMT Sariya Distributor', name_hi: 'सरिया / स्टील डिस्ट्रीब्यूटर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Sanitary & Hardware Dealer', name_hi: 'हार्डवेयर व सेनेटरी डीलर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Reti / Bajri / Grit Supplier', name_hi: 'रेती / बजरी सप्लायर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Godown Loading Labour Wages', name_hi: 'गोदाम लोडिंग मजदूरी', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Delivery Commercial Vehicle Asset', name_hi: 'कमर्शियल वाहन संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
+    { name: 'Freight Inward Vehicle Bhada', name_hi: 'आवक गाड़ी भाड़ा', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' }
+  ],
+  TRADING: [
+    { name: 'Wholesale Goods Supplier', name_hi: 'होलसेल माल सप्लायर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
+    { name: 'Shop Staff Salary', name_hi: 'दुकान स्टाफ वेतन', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
+    { name: 'Shop Rent Account', name_hi: 'दुकान किराया खाता', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
+    { name: 'Shop Electricity Bill', name_hi: 'दुकान बिजली बिल', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' }
+  ],
+  UNIVERSAL_COMMON: [
+    { name: 'Cash in Hand (Tijori)', name_hi: 'रोकड़ (गल्ला/तिजोरी)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Cash in Hand (रोकड़)', balanceType: 'Dr' },
+    { name: 'State Bank of India', name_hi: 'भारतीय स्टेट बैंक', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
+    { name: 'Punjab National Bank', name_hi: 'पंजाब नेशनल बैंक', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
+    { name: 'Bank Overdraft CC Limit A/c', name_hi: 'बैंक सीसी लिमिट / लोन', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Bank Overdraft / CC Accounts', balanceType: 'Cr' },
+    { name: 'Proprietor Capital Account', name_hi: 'स्वामी पूंजी खाता', categoryId: 'CREDITOR', type: 'EQUITY', subGroup: 'Proprietor / Partner Capital Account', balanceType: 'Cr' },
+    { name: 'Owner Personal Drawings A/c', name_hi: 'मालिक निजी आहरण', categoryId: 'DEBTOR', type: 'EQUITY', subGroup: 'Drawings Account (आहरण)', balanceType: 'Dr' },
+    { name: 'Discount Received Account', name_hi: 'छूट मिली खाता', categoryId: 'EXPENSE', type: 'INCOME', subGroup: 'Discount & Rebate Received', balanceType: 'Cr' },
+    { name: 'GST Output Tax Payable', name_hi: 'जीएसटी कर देय खाता', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Duties & Taxes (GST / TDS Payable)', balanceType: 'Cr' }
+  ]
+};
+
 export const resolveIndustryKey = (rawCat = '') => {
   const cat = String(rawCat || '').toUpperCase();
   if (cat.includes('BUILDING') || cat.includes('CEMENT') || cat.includes('STEEL') || cat.includes('HARDWARE')) return 'BUILDING_MATERIAL';
@@ -74,6 +118,14 @@ export const resolveIndustryKey = (rawCat = '') => {
   if (cat.includes('TRADING') || cat.includes('RETAIL') || cat.includes('SHOP') || cat.includes('STORE')) return 'TRADING';
   return 'BRICK_KILN';
 };
+
+export const getIndustrySuggestions = (firmCategory = '') => {
+  const industryKey = resolveIndustryKey(firmCategory);
+  const sectorList = INDUSTRY_SUGGESTION_BANKS[industryKey] || INDUSTRY_SUGGESTION_BANKS.BRICK_KILN;
+  return [...sectorList, ...INDUSTRY_SUGGESTION_BANKS.UNIVERSAL_COMMON];
+};
+
+export const STANDARD_ACCOUNT_SUGGESTIONS = getIndustrySuggestions('BRICK_KILN');
 
 const resolveFirmId = (firmId) => {
   if (firmId && typeof firmId === 'string' && firmId.trim()) {
@@ -83,14 +135,14 @@ const resolveFirmId = (firmId) => {
 };
 
 /**
- * नेस्टेड और लूप हुए नामों को ठीक करने वाला सुरक्षित Normalizer
+ * Idempotent Normalizer: Prevents recursive bracket nesting and applies Ind AS rules
  */
 export const upgradeAndNormalizeAccount = (acc) => {
   if (!acc) return null;
   const rawName = (acc.name_en || acc.account_name || acc.name || '').trim();
   const rawHi = (acc.name_hi || acc.account_name_hi || '').trim();
 
-  // यदि नाम पहले से ही खराब हो चुका है तो केवल मूल नाम निकालें
+  // Strip any preexisting or nested brackets
   const cleanBase = stripNestedBrackets(rawName);
   const bilingual = makeBilingualName(cleanBase || rawName, rawHi);
   const lowerName = bilingual.primary.toLowerCase();
@@ -100,7 +152,7 @@ export const upgradeAndNormalizeAccount = (acc) => {
   let bCat = acc.businessCategory || '';
   let bType = acc.balance_type || acc.balanceType || 'Dr';
 
-  // सख्त अकाउंटिंग मानक वर्गीकरण (GAAP / Ind AS Rule Overrides)
+  // Strict Ind AS / GAAP Group Classification Overrides
   if (lowerName.includes('discount received') || lowerName.includes('rebate received') || lowerName.includes('छूट मिली')) {
     bCat = 'EXPENSE';
     pType = 'INCOME';
@@ -189,7 +241,6 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
         let isModified = false;
         const normalized = parsed.map(acc => {
           const up = upgradeAndNormalizeAccount(acc);
-          // यदि नाम में नेस्टेड ब्रैकेट्स ठीक हुए हैं तो ही localStorage को अपडेट करें
           if (up && acc.account_name !== up.account_name) {
             isModified = true;
           }
@@ -243,7 +294,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
 
   if (!rawInput) throw new Error('Account name khali nahi ho sakta.');
 
-  // केवल साफ नाम से ही बाइलिंगुअल ऑब्जेक्ट बनाएं
   const cleanBase = stripNestedBrackets(rawInput);
   const bilingual = makeBilingualName(cleanBase || rawInput, accountData.name_hi || '');
   const cleanDisplayName = bilingual.display;
