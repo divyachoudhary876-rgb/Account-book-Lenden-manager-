@@ -1,5 +1,20 @@
 // frontend/src/utils/voucherPostingEngine.js
 
+// Universal helper to normalize bilingual and legacy account names for ledger aggregation
+export const normalizeLedgerAccountMatch = (targetAccount = '', candidateAccount = '') => {
+  if (!targetAccount || !candidateAccount) return false;
+  const t = String(targetAccount).trim().toLowerCase();
+  const c = String(candidateAccount).trim().toLowerCase();
+  if (t === c) return true;
+
+  // Strip brackets and Hindi characters to compare core Roman base name
+  const stripHi = (s) => s.replace(/\s*\([\u0900-\u097F\s]+\)/g, '').trim();
+  const cleanT = stripHi(t);
+  const cleanC = stripHi(c);
+
+  return cleanT === cleanC;
+};
+
 /**
  * 1. RETRIEVE VOUCHERS BY FIRM (Strictly Scoped & Firm Isolated)
  */
@@ -19,7 +34,7 @@ export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
         if (v && v.id) map.set(v.id, v);
       });
 
-      // STRICT EQUALITY: Koi '|| !v.firm_id' nahi hoga jo cross-firm data mix kare
+      // STRICT EQUALITY: Multi-firm isolation preserved
       const firmFiltered = Array.from(map.values()).filter(v => {
         if (!v) return false;
         const vFirm = String(v.firm_id || v.firmId || '').trim();
@@ -125,7 +140,7 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     if (!cr_account || !cr_account.trim()) {
       throw new Error('Credit Account (जमा) is mandatory.');
     }
-    if (dr_account.trim().toLowerCase() === cr_account.trim().toLowerCase()) {
+    if (normalizeLedgerAccountMatch(dr_account, cr_account)) {
       throw new Error('Debit and Credit cannot be the same ledger account.');
     }
 
