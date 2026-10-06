@@ -290,7 +290,7 @@ export default function PayrollManagementView({ firm, onClose }) {
             🏢 Firm: {firm?.legal_name || firm?.name || 'Active Firm'}
           </div>
         </div>
-        <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>👷 Labour, Employee & Tractor Wages</h1>
+        <h1 style={{ margin: 0, fontSize: '15px', fontWeight: '800' }}>👷 Labour, Employee & Tractor Wages</h1>
       </div>
 
       {errorMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
@@ -329,7 +329,7 @@ export default function PayrollManagementView({ firm, onClose }) {
 
       {/* Entry Form */}
       <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: 800 }}>
+        <h3 style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: '800' }}>
           {editingEntryId ? '✏️ Edit Kaam / Attendance Entry' : '📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)'}
         </h3>
 
@@ -388,7 +388,7 @@ export default function PayrollManagementView({ firm, onClose }) {
 
       {/* Scrollable Ledger Statement Register */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
-        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight 800 }}>
+        <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800' }}>
           📖 Ledger Statement Register ({workerEntries.length})
         </h3>
         {workerEntries.length === 0 ? (
