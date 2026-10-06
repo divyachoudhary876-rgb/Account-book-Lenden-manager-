@@ -1,7 +1,7 @@
 // frontend/src/utils/accountMasterEngine.js
 
 import { getUniversalVouchersByFirm } from './voucherPostingEngine.js';
-import { makeBilingualName } from './bilingualEngine.js';
+import { makeBilingualName, stripNestedBrackets } from './bilingualEngine.js';
 
 export const ACCOUNT_HIERARCHY = {
   ASSETS: {
@@ -67,56 +67,6 @@ export const ACCOUNT_HIERARCHY = {
   }
 };
 
-// क्लीन इंडस्ट्री सजेशन बैंक (द्विभाषी)
-export const INDUSTRY_SUGGESTION_BANKS = {
-  BRICK_KILN: [
-    { name: 'Coal / Fuel Supplier A/c', name_hi: 'कोयला सप्लायर खाता', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Soil / Mitti Supplier A/c', name_hi: 'मिट्टी सप्लायर खाता', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Mustard Husk / Turi Supplier', name_hi: 'तूड़ी / बायोमास सप्लायर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Pathai Mistri Thekedar (Wages)', name_hi: 'पथाई ठेकेदार (मजदूरी)', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Bharai & Pakai Mistri (Wages)', name_hi: 'भराई व पकाई मिस्त्री', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Nikasi & Loading Thekedar', name_hi: 'निकासी व लोडिंग ठेकेदार', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Tractor Driver Wages A/c', name_hi: 'ट्रैक्टर ड्राइवर मजदूरी', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Tractor Machinery Asset', name_hi: 'ट्रैक्टर मशीनरी संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Jhughi Labour Sheds Asset', name_hi: 'झोपड़ी व लेबर शेड संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Kiln Chimney & Pawa Asset', name_hi: 'चिमनी व पावा संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Tractor Diesel & Fuel Expense', name_hi: 'ट्रैक्टर डीजल व ईंधन खर्च', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Operating Fuel Costs (Tractor / Generator Diesel)', balanceType: 'Dr' },
-    { name: 'Kiln Coal Burning Expense', name_hi: 'कोयला झोंकाई खर्च', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Kiln Burning Fuel (Coal / Briquette / Husk)', balanceType: 'Dr' },
-    { name: 'Kiln Maintenance & Repairs', name_hi: 'भट्ठा मरम्मत व रख-रखाव', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Machinery Maintenance & Repairs', balanceType: 'Dr' }
-  ],
-  BUILDING_MATERIAL: [
-    { name: 'Cement Manufacturer Depot Supplier', name_hi: 'सीमेंट कंपनी / डिपो सप्लायर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Steel TMT Sariya Distributor', name_hi: 'सरिया / स्टील डिस्ट्रीब्यूटर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Sanitary & Hardware Wholesale Dealer', name_hi: 'हार्डवेयर व सेनेटरी डीलर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Reti / Bajri / Grit Supplier', name_hi: 'रेती / बजरी सप्लायर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Godown & Loading Labour Wages', name_hi: 'गोदाम लोडिंग लेबर मजदूरी', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Pickup Delivery Vehicle Driver', name_hi: 'पिकअप डिलीवरी ड्राइवर', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Commercial Delivery Vehicle Asset', name_hi: 'कमर्शियल वाहन संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Shop & Godown Shed Asset', name_hi: 'दुकान व गोदाम शेड संपत्ति', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' },
-    { name: 'Freight Inward Vehicle Bhada', name_hi: 'आवक गाड़ी भाड़ा', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
-    { name: 'Shop & Godown Rent A/c', name_hi: 'दुकान व गोदाम किराया', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' }
-  ],
-  TRADING: [
-    { name: 'Wholesale Goods Supplier', name_hi: 'होलसेल माल सप्लायर', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
-    { name: 'Shop Salesman & Staff Salary', name_hi: 'दुकान स्टाफ वेतन', categoryId: 'THEKEDAR', type: 'LIABILITIES', subGroup: 'Outstanding Expenses Payable', balanceType: 'Cr' },
-    { name: 'Shop Rent Account', name_hi: 'दुकान किराया खाता', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
-    { name: 'Freight Inward Cartage', name_hi: 'आवक ढुलाई / भाड़ा', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Freight & Cartage Inward (भाड़ा)', balanceType: 'Dr' },
-    { name: 'Shop Electricity & Power Bill', name_hi: 'दुकान बिजली बिल', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' },
-    { name: 'Shop Furniture & Counter Asset', name_hi: 'दुकान फर्नीचर व काउंटर', categoryId: 'ASSET', type: 'ASSETS', subGroup: 'Fixed Assets (Machinery / Vehicles / Land / Building)', balanceType: 'Dr' }
-  ],
-  UNIVERSAL_COMMON: [
-    { name: 'Cash in Hand (Tijori)', name_hi: 'रोकड़ (गल्ला/तिजोरी)', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Cash in Hand (रोकड़)', balanceType: 'Dr' },
-    { name: 'State Bank of India', name_hi: 'भारतीय स्टेट बैंक', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
-    { name: 'Punjab National Bank', name_hi: 'पंजाब नेशनल बैंक', categoryId: 'BANK_CASH', type: 'ASSETS', subGroup: 'Bank Accounts (बैंक खाते)', balanceType: 'Dr' },
-    { name: 'Bank Overdraft CC Limit A/c', name_hi: 'बैंक सीसी लिमिट / लोन', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Bank Overdraft / CC Accounts', balanceType: 'Cr' },
-    { name: 'Proprietor Capital Account', name_hi: 'स्वामी पूंजी खाता', categoryId: 'CREDITOR', type: 'EQUITY', subGroup: 'Proprietor / Partner Capital Account', balanceType: 'Cr' },
-    { name: 'Owner Personal Drawings A/c', name_hi: 'मालिक निजी आहरण', categoryId: 'DEBTOR', type: 'EQUITY', subGroup: 'Drawings Account (आहरण)', balanceType: 'Dr' },
-    { name: 'Discount Received Account', name_hi: 'छूट मिली खाता', categoryId: 'EXPENSE', type: 'INCOME', subGroup: 'Discount & Rebate Received', balanceType: 'Cr' },
-    { name: 'GST Output Tax Payable', name_hi: 'जीएसटी कर देय खाता', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Duties & Taxes (GST / TDS Payable)', balanceType: 'Cr' },
-    { name: 'Office Refreshment Chai-Pani', name_hi: 'चाय-पानी व ऑफिस खर्च', categoryId: 'EXPENSE', type: 'EXPENSES', subGroup: 'Administrative & Office Expenses', balanceType: 'Dr' }
-  ]
-};
-
 export const resolveIndustryKey = (rawCat = '') => {
   const cat = String(rawCat || '').toUpperCase();
   if (cat.includes('BUILDING') || cat.includes('CEMENT') || cat.includes('STEEL') || cat.includes('HARDWARE')) return 'BUILDING_MATERIAL';
@@ -124,14 +74,6 @@ export const resolveIndustryKey = (rawCat = '') => {
   if (cat.includes('TRADING') || cat.includes('RETAIL') || cat.includes('SHOP') || cat.includes('STORE')) return 'TRADING';
   return 'BRICK_KILN';
 };
-
-export const getIndustrySuggestions = (firmCategory = '') => {
-  const industryKey = resolveIndustryKey(firmCategory);
-  const sectorList = INDUSTRY_SUGGESTION_BANKS[industryKey] || INDUSTRY_SUGGESTION_BANKS.BRICK_KILN;
-  return [...sectorList, ...INDUSTRY_SUGGESTION_BANKS.UNIVERSAL_COMMON];
-};
-
-export const STANDARD_ACCOUNT_SUGGESTIONS = getIndustrySuggestions('BRICK_KILN');
 
 const resolveFirmId = (firmId) => {
   if (firmId && typeof firmId === 'string' && firmId.trim()) {
@@ -141,15 +83,16 @@ const resolveFirmId = (firmId) => {
 };
 
 /**
- * पुराने व नए खातों को स्वतः द्वैध-भाषी "English (हिन्दी)" प्रारूप में रूपांतरित करता है
+ * नेस्टेड और लूप हुए नामों को ठीक करने वाला सुरक्षित Normalizer
  */
 export const upgradeAndNormalizeAccount = (acc) => {
   if (!acc) return null;
-  const rawName = (acc.account_name || acc.name || '').trim();
+  const rawName = (acc.name_en || acc.account_name || acc.name || '').trim();
   const rawHi = (acc.name_hi || acc.account_name_hi || '').trim();
 
-  // बाइलिंगुअल मैपिंग जनरेट करें
-  const bilingual = makeBilingualName(rawName, rawHi);
+  // यदि नाम पहले से ही खराब हो चुका है तो केवल मूल नाम निकालें
+  const cleanBase = stripNestedBrackets(rawName);
+  const bilingual = makeBilingualName(cleanBase || rawName, rawHi);
   const lowerName = bilingual.primary.toLowerCase();
 
   let pType = String(acc.primary_type || acc.type || 'EXPENSES').toUpperCase();
@@ -246,7 +189,8 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
         let isModified = false;
         const normalized = parsed.map(acc => {
           const up = upgradeAndNormalizeAccount(acc);
-          if (up && (acc.account_name !== up.account_name || acc.display_name !== up.display_name)) {
+          // यदि नाम में नेस्टेड ब्रैकेट्स ठीक हुए हैं तो ही localStorage को अपडेट करें
+          if (up && acc.account_name !== up.account_name) {
             isModified = true;
           }
           return up;
@@ -262,12 +206,12 @@ export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
     }
 
     const defaultAccounts = [
-      { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand', name_hi: 'रोकड़ (गल्ला)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', businessCategory: 'BANK_CASH', is_system_locked: true },
-      { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India', name_hi: 'भारतीय स्टेट बैंक', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', businessCategory: 'BANK_CASH', is_system_locked: false },
-      { id: `ACC-${activeFirmId}-003`, account_name: 'Sales Revenue Account', name_hi: 'बिक्री खाता', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', businessCategory: 'INCOME', is_system_locked: true },
-      { id: `ACC-${activeFirmId}-004`, account_name: 'Purchase Raw Material Account', name_hi: 'कच्चा माल खरीद खाता', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production & Factory Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: true },
-      { id: `ACC-${activeFirmId}-005`, account_name: 'Labor & Wages Expense', name_hi: 'मजदूरी व लेबर खर्च', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Wages (मजदूरी)', group: 'Direct Labor & Wages (मज़दूर)', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: false },
-      { id: `ACC-${activeFirmId}-006`, account_name: 'Proprietor Capital Account', name_hi: 'स्वामी पूंजी खाता', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', businessCategory: 'EQUITY', is_system_locked: false }
+      { id: `ACC-${activeFirmId}-001`, account_name: 'Cash in Hand (रोकड़)', name_en: 'Cash in Hand', name_hi: 'रोकड़', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', businessCategory: 'BANK_CASH', is_system_locked: true },
+      { id: `ACC-${activeFirmId}-002`, account_name: 'State Bank of India (भारतीय स्टेट बैंक)', name_en: 'State Bank of India', name_hi: 'भारतीय स्टेट बैंक', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', businessCategory: 'BANK_CASH', is_system_locked: false },
+      { id: `ACC-${activeFirmId}-003`, account_name: 'Sales Revenue Account (बिक्री खाता)', name_en: 'Sales Revenue Account', name_hi: 'बिक्री खाता', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', businessCategory: 'INCOME', is_system_locked: true },
+      { id: `ACC-${activeFirmId}-004`, account_name: 'Purchase Raw Material Account (कच्चा माल खरीद खाता)', name_en: 'Purchase Raw Material Account', name_hi: 'कच्चा माल खरीद खाता', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production & Factory Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: true },
+      { id: `ACC-${activeFirmId}-005`, account_name: 'Labor & Wages Expense (मजदूरी व लेबर खर्च)', name_en: 'Labor & Wages Expense', name_hi: 'मजदूरी व लेबर खर्च', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Labor & Wages (मजदूरी)', group: 'Direct Labor & Wages (मज़दूर)', opening_balance: 0, balance_type: 'Dr', businessCategory: 'EXPENSE', is_system_locked: false },
+      { id: `ACC-${activeFirmId}-006`, account_name: 'Proprietor Capital Account (स्वामी पूंजी खाता)', name_en: 'Proprietor Capital Account', name_hi: 'स्वामी पूंजी खाता', primary_type: 'EQUITY', type: 'Income', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', businessCategory: 'EQUITY', is_system_locked: false }
     ].map(acc => upgradeAndNormalizeAccount(acc));
 
     localStorage.setItem(primaryKey, JSON.stringify(defaultAccounts));
@@ -299,8 +243,9 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
 
   if (!rawInput) throw new Error('Account name khali nahi ho sakta.');
 
-  // सिंगल इनपुट से स्वतः English (हिन्दी) ऑब्जेक्ट बनाएं
-  const bilingual = makeBilingualName(rawInput, accountData.name_hi || '');
+  // केवल साफ नाम से ही बाइलिंगुअल ऑब्जेक्ट बनाएं
+  const cleanBase = stripNestedBrackets(rawInput);
+  const bilingual = makeBilingualName(cleanBase || rawInput, accountData.name_hi || '');
   const cleanDisplayName = bilingual.display;
 
   const existingIdx = accounts.findIndex(
@@ -315,7 +260,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
     oldName = accounts[existingIdx].account_name || accounts[existingIdx].name || '';
   }
 
-  // अकाउंटिंग ओवरराइड्स (Rules)
   const lowerPrimary = bilingual.primary.toLowerCase();
   let finalType = accountData.primary_type || accountData.type || 'EXPENSES';
   let finalGroup = accountData.sub_group || accountData.group || 'Direct Production & Factory Expenses';
@@ -377,7 +321,6 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(accounts));
 
-  // कैस्केड रिनेम इंजन (वाउचर्स एवं बिलों में नाम स्वतः अपडेट)
   if (oldName && oldName.trim().toLowerCase() !== cleanDisplayName.trim().toLowerCase()) {
     const oldTarget = oldName.trim().toLowerCase();
     const firmTargetKeys = [
