@@ -32,7 +32,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
   
   const dropdownRef = useRef(null);
 
-  // 6 Intent-Driven Categories (Professional Labels)
+  // 6 Intent-Driven Categories (Updated Mazdoor -> Worker / Staff)
   const businessCategories = useMemo(() => {
     const isTransport = firmCat.includes('TRANSPORT') || firmCat.includes('LOGISTIC');
     const isTrading = firmCat.includes('TRADING') || firmCat.includes('RETAIL') || firmCat.includes('SHOP');
@@ -62,8 +62,8 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
       },
       {
         id: 'THEKEDAR',
-        title: isTransport ? 'Driver & Staff' : isTrading ? 'Staff / Salesman' : 'Thekedar / Mazdoor',
-        subtitle: isTransport ? 'गाड़ी चालक व हेल्पर' : isTrading ? 'दुकान सेल्समैन व स्टाफ' : 'पथाई, भराई, निकासी व लेबर ठेका',
+        title: 'Thekedar / Worker',
+        subtitle: isTransport ? 'गाड़ी चालक, हेल्पर व स्टाफ' : isTrading ? 'दुकान सेल्समैन व स्टाफ वेतन' : 'पथाई, भराई, ड्राइवर व स्टाफ लेबर',
         icon: '👷',
         color: '#166534',
         primaryType: 'LIABILITIES',
@@ -296,7 +296,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
     <div style={overlayStyle}>
       <div style={modalCardStyle}>
         
-        {/* Clean Header (NO FALTU CHIPS) */}
+        {/* Clean Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px', marginBottom: '14px' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
@@ -377,11 +377,11 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
             <input 
               type="text" 
               placeholder={
-                selectedCatId === 'DEBTOR' ? 'e.g. Ramlal (Customer) / Krishna Traders' :
-                selectedCatId === 'CREDITOR' ? 'e.g. Sharma Agency / National Suppliers' :
-                selectedCatId === 'THEKEDAR' ? 'e.g. Ramesh Staff / Sonu Driver / Thekedar' :
+                selectedCatId === 'DEBTOR' ? 'e.g. Ramlal (Customer) / Krishna Builders' :
+                selectedCatId === 'CREDITOR' ? 'e.g. Sharma Agency / Coal Supplier' :
+                selectedCatId === 'THEKEDAR' ? 'e.g. Balram driver birkali / Ramesh Mistri' :
                 selectedCatId === 'BANK_CASH' ? 'e.g. SBI Current A/c 5421 / Tijori Cash' :
-                selectedCatId === 'ASSET' ? 'e.g. Machinery Asset / Commercial Vehicle' :
+                selectedCatId === 'ASSET' ? 'e.g. Mahindra Tractor 575 DI / JCB' :
                 'e.g. Office Rent / Diesel / Maintenance'
               }
               value={accountName} 
@@ -394,7 +394,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
               required 
             />
 
-            {/* Smart Auto-Complete Dropdown for Active Category Only */}
+            {/* Smart Auto-Complete Dropdown */}
             {showDropdownSuggestions && filteredSuggestions.length > 0 && (
               <div style={autocompleteBoxStyle}>
                 <div style={{ padding: '4px 8px', fontSize: '9px', fontWeight: '800', color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
@@ -419,7 +419,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
             )}
           </div>
 
-          {/* DYNAMIC: Mobile & Address ONLY for Party Categories (Debtor, Creditor, Thekedar) */}
+          {/* Mobile & Address ONLY for Party Categories (Debtor, Creditor, Thekedar/Worker) */}
           {activeCategory.isParty && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <div>
