@@ -463,12 +463,14 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
     }
 
     try {
+      // 1. Revert Stock in Inventory Safely
       let currentStock = [...inventoryItems];
       currentStock = revertStockForBill(bill, currentStock);
       saveFirmData('inventory_items', firm, currentStock);
       localStorage.setItem(`inventory_items_${activeFirmId}`, JSON.stringify(currentStock));
       setInventoryItems(currentStock);
 
+      // 2. Remove Bill from all Purchase Registers (Scoped & Global Buckets)
       const filterOutBill = (list) => {
         if (!Array.isArray(list)) return [];
         return list.filter(b => {
@@ -482,9 +484,13 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       const remainingBills = filterOutBill(purchaseBills);
       setPurchaseBills(remainingBills);
 
-      localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(remainingBills));
-
-      ['purchase_bills', 'purchase_bills_FIRM-001'].forEach(pk => {
+      const purchaseKeysToClean = [
+        `purchase_bills_${activeFirmId}`,
+        'purchase_bills',
+        `app_purchase_bills_${activeFirmId}`,
+        'purchase_bills_FIRM-001'
+      ];
+      purchaseKeysToClean.forEach(pk => {
         try {
           const raw = localStorage.getItem(pk);
           if (raw) {
@@ -493,6 +499,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         } catch (e) {}
       });
 
+      // 3. Purge corresponding Universal Vouchers & Daybook entries
       const candidateKeys = [
         bill.id,
         `JV-${bill.id}`,
@@ -534,6 +541,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         } catch (e) {}
       });
 
+      // 4. Trigger Global State Sync
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('app_inventory_updated'));
@@ -546,7 +554,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       }
 
       loadData();
-      alert(`✓ Purchase Bill #${bNum} successfully deleted.`);
+      alert(`✓ Purchase Bill #${bNum} successfully deleted and purged from all registers.`);
     } catch (err) {
       alert(`Delete failed: ${err.message}`);
     }
@@ -629,7 +637,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
         <div>
           <SearchableAccountDropdown
-            label="Supplier / Vendor / Cash / Bank Party * *"
+            label="Supplier / Vendor / Cash / Bank Party *"
             accounts={supplierAccounts}
             value={selectedSupplier}
             onChange={val => setSelectedSupplier(val)}
