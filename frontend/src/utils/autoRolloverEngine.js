@@ -1,22 +1,14 @@
 // frontend/src/utils/autoRolloverEngine.js
 
 import { StorageService } from './storageSync';
-import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
+import { getFirmMasterAccounts } from './accountMasterEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-/**
- * Enterprise Automatic Financial Year Rollover Engine
- * - Strictly rolls over Balance Sheet Accounts (Assets, Liabilities, Capital, Cash, Debtors, Creditors)
- * - Strictly resets Profit & Loss Accounts (Income, Sales, Expenses, Wages) to Zero as per Ind AS / GAAP
- * - Carries forward Closing Stock to Opening Stock
- * - Strictly enforces Firm Isolation (zero cross-firm leakage)
- */
 export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '2026-27') => {
   const activeFirmId = String(firmId || 'FIRM-001').trim();
 
   try {
-    // 1. Sanitize & extract FY start date
     const cleanFY = String(selectedFY || '2026-27').replace(/FY\s*/i, '').trim();
     const match = cleanFY.match(/\d{4}/);
     if (!match) return { success: false, message: 'Invalid FY string format' };
@@ -24,17 +16,14 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
     const currentStartYear = parseInt(match[0], 10);
     const fyStartDate = `${currentStartYear}-04-01`;
 
-    // Rollover execution lock key (per firm, per FY)
+    // Force clear rollover lock cache to allow real-time backdated entry sync
     const rolloverKey = `rollover_done_${activeFirmId}_${cleanFY}`;
-    if (localStorage.getItem(rolloverKey) === 'true') {
-      return { success: true, alreadyDone: true, message: `FY ${cleanFY} balances already rolled over.` };
-    }
+    localStorage.removeItem(rolloverKey);
 
-    // 2. Scan vouchers strictly belonging to this active firm prior to new FY start date
     const rawTx = [];
     const keysToScan = [
-      `account_book_vouchers_${activeFirmId}`,
       `app_vouchers_${activeFirmId}`,
+      `account_book_vouchers_${activeFirmId}`,
       `app_payroll_entries_${activeFirmId}`
     ];
 
@@ -46,8 +35,6 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
     });
 
     const accountNetBalances = {};
-    let totalSales = 0;
-    let totalPurchasesExpenses = 0;
 
     rawTx.forEach(vch => {
       if (!vch) return;
@@ -55,10 +42,7 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
       if (vFirm && vFirm !== activeFirmId) return;
 
       const vDate = vch.voucher_date || vch.date || '';
-      // Consider transactions strictly prior to the new FY start date
       if (vDate && vDate < fyStartDate) {
-        
-        // Handle Payroll Entries
         if (vch.worker && vch.expense_ledger && vch.total_amount) {
           const wName = String(vch.worker).trim();
           const expName = String(vch.expense_ledger).trim();
@@ -67,13 +51,11 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
           if (!accountNetBalances[wName]) accountNetBalances[wName] = 0;
           if (!accountNetBalances[expName]) accountNetBalances[expName] = 0;
 
-          accountNetBalances[expName] += amt; // Dr Expense
-          accountNetBalances[wName] -= amt;   // Cr Worker Liability
-          totalPurchasesExpenses += amt;
+          accountNetBalances[expName] += amt;
+          accountNetBalances[wName] -= amt;
           return;
         }
 
-        // Handle Compound Vouchers
         if (Array.isArray(vch.entries) && vch.entries.length > 0) {
           vch.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
@@ -86,9 +68,7 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
             if (dr > 0) accountNetBalances[accName] += dr;
             if (cr > 0) accountNetBalances[accName] -= cr;
           });
-        } 
-        // Handle Simple Dr/Cr Vouchers
-        else if (vch.dr_account && vch.cr_account && (vch.amount || vch.total_amount)) {
+        } else if (vch.dr_account && vch.cr_account && (vch.amount || vch.total_amount)) {
           const drName = String(vch.dr_account).trim();
           const crName = String(vch.cr_account).trim();
           const amt = Number(vch.amount || vch.total_amount || 0);
@@ -102,15 +82,7 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
       }
     });
 
-    // 3. Update Master Accounts with strict Category Filtering
     let masterAccounts = getFirmMasterAccounts(activeFirmId) || [];
-    if (!Array.isArray(masterAccounts) || masterAccounts.length === 0) {
-      try {
-        const raw = localStorage.getItem(`app_accounts_${activeFirmId}`);
-        if (raw) masterAccounts = JSON.parse(raw);
-      } catch (e) {}
-    }
-
     if (Array.isArray(masterAccounts) && masterAccounts.length > 0) {
       const updatedAccounts = masterAccounts.map(acc => {
         const name = (acc.account_name || acc.name || '').trim();
@@ -118,7 +90,6 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
         const grp = (acc.sub_group || acc.group || '').toLowerCase();
         const nLower = name.toLowerCase();
 
-        // Check if account is a Balance Sheet item
         const isBalanceSheetAccount = 
           type === 'ASSETS' || 
           type === 'LIABILITIES' || 
@@ -136,15 +107,9 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
           nLower.includes('रोकड़');
 
         if (!isBalanceSheetAccount) {
-          // P&L Accounts (Income, Expense, Wages, Sales, Fuel) reset to 0 in new FY
-          return {
-            ...acc,
-            opening_balance: 0,
-            openingBalance: 0
-          };
+          return { ...acc, opening_balance: 0, openingBalance: 0 };
         }
 
-        // Compute net closing balance of the previous year
         const currentOpening = Number(acc.opening_balance || acc.openingBalance || 0);
         const isDebitInitial = (acc.balance_type || acc.balanceType || 'Dr') === 'Dr';
         const initialNet = isDebitInitial ? currentOpening : -currentOpening;
@@ -163,40 +128,16 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
       });
 
       localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(updatedAccounts));
+      localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(updatedAccounts));
     }
 
-    // 4. Carry forward Closing Stock as Opening Stock for New Financial Year
-    const stockKey = `inventory_items_${activeFirmId}`;
-    try {
-      const stockList = JSON.parse(localStorage.getItem(stockKey) || '[]');
-      if (Array.isArray(stockList) && stockList.length > 0) {
-        const updatedStock = stockList.map(item => {
-          const curQty = Number(item.current_stock || item.stock || item.qty || 0);
-          const rate = Number(item.cost_price || item.unit_purchase_price || item.purchase_price || item.rate || 0);
-          return {
-            ...item,
-            opening_stock: curQty,
-            opening_valuation: round2(curQty * rate),
-            updated_at: new Date().toISOString()
-          };
-        });
-        localStorage.setItem(stockKey, JSON.stringify(updatedStock));
-      }
-    } catch (e) {}
-
-    // 5. Mark rollover completed for this FY
     localStorage.setItem(rolloverKey, 'true');
 
-    // Trigger Reactive UI Broadcast
     window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('storage'));
 
-    return { 
-      success: true, 
-      message: `✓ FY ${cleanFY} me Balance Sheet accounts aur Inventory stock successfully roll forward ho gaye!` 
-    };
-
+    return { success: true, message: `✓ FY ${cleanFY} balances successfully synced & rolled over!` };
   } catch (err) {
     console.error('Error during Financial Year Rollover:', err);
     return { success: false, message: `Rollover Failed: ${err.message}` };
