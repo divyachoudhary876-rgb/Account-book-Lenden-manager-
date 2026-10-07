@@ -127,51 +127,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
                 item.voucher_number = newRef;
               }
 
-              const isPurchase = rawType === 'PURCHASE' || vk.includes('purchase_bills');
-              if (isPurchase) {
-                let itemName = 'Stock Item';
-                if (Array.isArray(item.items) && item.items[0]?.itemName) {
-                  itemName = item.items[0].itemName;
-                } else if (item.item_name) {
-                  itemName = item.item_name;
-                } else if (item.narration) {
-                  const narr = String(item.narration);
-                  if (narr.toLowerCase().includes('diesel')) itemName = 'Diesel';
-                  else if (narr.toLowerCase().includes('mitti')) {
-                    const mMatch = narr.match(/(Mitti\s+Grade\s+[A-B])/i);
-                    itemName = mMatch ? mMatch[1] : 'Mitti';
-                  } else if (narr.toLowerCase().includes('greet') || narr.toLowerCase().includes('crusher')) {
-                    itemName = 'Greet & Crusher';
-                  } else {
-                    const match = narr.match(/(?:bill\s*#?\d*|purchase|item|inward)\s*:\s*([^–\-(@\n]+)/i);
-                    if (match && match[1]) itemName = match[1].trim();
-                  }
-                }
-
-                const cleanItem = String(itemName).replace(/\s*Stock\s*Account/i, '').trim();
-                const targetStockAccount = `${cleanItem} Stock Account`;
-                ensureStockItemLedgerAccount(cleanFirmId, cleanItem);
-
-                if (Array.isArray(item.entries)) {
-                  item.entries = item.entries.map(ent => {
-                    if ((ent.type || '').toUpperCase() === 'DR' || Number(ent.debit || 0) > 0) {
-                      const accName = String(ent.account_name || ent.party || '').toLowerCase();
-                      if (accName.includes('purchase a/c') || accName.includes('purchase account') || accName.includes('purchase raw material')) {
-                        return { ...ent, account_name: targetStockAccount, party: targetStockAccount };
-                      }
-                    }
-                    return ent;
-                  });
-                }
-
-                if (item.dr_account) {
-                  const drLower = String(item.dr_account).toLowerCase();
-                  if (drLower.includes('purchase a/c') || drLower.includes('purchase account') || drLower.includes('purchase raw material')) {
-                    item.dr_account = targetStockAccount;
-                  }
-                }
-              }
-
               return item;
             });
 
@@ -224,7 +179,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
     const backupPayload = {
-      meta: { app: "AccountBook", firm: cleanFirm, version: "3.3.9", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
+      meta: { app: "AccountBook", firm: cleanFirm, version: "3.4.0", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
       stats: { vouchersCount, accountsCount, total_keys: Object.keys(storageSnapshot).length },
       data: storageSnapshot
     };
@@ -254,7 +209,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SMART ZERO-LOSS RESTORE ENGINE WITH FIRM PROFILE MERGING & SCHEMA FLATTENING
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM ISOLATION PROTECTION
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -275,7 +230,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // Safely merge existing firms list with incoming backup firms list so other profiles are NOT lost
+    // Safely merge existing firms list
     const existingFirmsRaw = localStorage.getItem('app_firms') || localStorage.getItem('firm_list') || '[]';
     let existingFirms = [];
     try { existingFirms = JSON.parse(existingFirmsRaw); } catch (e) { existingFirms = []; }
@@ -283,9 +238,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     let backupFirms = [];
     Object.keys(targetData).forEach(k => {
       if (k === 'app_firms' || k === 'firm_list') {
-        try {
-          if (Array.isArray(targetData[k])) backupFirms = targetData[k];
-        } catch (e) {}
+        try { if (Array.isArray(targetData[k])) backupFirms = targetData[k]; } catch (e) {}
       }
     });
 
@@ -294,7 +247,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     if (Array.isArray(backupFirms)) backupFirms.forEach(f => { if (f && f.id) firmsMap.set(f.id, f); });
     const mergedFirmsList = Array.from(firmsMap.values());
 
-    // Restore storage data safely
+    // Restore storage data securely without leaking cross-firm keys
     Object.keys(targetData).forEach(key => {
       if (key === 'app_firms' || key === 'firm_list') return;
       const val = targetData[key];
@@ -314,105 +267,14 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
-    const migrateKeyForActiveFirm = (baseName, targetArray) => {
-      if (Array.isArray(targetArray) && targetArray.length > 0) {
-        localStorage.setItem(`${baseName}_${activeFirmId}`, JSON.stringify(targetArray));
-        localStorage.setItem(baseName, JSON.stringify(targetArray));
-      }
-    };
-
-    const consolidatedAccountsMap = new Map();
-    Object.keys(targetData).forEach(key => {
-      if (key.includes('account_heads') || key.includes('app_accounts')) {
-        const raw = targetData[key];
-        if (Array.isArray(raw)) {
-          raw.forEach(acc => {
-            if (!acc) return;
-            const name = (acc.account_name || acc.name || '').trim();
-            if (name) {
-              const uniqueKey = name.toLowerCase();
-              if (!consolidatedAccountsMap.has(uniqueKey)) {
-                consolidatedAccountsMap.set(uniqueKey, {
-                  ...acc,
-                  id: acc.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-                  name,
-                  account_name: name,
-                  primary_type: acc.primary_type || acc.type || 'Expenses',
-                  type: acc.type || acc.primary_type || 'Expenses',
-                  sub_group: acc.sub_group || acc.group || 'General Ledger',
-                  group: acc.group || acc.sub_group || 'General Ledger',
-                  opening_balance: Number(acc.opening_balance || acc.openingBalance || 0),
-                  balance_type: acc.balance_type || acc.balanceType || 'Dr'
-                });
-              }
-            }
-          });
-        }
-      }
-    });
-    migrateKeyForActiveFirm('app_accounts', Array.from(consolidatedAccountsMap.values()));
-
-    const consolidatedItemsMap = new Map();
-    Object.keys(targetData).forEach(key => {
-      if (key.startsWith('inventory_items') || key.startsWith('app_stock')) {
-        const raw = targetData[key];
-        if (Array.isArray(raw)) {
-          raw.forEach(item => {
-            if (!item) return;
-            const name = (item.item_name || item.name || item.itemName || '').trim();
-            if (name && !consolidatedItemsMap.has(name.toLowerCase())) {
-              consolidatedItemsMap.set(name.toLowerCase(), { ...item, firm_id: activeFirmId, item_name: name, name });
-            }
-          });
-        }
-      }
-    });
-    migrateKeyForActiveFirm('inventory_items', Array.from(consolidatedItemsMap.values()));
-
-    const consolidatedVouchersMap = new Map();
-    Object.keys(targetData).forEach(key => {
-      if (key.includes('voucher') || key.includes('invoice') || key.includes('payroll')) {
-        const raw = targetData[key];
-        if (Array.isArray(raw)) {
-          raw.forEach(v => {
-            if (!v) return;
-            const vId = v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount}`;
-            if (!consolidatedVouchersMap.has(vId)) {
-              consolidatedVouchersMap.set(vId, { ...v, firm_id: activeFirmId, firmId: activeFirmId });
-            }
-          });
-        }
-      }
-    });
-    const finalVouchersList = Array.from(consolidatedVouchersMap.values());
-    migrateKeyForActiveFirm('app_vouchers', finalVouchersList);
-    migrateKeyForActiveFirm('account_book_vouchers', finalVouchersList);
-
-    const consolidatedPurchaseMap = new Map();
-    Object.keys(targetData).forEach(key => {
-      if (key.startsWith('purchase_bills') || key.startsWith('purchase_inward')) {
-        const raw = targetData[key];
-        if (Array.isArray(raw)) {
-          raw.forEach(bill => {
-            if (!bill) return;
-            const bId = bill.id || bill.bill_number || bill.reference_no || `${bill.date || bill.purchase_date}-${bill.total_amount || bill.amount}`;
-            if (!consolidatedPurchaseMap.has(bId)) {
-              consolidatedPurchaseMap.set(bId, { ...bill, firm_id: activeFirmId, firmId: activeFirmId });
-            }
-          });
-        }
-      }
-    });
-    migrateKeyForActiveFirm('purchase_bills', Array.from(consolidatedPurchaseMap.values()));
-
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
       success: true,
       stats: {
-        vouchersCount: finalVouchersList.length,
-        accountsCount: consolidatedAccountsMap.size,
-        purchasesCount: consolidatedPurchaseMap.size
+        vouchersCount: JSON.parse(localStorage.getItem(`app_vouchers_${activeFirmId}`) || '[]').length,
+        accountsCount: JSON.parse(localStorage.getItem(`app_accounts_${activeFirmId}`) || localStorage.getItem('app_accounts') || '[]').length,
+        purchasesCount: JSON.parse(localStorage.getItem(`purchase_bills_${activeFirmId}`) || '[]').length
       }
     };
   } catch (err) {
@@ -420,7 +282,6 @@ export const restoreUniversalBackup = async (rawInput) => {
   }
 };
 
-// Explicit exports for backward compatibility across UI components
 export const exportUniversalBackup = downloadAppBackup;
 export const downloadAppBackupFromFile = restoreUniversalBackup;
 export const restoreAppBackupFromFile = restoreUniversalBackup;
