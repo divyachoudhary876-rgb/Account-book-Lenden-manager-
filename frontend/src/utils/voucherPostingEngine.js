@@ -59,6 +59,35 @@ export const getUniversalVouchersByFirm = (firmId = 'FIRM-001') => {
 };
 
 /**
+ * Helper: Auto-calculate next sequential number (1, 2, 3...) for each voucher type
+ */
+const getNextSequentialNumber = (existingVouchers, vType) => {
+  let maxNum = 0;
+  const prefix = vType === 'PAYMENT' ? 'PAY' :
+                 vType === 'RECEIPT' ? 'REC' :
+                 vType === 'JOURNAL' ? 'JV' :
+                 vType === 'CONTRA' ? 'CONTRA' :
+                 vType === 'PURCHASE' ? 'PUR' : 'VCH';
+
+  (existingVouchers || []).forEach(v => {
+    if (!v) return;
+    const type = String(v.voucher_type || v.type || '').toUpperCase();
+    if (type === vType || type.includes(prefix)) {
+      const ref = String(v.reference_no || v.voucher_number || '').trim();
+      const match = ref.match(/\d+/g);
+      if (match) {
+        const val = parseInt(match[match.length - 1], 10);
+        if (!isNaN(val) && val > maxNum && val < 1000000) {
+          maxNum = val;
+        }
+      }
+    }
+  });
+
+  return `${prefix}-${maxNum + 1}`;
+};
+
+/**
  * 2. POST OR UPDATE UNIVERSAL DOUBLE-ENTRY VOUCHER
  */
 export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) => {
@@ -94,7 +123,14 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
     entries = []
   } = voucherPayload;
 
-  const vchNumber = (reference_no || '').trim() || `${voucher_type.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+  const normalizedType = voucher_type.toUpperCase();
+  const cleanRef = (reference_no || '').trim();
+  
+  // Clean sequential number assignment (e.g., PAY-1, REC-1, JV-1)
+  const vchNumber = cleanRef && !cleanRef.includes('MAT-ADJ') && !cleanRef.includes('BILL-') 
+    ? cleanRef 
+    : getNextSequentialNumber(existingVouchers, normalizedType);
+
   let finalVoucher = null;
 
   if (is_compound && Array.isArray(entries) && entries.length > 0) {
@@ -118,8 +154,8 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
       voucher_number: vchNumber,
       voucher_date,
       date: voucher_date,
-      voucher_type: voucher_type.toUpperCase(),
-      type: voucher_type.toUpperCase(),
+      voucher_type: normalizedType,
+      type: normalizedType,
       reference_no: vchNumber,
       narration: (narration || '').trim(),
       amount: parseFloat(totalDr.toFixed(2)),
@@ -151,8 +187,8 @@ export const saveUniversalVoucher = (firmId = 'FIRM-001', voucherPayload = {}) =
       voucher_number: vchNumber,
       voucher_date,
       date: voucher_date,
-      voucher_type: voucher_type.toUpperCase(),
-      type: voucher_type.toUpperCase(),
+      voucher_type: normalizedType,
+      type: normalizedType,
       reference_no: vchNumber,
       narration: (narration || '').trim(),
       amount: cleanAmt,
