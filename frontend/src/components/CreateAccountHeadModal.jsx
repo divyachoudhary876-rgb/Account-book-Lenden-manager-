@@ -30,7 +30,6 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
   const [accounts, setAccounts] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
-  // Form States
   const [selectedCatId, setSelectedCatId] = useState('DEBTOR');
   const [accountName, setAccountName] = useState('');
   const [phone, setPhone] = useState('');
@@ -38,9 +37,7 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
   const [openingBalance, setOpeningBalance] = useState('');
   const [balanceDirection, setBalanceDirection] = useState('LE_NA_HAI');
 
-  // Manual Guide Modal State
   const [isManualOpen, setIsManualOpen] = useState(false);
-
   const [showDropdownSuggestions, setShowDropdownSuggestions] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [statusMessage, setStatusMessage] = useState(null);
@@ -545,6 +542,74 @@ export default function CreateAccountHeadModal({ firm, selectedFY, isOpen = true
 
         </form>
 
+        {/* Existing Accounts Table with Search & Scrollable Directory */}
+        <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+            <strong style={{ fontSize: '12px', color: '#0f172a' }}>
+              📋 Registered Accounts ({processedAccounts.length})
+            </strong>
+            <input 
+              type="text" 
+              placeholder="🔍 Search accounts..." 
+              value={searchFilter} 
+              onChange={e => setSearchFilter(e.target.value)} 
+              style={{ ...inputStyle, width: '160px', padding: '5px 8px', fontSize: '10px' }} 
+            />
+          </div>
+
+          <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {processedAccounts.map(acc => {
+              const bal = acc.opening_balance !== undefined ? acc.opening_balance : (acc.openingBalance || 0);
+              const isLocked = acc.is_system_locked || acc.isSystemLocked;
+
+              return (
+                <div 
+                  key={acc.id} 
+                  style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    padding: '6px 8px', 
+                    backgroundColor: editingId === acc.id ? '#eff6ff' : '#f8fafc', 
+                    borderRadius: '6px', 
+                    border: '1px solid #e2e8f0',
+                    fontSize: '11px'
+                  }}
+                >
+                  <div>
+                    <strong style={{ color: '#0f172a' }}>{acc.account_name || acc.name}</strong>
+                    <div style={{ fontSize: '9px', color: '#64748b' }}>
+                      {acc.sub_group || acc.group} {acc.phone ? `| 📞 ${acc.phone}` : ''}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '10px', color: (acc.balance_type || acc.balanceType) === 'Dr' ? '#0284c7' : '#dc2626' }}>
+                      {bal ? `₹${Number(bal).toLocaleString('en-IN')} ${acc.balance_type || 'Dr'}` : '-'}
+                    </span>
+                    <button 
+                      type="button" 
+                      onClick={() => handleEdit(acc)} 
+                      style={{ padding: '3px 6px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold' }}
+                    >
+                      Edit
+                    </button>
+                    {!isLocked && (
+                      <button 
+                        type="button" 
+                        onClick={() => handleDelete(acc.id, isLocked)} 
+                        style={{ padding: '3px 6px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold' }}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -581,6 +646,7 @@ const modalCardStyle = {
 };
 
 const labelStyle = {
+  listStyle: 'none',
   display: 'block',
   fontSize: '10px',
   fontWeight: '800',
@@ -591,6 +657,7 @@ const labelStyle = {
 };
 
 const inputStyle = {
+  width: '100%',
   padding: '8px 10px',
   borderRadius: '6px',
   border: '1px solid #cbd5e1',
