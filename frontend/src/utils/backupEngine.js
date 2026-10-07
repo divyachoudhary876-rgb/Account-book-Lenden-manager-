@@ -1,4 +1,4 @@
-// frontend/src/utils/backupEngine.js
+// frontend/src/utils/backupEngine.js (Upgraded with Purchase Ledger Normalization)
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -56,8 +56,8 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Post-Restore Self-Healing & Purchase Ledger Auto-Correction Sweep
- * Converts all legacy generic Purchase accounts into proper item-specific Stock Accounts
+ * Post-Restore Self-Healing & Purchase Ledger Normalization Sweep
+ * Automatically converts legacy generic Purchase A/c vouchers into item-specific Stock Accounts.
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
@@ -94,7 +94,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // AUTO-HEALING PURCHASE VOUCHERS: Fix legacy Purchase A/c to Item Stock Account
+    // COMPREHENSIVE PURCHASE VOUCHER NORMALIZATION SWEEP
     const voucherKeys = [
       `app_vouchers_${cleanFirmId}`,
       `account_book_vouchers_${cleanFirmId}`,
@@ -117,8 +117,19 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
                 } else if (v.item_name) {
                   itemName = v.item_name;
                 } else if (v.narration) {
-                  const match = v.narration.match(/(?:bill\s*#?\d*|purchase|item|inward)\s*:\s*([^–\-(@\n]+)/i);
-                  if (match && match[1]) itemName = match[1].trim();
+                  // Extract true item name from narration (e.g. "Diesel", "Mitti Grade B", "Greet & Crusher")
+                  const narr = String(v.narration);
+                  if (narr.toLowerCase().includes('diesel')) {
+                    itemName = 'Diesel';
+                  } else if (narr.toLowerCase().includes('mitti')) {
+                    const mMatch = narr.match(/(Mitti\s+Grade\s+[A-B])/i);
+                    itemName = mMatch ? mMatch[1] : 'Mitti';
+                  } else if (narr.toLowerCase().includes('greet') || narr.toLowerCase().includes('crusher')) {
+                    itemName = 'Greet & Crusher';
+                  } else {
+                    const match = narr.match(/(?:bill\s*#?\d*|purchase|item|inward)\s*:\s*([^–\-(@\n]+)/i);
+                    if (match && match[1]) itemName = match[1].trim();
+                  }
                 }
 
                 const cleanItem = String(itemName).replace(/\s*Stock\s*Account/i, '').trim();
@@ -208,7 +219,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: { 
         app: "AccountBook", 
         firm: cleanFirm, 
-        version: "3.3.2", 
+        version: "3.3.3", 
         export_timestamp: now.toISOString(),
         active_firm_id: activeFirmId 
       },
@@ -216,7 +227,6 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       data: storageSnapshot
     };
 
-    // Compressed stringification (omits indentation whitespace to reduce backup file size)
     const jsonString = JSON.stringify(backupPayload);
 
     if (Capacitor.isNativePlatform()) {
@@ -409,7 +419,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       }
     };
   } catch (err) {
-    throw new Error(err.message || 'Failed to restore backup restore mein safal nahi ho saka.');
+    throw new Error(err.message || 'Failed to restore backup.');
   }
 };
 
