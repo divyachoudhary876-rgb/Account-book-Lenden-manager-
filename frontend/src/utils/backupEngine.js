@@ -1,4 +1,4 @@
-// frontend/src/utils/backupEngine.js (Upgraded with Purchase Ledger Normalization)
+// frontend/src/utils/backupEngine.js (Upgraded with Permanent Purchase Ledger Normalization)
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -13,10 +13,6 @@ const resolveFirmNameString = (firmInput) => {
   return 'AccountBook';
 };
 
-/**
- * Ensures an Inventory Stock Item always has a corresponding Financial Asset Account
- * under Current Assets without manual user intervention.
- */
 export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
   if (!firmId || !rawItemName) return null;
 
@@ -56,8 +52,8 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Post-Restore Self-Healing & Purchase Ledger Normalization Sweep
- * Automatically converts legacy generic Purchase A/c vouchers into item-specific Stock Accounts.
+ * Deep Permanent Purchase Ledger Normalization Sweep
+ * Converts ALL historical generic Purchase A/c vouchers into item-specific Stock Accounts.
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
@@ -94,31 +90,33 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // COMPREHENSIVE PURCHASE VOUCHER NORMALIZATION SWEEP
+    // PERMANENT VOUCHER SWEEP: Fix ALL historical Purchase A/c / Raw Material accounts
     const voucherKeys = [
       `app_vouchers_${cleanFirmId}`,
       `account_book_vouchers_${cleanFirmId}`,
       'app_vouchers',
-      'account_book_vouchers'
+      'account_book_vouchers',
+      `purchase_bills_${cleanFirmId}`,
+      'purchase_bills'
     ];
 
     voucherKeys.forEach(vk => {
       try {
         const raw = localStorage.getItem(vk);
         if (raw) {
-          let vchs = JSON.parse(raw);
+          let list = JSON.parse(raw);
           let modified = false;
-          if (Array.isArray(vchs)) {
-            vchs = vchs.map(v => {
-              if (v && String(v.voucher_type || v.type || '').toUpperCase() === 'PURCHASE') {
+          if (Array.isArray(list)) {
+            list = list.map(item => {
+              const isPurchase = String(item.voucher_type || item.type || '').toUpperCase() === 'PURCHASE' || vk.includes('purchase_bills');
+              if (isPurchase) {
                 let itemName = 'Stock Item';
-                if (Array.isArray(v.items) && v.items[0]?.itemName) {
-                  itemName = v.items[0].itemName;
-                } else if (v.item_name) {
-                  itemName = v.item_name;
-                } else if (v.narration) {
-                  // Extract true item name from narration (e.g. "Diesel", "Mitti Grade B", "Greet & Crusher")
-                  const narr = String(v.narration);
+                if (Array.isArray(item.items) && item.items[0]?.itemName) {
+                  itemName = item.items[0].itemName;
+                } else if (item.item_name) {
+                  itemName = item.item_name;
+                } else if (item.narration) {
+                  const narr = String(item.narration);
                   if (narr.toLowerCase().includes('diesel')) {
                     itemName = 'Diesel';
                   } else if (narr.toLowerCase().includes('mitti')) {
@@ -137,8 +135,8 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
 
                 ensureStockItemLedgerAccount(cleanFirmId, cleanItem);
 
-                if (Array.isArray(v.entries)) {
-                  v.entries = v.entries.map(ent => {
+                if (Array.isArray(item.entries)) {
+                  item.entries = item.entries.map(ent => {
                     if ((ent.type || '').toUpperCase() === 'DR' || Number(ent.debit || 0) > 0) {
                       const accName = String(ent.account_name || ent.party || '').toLowerCase();
                       if (accName.includes('purchase a/c') || accName.includes('purchase account') || accName.includes('purchase raw material')) {
@@ -150,18 +148,18 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
                   });
                 }
 
-                if (v.dr_account) {
-                  const drLower = String(v.dr_account).toLowerCase();
+                if (item.dr_account) {
+                  const drLower = String(item.dr_account).toLowerCase();
                   if (drLower.includes('purchase a/c') || drLower.includes('purchase account') || drLower.includes('purchase raw material')) {
                     modified = true;
-                    v.dr_account = targetStockAccount;
+                    item.dr_account = targetStockAccount;
                   }
                 }
               }
-              return v;
+              return item;
             });
             if (modified) {
-              localStorage.setItem(vk, JSON.stringify(vchs));
+              localStorage.setItem(vk, JSON.stringify(list));
             }
           }
         }
@@ -219,7 +217,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: { 
         app: "AccountBook", 
         firm: cleanFirm, 
-        version: "3.3.3", 
+        version: "3.3.4", 
         export_timestamp: now.toISOString(),
         active_firm_id: activeFirmId 
       },
@@ -261,7 +259,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH MULTI-FIRM KEY MIGRATION & HEALING)
+ * 2. SMART ZERO-LOSS RESTORE ENGINE
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -336,7 +334,7 @@ export const restoreUniversalBackup = async (rawInput) => {
         }
       }
     });
-    const finalAccountsList = Array.from(consolidatedAccountsMap.values());
+    const finalAccountsList = Array.main ? Array.from(consolidatedAccountsMap.values()) : Array.from(consolidatedAccountsMap.values());
     migrateKeyForActiveFirm('app_accounts', finalAccountsList);
     migrateKeyForActiveFirm('account_heads', finalAccountsList);
 
