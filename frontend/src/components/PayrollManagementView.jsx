@@ -17,7 +17,7 @@ export default function PayrollManagementView({ firm, onClose }) {
   
   const [selectedWorker, setSelectedWorker] = useState('');
   const [workDate, setWorkDate] = useState(new Date().toISOString().slice(0, 10));
-  const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expenses (à¤®à¤œà¤¦à¥‚à¤°à¥€)');
+  const [expenseLedger, setExpenseLedger] = useState('Pathai & Labour Expenses (मजदूरी)');
   const [quantity, setQuantity] = useState('');
   const [ratePerUnit, setRatePerUnit] = useState('');
   const [workDescription, setWorkDescription] = useState('');
@@ -47,7 +47,6 @@ export default function PayrollManagementView({ firm, onClose }) {
     entries.sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0));
     setPayrollEntries(entries);
 
-    // Fetch all vouchers of active firm strictly
     const allVchs = getAllUniversalVouchers(activeFirmId) || [];
     setFirmVouchers(allVchs);
   };
@@ -100,7 +99,6 @@ export default function PayrollManagementView({ firm, onClose }) {
 
     const entryId = editingEntryId || ('PAY-' + Date.now());
 
-    // 1. Ensure Worker & Expense Ledgers Exist in Master
     const currentAccounts = getFirmMasterAccounts(activeFirmId);
     if (!currentAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === workerName.toLowerCase())) {
       saveMasterAccount(activeFirmId, {
@@ -112,7 +110,6 @@ export default function PayrollManagementView({ firm, onClose }) {
       });
     }
 
-    // 2. Save / Update Payroll Entry
     const newEntry = {
       id: entryId,
       firm_id: activeFirmId,
@@ -131,7 +128,6 @@ export default function PayrollManagementView({ firm, onClose }) {
     setPayrollEntries(updatedEntries);
     saveFirmData('app_payroll_entries', firm, updatedEntries);
 
-    // 3. Post Dual-Key Synchronized Double-Entry Journal Voucher
     try {
       const voucherId = 'JV-' + entryId;
       saveUniversalVoucher(activeFirmId, {
@@ -148,7 +144,7 @@ export default function PayrollManagementView({ firm, onClose }) {
         cr_account: workerName,
         amount: calculatedTotalAmount,
         total_amount: calculatedTotalAmount,
-        narration: `Wages credited to ${workerName} via ${expenseName} [Qty: ${quantity} x Rate: â‚¹${ratePerUnit}] - ${workDescription || 'Attendance'}`,
+        narration: `Wages credited to ${workerName} via ${expenseName} [Qty: ${quantity} x Rate: ₹${ratePerUnit}] - ${workDescription || 'Attendance'}`,
         is_compound: true,
         entries: [
           { account_name: expenseName, party: expenseName, type: 'DR', debit: calculatedTotalAmount, credit: 0, amount: calculatedTotalAmount },
@@ -164,8 +160,8 @@ export default function PayrollManagementView({ firm, onClose }) {
     window.dispatchEvent(new Event('storage'));
 
     setSuccessMsg(editingEntryId 
-      ? `âœ“ Successfully updated wage entry for ${workerName}!` 
-      : `âœ“ Successfully posted â‚¹${calculatedTotalAmount.toLocaleString('en-IN')} credit to ${workerName}'s ledger!`
+      ? `✓ Successfully updated wage entry for ${workerName}!` 
+      : `✓ Successfully posted ₹${calculatedTotalAmount.toLocaleString('en-IN')} credit to ${workerName}'s ledger!`
     );
     
     setEditingEntryId(null);
@@ -180,7 +176,7 @@ export default function PayrollManagementView({ firm, onClose }) {
     setEditingEntryId(ent.id);
     setSelectedWorker(ent.worker || '');
     setWorkDate(ent.date || new Date().toISOString().slice(0, 10));
-    setExpenseLedger(ent.expense_ledger || 'Pathai & Labour Expenses (à¤®à¤œà¤¦à¥‚à¤°à¥€)');
+    setExpenseLedger(ent.expense_ledger || 'Pathai & Labour Expenses (मजदूरी)');
     setQuantity(ent.quantity ? String(ent.quantity) : '');
     setRatePerUnit(ent.rate ? String(ent.rate) : '');
     setWorkDescription(ent.description || '');
@@ -195,7 +191,6 @@ export default function PayrollManagementView({ firm, onClose }) {
       setPayrollEntries(filteredEntries);
       saveFirmData('app_payroll_entries', firm, filteredEntries);
 
-      // Delete corresponding JV voucher
       try {
         deleteUniversalVoucher(activeFirmId, 'JV-' + entryId);
       } catch (e) {}
@@ -212,24 +207,19 @@ export default function PayrollManagementView({ firm, onClose }) {
       }
 
       loadData();
-      alert('âœ“ Wage entry & accounting voucher deleted successfully.');
+      alert('✓ Wage entry & accounting voucher deleted successfully.');
     } catch (err) {
       alert('Delete failed: ' + err.message);
     }
   };
 
-  // -------------------------------------------------------------
-  // ACCURATE RECONCILIATION CALCULATION (KUL, PAID, BAKI)
-  // -------------------------------------------------------------
   const resolvedActiveWorker = (typeof selectedWorker === 'object' 
     ? (selectedWorker.account_name || selectedWorker.name || '') 
     : selectedWorker || '').trim().toLowerCase();
 
-  // 1. Worker entries filter
   const workerEntries = payrollEntries.filter(e => !resolvedActiveWorker || String(e.worker || '').trim().toLowerCase() === resolvedActiveWorker);
   const totalEarned = round2(workerEntries.reduce((sum, e) => sum + (e.total_amount || 0), 0));
 
-  // Set of target workers (either single worker or all payroll workers)
   const targetWorkerNames = new Set();
   if (resolvedActiveWorker) {
     targetWorkerNames.add(resolvedActiveWorker);
@@ -239,12 +229,10 @@ export default function PayrollManagementView({ firm, onClose }) {
     });
   }
 
-  // 2. Scan vouchers for all payments/debits made to target workers
   let totalPaid = 0;
   firmVouchers.forEach(v => {
     if (!v) return;
 
-    // A. Check compound entries
     if (Array.isArray(v.entries) && v.entries.length > 0) {
       v.entries.forEach(e => {
         const acc = String(e.account_name || e.party || '').trim().toLowerCase();
@@ -252,16 +240,13 @@ export default function PayrollManagementView({ firm, onClose }) {
         const amt = Number(e.amount || e.debit || 0);
 
         if (targetWorkerNames.has(acc) && isDebit && amt > 0) {
-          // Do not count wage accrual itself as payment
           const isWageVoucher = String(v.id || '').startsWith('JV-PAY-') || String(v.narration || '').toLowerCase().includes('wages credited to');
           if (!isWageVoucher) {
             totalPaid += amt;
           }
         }
       });
-    } 
-    // B. Check standard simple vouchers
-    else {
+    } else {
       const dr = String(v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
       const amt = Number(v.amount || v.total_amount || 0);
 
@@ -285,14 +270,14 @@ export default function PayrollManagementView({ firm, onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           {onClose && (
             <button onClick={onClose} style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 12px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
-              â† Dashboard
+              ← Dashboard
             </button>
           )}
           <div style={{ fontSize: '10px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
-            ðŸ¢ Firm: {firm?.legal_name || firm?.name || 'Active Firm'}
+            🏢 Firm: {firm?.legal_name || firm?.name || 'Active Firm'}
           </div>
         </div>
-        <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>ðŸ‘· Labour, Employee & Tractor Wages</h1>
+        <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>👷 Labour, Employee & Tractor Wages</h1>
       </div>
 
       {errorMsg && <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', boxSizing: 'border-box', width: '100%' }}>{errorMsg}</div>}
@@ -315,16 +300,16 @@ export default function PayrollManagementView({ firm, onClose }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', textAlign: 'center', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
           <div>
-            <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL EARNED (à¤•à¥à¤² à¤•à¤¾à¤®)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>â‚¹{totalEarned.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>KUL EARNED (कुल काम)</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>₹{totalEarned.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
           <div>
-            <div style={{ fontSize: '9px', color: '#166534', fontWeight: 'bold' }}>PAID (à¤šà¥à¤•à¤¾à¤/à¤­à¥à¤—à¤¤à¤¾à¤¨)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#166534' }}>â‚¹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div style={{ fontSize: '9px', color: '#166534', fontWeight: 'bold' }}>PAID (चुकाया/भुगतान)</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: '#166534' }}>₹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
           <div>
-            <div style={{ fontSize: '9px', color: '#991b1b', fontWeight: 'bold' }}>BAKI (à¤¦à¥‡à¤¨à¤¾ à¤¬à¤¾à¤•à¥€)</div>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: totalBaki > 0 ? '#991b1b' : '#059669' }}>â‚¹{totalBaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div style={{ fontSize: '9px', color: '#991b1b', fontWeight: 'bold' }}>BAKI (देना बाकी)</div>
+            <div style={{ fontSize: '12px', fontWeight: '800', color: totalBaki > 0 ? '#991b1b' : '#059669' }}>₹{totalBaki.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </div>
         </div>
       </div>
@@ -332,7 +317,7 @@ export default function PayrollManagementView({ firm, onClose }) {
       {/* Entry Form */}
       <form onSubmit={handlePostWorkCredit} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: 800 }}>
-          {editingEntryId ? 'âœï¸ Edit Kaam / Attendance Entry' : 'ðŸ“‹ Record Kaam / Attendance (à¤®à¤œà¤¦à¥‚à¤°à¥€ à¤•à¥€ à¤ªà¥à¤°à¤µà¤¿à¤·à¥à¤Ÿà¤¿)'}
+          {editingEntryId ? '✏️ Edit Kaam / Attendance Entry' : '📋 Record Kaam / Attendance (मजदूरी की प्रविष्टि)'}
         </h3>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
@@ -360,25 +345,25 @@ export default function PayrollManagementView({ firm, onClose }) {
             <input type="number" step="0.01" placeholder="e.g. 5" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Rate/Unit (â‚¹) *</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Rate/Unit (₹) *</label>
             <input type="number" step="0.01" placeholder="e.g. 100" value={ratePerUnit} onChange={(e) => setRatePerUnit(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Kul Amount (â‚¹)</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Kul Amount (₹)</label>
             <div style={{ padding: '10px', backgroundColor: '#f1f5f9', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: 'bold', color: '#166534', boxSizing: 'border-box' }}>
-              â‚¹{calculatedTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{calculatedTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
           </div>
         </div>
 
         <div>
-          <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Work Description (à¤µà¤¿à¤µà¤°à¤£)</label>
+          <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px' }}>Work Description (विवरण)</label>
           <input type="text" placeholder="e.g. Chamber No. 3 pathai work" value={workDescription} onChange={(e) => setWorkDescription(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box' }} />
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
           <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxSizing: 'border-box' }}>
-            {editingEntryId ? 'âœ“ Update Payroll Entry' : 'âš¡ Post Work Credit to Worker Ledger'}
+            {editingEntryId ? '✓ Update Payroll Entry' : '⚡ Post Work Credit to Worker Ledger'}
           </button>
           {editingEntryId && (
             <button type="button" onClick={() => { setEditingEntryId(null); setQuantity(''); setRatePerUnit(''); setWorkDescription(''); }} style={{ padding: '12px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '10px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
@@ -391,7 +376,7 @@ export default function PayrollManagementView({ firm, onClose }) {
       {/* Scrollable Ledger Statement Register */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 800 }}>
-          ðŸ“– Ledger Statement Register ({workerEntries.length})
+          📖 Ledger Statement Register ({workerEntries.length})
         </h3>
         {workerEntries.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', padding: '12px' }}>No work or attendance entries recorded yet.</div>
@@ -404,10 +389,10 @@ export default function PayrollManagementView({ firm, onClose }) {
                     {ent.date} | <strong>{ent.worker}</strong> ({ent.expense_ledger})
                   </div>
                   <div style={{ color: '#64748b', wordBreak: 'break-word', marginBottom: '2px' }}>
-                    {ent.description} [Qty: {ent.quantity} Ã— Rate: â‚¹{ent.rate}]
+                    {ent.description} [Qty: {ent.quantity} × Rate: ₹{ent.rate}]
                   </div>
                   <div style={{ color: '#166534', fontWeight: 'bold' }}>
-                    Earned: +â‚¹{Number(ent.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    Earned: +₹{Number(ent.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
                 </div>
                 <div>
