@@ -1,4 +1,4 @@
-// frontend/src/utils/backupEngine.js
+// frontend/src/utils/backupEngine.js (Compressed Backup Export Update)
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -13,10 +13,6 @@ const resolveFirmNameString = (firmInput) => {
   return 'AccountBook';
 };
 
-/**
- * Ensures an Inventory Stock Item always has a corresponding Financial Asset Account
- * under Current Assets without manual user intervention.
- */
 export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
   if (!firmId || !rawItemName) return null;
 
@@ -55,10 +51,6 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
   return null;
 };
 
-/**
- * Post-Restore Self-Healing & Ledger Synchronization Sweep
- * Scans all restored inventory items and purchase bills to auto-create missing stock ledgers.
- */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
@@ -135,7 +127,8 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
 };
 
 /**
- * 1. UNIVERSAL ZERO-LOSS EXPORT ENGINE
+ * 1. UNIVERSAL COMPRESSED ZERO-LOSS EXPORT ENGINE
+ * Removes whitespace and indentation to drastically reduce JSON backup file size.
  */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
@@ -146,6 +139,9 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key) {
+        // Exclude temporary UI cache or heavy non-essential logs if any
+        if (key.startsWith('temp_cache_') || key.startsWith('debug_log_')) continue;
+
         const rawVal = localStorage.getItem(key);
         try {
           const parsed = JSON.parse(rawVal);
@@ -173,7 +169,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: { 
         app: "AccountBook", 
         firm: cleanFirm, 
-        version: "3.3.0", 
+        version: "3.3.1", 
         export_timestamp: now.toISOString(),
         active_firm_id: activeFirmId 
       },
@@ -181,7 +177,8 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       data: storageSnapshot
     };
 
-    const jsonString = JSON.stringify(backupPayload, null, 2);
+    // COMPRESSION STEP: Omit spaces and indentation (null, 2 replaced with compressed stringify)
+    const jsonString = JSON.stringify(backupPayload);
 
     if (Capacitor.isNativePlatform()) {
       const writeResult = await Filesystem.writeFile({
@@ -215,7 +212,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH MULTI-FIRM KEY MIGRATION)
+ * 2. SMART ZERO-LOSS RESTORE ENGINE (FULLY COMPATIBLE WITH COMPRESSED JSON)
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -244,7 +241,6 @@ export const restoreUniversalBackup = async (rawInput) => {
                        targetData['app_active_firm_id'] || 
                        'FIRM-001';
 
-    // A. Write all raw keys first
     Object.keys(targetData).forEach(key => {
       const val = targetData[key];
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
@@ -253,9 +249,6 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
-    // ========================================================
-    // B. MULTI-FIRM KEY MIGRATION (Ensures active firm reads restored records)
-    // ========================================================
     const migrateKeyForActiveFirm = (baseName, targetArray) => {
       if (Array.isArray(targetArray) && targetArray.length > 0) {
         localStorage.setItem(`${baseName}_${activeFirmId}`, JSON.stringify(targetArray));
@@ -263,7 +256,6 @@ export const restoreUniversalBackup = async (rawInput) => {
       }
     };
 
-    // 1. Accounts Consolidation
     const consolidatedAccountsMap = new Map();
     Object.keys(targetData).forEach(key => {
       if (key.includes('account_heads') || key.includes('app_accounts')) {
@@ -299,7 +291,6 @@ export const restoreUniversalBackup = async (rawInput) => {
     migrateKeyForActiveFirm('app_accounts', finalAccountsList);
     migrateKeyForActiveFirm('account_heads', finalAccountsList);
 
-    // 2. Inventory Items Consolidation
     const consolidatedItemsMap = new Map();
     Object.keys(targetData).forEach(key => {
       if (key.startsWith('inventory_items') || key.startsWith('app_stock')) {
@@ -323,7 +314,6 @@ export const restoreUniversalBackup = async (rawInput) => {
     const finalItemsList = Array.from(consolidatedItemsMap.values());
     migrateKeyForActiveFirm('inventory_items', finalItemsList);
 
-    // 3. Vouchers & Invoices Consolidation
     const consolidatedVouchersMap = new Map();
     Object.keys(targetData).forEach(key => {
       if (key.includes('voucher') || key.includes('invoice') || key.includes('payroll')) {
@@ -347,7 +337,6 @@ export const restoreUniversalBackup = async (rawInput) => {
     migrateKeyForActiveFirm('app_vouchers', finalVouchersList);
     migrateKeyForActiveFirm('account_book_vouchers', finalVouchersList);
 
-    // 4. Purchase Bills Consolidation
     const consolidatedPurchaseMap = new Map();
     Object.keys(targetData).forEach(key => {
       if (key.startsWith('purchase_bills') || key.startsWith('purchase_inward')) {
@@ -370,7 +359,6 @@ export const restoreUniversalBackup = async (rawInput) => {
     const finalPurchaseList = Array.from(consolidatedPurchaseMap.values());
     migrateKeyForActiveFirm('purchase_bills', finalPurchaseList);
 
-    // C. Post-Restore Auto Healing
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
