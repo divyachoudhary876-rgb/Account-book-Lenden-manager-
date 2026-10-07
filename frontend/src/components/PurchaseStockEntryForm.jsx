@@ -1,552 +1,859 @@
-// frontend/src/utils/pdfDownloadEngine.js
+// frontend/src/components/PurchaseStockEntryForm.jsx
 
-import { jsPDF } from 'jspdf';
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
-import { Capacitor } from '@capacitor/core';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
+import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
+import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine.js';
+import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
+import SearchableStockDropdown from './SearchableStockDropdown.jsx';
 
-/**
- * Universal safe firm name resolver
- */
-const getCleanFirmName = (firmInput) => {
-  if (typeof firmInput === 'string' && firmInput.trim() !== '') {
-    return firmInput.trim();
-  }
-  if (firmInput && typeof firmInput === 'object') {
-    return firmInput.legal_name || firmInput.trade_name || firmInput.name || firmInput.firm_name || 'Neelkanth Groups';
-  }
-  return 'Neelkanth Groups';
-};
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-/**
- * Ultra-Robust Typography & Spacing Normalizer
- */
-export const cleanTypographySpacing = (rawText) => {
-  if (!rawText) return '';
-  let str = String(rawText);
+const getBillSupplierName = (bill) => {
+  if (!bill) return 'Supplier Party';
+  if (bill.supplier && String(bill.supplier).trim() !== '') return String(bill.supplier).trim();
+  if (bill.supplier_name && String(bill.supplier_name).trim() !== '') return String(bill.supplier_name).trim();
+  if (bill.party && String(bill.party).trim() !== '') return String(bill.party).trim();
+  if (bill.party_name && String(bill.party_name).trim() !== '') return String(bill.party_name).trim();
+  if (bill.vendor && String(bill.vendor).trim() !== '') return String(bill.vendor).trim();
+  if (bill.cr_account && String(bill.cr_account).trim() !== '') return String(bill.cr_account).trim();
 
-  str = str.replace(/\s*:\s*/g, ': ');
-  str = str.replace(/\s*@\s*(?:rs\.?|₹)?\s*/gi, ' @ Rs ');
-  str = str.replace(/\s*,\s*/g, ', ');
-  str = str.replace(/\s*-\s*/g, ' - ');
-  str = str.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
-  str = str.replace(/\s{2,}/g, ' ');
-
-  return str.trim();
-};
-
-/**
- * Ultra-Robust Account Name Sanitizer
- */
-const cleanAccountTitle = (rawName) => {
-  if (!rawName) return '';
-  let str = String(rawName).trim();
-
-  if (/cash\s*in\s*hand/i.test(str) || /^cash$/i.test(str)) {
-    return 'Cash in Hand';
+  if (Array.isArray(bill.entries) && bill.entries.length > 0) {
+    const crEntry = bill.entries.find(e => (e.type || '').toUpperCase() === 'CR' || Number(e.credit) > 0);
+    if (crEntry && (crEntry.account_name || crEntry.party)) {
+      return (crEntry.account_name || crEntry.party).trim();
+    }
   }
 
-  str = str.replace(/\s*\([^)]*OK[^)]*\)/gi, '');
-  str = str.replace(/\s*\[[^\]]*OK[^\]]*\]/gi, '');
-  str = str.replace(/\s*\([^)]*![^)]*\)/gi, '');
-  str = str.replace(/\s*\([^)]*<[^)]*\)/gi, '');
-  str = str.replace(/\s*\(OK\s*!?.*$/gi, '');
-  str = str.replace(/\s*\[OK\s*!?.*$/gi, '');
-
-  return cleanTypographySpacing(str) || 'Account';
-};
-
-/**
- * Safely convert ArrayBuffer to Base64
- */
-const arrayBufferToBase64 = (buffer) => {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const narr = String(bill.narration || '');
+  const matchFrom = narr.match(/from\s+([^(\n]+)/i);
+  if (matchFrom && matchFrom[1]) {
+    return matchFrom[1].trim();
   }
-  return window.btoa(binary);
+
+  return 'Supplier Party';
 };
 
-/**
- * 100% Corruption-Free True PDF Exporter
- */
-export const exportTruePDF = async (doc, rawFileName = 'Report') => {
-  const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const fullFileName = `${cleanName}_${Date.now()}.pdf`;
+const getCleanPurchaseItemName = (bill) => {
+  if (!bill) return 'Stock Item';
 
-  try {
-    const pdfArrayBuffer = doc.output('arraybuffer');
+  const isGeneric = (str) => {
+    if (!str) return true;
+    const s = String(str).toLowerCase().trim();
+    return s === 'purchase a/c' || 
+           s === 'purchase account' || 
+           s.startsWith('purchase raw material') ||
+           s === 'material' ||
+           s === 'general purchase' ||
+           s === 'purchase';
+  };
 
-    if (Capacitor.isNativePlatform()) {
-      const base64Data = arrayBufferToBase64(pdfArrayBuffer);
-      const writeResult = await Filesystem.writeFile({
-        path: fullFileName,
-        data: base64Data,
-        directory: Directory.Cache
+  if (bill.item_name && !isGeneric(bill.item_name)) {
+    return String(bill.item_name).replace(/\s*Stock\s*Account/i, '').trim();
+  }
+  if (bill.itemName && !isGeneric(bill.itemName)) {
+    return String(bill.itemName).replace(/\s*Stock\s*Account/i, '').trim();
+  }
+  if (bill.stock_item_name && !isGeneric(bill.stock_item_name)) {
+    return String(bill.stock_item_name).replace(/\s*Stock\s*Account/i, '').trim();
+  }
+
+  if (Array.isArray(bill.items) && bill.items.length > 0) {
+    for (const it of bill.items) {
+      const itName = it?.itemName || it?.item_name || it?.name;
+      if (itName && !isGeneric(itName)) {
+        return String(itName).replace(/\s*Stock\s*Account/i, '').trim();
+      }
+    }
+  }
+
+  const narr = String(bill.narration || '');
+  if (narr) {
+    const colonMatch = narr.match(/(?:bill\s*#?\d*|purchase|item|inward)\s*:\s*([^–\-(@\n]+)/i);
+    if (colonMatch && colonMatch[1] && !isGeneric(colonMatch[1])) {
+      return colonMatch[1].trim();
+    }
+  }
+
+  const dr = String(bill.dr_account || bill.debit_account || '');
+  if (dr && !isGeneric(dr)) {
+    return dr.replace(/\s*Stock\s*Account/i, '').trim();
+  }
+
+  return 'Stock Item';
+};
+
+export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
+  const activeFirmId = useMemo(() => {
+    return firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  }, [firm]);
+
+  const todayMaxDate = new Date().toISOString().split('T')[0];
+
+  const [supplierAccounts, setSupplierAccounts] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [purchaseBills, setPurchaseBills] = useState([]);
+
+  const [editingBill, setEditingBill] = useState(null);
+  const [purchaseDate, setPurchaseDate] = useState(todayMaxDate);
+  const [billNumber, setBillNumber] = useState('');
+  const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [selectedStockId, setSelectedStockId] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [purchaseRate, setPurchaseRate] = useState('');
+  const [narration, setNarration] = useState('');
+
+  const [searchFilter, setSearchFilter] = useState('');
+  const [statusMessage, setStatusMessage] = useState(null);
+
+  const getNextBillNumber = useCallback((bills) => {
+    let maxNum = 0;
+    (bills || []).forEach(b => {
+      const raw = String(b.bill_number || b.reference_no || '').trim();
+      const numMatch = raw.match(/\d+/g);
+      if (numMatch) {
+        const val = parseInt(numMatch[numMatch.length - 1], 10);
+        if (!isNaN(val) && val > maxNum && val < 1000000) {
+          maxNum = val;
+        }
+      }
+    });
+    return String(maxNum + 1);
+  }, []);
+
+  const revertStockForBill = useCallback((billObj, currentStockList) => {
+    if (!billObj || !Array.isArray(currentStockList)) return currentStockList || [];
+    const targetItemId = String(billObj.item_id || billObj.stock_id || '');
+    const targetItemName = String(getCleanPurchaseItemName(billObj)).trim().toLowerCase();
+    const qtyToRevert = parseFloat(billObj.quantity || billObj.qty || 0);
+
+    return currentStockList.map(item => {
+      if (!item) return item;
+      const isIdMatch = targetItemId && String(item.id) === targetItemId;
+      const isNameMatch = targetItemName && String(item.name || item.item_name || '').trim().toLowerCase() === targetItemName;
+
+      if ((isIdMatch || isNameMatch) && !item.is_service && item.item_type !== 'SERVICE') {
+        const curStock = parseFloat(item.current_stock || item.stock || item.qty || 0);
+        const newStock = round2(Math.max(0, curStock - qtyToRevert));
+        return {
+          ...item,
+          current_stock: newStock,
+          stock: newStock,
+          qty: newStock,
+          updated_at: new Date().toISOString()
+        };
+      }
+      return item;
+    });
+  }, []);
+
+  const loadData = useCallback(() => {
+    try {
+      const allAccounts = getFirmMasterAccounts(activeFirmId) || [];
+      const suppliers = allAccounts.filter(a => {
+        if (!a) return false;
+        const type = String(a.primary_type || a.type || '').toUpperCase();
+        const grp = String(a.sub_group || a.group || '').toLowerCase();
+        const name = String(a.account_name || a.name || '').toLowerCase();
+
+        const isCreditorOrSupplier = (
+          type === 'LIABILITIES' ||
+          grp.includes('creditor') ||
+          grp.includes('supplier') ||
+          grp.includes('thekedar') ||
+          grp.includes('capital') ||
+          grp.includes('vendor')
+        );
+
+        const isCashOrBank = (
+          name.includes('cash') ||
+          name.includes('bank') ||
+          name.includes('रोकड़') ||
+          name.includes('बैंक') ||
+          grp.includes('cash') ||
+          grp.includes('bank')
+        );
+
+        return isCreditorOrSupplier || isCashOrBank;
+      });
+      setSupplierAccounts(suppliers.length > 0 ? suppliers : allAccounts);
+
+      let stockList = loadFirmData('inventory_items', firm, []);
+      if (!Array.isArray(stockList) || stockList.length === 0) {
+        try {
+          const raw = localStorage.getItem(`inventory_items_${activeFirmId}`) || localStorage.getItem('inventory_items');
+          if (raw) stockList = JSON.parse(raw);
+        } catch (e) {}
+      }
+      const cleanStock = Array.isArray(stockList) ? stockList.filter(i => i && (i.name || i.item_name)) : [];
+      setInventoryItems(cleanStock);
+
+      const purchaseKey = `purchase_bills_${activeFirmId}`;
+      let rawBills = [];
+      try {
+        const stored = localStorage.getItem(purchaseKey);
+        if (stored) rawBills = JSON.parse(stored);
+      } catch (e) {}
+
+      const billsMap = new Map();
+      if (Array.isArray(rawBills)) {
+        rawBills.forEach(b => {
+          if (!b) return;
+          const bNum = String(b.bill_number || b.reference_no || b.id || '').trim();
+          if (bNum) {
+            billsMap.set(bNum, {
+              ...b,
+              bill_number: bNum,
+              reference_no: bNum,
+              supplier: getBillSupplierName(b),
+              item_name: getCleanPurchaseItemName(b)
+            });
+          }
+        });
+      }
+
+      const completeBills = Array.from(billsMap.values());
+      completeBills.sort((a, b) => {
+        const numA = parseInt(String(a.bill_number).replace(/\D/g, ''), 10) || 0;
+        const numB = parseInt(String(b.bill_number).replace(/\D/g, ''), 10) || 0;
+        if (numA && numB && numA !== numB) {
+          return numB - numA;
+        }
+        return new Date(b.date || b.purchase_date || 0) - new Date(a.date || a.purchase_date || 0);
       });
 
-      if (writeResult && writeResult.uri) {
-        await Share.share({
-          title: cleanName,
-          text: `Account Book PDF Report: ${cleanName}`,
-          url: writeResult.uri,
-          dialogTitle: 'Open or Save PDF Report'
-        });
-        return { success: true };
+      setPurchaseBills(completeBills);
+
+      if (!editingBill) {
+        setBillNumber(getNextBillNumber(completeBills));
       }
+    } catch (e) {
+      console.error("Error loading purchase data:", e);
     }
+  }, [activeFirmId, firm, editingBill, getNextBillNumber]);
 
-    const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
-    const blobUrl = URL.createObjectURL(blob);
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.href = blobUrl;
-    downloadAnchor.setAttribute('download', fullFileName);
-    downloadAnchor.style.display = 'none';
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-
-    setTimeout(() => {
-      document.body.removeChild(downloadAnchor);
-      URL.revokeObjectURL(blobUrl);
-    }, 1500);
-
-    return { success: true };
-
-  } catch (err) {
-    console.error('True PDF Binary Export Error:', err);
-    throw new Error('Failed to generate uncorrupted PDF file.');
-  }
-};
-
-/**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait)
- */
-export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
-  const firmName = getCleanFirmName(firmInput);
-  const cleanParty = cleanAccountTitle(partyName);
-  const txs = (statementData && Array.isArray(statementData.transactions)) ? statementData.transactions : (Array.isArray(statementData) ? statementData : []);
-
-  const doc = new jsPDF('p', 'mm', 'a4');
-  let y = 18;
-  let pageNum = 1;
-
-  const printHeader = () => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(15, 23, 42);
-    doc.text(firmName.toUpperCase(), 14, y);
-    y += 6;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
-    doc.text(`Account Statement: ${cleanParty}`, 14, y);
-    y += 5;
-
-    doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
-    y += 6;
-
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y, 182, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-
-    doc.text('Date', 16, y + 4.8);
-    doc.text('Particulars & Description', 38, y + 4.8);
-    doc.text('Debit (Rs)', 132, y + 4.8, { align: 'right' });
-    doc.text('Credit (Rs)', 162, y + 4.8, { align: 'right' });
-    doc.text('Balance (Rs)', 193, y + 4.8, { align: 'right' });
-    y += 9;
-  };
-
-  printHeader();
-
-  txs.forEach((t, index) => {
-    const rawTitle = cleanTypographySpacing(`${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`);
-    const descText = cleanTypographySpacing(t.narration || '');
-
-    const splitTitle = doc.splitTextToSize(rawTitle, 68);
-    const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
-    const totalLines = splitTitle.length + splitDesc.length;
-    const rowHeight = Math.max(7, 3 + (totalLines * 3.4));
-
-    if (y + rowHeight > 280) {
-      doc.addPage();
-      pageNum += 1;
-      y = 18;
-      printHeader();
-    }
-
-    if (index % 2 === 0) {
-      doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 3, 182, rowHeight, 'F');
-    }
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(15, 23, 42);
-
-    doc.text(String(t.date || t.voucher_date || '-'), 16, y);
-    doc.text(splitTitle, 38, y);
-
-    const deb = Number(t.debit || 0);
-    const cr = Number(t.credit || 0);
-    const runBal = Number(t.runningBalance || t.amount || 0);
-
-    doc.text(deb > 0 ? deb.toFixed(2) : '-', 132, y, { align: 'right' });
-    doc.text(cr > 0 ? cr.toFixed(2) : '-', 162, y, { align: 'right' });
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${runBal.toFixed(2)} ${t.balanceType || 'Dr'}`, 193, y, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
-
-    if (splitDesc.length > 0) {
-      const descY = y + (splitTitle.length * 3.4);
-      doc.setFontSize(6.8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(splitDesc, 38, descY);
-      doc.setTextColor(15, 23, 42);
-    }
-
-    y += rowHeight;
-  });
-
-  return await exportTruePDF(doc, `Statement_${cleanParty}`);
-};
-
-/**
- * 2. FINANCIAL STATEMENTS REPORT (Explicit & Safe Parameter Resolution)
- */
-export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth Groups', reportData = {}, tabType = 'TRIAL_BALANCE') => {
-  let firm = firmInput;
-  let data = reportData;
-  let tab = tabType;
-
-  // Flexible argument parser to prevent UI crashes
-  [firmInput, reportData, tabType].forEach(arg => {
-    if (!arg) return;
-    if (typeof arg === 'object') {
-      if (arg.legal_name || arg.trade_name || arg.name || arg.id) firm = arg;
-      if (arg.trialBalance || arg.trading || arg.balanceSheet || arg.gstSummary || arg.pnl) data = arg;
-    } else if (typeof arg === 'string') {
-      const upper = arg.toUpperCase();
-      if (['TRIAL_BALANCE', 'TRADING', 'PNL', 'BALANCE_SHEET', 'GST_SUMMARY', 'TB', '1', '2', '3', '4', '5'].includes(upper)) {
-        if (upper === '1') tab = 'TRIAL_BALANCE';
-        else if (upper === '2') tab = 'TRADING';
-        else if (upper === '3') tab = 'PNL';
-        else if (upper === '4') tab = 'BALANCE_SHEET';
-        else if (upper === '5') tab = 'GST_SUMMARY';
-        else tab = upper;
-      } else {
-        firm = arg;
-      }
-    }
-  });
-
-  const firmName = getCleanFirmName(firm);
-  let reportTitle = 'Trial Balance Report';
-  if (tab === 'TRADING' || tab === '2') reportTitle = 'Trading Account Report';
-  else if (tab === 'PNL' || tab === '3') reportTitle = 'Profit & Loss Statement';
-  else if (tab === 'BALANCE_SHEET' || tab === '4') reportTitle = 'Balance Sheet (Assets & Liabilities)';
-  else if (tab === 'GST_SUMMARY' || tab === '5') reportTitle = 'GSTR Tax Summary Report';
-
-  const doc = new jsPDF('p', 'mm', 'a4');
-  let y = 18;
-  let pageNum = 1;
-
-  const printReportTop = () => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(15, 23, 42);
-    doc.text(firmName.toUpperCase(), 14, y);
-    y += 6;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
-    doc.text(reportTitle, 14, y);
-    y += 5;
-
-    doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
-    y += 6;
-  };
-
-  printReportTop();
-
-  if (tab === 'TRIAL_BALANCE' || tab === 'TB' || tab === '1') {
-    const printTBHeader = () => {
-      doc.setFillColor(15, 23, 42);
-      doc.rect(14, y, 182, 7, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.text('Account Name', 16, y + 4.8);
-      doc.text('Category', 95, y + 4.8);
-      doc.text('Debit (Rs)', 150, y + 4.8, { align: 'right' });
-      doc.text('Credit (Rs)', 193, y + 4.8, { align: 'right' });
-      y += 9;
+  useEffect(() => {
+    loadData();
+    window.addEventListener('app_state_updated', loadData);
+    window.addEventListener('app_storage_updated', loadData);
+    window.addEventListener('app_inventory_updated', loadData);
+    window.addEventListener('storage', loadData);
+    return () => {
+      window.removeEventListener('app_state_updated', loadData);
+      window.removeEventListener('app_storage_updated', loadData);
+      window.removeEventListener('app_inventory_updated', loadData);
+      window.removeEventListener('storage', loadData);
     };
+  }, [loadData]);
 
-    printTBHeader();
-    const rows = (data.trialBalance && Array.isArray(data.trialBalance)) ? data.trialBalance : [];
+  const calculatedTotal = useMemo(() => {
+    return round2((Number(quantity) || 0) * (Number(purchaseRate) || 0));
+  }, [quantity, purchaseRate]);
 
-    rows.forEach((row, index) => {
-      if (y > 275) {
-        doc.addPage();
-        pageNum += 1;
-        y = 18;
-        printReportTop();
-        printTBHeader();
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setStatusMessage(null);
+
+    const supplierName = (typeof selectedSupplier === 'object'
+      ? (selectedSupplier.account_name || selectedSupplier.name || '')
+      : selectedSupplier).trim();
+
+    if (!supplierName) {
+      setStatusMessage({ type: 'error', text: 'Kripya Supplier / Cash / Bank Account chunein!' });
+      return;
+    }
+    if (!selectedStockId) {
+      setStatusMessage({ type: 'error', text: 'Kripya Stock Item chunein!' });
+      return;
+    }
+
+    const numQty = parseFloat(quantity);
+    const numRate = parseFloat(purchaseRate);
+
+    if (!numQty || numQty <= 0) {
+      setStatusMessage({ type: 'error', text: 'Kripya valid Quantity (> 0) darj karein!' });
+      return;
+    }
+    if (!numRate || numRate <= 0) {
+      setStatusMessage({ type: 'error', text: 'Kripya valid Purchase Rate (> 0) darj karein!' });
+      return;
+    }
+
+    try {
+      const finalBillNo = billNumber.trim() || getNextBillNumber(purchaseBills);
+      const billId = editingBill ? editingBill.id : `PUR-${finalBillNo}`;
+
+      let currentStock = [...inventoryItems];
+      if (editingBill) {
+        currentStock = revertStockForBill(editingBill, currentStock);
       }
 
-      if (index % 2 === 0) {
-        doc.setFillColor(248, 250, 252);
-        doc.rect(14, y - 3, 182, 6, 'F');
+      const itemIdx = currentStock.findIndex(i =>
+        String(i.id) === String(selectedStockId) ||
+        String(i.name || i.item_name || '').trim().toLowerCase() === String(selectedStockId).trim().toLowerCase()
+      );
+
+      let cleanItemName = 'Purchase Item';
+      let cleanUnit = 'Pcs';
+
+      if (itemIdx !== -1) {
+        cleanItemName = currentStock[itemIdx].name || currentStock[itemIdx].item_name || 'Item';
+        cleanUnit = currentStock[itemIdx].unit || 'Pcs';
+        const baseQty = parseFloat(currentStock[itemIdx].current_stock || currentStock[itemIdx].stock || 0);
+        const newQty = round2(baseQty + numQty);
+
+        currentStock[itemIdx] = {
+          ...currentStock[itemIdx],
+          current_stock: newQty,
+          stock: newQty,
+          qty: newQty,
+          unit_purchase_price: numRate,
+          purchase_price: numRate,
+          rate: numRate,
+          cost_price: numRate,
+          updated_at: new Date().toISOString()
+        };
       }
 
-      const deb = Number(row.dr || row.debit || 0);
-      const cr = Number(row.cr || row.credit || 0);
-      const cleanName = cleanAccountTitle(row.name || row.account_name || 'Account');
-      const accName = doc.splitTextToSize(cleanName, 75)[0];
+      saveFirmData('inventory_items', firm, currentStock);
+      localStorage.setItem(`inventory_items_${activeFirmId}`, JSON.stringify(currentStock));
+      setInventoryItems(currentStock);
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(accName, 16, y);
-      doc.text(String(row.category || row.primary_type || 'General'), 95, y);
-      doc.text(deb > 0 ? deb.toFixed(2) : '-', 150, y, { align: 'right' });
-      doc.text(cr > 0 ? cr.toFixed(2) : '-', 193, y, { align: 'right' });
-      y += 6;
-    });
+      const stockAssetAccount = `${cleanItemName} Stock Account`;
+      const masterAccounts = getFirmMasterAccounts(activeFirmId) || [];
+      if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === stockAssetAccount.toLowerCase())) {
+        saveMasterAccount(activeFirmId, {
+          account_name: stockAssetAccount,
+          primary_type: 'ASSETS',
+          type: 'Assets',
+          sub_group: 'Raw Material Inventory (कच्चा माल)',
+          group: 'Current Assets',
+          balance_type: 'Dr'
+        });
+      }
 
-    if (y > 270) { doc.addPage(); pageNum += 1; y = 18; printReportTop(); }
-    y += 2;
-    doc.setDrawColor(203, 213, 225);
-    doc.line(14, y, 196, y);
-    y += 5;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.text('Grand Total:', 95, y);
-    doc.text(`Rs ${(data?.totalDebit || 0).toFixed(2)}`, 150, y, { align: 'right' });
-    doc.text(`Rs ${(data?.totalCredit || 0).toFixed(2)}`, 193, y, { align: 'right' });
+      const newBillRecord = {
+        id: billId,
+        firm_id: activeFirmId,
+        date: purchaseDate,
+        purchase_date: purchaseDate,
+        bill_number: finalBillNo,
+        reference_no: finalBillNo,
+        supplier: supplierName,
+        supplier_name: supplierName,
+        party: supplierName,
+        item_id: selectedStockId,
+        item_name: cleanItemName,
+        unit: cleanUnit,
+        quantity: numQty,
+        rate: numRate,
+        purchase_rate: numRate,
+        total_amount: calculatedTotal,
+        narration: narration.trim() || `Purchase Bill #${finalBillNo}: ${cleanItemName} (${numQty} ${cleanUnit} @ ₹${numRate}) from ${supplierName}`,
+        updated_at: new Date().toISOString()
+      };
 
-  } else if (tab === 'BALANCE_SHEET' || tab === '4') {
-    const assets = (data.balanceSheet && Array.isArray(data.balanceSheet.assets)) ? data.balanceSheet.assets : [];
-    const liabilities = (data.balanceSheet && Array.isArray(data.balanceSheet.liabilities)) ? data.balanceSheet.liabilities : [];
+      const existingBills = purchaseBills.filter(b => b && b.id !== billId && String(b.bill_number) !== finalBillNo);
+      const updatedBills = [newBillRecord, ...existingBills];
 
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y, 182, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('Assets (Property & Current Assets)', 16, y + 4.8);
-    doc.text('Amount (Rs)', 193, y + 4.8, { align: 'right' });
-    y += 9;
+      localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(updatedBills));
+      setPurchaseBills(updatedBills);
 
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'normal');
+      if (editingBill) {
+        const oldCandidateIds = [
+          editingBill.id,
+          `JV-${editingBill.id}`,
+          editingBill.bill_number,
+          `#${editingBill.bill_number}`,
+          `PUR-${editingBill.bill_number}`
+        ];
+        oldCandidateIds.forEach(id => {
+          try { deleteUniversalVoucher(activeFirmId, id); } catch (e) {}
+        });
+      }
 
-    assets.forEach((a, index) => {
-      if (y > 275) { doc.addPage(); pageNum += 1; y = 18; printReportTop(); }
-      if (index % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 3, 182, 6, 'F'); }
-      doc.setFontSize(7.5);
-      doc.text(cleanAccountTitle(a.name || 'Asset'), 16, y);
-      doc.text(Number(a.amount || 0).toFixed(2), 193, y, { align: 'right' });
-      y += 6;
-    });
+      const voucherFinalId = `#${finalBillNo}`;
+      saveUniversalVoucher(activeFirmId, {
+        id: voucherFinalId,
+        firm_id: activeFirmId,
+        voucher_type: 'PURCHASE',
+        type: 'PURCHASE',
+        voucher_date: purchaseDate,
+        date: purchaseDate,
+        reference_no: finalBillNo,
+        voucher_number: finalBillNo,
+        dr_account: stockAssetAccount,
+        cr_account: supplierName,
+        amount: calculatedTotal,
+        total_amount: calculatedTotal,
+        narration: newBillRecord.narration,
+        is_compound: true,
+        items: [
+          { itemName: cleanItemName, name: cleanItemName, qty: numQty, quantity: numQty, unit: cleanUnit, rate: numRate }
+        ],
+        entries: [
+          { account_name: stockAssetAccount, party: stockAssetAccount, type: 'DR', debit: calculatedTotal, credit: 0, amount: calculatedTotal },
+          { account_name: supplierName, party: supplierName, type: 'CR', debit: 0, credit: calculatedTotal, amount: calculatedTotal }
+        ]
+      });
 
-    y += 2;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.text(`Total Assets: Rs ${(data.balanceSheet?.totalAssets || 0).toFixed(2)}`, 193, y, { align: 'right' });
-    y += 9;
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('app_inventory_updated'));
+      window.dispatchEvent(new Event('storage'));
 
-    if (y > 240) { doc.addPage(); pageNum += 1; y = 18; printReportTop(); }
+      setStatusMessage({
+        type: 'success',
+        text: editingBill
+          ? `✓ Purchase Bill #${finalBillNo} updated & stock synchronized successfully!`
+          : `✓ Purchase Bill #${finalBillNo} saved & stock added successfully!`
+      });
 
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y, 182, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('Liabilities & Capital', 16, y + 4.8);
-    doc.text('Amount (Rs)', 193, y + 4.8, { align: 'right' });
-    y += 9;
-
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'normal');
-
-    liabilities.forEach((l, index) => {
-      if (y > 275) { doc.addPage(); pageNum += 1; y = 18; printReportTop(); }
-      if (index % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 3, 182, 6, 'F'); }
-      doc.setFontSize(7.5);
-      doc.text(cleanAccountTitle(l.name || 'Liability'), 16, y);
-      doc.text(Number(l.amount || 0).toFixed(2), 193, y, { align: 'right' });
-      y += 6;
-    });
-
-    y += 2;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.text(`Total Liabilities: Rs ${(data.balanceSheet?.totalLiabilities || 0).toFixed(2)}`, 193, y, { align: 'right' });
-  }
-
-  return await exportTruePDF(doc, reportTitle);
-};
-
-export const downloadFinancialReportPDF = downloadFinancialStatementsReport;
-export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
-  return downloadFinancialStatementsReport(firmInput, reportData, 'PNL');
-};
-
-/**
- * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE - FIXED SAFE GUARDS)
- */
-export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
-  const firmName = getCleanFirmName(firmInput);
-  const rows = Array.isArray(vouchers) ? vouchers : [];
-
-  const doc = new jsPDF('l', 'mm', 'a4');
-  let y = 16;
-  let pageNum = 1;
-
-  const printJournalHeader = () => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(15, 23, 42);
-    doc.text(firmName.toUpperCase(), 14, y);
-    y += 6;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
-    doc.text('Journal Daybook Register', 14, y);
-    y += 5;
-
-    doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
-    y += 6;
-
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y, 269, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-
-    doc.text('#', 16, y + 4.8);
-    doc.text('Date', 27, y + 4.8);
-    doc.text('Voucher Type', 48, y + 4.8);
-    doc.text('Reference No', 78, y + 4.8);
-    doc.text('Debit Account (Dr)', 118, y + 4.8);
-    doc.text('Credit Account (Cr)', 175, y + 4.8);
-    doc.text('Amount (Rs)', 278, y + 4.8, { align: 'right' });
-    y += 9;
+      setEditingBill(null);
+      setQuantity('');
+      setPurchaseRate('');
+      setNarration('');
+      setBillNumber(getNextBillNumber(updatedBills));
+      loadData();
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: `Error: ${err.message}` });
+    }
   };
 
-  printJournalHeader();
+  const handleEditInit = (e, bill) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!bill) return;
 
-  rows.forEach((vch, idx) => {
-    const rawRef = cleanTypographySpacing(String(vch.reference_no || vch.voucher_number || vch.id || '-'));
-    const vType = String(vch.voucher_type || vch.type || 'JOURNAL');
+    setEditingBill(bill);
+    setPurchaseDate(bill.purchase_date || bill.date || todayMaxDate);
+    setBillNumber(bill.bill_number || bill.reference_no || '');
+    setSelectedSupplier(getBillSupplierName(bill));
+    setSelectedStockId(bill.item_id || bill.stock_id || '');
+    setQuantity(bill.quantity ? String(bill.quantity) : '');
+    setPurchaseRate(bill.rate || bill.purchase_rate ? String(bill.rate || bill.purchase_rate) : '');
+    setNarration(bill.narration || '');
+    setStatusMessage(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-    const drName = cleanAccountTitle(vch.dr_account || vch.dr_party || 'Dr Account');
-    const crName = cleanAccountTitle(vch.cr_account || vch.cr_party || 'Cr Account');
+  const handleCancelEdit = () => {
+    setEditingBill(null);
+    setQuantity('');
+    setPurchaseRate('');
+    setNarration('');
+    setBillNumber(getNextBillNumber(purchaseBills));
+    setStatusMessage(null);
+  };
 
-    const itemsList = Array.isArray(vch.items) ? vch.items : [];
-    let itemStr = itemsList.map(it => {
-      const iName = cleanTypographySpacing(it.itemName || it.name || 'Item');
-      const iQty = it.qty || it.quantity || 0;
-      const iUnit = (it.unit || 'Pcs').trim();
-      const iRate = parseFloat(it.rate || it.price || 0);
-      return cleanTypographySpacing(`${iName} (Qty: ${iQty} ${iUnit} @ Rs ${iRate.toFixed(2)})`);
-    }).join(', ');
+  const handleDeleteBill = (e, bill) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!bill) return;
 
-    const rawNote = vch.narration || vch.remarks || vch.description || '';
-    const cleanNote = cleanTypographySpacing(rawNote);
-    const noteText = cleanNote ? (itemStr ? `${itemStr} - ${cleanNote}` : cleanNote) : itemStr;
+    const bNum = String(bill.bill_number || bill.reference_no || '').trim();
+    const supName = getBillSupplierName(bill);
 
-    const splitDr = doc.splitTextToSize(drName, 54);
-    const splitCr = doc.splitTextToSize(crName, 75);
-    const splitNote = noteText ? doc.splitTextToSize(noteText, 125) : [];
-
-    const namesHeight = Math.max(splitDr.length, splitCr.length) * 3.4;
-    const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.2) : 0;
-    const rowHeight = Math.max(6.5, 3.5 + namesHeight + noteHeight);
-
-    if (y + rowHeight > 190) {
-      doc.addPage();
-      pageNum += 1;
-      y = 16;
-      printJournalHeader();
+    if (!window.confirm(`Purchase Bill #${bNum} (${supName}) ko delete karna chahte hain?\n\n- Inventory se ${bill.quantity || 1} ${bill.unit || 'Pcs'} stock minus ho jayega.\n- Party ke khate aur Daybook se ₹${parseFloat(bill.total_amount || 0).toFixed(2)} ka voucher hat jayega.\n\nJari rakhein?`)) {
+      return;
     }
 
-    if (idx % 2 === 0) {
-      doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 3, 269, rowHeight, 'F');
+    try {
+      let currentStock = [...inventoryItems];
+      currentStock = revertStockForBill(bill, currentStock);
+      saveFirmData('inventory_items', firm, currentStock);
+      localStorage.setItem(`inventory_items_${activeFirmId}`, JSON.stringify(currentStock));
+      setInventoryItems(currentStock);
+
+      const filterOutBill = (list) => {
+        if (!Array.isArray(list)) return [];
+        return list.filter(b => {
+          if (!b) return false;
+          const matchId = String(b.id || '').trim() === String(bill.id || '').trim();
+          const matchNum = String(b.bill_number || b.reference_no || '').trim() === bNum;
+          return !(matchId || matchNum);
+        });
+      };
+
+      const remainingBills = filterOutBill(purchaseBills);
+      setPurchaseBills(remainingBills);
+
+      const purchaseKeysToClean = [
+        `purchase_bills_${activeFirmId}`,
+        'purchase_bills',
+        `app_purchase_bills_${activeFirmId}`,
+        'purchase_bills_FIRM-001'
+      ];
+      purchaseKeysToClean.forEach(pk => {
+        try {
+          const raw = localStorage.getItem(pk);
+          if (raw) {
+            localStorage.setItem(pk, JSON.stringify(filterOutBill(JSON.parse(raw))));
+          }
+        } catch (e) {}
+      });
+
+      const candidateKeys = [
+        bill.id,
+        `JV-${bill.id}`,
+        bNum,
+        `#${bNum}`,
+        `PUR-${bNum}`,
+        `PV-${bNum}`,
+        `JV-PUR-${bNum}`
+      ];
+
+      candidateKeys.forEach(vId => {
+        if (vId) {
+          try { deleteUniversalVoucher(activeFirmId, vId); } catch (e) {}
+        }
+      });
+
+      const voucherKeys = [
+        `app_vouchers_${activeFirmId}`,
+        `account_book_vouchers_${activeFirmId}`,
+        'app_vouchers',
+        'account_book_vouchers'
+      ];
+
+      voucherKeys.forEach(vk => {
+        try {
+          const raw = localStorage.getItem(vk);
+          if (raw) {
+            let vchs = JSON.parse(raw);
+            if (Array.isArray(vchs)) {
+              vchs = vchs.filter(v => {
+                if (!v) return false;
+                const vNum = String(v.reference_no || v.voucher_number || v.id || '').replace(/^#|^PUR-|^PV-/, '').trim();
+                const isMatch = vNum === bNum || candidateKeys.includes(v.id) || String(v.id).includes(bNum);
+                return !isMatch;
+              });
+              localStorage.setItem(vk, JSON.stringify(vchs));
+            }
+          }
+        } catch (e) {}
+      });
+
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('app_inventory_updated'));
+      window.dispatchEvent(new Event('storage'));
+
+      if (editingBill && (editingBill.id === bill.id || String(editingBill.bill_number) === bNum)) {
+        handleCancelEdit();
+      } else {
+        setBillNumber(getNextBillNumber(remainingBills));
+      }
+
+      loadData();
+      alert(`✓ Purchase Bill #${bNum} successfully deleted.`);
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`);
     }
+  };
 
-    const amt = parseFloat(vch.amount || vch.total_amount || 0);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(15, 23, 42);
-
-    doc.text(String(idx + 1), 16, y);
-    doc.text(String(vch.voucher_date || vch.date || '-'), 27, y);
-    doc.text(vType, 48, y);
-
-    const splitRef = doc.splitTextToSize(rawRef, 36);
-    doc.text(splitRef[0] || rawRef, 78, y);
-
-    doc.text(splitDr, 118, y);
-    doc.text(splitCr, 175, y);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text(amt.toFixed(2), 278, y, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
-
-    if (splitNote.length > 0) {
-      const noteY = y + namesHeight;
-      doc.setFontSize(6.8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(splitNote, 118, noteY);
-      doc.setTextColor(15, 23, 42);
-    }
-
-    y += rowHeight;
+  const filteredBills = purchaseBills.filter(b => {
+    if (!b) return false;
+    const q = (searchFilter || '').toLowerCase();
+    const supName = getBillSupplierName(b).toLowerCase();
+    const itemNameStr = getCleanPurchaseItemName(b).toLowerCase();
+    return (
+      (b.bill_number && String(b.bill_number).toLowerCase().includes(q)) ||
+      supName.includes(q) ||
+      itemNameStr.includes(q) ||
+      (b.narration && String(b.narration).toLowerCase().includes(q))
+    );
   });
 
-  return await exportTruePDF(doc, 'Journal_Register');
+  return (
+    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
+              {editingBill ? '✏️ Edit Purchase Bill' : '📦 Purchase & Inward Stock (+IN)'}
+            </h3>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>Raw materials, fuel inward, and supplier ledger credit</span>
+          </div>
+          {onClose && (
+            <button type="button" onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+              Close
+            </button>
+          )}
+        </div>
+      </div>
+
+      {statusMessage && (
+        <div style={{
+          backgroundColor: statusMessage.type === 'error' ? '#fef2f2' : '#ecfdf5',
+          border: `1px solid ${statusMessage.type === 'error' ? '#fecaca' : '#a7f3d0'}`,
+          color: statusMessage.type === 'error' ? '#991b1b' : '#065f46',
+          padding: '10px 14px',
+          borderRadius: '10px',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          boxSizing: 'border-box',
+          width: '100%'
+        }}>
+          {statusMessage.text}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>PURCHASE DATE *</label>
+            <input 
+              type="date" 
+              max={todayMaxDate}
+              value={purchaseDate} 
+              onChange={e => setPurchaseDate(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>BILL / REF NO *</label>
+            <input 
+              type="text" 
+              placeholder="e.g. 73" 
+              value={billNumber} 
+              onChange={e => setBillNumber(e.target.value)} 
+              style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0284c7' }} 
+              required 
+            />
+          </div>
+        </div>
+
+        <div>
+          <SearchableAccountDropdown
+            label="Supplier / Vendor / Cash / Bank Party *"
+            accounts={supplierAccounts}
+            value={selectedSupplier}
+            onChange={val => setSelectedSupplier(val)}
+            placeholder="Search supplier, cash or bank account..."
+            colorAccent="#dc2626"
+            required
+          />
+        </div>
+
+        <div>
+          <SearchableStockDropdown
+            firm={firm}
+            label="STOCK ITEM (+IN) *"
+            value={selectedStockId}
+            onChange={val => setSelectedStockId(val)}
+            placeholder="-- Choose Stock Item --"
+          />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={labelStyle}>QUANTITY *</label>
+            <input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={quantity} 
+              onChange={e => setQuantity(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>PURCHASE RATE (₹) *</label>
+            <input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={purchaseRate} 
+              onChange={e => setPurchaseRate(e.target.value)} 
+              style={inputStyle} 
+              required 
+            />
+          </div>
+        </div>
+
+        <div style={{ backgroundColor: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}>Total Purchase Amount:</span>
+          <span style={{ fontSize: '15px', fontWeight: '900', color: '#059669' }}>₹{calculatedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Narration / Remarks</label>
+          <input 
+            type="text" 
+            placeholder="e.g. Received at chamber / tractor freight" 
+            value={narration} 
+            onChange={e => setNarration(e.target.value)} 
+            style={inputStyle} 
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+          <button 
+            type="submit" 
+            style={{ 
+              flex: 1, 
+              backgroundColor: '#059669', 
+              color: '#ffffff', 
+              border: 'none', 
+              padding: '12px', 
+              borderRadius: '8px', 
+              fontSize: '12px', 
+              fontWeight: 'bold', 
+              cursor: 'pointer' 
+            }}
+          >
+            {editingBill ? `✓ Update Purchase #${billNumber}` : `💾 Save Purchase & Add Stock (#${billNumber})`}
+          </button>
+
+          {editingBill && (
+            <button 
+              type="button" 
+              onClick={handleCancelEdit} 
+              style={{ 
+                backgroundColor: '#f1f5f9', 
+                color: '#475569', 
+                border: '1px solid #cbd5e1', 
+                padding: '12px 16px', 
+                borderRadius: '8px', 
+                fontSize: '12px', 
+                fontWeight: 'bold', 
+                cursor: 'pointer' 
+              }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+
+      </form>
+
+      <div style={cardStyle}>
+        <div style={{ marginBottom: '10px' }}>
+          <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+            📋 Purchase Bills Register ({filteredBills.length})
+          </strong>
+        </div>
+
+        <input 
+          type="text" 
+          placeholder="🔍 Search purchase bills by bill no, supplier, item..." 
+          value={searchFilter} 
+          onChange={e => setSearchFilter(e.target.value)} 
+          style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '10px' }} 
+        />
+
+        <div style={{ maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {filteredBills.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '12px' }}>
+              No purchase bills found for this firm.
+            </div>
+          ) : (
+            filteredBills.map((bill) => {
+              const totalAmt = parseFloat(bill.total_amount || 0);
+              const isSelected = editingBill && (editingBill.id === bill.id || String(bill.bill_number) === String(bill.bill_number));
+              const displayName = getBillSupplierName(bill);
+              const displayItemName = getCleanPurchaseItemName(bill);
+
+              return (
+                <div 
+                  key={bill.id || bill.bill_number} 
+                  style={{ 
+                    backgroundColor: isSelected ? '#ecfdf5' : '#f8fafc', 
+                    border: `1px solid ${isSelected ? '#059669' : '#e2e8f0'}`, 
+                    borderRadius: '8px', 
+                    padding: '10px 12px', 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                        {bill.purchase_date || bill.date}
+                      </span>
+                      <strong style={{ fontSize: '12px', color: '#0f172a' }}>
+                        #{bill.bill_number || bill.reference_no}
+                      </strong>
+                    </div>
+
+                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#dc2626', marginTop: '2px' }}>
+                      {displayName}
+                    </div>
+
+                    <div style={{ fontSize: '11px', color: '#475569', marginTop: '2px' }}>
+                      📦 <strong style={{ color: '#0f172a' }}>{displayItemName}</strong> — Qty: <strong>{bill.quantity} {bill.unit || 'Pcs'}</strong> @ ₹{bill.rate || bill.purchase_rate}
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '900', color: '#059669' }}>
+                      ₹{totalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button 
+                        type="button" 
+                        onClick={(e) => handleEditInit(e, bill)} 
+                        style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={(e) => handleDeleteBill(e, bill)} 
+                        style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+const cardStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '12px',
+  padding: '14px',
+  border: '1px solid #cbd5e1',
+  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
+  boxSizing: 'border-box',
+  width: '100%'
 };
 
-/**
- * 4. PROFESSIONAL TAX INVOICE GENERATOR
- */
-export const generateProfessionalInvoicePDF = async (firmInput, invoice = {}) => {
-  const firmName = getCleanFirmName(firmInput);
-  const invNumber = cleanTypographySpacing(invoice?.invoice_number || ('INV-' + Date.now()));
-  const grandTotal = parseFloat(invoice?.grand_total || invoice?.total_amount || 0);
+const labelStyle = {
+  display: 'block',
+  fontSize: '11px',
+  fontWeight: 'bold',
+  color: '#334155',
+  marginBottom: '4px'
+};
 
-  const doc = new jsPDF('p', 'mm', 'a4');
-  let y = 18;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(15, 23, 42);
-  doc.text(firmName.toUpperCase(), 14, y);
-  y += 7;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Tax Invoice: ${invNumber}`, 14, y);
-  y += 9;
-
-  doc.setFontSize(9.5);
-  doc.text(`Grand Total: Rs ${grandTotal.toFixed(2)}`, 14, y);
-
-  return await exportTruePDF(doc, `Invoice_${invNumber}`);
+const inputStyle = {
+  width: '100%',
+  padding: '9px 10px',
+  borderRadius: '8px',
+  border: '1px solid #cbd5e1',
+  fontSize: '12px',
+  boxSizing: 'border-box',
+  backgroundColor: '#ffffff',
+  color: '#0f172a',
+  outline: 'none'
 };
