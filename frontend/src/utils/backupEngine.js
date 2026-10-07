@@ -1,4 +1,4 @@
-// frontend/src/utils/backupEngine.js (Upgraded Restore with Full Normalization)
+// frontend/src/utils/backupEngine.js
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -52,7 +52,7 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Deep Normalizer Sweep: Normalizes legacy Purchase A/c into Stock Accounts & assigns clean sequential references
+ * Post-Restore Self-Healing & Sequential Number Normalization Sweep
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
@@ -89,9 +89,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       `app_vouchers_${cleanFirmId}`,
       `account_book_vouchers_${cleanFirmId}`,
       'app_vouchers',
-      'account_book_vouchers',
-      `purchase_bills_${cleanFirmId}`,
-      'purchase_bills'
+      'account_book_vouchers'
     ];
 
     voucherKeys.forEach(vk => {
@@ -99,7 +97,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         const raw = localStorage.getItem(vk);
         if (raw) {
           let list = JSON.parse(raw);
-          let modified = false;
           if (Array.isArray(list) && list.length > 0) {
             list.sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
 
@@ -125,14 +122,11 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
 
               const newRef = `${prefix}-${counters[baseKey]}`;
 
-              // 1. Normalize Reference Numbers
               if (!String(item.reference_no || '').startsWith(prefix)) {
-                modified = true;
                 item.reference_no = newRef;
                 item.voucher_number = newRef;
               }
 
-              // 2. Normalize Purchase Ledgers (Purchase A/c -> Stock Account)
               const isPurchase = rawType === 'PURCHASE' || vk.includes('purchase_bills');
               if (isPurchase) {
                 let itemName = 'Stock Item';
@@ -163,7 +157,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
                     if ((ent.type || '').toUpperCase() === 'DR' || Number(ent.debit || 0) > 0) {
                       const accName = String(ent.account_name || ent.party || '').toLowerCase();
                       if (accName.includes('purchase a/c') || accName.includes('purchase account') || accName.includes('purchase raw material')) {
-                        modified = true;
                         return { ...ent, account_name: targetStockAccount, party: targetStockAccount };
                       }
                     }
@@ -174,7 +167,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
                 if (item.dr_account) {
                   const drLower = String(item.dr_account).toLowerCase();
                   if (drLower.includes('purchase a/c') || drLower.includes('purchase account') || drLower.includes('purchase raw material')) {
-                    modified = true;
                     item.dr_account = targetStockAccount;
                   }
                 }
@@ -183,9 +175,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
               return item;
             });
 
-            if (modified) {
-              localStorage.setItem(vk, JSON.stringify(list));
-            }
+            localStorage.setItem(vk, JSON.stringify(list));
           }
         }
       } catch (e) {}
@@ -231,7 +221,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
     const backupPayload = {
-      meta: { app: "AccountBook", firm: cleanFirm, version: "3.3.7", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
+      meta: { app: "AccountBook", firm: cleanFirm, version: "3.3.8", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
       stats: { vouchersCount, accountsCount, total_keys: Object.keys(storageSnapshot).length },
       data: storageSnapshot
     };
@@ -260,6 +250,9 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   }
 };
 
+/**
+ * 2. SMART ZERO-LOSS RESTORE ENGINE WITH FIRM PROFILE MERGING (NO OVERWRITE OF OTHER FIRMS)
+ */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
     if (!rawInput) throw new Error("No backup data provided.");
@@ -279,16 +272,43 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    let activeFirmId = localStorage.getItem('app_active_firm_id') || 
-                       parsedContent?.meta?.active_firm_id || 
-                       targetData['app_active_firm_id'] || 
-                       'FIRM-001';
+    // Safely merge existing firms list with incoming backup firms list so other profiles are NOT lost
+    const existingFirmsRaw = localStorage.getItem('app_firms') || localStorage.getItem('firm_list') || '[]';
+    let existingFirms = [];
+    try { existingFirms = JSON.parse(existingFirmsRaw); } catch (e) { existingFirms = []; }
 
+    let backupFirms = [];
+    Object.keys(targetData).forEach(k => {
+      if (k === 'app_firms' || k === 'firm_list') {
+        try {
+          if (Array.isArray(targetData[k])) backupFirms = targetData[k];
+        } catch (e) {}
+      }
+    });
+
+    const firmsMap = new Map();
+    if (Array.isArray(existingFirms)) existingFirms.forEach(f => { if (f && f.id) firmsMap.set(f.id, f); });
+    if (Array.isArray(backupFirms)) backupFirms.forEach(f => { if (f && f.id) firmsMap.set(f.id, f); });
+    const mergedFirmsList = Array.from(firmsMap.values());
+
+    // Restore storage data safely without destroying other firms' non-conflicting keys
     Object.keys(targetData).forEach(key => {
+      if (key === 'app_firms' || key === 'firm_list') return; // Handled separately via merge
       const val = targetData[key];
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
       localStorage.setItem(key, stringifiedVal);
     });
+
+    // Save merged firms list back
+    if (mergedFirmsList.length > 0) {
+      localStorage.setItem('app_firms', JSON.stringify(mergedFirmsList));
+      localStorage.setItem('firm_list', JSON.stringify(mergedFirmsList));
+    }
+
+    let activeFirmId = localStorage.getItem('app_active_firm_id') || 
+                       parsedContent?.meta?.active_firm_id || 
+                       targetData['app_active_firm_id'] || 
+                       'FIRM-001';
 
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
@@ -383,7 +403,6 @@ export const restoreUniversalBackup = async (rawInput) => {
     });
     migrateKeyForActiveFirm('purchase_bills', Array.from(consolidatedPurchaseMap.values()));
 
-    // Run Auto-Healing & Full Normalization Sweep immediately after restore
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
@@ -395,7 +414,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       }
     };
   } catch (err) {
-    throw new Error(err.message || 'Failed to restore backup.');
+    throw new Error(err.message || 'Backup restore karne mein asafalta hui.');
   }
 };
 
