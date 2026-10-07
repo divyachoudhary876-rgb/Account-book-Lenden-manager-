@@ -1,4 +1,4 @@
-// frontend/src/utils/backupEngine.js (Compressed Backup Export Update)
+// frontend/src/utils/backupEngine.js
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -13,10 +13,14 @@ const resolveFirmNameString = (firmInput) => {
   return 'AccountBook';
 };
 
+/**
+ * Ensures an Inventory Stock Item always has a corresponding Financial Asset Account
+ * under Current Assets without manual user intervention.
+ */
 export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
   if (!firmId || !rawItemName) return null;
 
-  const cleanItemName = String(rawItemName).trim();
+  const cleanItemName = String(rawItemName).replace(/\s*Stock\s*Account/i, '').trim();
   const stockAccountName = `${cleanItemName} Stock Account`;
 
   try {
@@ -51,6 +55,10 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
   return null;
 };
 
+/**
+ * Post-Restore Self-Healing & Purchase Ledger Auto-Correction Sweep
+ * Converts all legacy generic Purchase accounts into proper item-specific Stock Accounts
+ */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
@@ -86,34 +94,67 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    let purchaseBills = [];
-    const billKeys = [
-      `purchase_bills_${cleanFirmId}`,
-      'purchase_bills',
-      'purchase_bills_FIRM-001'
+    // AUTO-HEALING PURCHASE VOUCHERS: Fix legacy Purchase A/c to Item Stock Account
+    const voucherKeys = [
+      `app_vouchers_${cleanFirmId}`,
+      `account_book_vouchers_${cleanFirmId}`,
+      'app_vouchers',
+      'account_book_vouchers'
     ];
 
-    billKeys.forEach(bk => {
+    voucherKeys.forEach(vk => {
       try {
-        const raw = localStorage.getItem(bk);
+        const raw = localStorage.getItem(vk);
         if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            parsed.forEach(pb => {
-              if (pb && pb.item_name && !purchaseBills.some(x => x.item_name === pb.item_name)) {
-                purchaseBills.push(pb);
+          let vchs = JSON.parse(raw);
+          let modified = false;
+          if (Array.isArray(vchs)) {
+            vchs = vchs.map(v => {
+              if (v && String(v.voucher_type || v.type || '').toUpperCase() === 'PURCHASE') {
+                let itemName = 'Stock Item';
+                if (Array.isArray(v.items) && v.items[0]?.itemName) {
+                  itemName = v.items[0].itemName;
+                } else if (v.item_name) {
+                  itemName = v.item_name;
+                } else if (v.narration) {
+                  const match = v.narration.match(/(?:bill\s*#?\d*|purchase|item|inward)\s*:\s*([^–\-(@\n]+)/i);
+                  if (match && match[1]) itemName = match[1].trim();
+                }
+
+                const cleanItem = String(itemName).replace(/\s*Stock\s*Account/i, '').trim();
+                const targetStockAccount = `${cleanItem} Stock Account`;
+
+                ensureStockItemLedgerAccount(cleanFirmId, cleanItem);
+
+                if (Array.isArray(v.entries)) {
+                  v.entries = v.entries.map(ent => {
+                    if ((ent.type || '').toUpperCase() === 'DR' || Number(ent.debit || 0) > 0) {
+                      const accName = String(ent.account_name || ent.party || '').toLowerCase();
+                      if (accName.includes('purchase a/c') || accName.includes('purchase account') || accName.includes('purchase raw material')) {
+                        modified = true;
+                        return { ...ent, account_name: targetStockAccount, party: targetStockAccount };
+                      }
+                    }
+                    return ent;
+                  });
+                }
+
+                if (v.dr_account) {
+                  const drLower = String(v.dr_account).toLowerCase();
+                  if (drLower.includes('purchase a/c') || drLower.includes('purchase account') || drLower.includes('purchase raw material')) {
+                    modified = true;
+                    v.dr_account = targetStockAccount;
+                  }
+                }
               }
+              return v;
             });
+            if (modified) {
+              localStorage.setItem(vk, JSON.stringify(vchs));
+            }
           }
         }
       } catch (e) {}
-    });
-
-    purchaseBills.forEach(bill => {
-      const itemName = bill?.item_name;
-      if (itemName) {
-        ensureStockItemLedgerAccount(cleanFirmId, itemName);
-      }
     });
 
     window.dispatchEvent(new Event('app_accounts_updated'));
@@ -127,8 +168,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
 };
 
 /**
- * 1. UNIVERSAL COMPRESSED ZERO-LOSS EXPORT ENGINE
- * Removes whitespace and indentation to drastically reduce JSON backup file size.
+ * 1. COMPRESSED ZERO-LOSS EXPORT ENGINE
  */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
@@ -139,7 +179,6 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key) {
-        // Exclude temporary UI cache or heavy non-essential logs if any
         if (key.startsWith('temp_cache_') || key.startsWith('debug_log_')) continue;
 
         const rawVal = localStorage.getItem(key);
@@ -169,7 +208,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: { 
         app: "AccountBook", 
         firm: cleanFirm, 
-        version: "3.3.1", 
+        version: "3.3.2", 
         export_timestamp: now.toISOString(),
         active_firm_id: activeFirmId 
       },
@@ -177,7 +216,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       data: storageSnapshot
     };
 
-    // COMPRESSION STEP: Omit spaces and indentation (null, 2 replaced with compressed stringify)
+    // Compressed stringification (omits indentation whitespace to reduce backup file size)
     const jsonString = JSON.stringify(backupPayload);
 
     if (Capacitor.isNativePlatform()) {
@@ -212,7 +251,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SMART ZERO-LOSS RESTORE ENGINE (FULLY COMPATIBLE WITH COMPRESSED JSON)
+ * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH MULTI-FIRM KEY MIGRATION & HEALING)
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -370,7 +409,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       }
     };
   } catch (err) {
-    throw new Error(err.message || 'Failed to restore backup.');
+    throw new Error(err.message || 'Failed to restore backup restore mein safal nahi ho saka.');
   }
 };
 
