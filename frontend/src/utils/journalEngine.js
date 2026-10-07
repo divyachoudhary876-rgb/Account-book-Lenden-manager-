@@ -4,10 +4,11 @@ import { getAllUniversalVouchers } from './statementEngine.js';
 
 /**
  * Compile and sort General Journal Register vouchers strictly by date
+ * Default sortOrder is set to 'DESC' so that the latest/newest entries appear at the very top.
  * @param {string} firmId 
- * @param {string} sortOrder 'ASC' (Oldest to Newest) or 'DESC' (Newest to Oldest)
+ * @param {string} sortOrder 'DESC' (Newest to Oldest - Default) or 'ASC' (Oldest to Newest)
  */
-export const getSortedJournalRegister = (firmId = 'FIRM-001', sortOrder = 'ASC') => {
+export const getSortedJournalRegister = (firmId = 'FIRM-001', sortOrder = 'DESC') => {
   const rawVouchers = getAllUniversalVouchers(firmId);
 
   return [...rawVouchers].sort((a, b) => {
