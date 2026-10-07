@@ -1,4 +1,4 @@
-// frontend/src/utils/backupEngine.js
+// frontend/src/utils/backupEngine.js (Upgraded Restore with Full Normalization)
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -52,19 +52,14 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Post-Restore Self-Healing & Sequential Number Normalization Sweep
- * Normalizes all restored vouchers and purchase bills into clean sequential numbering (PAY-1, REC-1, JV-1...)
+ * Deep Normalizer Sweep: Normalizes legacy Purchase A/c into Stock Accounts & assigns clean sequential references
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   try {
     let stockItems = [];
-    const stockKeys = [
-      `inventory_items_${cleanFirmId}`,
-      'inventory_items',
-      'inventory_items_FIRM-001'
-    ];
+    const stockKeys = [`inventory_items_${cleanFirmId}`, 'inventory_items', 'inventory_items_FIRM-001'];
 
     stockKeys.forEach(k => {
       try {
@@ -90,12 +85,13 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // 1. NORMALIZE VOUCHERS SEQUENTIAL NUMBERING (PAY-1, REC-1, JV-1...)
     const voucherKeys = [
       `app_vouchers_${cleanFirmId}`,
       `account_book_vouchers_${cleanFirmId}`,
       'app_vouchers',
-      'account_book_vouchers'
+      'account_book_vouchers',
+      `purchase_bills_${cleanFirmId}`,
+      'purchase_bills'
     ];
 
     voucherKeys.forEach(vk => {
@@ -103,6 +99,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         const raw = localStorage.getItem(vk);
         if (raw) {
           let list = JSON.parse(raw);
+          let modified = false;
           if (Array.isArray(list) && list.length > 0) {
             list.sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
 
@@ -127,14 +124,68 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
                              baseKey === 'CONTRA' ? 'CONTRA' : 'JV';
 
               const newRef = `${prefix}-${counters[baseKey]}`;
-              return {
-                ...item,
-                reference_no: newRef,
-                voucher_number: newRef
-              };
+
+              // 1. Normalize Reference Numbers
+              if (!String(item.reference_no || '').startsWith(prefix)) {
+                modified = true;
+                item.reference_no = newRef;
+                item.voucher_number = newRef;
+              }
+
+              // 2. Normalize Purchase Ledgers (Purchase A/c -> Stock Account)
+              const isPurchase = rawType === 'PURCHASE' || vk.includes('purchase_bills');
+              if (isPurchase) {
+                let itemName = 'Stock Item';
+                if (Array.isArray(item.items) && item.items[0]?.itemName) {
+                  itemName = item.items[0].itemName;
+                } else if (item.item_name) {
+                  itemName = item.item_name;
+                } else if (item.narration) {
+                  const narr = String(item.narration);
+                  if (narr.toLowerCase().includes('diesel')) itemName = 'Diesel';
+                  else if (narr.toLowerCase().includes('mitti')) {
+                    const mMatch = narr.match(/(Mitti\s+Grade\s+[A-B])/i);
+                    itemName = mMatch ? mMatch[1] : 'Mitti';
+                  } else if (narr.toLowerCase().includes('greet') || narr.toLowerCase().includes('crusher')) {
+                    itemName = 'Greet & Crusher';
+                  } else {
+                    const match = narr.match(/(?:bill\s*#?\d*|purchase|item|inward)\s*:\s*([^–\-(@\n]+)/i);
+                    if (match && match[1]) itemName = match[1].trim();
+                  }
+                }
+
+                const cleanItem = String(itemName).replace(/\s*Stock\s*Account/i, '').trim();
+                const targetStockAccount = `${cleanItem} Stock Account`;
+                ensureStockItemLedgerAccount(cleanFirmId, cleanItem);
+
+                if (Array.isArray(item.entries)) {
+                  item.entries = item.entries.map(ent => {
+                    if ((ent.type || '').toUpperCase() === 'DR' || Number(ent.debit || 0) > 0) {
+                      const accName = String(ent.account_name || ent.party || '').toLowerCase();
+                      if (accName.includes('purchase a/c') || accName.includes('purchase account') || accName.includes('purchase raw material')) {
+                        modified = true;
+                        return { ...ent, account_name: targetStockAccount, party: targetStockAccount };
+                      }
+                    }
+                    return ent;
+                  });
+                }
+
+                if (item.dr_account) {
+                  const drLower = String(item.dr_account).toLowerCase();
+                  if (drLower.includes('purchase a/c') || drLower.includes('purchase account') || drLower.includes('purchase raw material')) {
+                    modified = true;
+                    item.dr_account = targetStockAccount;
+                  }
+                }
+              }
+
+              return item;
             });
 
-            localStorage.setItem(vk, JSON.stringify(list));
+            if (modified) {
+              localStorage.setItem(vk, JSON.stringify(list));
+            }
           }
         }
       } catch (e) {}
@@ -160,18 +211,13 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       const key = localStorage.key(i);
       if (key) {
         if (key.startsWith('temp_cache_') || key.startsWith('debug_log_')) continue;
-
         const rawVal = localStorage.getItem(key);
         try {
           const parsed = JSON.parse(rawVal);
           storageSnapshot[key] = parsed;
           if (Array.isArray(parsed)) {
-            if (key.includes('voucher') || key.includes('invoice') || key.includes('purchase_bill')) {
-              vouchersCount += parsed.length;
-            }
-            if (key.includes('account') || key.includes('inventory')) {
-              accountsCount += parsed.length;
-            }
+            if (key.includes('voucher') || key.includes('invoice') || key.includes('purchase_bill')) vouchersCount += parsed.length;
+            if (key.includes('account') || key.includes('inventory')) accountsCount += parsed.length;
           }
         } catch {
           storageSnapshot[key] = rawVal;
@@ -185,26 +231,14 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
     const backupPayload = {
-      meta: { 
-        app: "AccountBook", 
-        firm: cleanFirm, 
-        version: "3.3.6", 
-        export_timestamp: now.toISOString(),
-        active_firm_id: activeFirmId 
-      },
+      meta: { app: "AccountBook", firm: cleanFirm, version: "3.3.7", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
       stats: { vouchersCount, accountsCount, total_keys: Object.keys(storageSnapshot).length },
       data: storageSnapshot
     };
 
     const jsonString = JSON.stringify(backupPayload);
-
     if (Capacitor.isNativePlatform()) {
-      const writeResult = await Filesystem.writeFile({
-        path: fileName, 
-        data: jsonString, 
-        directory: Directory.Cache, 
-        encoding: Encoding.UTF8
-      });
+      const writeResult = await Filesystem.writeFile({ path: fileName, data: jsonString, directory: Directory.Cache, encoding: Encoding.UTF8 });
       if (writeResult?.uri) {
         await Share.share({ title: 'Account Book Backup', url: writeResult.uri });
         return { success: true };
@@ -218,10 +252,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => { 
-      document.body.removeChild(a); 
-      URL.revokeObjectURL(url); 
-    }, 1500);
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
 
     return { success: true };
   } catch (err) {
@@ -234,14 +265,11 @@ export const restoreUniversalBackup = async (rawInput) => {
     if (!rawInput) throw new Error("No backup data provided.");
 
     let parsedContent;
-    if (typeof rawInput === 'string') {
-      parsedContent = JSON.parse(rawInput);
-    } else if (rawInput instanceof Blob || rawInput instanceof File) {
+    if (typeof rawInput === 'string') parsedContent = JSON.parse(rawInput);
+    else if (rawInput instanceof Blob || rawInput instanceof File) {
       const text = await rawInput.text();
       parsedContent = JSON.parse(text);
-    } else {
-      parsedContent = rawInput;
-    }
+    } else parsedContent = rawInput;
 
     let targetData = parsedContent?.data && typeof parsedContent.data === 'object' && !Array.isArray(parsedContent.data) 
       ? parsedContent.data 
@@ -285,16 +313,14 @@ export const restoreUniversalBackup = async (rawInput) => {
                 consolidatedAccountsMap.set(uniqueKey, {
                   ...acc,
                   id: acc.id || `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-                  name: name,
+                  name,
                   account_name: name,
                   primary_type: acc.primary_type || acc.type || 'Expenses',
                   type: acc.type || acc.primary_type || 'Expenses',
                   sub_group: acc.sub_group || acc.group || 'General Ledger',
                   group: acc.group || acc.sub_group || 'General Ledger',
                   opening_balance: Number(acc.opening_balance || acc.openingBalance || 0),
-                  openingBalance: Number(acc.opening_balance || acc.openingBalance || 0),
-                  balance_type: acc.balance_type || acc.balanceType || 'Dr',
-                  balanceType: acc.balance_type || acc.balanceType || 'Dr'
+                  balance_type: acc.balance_type || acc.balanceType || 'Dr'
                 });
               }
             }
@@ -302,9 +328,7 @@ export const restoreUniversalBackup = async (rawInput) => {
         }
       }
     });
-    const finalAccountsList = Array.from(consolidatedAccountsMap.values());
-    migrateKeyForActiveFirm('app_accounts', finalAccountsList);
-    migrateKeyForActiveFirm('account_heads', finalAccountsList);
+    migrateKeyForActiveFirm('app_accounts', Array.from(consolidatedAccountsMap.values()));
 
     const consolidatedItemsMap = new Map();
     Object.keys(targetData).forEach(key => {
@@ -315,19 +339,13 @@ export const restoreUniversalBackup = async (rawInput) => {
             if (!item) return;
             const name = (item.item_name || item.name || item.itemName || '').trim();
             if (name && !consolidatedItemsMap.has(name.toLowerCase())) {
-              consolidatedItemsMap.set(name.toLowerCase(), {
-                ...item,
-                firm_id: activeFirmId,
-                item_name: name,
-                name: name
-              });
+              consolidatedItemsMap.set(name.toLowerCase(), { ...item, firm_id: activeFirmId, item_name: name, name });
             }
           });
         }
       }
     });
-    const finalItemsList = Array.from(consolidatedItemsMap.values());
-    migrateKeyForActiveFirm('inventory_items', finalItemsList);
+    migrateKeyForActiveFirm('inventory_items', Array.from(consolidatedItemsMap.values()));
 
     const consolidatedVouchersMap = new Map();
     Object.keys(targetData).forEach(key => {
@@ -338,11 +356,7 @@ export const restoreUniversalBackup = async (rawInput) => {
             if (!v) return;
             const vId = v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.amount || v.total_amount}`;
             if (!consolidatedVouchersMap.has(vId)) {
-              consolidatedVouchersMap.set(vId, {
-                ...v,
-                firm_id: activeFirmId,
-                firmId: activeFirmId
-              });
+              consolidatedVouchersMap.set(vId, { ...v, firm_id: activeFirmId, firmId: activeFirmId });
             }
           });
         }
@@ -361,27 +375,23 @@ export const restoreUniversalBackup = async (rawInput) => {
             if (!bill) return;
             const bId = bill.id || bill.bill_number || bill.reference_no || `${bill.date || bill.purchase_date}-${bill.total_amount || bill.amount}`;
             if (!consolidatedPurchaseMap.has(bId)) {
-              consolidatedPurchaseMap.set(bId, {
-                ...bill,
-                firm_id: activeFirmId,
-                firmId: activeFirmId
-              });
+              consolidatedPurchaseMap.set(bId, { ...bill, firm_id: activeFirmId, firmId: activeFirmId });
             }
           });
         }
       }
     });
-    const finalPurchaseList = Array.from(consolidatedPurchaseMap.values());
-    migrateKeyForActiveFirm('purchase_bills', finalPurchaseList);
+    migrateKeyForActiveFirm('purchase_bills', Array.from(consolidatedPurchaseMap.values()));
 
+    // Run Auto-Healing & Full Normalization Sweep immediately after restore
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
       success: true,
       stats: {
         vouchersCount: finalVouchersList.length,
-        accountsCount: finalAccountsList.length,
-        purchasesCount: finalPurchaseList.length
+        accountsCount: consolidatedAccountsMap.size,
+        purchasesCount: consolidatedPurchaseMap.size
       }
     };
   } catch (err) {
