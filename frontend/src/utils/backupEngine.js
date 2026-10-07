@@ -25,8 +25,6 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 
   try {
     const masterAccounts = getFirmMasterAccounts(firmId) || [];
-    
-    // Case-insensitive duplicate check
     const exists = masterAccounts.some(
       (acc) => (acc.account_name || acc.name || '').trim().toLowerCase() === stockAccountName.toLowerCase()
     );
@@ -65,7 +63,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   try {
-    // 1. Scan Inventory Items across all standard keys
     let stockItems = [];
     const stockKeys = [
       `inventory_items_${cleanFirmId}`,
@@ -97,7 +94,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // 2. Scan Purchase Bills to guarantee Dr asset ledger heads exist
     let purchaseBills = [];
     const billKeys = [
       `purchase_bills_${cleanFirmId}`,
@@ -128,7 +124,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // 3. Complete Reactive Broadcast
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
@@ -172,7 +167,6 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     const cleanFirm = String(resolveFirmNameString(firmInput)).replace(/[^a-zA-Z0-9_-]/g, '_');
     const now = new Date();
     const fileName = `${cleanFirm}_Backup_${now.toISOString().slice(0, 10)}.json`;
-
     const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
     const backupPayload = {
@@ -221,7 +215,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH AUTO-HEALING & BACKWARD-COMPATIBILITY)
+ * 2. SMART ZERO-LOSS RESTORE ENGINE (WITH MULTI-FIRM KEY MIGRATION)
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -245,13 +239,12 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // A. Detect the true active firm ID
     let activeFirmId = localStorage.getItem('app_active_firm_id') || 
                        parsedContent?.meta?.active_firm_id || 
                        targetData['app_active_firm_id'] || 
                        'FIRM-001';
 
-    // B. Write all raw keys first as in the dump
+    // A. Write all raw keys first
     Object.keys(targetData).forEach(key => {
       const val = targetData[key];
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
@@ -261,10 +254,17 @@ export const restoreUniversalBackup = async (rawInput) => {
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
     // ========================================================
-    // C. CONSOLIDATE ACCOUNTS (Zero-Loss Master Recovery)
+    // B. MULTI-FIRM KEY MIGRATION (Ensures active firm reads restored records)
     // ========================================================
+    const migrateKeyForActiveFirm = (baseName, targetArray) => {
+      if (Array.isArray(targetArray) && targetArray.length > 0) {
+        localStorage.setItem(`${baseName}_${activeFirmId}`, JSON.stringify(targetArray));
+        localStorage.setItem(baseName, JSON.stringify(targetArray));
+      }
+    };
+
+    // 1. Accounts Consolidation
     const consolidatedAccountsMap = new Map();
-    
     Object.keys(targetData).forEach(key => {
       if (key.includes('account_heads') || key.includes('app_accounts')) {
         const raw = targetData[key];
@@ -289,34 +289,18 @@ export const restoreUniversalBackup = async (rawInput) => {
                   balance_type: acc.balance_type || acc.balanceType || 'Dr',
                   balanceType: acc.balance_type || acc.balanceType || 'Dr'
                 });
-              } else {
-                const existing = consolidatedAccountsMap.get(uniqueKey);
-                consolidatedAccountsMap.set(uniqueKey, {
-                  ...existing,
-                  ...acc,
-                  name: name,
-                  account_name: name,
-                  opening_balance: Number(acc.opening_balance || acc.openingBalance || existing.opening_balance || 0),
-                  openingBalance: Number(acc.opening_balance || acc.openingBalance || existing.openingBalance || 0)
-                });
               }
             }
           });
         }
       }
     });
-
     const finalAccountsList = Array.from(consolidatedAccountsMap.values());
-    if (finalAccountsList.length > 0) {
-      localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(finalAccountsList));
-      localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(finalAccountsList));
-    }
+    migrateKeyForActiveFirm('app_accounts', finalAccountsList);
+    migrateKeyForActiveFirm('account_heads', finalAccountsList);
 
-    // ========================================================
-    // D. CONSOLIDATE INVENTORY ITEMS
-    // ========================================================
+    // 2. Inventory Items Consolidation
     const consolidatedItemsMap = new Map();
-
     Object.keys(targetData).forEach(key => {
       if (key.startsWith('inventory_items') || key.startsWith('app_stock')) {
         const raw = targetData[key];
@@ -336,20 +320,13 @@ export const restoreUniversalBackup = async (rawInput) => {
         }
       }
     });
-
     const finalItemsList = Array.from(consolidatedItemsMap.values());
-    if (finalItemsList.length > 0) {
-      localStorage.setItem(`inventory_items_${activeFirmId}`, JSON.stringify(finalItemsList));
-      localStorage.setItem('inventory_items', JSON.stringify(finalItemsList));
-    }
+    migrateKeyForActiveFirm('inventory_items', finalItemsList);
 
-    // ========================================================
-    // E. CONSOLIDATE VOUCHERS, SALES & JOURNAL ENTRIES
-    // ========================================================
+    // 3. Vouchers & Invoices Consolidation
     const consolidatedVouchersMap = new Map();
-
     Object.keys(targetData).forEach(key => {
-      if (key.includes('voucher') || key.includes('invoice')) {
+      if (key.includes('voucher') || key.includes('invoice') || key.includes('payroll')) {
         const raw = targetData[key];
         if (Array.isArray(raw)) {
           raw.forEach(v => {
@@ -366,18 +343,12 @@ export const restoreUniversalBackup = async (rawInput) => {
         }
       }
     });
-
     const finalVouchersList = Array.from(consolidatedVouchersMap.values());
-    if (finalVouchersList.length > 0) {
-      localStorage.setItem(`app_vouchers_${activeFirmId}`, JSON.stringify(finalVouchersList));
-      localStorage.setItem(`account_book_vouchers_${activeFirmId}`, JSON.stringify(finalVouchersList));
-    }
+    migrateKeyForActiveFirm('app_vouchers', finalVouchersList);
+    migrateKeyForActiveFirm('account_book_vouchers', finalVouchersList);
 
-    // ========================================================
-    // F. CONSOLIDATE PURCHASE BILLS (Zero-Loss Recovery)
-    // ========================================================
+    // 4. Purchase Bills Consolidation
     const consolidatedPurchaseMap = new Map();
-
     Object.keys(targetData).forEach(key => {
       if (key.startsWith('purchase_bills') || key.startsWith('purchase_inward')) {
         const raw = targetData[key];
@@ -396,44 +367,10 @@ export const restoreUniversalBackup = async (rawInput) => {
         }
       }
     });
-
     const finalPurchaseList = Array.from(consolidatedPurchaseMap.values());
-    if (finalPurchaseList.length > 0) {
-      localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(finalPurchaseList));
-      localStorage.setItem('purchase_bills', JSON.stringify(finalPurchaseList));
-    }
+    migrateKeyForActiveFirm('purchase_bills', finalPurchaseList);
 
-    // ========================================================
-    // G. CONSOLIDATE MATERIAL ADJUSTMENTS & CONSUMPTIONS
-    // ========================================================
-    const consolidatedAdjMap = new Map();
-    Object.keys(targetData).forEach(key => {
-      if (key.includes('material_adjustment') || key.includes('consumption_record')) {
-        const raw = targetData[key];
-        if (Array.isArray(raw)) {
-          raw.forEach(adj => {
-            if (!adj) return;
-            const aId = adj.id || `${adj.date}-${adj.total_amount || adj.total_value}`;
-            if (!consolidatedAdjMap.has(aId)) {
-              consolidatedAdjMap.set(aId, {
-                ...adj,
-                firm_id: activeFirmId
-              });
-            }
-          });
-        }
-      }
-    });
-
-    const finalAdjList = Array.from(consolidatedAdjMap.values());
-    if (finalAdjList.length > 0) {
-      localStorage.setItem(`universal_material_adjustments_${activeFirmId}`, JSON.stringify(finalAdjList));
-    }
-
-    // ========================================================
-    // H. CRITICAL POST-RESTORE SELF-HEALING SWEEP
-    // Auto-creates missing Stock Accounts for all restored items & purchases
-    // ========================================================
+    // C. Post-Restore Auto Healing
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
