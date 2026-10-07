@@ -1,4 +1,4 @@
-// frontend/src/utils/backupEngine.js (Upgraded with Permanent Purchase Ledger Normalization)
+// frontend/src/utils/backupEngine.js
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -52,8 +52,8 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Deep Permanent Purchase Ledger Normalization Sweep
- * Converts ALL historical generic Purchase A/c vouchers into item-specific Stock Accounts.
+ * Post-Restore Self-Healing & Sequential Number Normalization Sweep
+ * Normalizes all restored vouchers and purchase bills into clean sequential numbering (PAY-1, REC-1, JV-1...)
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
@@ -90,14 +90,12 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // PERMANENT VOUCHER SWEEP: Fix ALL historical Purchase A/c / Raw Material accounts
+    // 1. NORMALIZE VOUCHERS SEQUENTIAL NUMBERING (PAY-1, REC-1, JV-1...)
     const voucherKeys = [
       `app_vouchers_${cleanFirmId}`,
       `account_book_vouchers_${cleanFirmId}`,
       'app_vouchers',
-      'account_book_vouchers',
-      `purchase_bills_${cleanFirmId}`,
-      'purchase_bills'
+      'account_book_vouchers'
     ];
 
     voucherKeys.forEach(vk => {
@@ -105,62 +103,39 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         const raw = localStorage.getItem(vk);
         if (raw) {
           let list = JSON.parse(raw);
-          let modified = false;
-          if (Array.isArray(list)) {
+          if (Array.isArray(list) && list.length > 0) {
+            // Sort chronologically to assign neat sequential IDs starting from 1
+            list.sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
+
+            const counters = { PAYMENT: 0, RECEIPT: 0, JOURNAL: 0, PURCHASE: 0, SALES: 0, CONTRA: 0, JV: 0 };
+
             list = list.map(item => {
-              const isPurchase = String(item.voucher_type || item.type || '').toUpperCase() === 'PURCHASE' || vk.includes('purchase_bills');
-              if (isPurchase) {
-                let itemName = 'Stock Item';
-                if (Array.isArray(item.items) && item.items[0]?.itemName) {
-                  itemName = item.items[0].itemName;
-                } else if (item.item_name) {
-                  itemName = item.item_name;
-                } else if (item.narration) {
-                  const narr = String(item.narration);
-                  if (narr.toLowerCase().includes('diesel')) {
-                    itemName = 'Diesel';
-                  } else if (narr.toLowerCase().includes('mitti')) {
-                    const mMatch = narr.match(/(Mitti\s+Grade\s+[A-B])/i);
-                    itemName = mMatch ? mMatch[1] : 'Mitti';
-                  } else if (narr.toLowerCase().includes('greet') || narr.toLowerCase().includes('crusher')) {
-                    itemName = 'Greet & Crusher';
-                  } else {
-                    const match = narr.match(/(?:bill\s*#?\d*|purchase|item|inward)\s*:\s*([^–\-(@\n]+)/i);
-                    if (match && match[1]) itemName = match[1].trim();
-                  }
-                }
+              if (!item) return item;
+              const rawType = String(item.voucher_type || item.type || 'JV').toUpperCase();
+              let baseKey = 'JV';
+              if (rawType.includes('PAY')) baseKey = 'PAYMENT';
+              else if (rawType.includes('REC')) baseKey = 'RECEIPT';
+              else if (rawType.includes('PUR')) baseKey = 'PURCHASE';
+              else if (rawType.includes('SAL')) baseKey = 'SALES';
+              else if (rawType.includes('CON')) baseKey = 'CONTRA';
+              else if (rawType.includes('JOURNAL') || rawType.includes('JV')) baseKey = 'JOURNAL';
 
-                const cleanItem = String(itemName).replace(/\s*Stock\s*Account/i, '').trim();
-                const targetStockAccount = `${cleanItem} Stock Account`;
+              counters[baseKey] = (counters[baseKey] || 0) + 1;
+              const prefix = baseKey === 'PAYMENT' ? 'PAY' :
+                             baseKey === 'RECEIPT' ? 'REC' :
+                             baseKey === 'PURCHASE' ? 'PUR' :
+                             baseKey === 'SALES' ? 'SAL' :
+                             baseKey === 'CONTRA' ? 'CONTRA' : 'JV';
 
-                ensureStockItemLedgerAccount(cleanFirmId, cleanItem);
-
-                if (Array.isArray(item.entries)) {
-                  item.entries = item.entries.map(ent => {
-                    if ((ent.type || '').toUpperCase() === 'DR' || Number(ent.debit || 0) > 0) {
-                      const accName = String(ent.account_name || ent.party || '').toLowerCase();
-                      if (accName.includes('purchase a/c') || accName.includes('purchase account') || accName.includes('purchase raw material')) {
-                        modified = true;
-                        return { ...ent, account_name: targetStockAccount, party: targetStockAccount };
-                      }
-                    }
-                    return ent;
-                  });
-                }
-
-                if (item.dr_account) {
-                  const drLower = String(item.dr_account).toLowerCase();
-                  if (drLower.includes('purchase a/c') || drLower.includes('purchase account') || drLower.includes('purchase raw material')) {
-                    modified = true;
-                    item.dr_account = targetStockAccount;
-                  }
-                }
-              }
-              return item;
+              const newRef = `${prefix}-${counters[baseKey]}`;
+              return {
+                ...item,
+                reference_no: newRef,
+                voucher_number: newRef
+              };
             });
-            if (modified) {
-              localStorage.setItem(vk, JSON.stringify(list));
-            }
+
+            localStorage.setItem(vk, JSON.stringify(list));
           }
         }
       } catch (e) {}
@@ -176,9 +151,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   }
 };
 
-/**
- * 1. COMPRESSED ZERO-LOSS EXPORT ENGINE
- */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
     const storageSnapshot = {};
@@ -217,7 +189,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: { 
         app: "AccountBook", 
         firm: cleanFirm, 
-        version: "3.3.4", 
+        version: "3.3.5", 
         export_timestamp: now.toISOString(),
         active_firm_id: activeFirmId 
       },
@@ -258,9 +230,6 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   }
 };
 
-/**
- * 2. SMART ZERO-LOSS RESTORE ENGINE
- */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
     if (!rawInput) throw new Error("No backup data provided.");
@@ -334,7 +303,7 @@ export const restoreUniversalBackup = async (rawInput) => {
         }
       }
     });
-    const finalAccountsList = Array.main ? Array.from(consolidatedAccountsMap.values()) : Array.from(consolidatedAccountsMap.values());
+    const finalAccountsList = Array.from(consolidatedAccountsMap.values());
     migrateKeyForActiveFirm('app_accounts', finalAccountsList);
     migrateKeyForActiveFirm('account_heads', finalAccountsList);
 
