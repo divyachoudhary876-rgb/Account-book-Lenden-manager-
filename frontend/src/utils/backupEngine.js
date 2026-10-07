@@ -104,7 +104,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         if (raw) {
           let list = JSON.parse(raw);
           if (Array.isArray(list) && list.length > 0) {
-            // Sort chronologically to assign neat sequential IDs starting from 1
             list.sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
 
             const counters = { PAYMENT: 0, RECEIPT: 0, JOURNAL: 0, PURCHASE: 0, SALES: 0, CONTRA: 0, JV: 0 };
@@ -189,7 +188,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
       meta: { 
         app: "AccountBook", 
         firm: cleanFirm, 
-        version: "3.3.5", 
+        version: "3.3.6", 
         export_timestamp: now.toISOString(),
         active_firm_id: activeFirmId 
       },
