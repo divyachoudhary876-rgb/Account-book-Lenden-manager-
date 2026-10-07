@@ -39,14 +39,12 @@ export default function CreateInvoice({ firm, onClose }) {
       const validInventory = rawInventory.filter(i => i && (i.name || i.item_name));
       setAllItems(validInventory);
 
-      // Robust firm-scoped accounts loading with multiple fallbacks
       let accList = getFirmMasterAccounts(activeFirmId) || [];
       if (!accList || accList.length === 0) {
         accList = StorageService.getItem(`app_accounts_${activeFirmId}`, []) || StorageService.getItem('app_account_heads', []);
       }
       setAccountsList(accList);
 
-      // Strictly firm-scoped sales vouchers scan
       const scopedVouchersKey = `account_book_vouchers_${activeFirmId}`;
       const allVouchers = StorageService.getItem(scopedVouchersKey, []) || StorageService.getItem('account_book_vouchers', []);
       
@@ -386,7 +384,7 @@ export default function CreateInvoice({ firm, onClose }) {
             type="text" 
             placeholder="Search invoice or party..." 
             value={searchFilter} 
-            onChange={e => setSearchFile(e.target.value)} 
+            onChange={e => setSearchFilter(e.target.value)} 
             style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', width: '180px' }} 
           />
         </div>
@@ -401,7 +399,7 @@ export default function CreateInvoice({ firm, onClose }) {
                 <div key={inv.id} style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>#{inv.reference_no} — {inv.dr_account}</div>
-                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date || inv.date}
+                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date || inv.date}</div>
                     
                     <div style={{ marginTop: '4px', fontSize: '11px', color: '#334155' }}>
                       {itemsList.map((it, idx) => (
@@ -416,7 +414,7 @@ export default function CreateInvoice({ firm, onClose }) {
                     <span style={{ fontSize: '14px', fontWeight: '900', color: '#059669' }}>₹{Number(inv.amount || inv.total_amount || 0).toFixed(2)}</span>
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <button onClick={() => handleEdit(inv)} style={{ padding: '4px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Edit</button>
-                      <button onClick={() => handleDelete(inv.id, inv.reference_no)} style={{PAKAI: '4px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Delete</button>
+                      <button onClick={() => handleDelete(inv.id, inv.reference_no)} style={{ padding: '4px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>Delete</button>
                     </div>
                   </div>
                 </div>
@@ -432,7 +430,6 @@ export default function CreateInvoice({ firm, onClose }) {
 const inputStyle = {
   width: '100%',
   padding: '9px',
-  screenshot: '0',
   borderRadius: '8px',
   border: '1px solid #cbd5e1',
   fontSize: '12px',
