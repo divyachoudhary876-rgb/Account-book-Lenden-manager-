@@ -453,6 +453,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       e.preventDefault();
       e.stopPropagation();
     }
+    if (!bill) return;
 
     const bNum = String(bill.bill_number || bill.reference_no || '').trim();
     const supName = getBillSupplierName(bill);
@@ -805,7 +806,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                       </button>
                       <button 
                         type="button" 
-                        onClick={(e, bill) => handleDeleteBill(e, bill)} 
+                        onClick={(e) => handleDeleteBill(e, bill)} 
                         style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
                         Delete
