@@ -3,394 +3,252 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
-import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
+import { getAccountStatement, downloadCSVStatement } from '../utils/statementEngine.js';
 import { downloadAccountStatementPDF } from '../utils/pdfDownloadEngine.js';
+import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-export default function AccountStatementView({ firm, selectedFY }) {
+export default function AccountStatementView({ firm, onClose }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
-  const firmName = firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Groups';
   const todayMaxDate = new Date().toISOString().split('T')[0];
 
-  // Derive FY boundary dates
-  const cleanFY = String(selectedFY || localStorage.getItem(`app_active_fy_${activeFirmId}`) || '2026-27').replace(/FY\s*/i, '').trim();
-  const fyParts = cleanFY.split('-');
-  const fyStart = fyParts.length === 2 ? `${parseInt(fyParts[0], 10) < 100 ? 2000 + parseInt(fyParts[0], 10) : parseInt(fyParts[0], 10)}-04-01` : '2026-04-01';
-  const fyEnd = fyParts.length === 2 ? `${parseInt(fyParts[0], 10) < 100 ? 2000 + parseInt(fyParts[0], 10) + 1 : parseInt(fyParts[0], 10) + 1}-03-31` : '2027-03-31';
-
-  const [accounts, setAccounts] = useState([]);
-  const [selectedParty, setSelectedParty] = useState('');
-  const [fromDate, setFromDate] = useState(fyStart);
-  const [toDate, setToDate] = useState(todayMaxDate < fyEnd ? todayMaxDate : fyEnd);
+  const [accountsList, setAccountsList] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState('');
+  const [fromDate, setFromDate] = useState('2026-04-01');
+  const [toDate, setToDate] = useState(todayMaxDate);
+  
   const [statementData, setStatementData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [statusNotification, setStatusNotification] = useState(null);
 
-  const loadData = () => {
+  const loadAccounts = () => {
     try {
-      const accList = getFirmMasterAccounts(activeFirmId) || [];
-      setAccounts(accList);
-      
-      if (accList.length > 0) {
-        if (!selectedParty || !accList.some(a => (a.account_name || a.name) === selectedParty)) {
-          setSelectedParty(accList[0].account_name || accList[0].name || '');
-        }
+      const accs = getFirmMasterAccounts(activeFirmId) || [];
+      setAccountsList(accs);
+      if (accs.length > 0 && !selectedAccount) {
+        setSelectedAccount(accs[0].account_name || accs[0].name || '');
       }
-    } catch (e) {
-      console.error("Error loading accounts:", e);
+    } catch (err) {
+      console.error("Error loading accounts for statement:", err);
     }
   };
 
   useEffect(() => {
-    loadData();
-    window.addEventListener('app_state_updated', loadData);
-    window.addEventListener('app_storage_updated', loadData);
-    window.addEventListener('storage', loadData);
+    loadAccounts();
+    window.addEventListener('app_storage_updated', loadAccounts);
+    window.addEventListener('app_state_updated', loadAccounts);
     return () => {
-      window.removeEventListener('app_state_updated', loadData);
-      window.removeEventListener('app_storage_updated', loadData);
-      window.removeEventListener('storage', loadData);
+      window.removeEventListener('app_storage_updated', loadAccounts);
+      window.removeEventListener('app_state_updated', loadAccounts);
     };
   }, [activeFirmId]);
 
   useEffect(() => {
-    if (!selectedParty) {
+    if (selectedAccount) {
+      const stmt = getAccountStatement(activeFirmId, selectedAccount);
+      setStatementData(stmt);
+    } else {
       setStatementData(null);
-      return;
     }
-
-    try {
-      const targetClean = String(selectedParty).trim().toLowerCase();
-
-      // 1. Master Opening Balance strictly for active firm
-      let masterOpeningAmt = 0;
-      let masterOpeningSign = 'Dr';
-      
-      const firmAccounts = getFirmMasterAccounts(activeFirmId) || [];
-      const foundHead = firmAccounts.find(a => String(a.account_name || a.name || '').trim().toLowerCase() === targetClean);
-      if (foundHead) {
-        masterOpeningAmt = Number(foundHead.opening_balance || foundHead.openingBalance || 0);
-        masterOpeningSign = foundHead.balance_type || foundHead.balanceType || 'Dr';
-      }
-
-      let initialOpeningSum = masterOpeningSign === 'Cr' ? -masterOpeningAmt : masterOpeningAmt;
-
-      // 2. Fetch vouchers from primary ledger buckets strictly for activeFirmId
-      let rawTx = [];
-      const keysToScan = [
-        `app_vouchers_${activeFirmId}`,
-        `account_book_vouchers_${activeFirmId}`
-      ];
-
-      keysToScan.forEach(k => {
-        try {
-          const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
-          if (Array.isArray(val)) rawTx.push(...val);
-        } catch (e) {}
-      });
-
-      // Deduplicate vouchers by unique voucher ID
-      const uniqueVoucherMap = new Map();
-      rawTx.forEach(v => {
-        if (!v) return;
-        const vFirm = String(v.firm_id || v.firmId || '').trim();
-        if (vFirm && vFirm !== String(activeFirmId).trim()) return;
-
-        const uniqueId = v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.total_amount || v.amount || 0}`;
-        if (!uniqueVoucherMap.has(uniqueId)) {
-          uniqueVoucherMap.set(uniqueId, v);
-        }
-      });
-
-      const uniqueVouchers = Array.from(uniqueVoucherMap.values());
-      const allParsedTransactions = [];
-
-      uniqueVouchers.forEach(v => {
-        const vDate = v.voucher_date || v.date || '2026-04-01';
-        const vType = String(v.voucher_type || v.type || 'JV').toUpperCase();
-        const vNum = v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : 'N/A');
-        const narration = v.narration || v.notes || v.description || '';
-
-        // Case A: Structured Double-Entry Vouchers (entries array)
-        if (Array.isArray(v.entries) && v.entries.length > 0) {
-          let partyDebit = 0;
-          let partyCredit = 0;
-          let isMatch = false;
-          let otherParties = [];
-
-          v.entries.forEach(e => {
-            const accName = (e.account_name || e.party || '').trim();
-            const amt = Number(e.amount || e.debit || e.credit || 0);
-            const type = (e.type || (Number(e.debit) > 0 ? 'DR' : 'CR')).toUpperCase();
-            
-            if (accName.toLowerCase() === targetClean) {
-              isMatch = true;
-              if (type === 'DR' || Number(e.debit || 0) > 0) partyDebit += amt;
-              if (type === 'CR' || Number(e.credit || 0) > 0) partyCredit += amt;
-            } else if (accName) {
-              otherParties.push(accName);
-            }
-          });
-
-          if (isMatch) {
-            let itemDisplayInfo = '';
-            if (Array.isArray(v.items) && v.items.length > 0) {
-              itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ â‚¹${it.rate || 0})`).join(', ');
-            }
-
-            const opposingName = otherParties.length > 0 ? (partyDebit > 0 ? `To ${otherParties.join(', ')}` : `By ${otherParties.join(', ')}`) : '';
-            const finalNarr = [opposingName, itemDisplayInfo, narration].filter(Boolean).join(' | ');
-
-            allParsedTransactions.push({
-              date: vDate,
-              voucher_type: vType,
-              voucher_number: vNum,
-              narration: finalNarr,
-              debit: round2(partyDebit),
-              credit: round2(partyCredit)
-            });
-          }
-          return;
-        }
-
-        // Case B: Standard Single Dr/Cr Vouchers
-        const drAcc = (v.dr_account || v.debit_account || '').trim();
-        const crAcc = (v.cr_account || v.credit_account || '').trim();
-        const amt = Number(v.amount || v.total_amount || 0);
-        if (amt <= 0) return;
-
-        const isDrMatch = drAcc.toLowerCase() === targetClean;
-        const isCrMatch = crAcc.toLowerCase() === targetClean;
-
-        if (isDrMatch || isCrMatch) {
-          let opposingParty = isDrMatch ? (crAcc ? `To ${crAcc}` : '') : (drAcc ? `By ${drAcc}` : '');
-          
-          let itemDisplayInfo = '';
-          if (Array.isArray(v.items) && v.items.length > 0) {
-            itemDisplayInfo = v.items.map(it => `${it.itemName || it.name || 'Item'} (Qty: ${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ â‚¹${it.rate || 0})`).join(', ');
-          } else if (v.itemName || v.item_name || v.qty || v.quantity) {
-            const itName = v.itemName || v.item_name || 'Item';
-            const itQty = v.qty || v.quantity || 0;
-            const itUnit = v.unit || 'Pcs';
-            const itRate = v.rate || v.unit_rate || 0;
-            itemDisplayInfo = `${itName} (Qty: ${itQty} ${itUnit} @ â‚¹${itRate})`;
-          }
-
-          let descParts = [];
-          if (opposingParty) descParts.push(opposingParty);
-          if (itemDisplayInfo) descParts.push(itemDisplayInfo);
-          if (narration && !narration.toLowerCase().includes(opposingParty.toLowerCase())) {
-            descParts.push(narration);
-          }
-
-          allParsedTransactions.push({
-            date: vDate,
-            voucher_type: vType,
-            voucher_number: vNum,
-            narration: descParts.join(' | '),
-            debit: isDrMatch ? round2(amt) : 0,
-            credit: isCrMatch ? round2(amt) : 0
-          });
-        }
-      });
-
-      allParsedTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-      let runningBal = initialOpeningSum;
-      const filteredTransactions = [];
-
-      allParsedTransactions.forEach(t => {
-        if (fromDate && t.date < fromDate) {
-          runningBal += (t.debit - t.credit);
-        } else if (toDate && t.date > toDate) {
-          // Exclude transactions beyond specified date range
-        } else {
-          filteredTransactions.push(t);
-        }
-      });
-
-      const finalOpeningBalance = round2(Math.abs(runningBal));
-      const finalOpeningType = runningBal >= 0 ? 'Dr' : 'Cr';
-
-      const processedTransactions = filteredTransactions.map(t => {
-        runningBal += (t.debit - t.credit);
-        return {
-          ...t,
-          runningBalance: round2(Math.abs(runningBal)),
-          balanceType: runningBal >= 0 ? 'Dr' : 'Cr'
-        };
-      });
-
-      const lastClosing = processedTransactions.length > 0 
-        ? processedTransactions[processedTransactions.length - 1] 
-        : { runningBalance: finalOpeningBalance, balanceType: finalOpeningType };
-
-      setStatementData({
-        openingBalance: finalOpeningBalance,
-        openingType: finalOpeningType,
-        closingBalance: lastClosing.runningBalance,
-        closingType: lastClosing.balanceType,
-        transactions: processedTransactions
-      });
-
-    } catch (e) {
-      console.error("Error generating account statement:", e);
-    }
-  }, [selectedParty, fromDate, toDate, activeFirmId, selectedFY]);
+  }, [selectedAccount, activeFirmId]);
 
   const handleExportPDF = async () => {
-    if (!statementData || statementData.transactions.length === 0) {
-      alert("âš ï¸ No transactions found to export.");
-      return;
+    if (!statementData || !statementData.entries || statementData.entries.length === 0) {
+      return alert('Export ke liye koi transaction data uplabdh nahi hai.');
     }
-
     setIsExporting(true);
-    setStatusNotification({ type: 'info', message: 'â³ Generating PDF document...' });
-
     try {
-      const res = await downloadAccountStatementPDF(statementData, selectedParty, firm);
-      if (res?.success) {
-        setStatusNotification({ type: 'success', message: 'âœ“ PDF downloaded successfully!' });
-      }
-    } catch (e) {
-      setStatusNotification({ type: 'error', message: `âŒ Export Failed: ${e.message}` });
+      await downloadAccountStatementPDF(statementData, selectedAccount, firm);
+      alert('✓ PDF Statement Successfully Downloaded / Shared!');
+    } catch (err) {
+      alert('PDF export failed: ' + err.message);
     } finally {
       setIsExporting(false);
-      setTimeout(() => setStatusNotification(null), 4000);
     }
   };
 
-  return (
-    <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '0 4px 50px 4px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
-              ðŸ“– à¤–à¤¾à¤¤à¤¾ à¤®à¤¿à¤²à¤¾à¤¨ (Account Statement)
-            </h3>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry General Ledger & Real-Time Balance</span>
-          </div>
+  const handleExportCSV = () => {
+    if (!statementData || !statementData.entries || statementData.entries.length === 0) {
+      return alert('Export ke liye koi transaction data uplabdh nahi hai.');
+    }
+    const firmName = firm?.legal_name || firm?.name || 'Firm';
+    downloadCSVStatement(statementData, firmName);
+  };
 
-          <button
-            type="button"
-            onClick={handleExportPDF}
-            disabled={isExporting || !statementData || statementData.transactions.length === 0}
-            style={{ backgroundColor: '#0f172a', color: '#ffffff', border: 'none', padding: '7px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+  const filteredEntries = (statementData?.entries || []).filter(e => {
+    if (!e.date) return true;
+    if (fromDate && e.date < fromDate) return false;
+    if (toDate && e.date > toDate) return false;
+    return true;
+  });
+
+  return (
+    <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a', maxWidth: '850px', margin: '0 auto' }}>
+      
+      {/* Header Card */}
+      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
+            📖 Khata Bahi & Account Statement
+          </h2>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Double-Entry General Ledger & Real-Time Balance</span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button 
+            onClick={handleExportPDF} 
+            disabled={isExporting}
+            style={{ padding: '6px 12px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
           >
-            <span>ðŸ“„</span> {isExporting ? 'Saving...' : 'Save PDF'}
+            {isExporting ? 'Generating PDF...' : '📥 Save PDF'}
           </button>
+          
+          <button 
+            onClick={handleExportCSV} 
+            style={{ padding: '6px 12px', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            📊 Export CSV
+          </button>
+
+          {onClose && (
+            <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>
+              Close
+            </button>
+          )}
         </div>
       </div>
 
-      {statusNotification && (
-        <div style={{ backgroundColor: '#ecfdf5', color: '#065f46', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold' }}>
-          {statusNotification.message}
+      {/* Filter Controls Card */}
+      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        
+        <div>
+          <SearchableAccountDropdown
+            label="Select Party / Account *"
+            accounts={accountsList}
+            value={selectedAccount}
+            onChange={val => setSelectedAccount(val)}
+            placeholder="-- Search or Choose Account --"
+            colorAccent="#0284c7"
+            required
+          />
         </div>
-      )}
 
-      <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <SearchableAccountDropdown
-          label="à¤–à¤¾à¤¤à¤¾ à¤šà¥à¤¨à¥‡à¤‚ (Select Party/Account) *"
-          accounts={accounts}
-          value={selectedParty}
-          onChange={val => setSelectedParty(val)}
-          placeholder="à¤ªà¤¾à¤°à¥à¤Ÿà¥€ à¤•à¤¾ à¤¨à¤¾à¤® à¤–à¥‹à¤œà¥‡à¤‚..."
-          colorAccent="#0284c7"
-          required
-        />
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>From Date (à¤¸à¥‡)</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>From Date</label>
             <input 
               type="date" 
               value={fromDate} 
               onChange={e => setFromDate(e.target.value)} 
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff', color: '#0f172a' }} 
+              style={inputStyle} 
             />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>To Date (à¤¤à¤•)</label>
+            <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#475569', marginBottom: '4px', textTransform: 'uppercase' }}>To Date</label>
             <input 
               type="date" 
-              max={todayMaxDate}
               value={toDate} 
               onChange={e => setToDate(e.target.value)} 
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', backgroundColor: '#fff', color: '#0f172a' }} 
+              style={inputStyle} 
             />
           </div>
         </div>
+
+        {/* Summary Badges */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '4px' }}>
+          <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Opening Balance</div>
+            <div style={{ fontSize: '14px', fontWeight: '900', color: '#0f172a', marginTop: '2px' }}>
+              ₹{statementData ? statementData.openingBalance.toFixed(2) : '0.00'} {statementData?.openingBalanceType || 'Dr'}
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#f0fdf4', padding: '10px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#166534', textTransform: 'uppercase' }}>Net Closing Balance</div>
+            <div style={{ fontSize: '14px', fontWeight: '900', color: '#15803d', marginTop: '2px' }}>
+              ₹{statementData ? statementData.closingBalance.toFixed(2) : '0.00'} {statementData?.closingBalanceType || 'Dr'}
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      {statementData && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-          <div style={{ ...cardStyle, backgroundColor: '#f8fafc' }}>
-            <div style={labelStyle}>OPENING BALANCE</div>
-            <strong style={{ fontSize: '15px', color: '#0f172a' }}>
-              â‚¹{statementData.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.openingType}
-            </strong>
-          </div>
-          <div style={{ ...cardStyle, backgroundColor: statementData.closingType === 'Dr' ? '#eff6ff' : '#fef2f2' }}>
-            <div style={labelStyle}>NET CLOSING BALANCE</div>
-            <strong style={{ fontSize: '15px', color: statementData.closingType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
-              â‚¹{statementData.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementData.closingType}
-            </strong>
-          </div>
-        </div>
-      )}
+      {/* Transactions Register Table / List */}
+      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
+          Ledger Transactions ({filteredEntries.length})
+        </h3>
 
-      {/* Scrollable Statement Table Container */}
-      <div style={{ ...cardStyle, padding: '12px' }}>
-        <div style={{ maxHeight: '480px', overflowY: 'auto', overflowX: 'auto', width: '100%' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left', minWidth: '450px' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#0f172a', color: '#ffffff', position: 'sticky', top: 0, zIndex: 1 }}>
-                <th style={thStyle}>à¤¤à¤¾à¤°à¥€à¤–</th>
-                <th style={thStyle}>à¤µà¤¿à¤µà¤°à¤£ (Particulars)</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>à¤¨à¤¾à¤®à¥‡ (Dr â‚¹)</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>à¤œà¤®à¤¾ (Cr â‚¹)</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>à¤¬à¤¾à¤•à¥€ (Balance â‚¹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!statementData || statementData.transactions.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
-                    à¤‡à¤¸ à¤–à¤¾à¤¤à¥‡ à¤®à¥‡à¤‚ à¤•à¥‹à¤ˆ à¤²à¥‡à¤¨-à¤¦à¥‡à¤¨ à¤¦à¤°à¥à¤œ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤
-                  </td>
-                </tr>
-              ) : (
-                statementData.transactions.map((t, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                    <td style={tdStyle}>{t.date}</td>
-                    <td style={tdStyle}>
-                      <strong>{t.voucher_type}</strong> #{t.voucher_number}
-                      {t.narration && <div style={{ color: '#0284c7', fontSize: '11px', fontWeight: '600', marginTop: '2px' }}>{t.narration}</div>}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', color: t.debit > 0 ? '#059669' : '#94a3b8', fontWeight: t.debit > 0 ? 'bold' : 'normal' }}>
-                      {t.debit > 0 ? t.debit.toFixed(2) : '-'}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', color: t.credit > 0 ? '#dc2626' : '#94a3b8', fontWeight: t.credit > 0 ? 'bold' : 'normal' }}>
-                      {t.credit > 0 ? t.credit.toFixed(2) : '-'}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: t.balanceType === 'Dr' ? '#1d4ed8' : '#b91c1c' }}>
-                      {t.runningBalance.toFixed(2)} {t.balanceType}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        {filteredEntries.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '11px' }}>
+            Is khate ke liye chayanit tarikh mein koi transaction darj nahi hai.
+          </div>
+        ) : (
+          <div style={{ maxHeight: '450px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {filteredEntries.map((entry, idx) => (
+              <div 
+                key={entry.id || idx} 
+                style={{ 
+                  backgroundColor: '#f8fafc', 
+                  padding: '10px 12px', 
+                  borderRadius: '8px', 
+                  border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '11px'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '2px' }}>
+                    <span style={{ color: '#64748b', fontWeight: 'bold' }}>{entry.date}</span>
+                    <span style={{ fontSize: '9px', fontWeight: '800', backgroundColor: '#e2e8f0', padding: '2px 5px', borderRadius: '4px', color: '#334155' }}>
+                      {entry.voucher_type} #{entry.voucher_no}
+                    </span>
+                  </div>
+                  <div style={{ fontWeight: '700', color: '#0284c7' }}>
+                    {entry.particulars}
+                  </div>
+                  {entry.narration && (
+                    <div style={{ color: '#64748b', fontSize: '10px', marginTop: '2px' }}>
+                      {entry.narration}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  {entry.debit > 0 && (
+                    <div style={{ fontWeight: '800', color: '#dc2626' }}>
+                      Dr: ₹{entry.debit.toFixed(2)}
+                    </div>
+                  )}
+                  {entry.credit > 0 && (
+                    <div style={{ fontWeight: '800', color: '#059669' }}>
+                      Cr: ₹{entry.credit.toFixed(2)}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', fontWeight: 'bold' }}>
+                    Bal: ₹{entry.running_balance.toFixed(2)} {entry.balance_type}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
     </div>
   );
 }
 
-const cardStyle = { backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' };
-const labelStyle = { fontSize: '10px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' };
-const thStyle = { padding: '8px', fontWeight: 'bold' };
-const tdStyle = { padding: '8px', verticalAlign: 'top' };
+const inputStyle = {
+  width: '100%',
+  padding: '8px 10px',
+  borderRadius: '6px',
+  border: '1px solid #cbd5e1',
+  fontSize: '11px',
+  boxSizing: 'border-box',
+  backgroundColor: '#ffffff',
+  color: '#0f172a',
+  outline: 'none'
+};
