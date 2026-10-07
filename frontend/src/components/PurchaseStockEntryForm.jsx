@@ -188,7 +188,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       const cleanStock = Array.isArray(stockList) ? stockList.filter(i => i && (i.name || i.item_name)) : [];
       setInventoryItems(cleanStock);
 
-      // Load strictly from active firm's purchase bills bucket
       const purchaseKey = `purchase_bills_${activeFirmId}`;
       let rawBills = [];
       try {
@@ -482,10 +481,8 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       const remainingBills = filterOutBill(purchaseBills);
       setPurchaseBills(remainingBills);
 
-      // Permanently update firm-scoped purchase bills bucket
       localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(remainingBills));
 
-      // Also clean up global fallback purchase keys
       ['purchase_bills', 'purchase_bills_FIRM-001'].forEach(pk => {
         try {
           const raw = localStorage.getItem(pk);
@@ -495,7 +492,6 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         } catch (e) {}
       });
 
-      // Delete corresponding Universal Vouchers across all possible keys
       const candidateKeys = [
         bill.id,
         `JV-${bill.id}`,
@@ -802,14 +798,14 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <button 
                         type="button" 
-                        onClick={(e) => handleEditInit(e, bill)) 
+                        onClick={(e) => handleEditInit(e, bill)} 
                         style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
                         Edit
                       </button>
                       <button 
                         type="button" 
-                        onClick={(e) => handleDeleteBill(e, bill)} 
+                        onClick={(e, bill) => handleDeleteBill(e, bill)} 
                         style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
                         Delete
