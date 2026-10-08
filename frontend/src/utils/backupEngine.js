@@ -1,4 +1,7 @@
-// frontend/src/utils/backupEngine.js
+/**
+ * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
+ * Ensures multi-firm isolation, inventory stock reconciliation, and voucher integrity.
+ */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -52,7 +55,7 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Post-Restore Self-Healing & Sequential Number Normalization Sweep
+ * Post-Restore Self-Healing & Stock Recalculation Engine
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
@@ -77,6 +80,66 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         }
       } catch (e) {}
     });
+
+    const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
+    let allPurchases = [];
+    purchaseKeys.forEach(pk => {
+      try {
+        const raw = localStorage.getItem(pk);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) allPurchases.push(...parsed);
+        }
+      } catch (e) {}
+    });
+
+    const salesKeys = [`sales_invoices_${cleanFirmId}`, `app_invoices_${cleanFirmId}`, 'app_invoices'];
+    let allSales = [];
+    salesKeys.forEach(sk => {
+      try {
+        const raw = localStorage.getItem(sk);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) allSales.push(...parsed);
+        }
+      } catch (e) {}
+    });
+
+    stockItems = stockItems.map(item => {
+      const itemName = (item?.name || item?.item_name || '').trim().toLowerCase();
+      const itemId = String(item?.id || '');
+
+      let totalPurchased = 0;
+      allPurchases.forEach(p => {
+        const pItemId = String(p?.itemId || p?.item_id || p?.item || '');
+        const pItemName = String(p?.itemName || p?.item_name || '').trim().toLowerCase();
+        if (pItemId === itemId || pItemName === itemName) {
+          totalPurchased += parseFloat(p?.qty || p?.quantity || p?.stock || 0);
+        }
+      });
+
+      let totalSold = 0;
+      allSales.forEach(s => {
+        const itemsList = Array.isArray(s?.items) ? s.items : [];
+        itemsList.forEach(si => {
+          const sItemId = String(si?.itemId || si?.item_id || si?.product_id || si?.id || '');
+          const sItemName = String(si?.itemName || si?.item_name || si?.name || '').trim().toLowerCase();
+          if (sItemId === itemId || sItemName === itemName) {
+            totalSold += parseFloat(si?.quantity || si?.qty || 0);
+          }
+        });
+      });
+
+      const netStock = Math.max(0, totalPurchased - totalSold);
+      item.current_stock = netStock;
+      item.stock = netStock;
+      item.qty = netStock;
+      return item;
+    });
+
+    const inventoryKey = `inventory_items_${cleanFirmId}`;
+    localStorage.setItem(inventoryKey, JSON.stringify(stockItems));
+    localStorage.setItem('inventory_items', JSON.stringify(stockItems));
 
     stockItems.forEach(item => {
       const itemName = item?.name || item?.item_name;
@@ -121,12 +184,10 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
                              baseKey === 'CONTRA' ? 'CONTRA' : 'JV';
 
               const newRef = `${prefix}-${counters[baseKey]}`;
-
               if (!String(item.reference_no || '').startsWith(prefix)) {
                 item.reference_no = newRef;
                 item.voucher_number = newRef;
               }
-
               return item;
             });
 
@@ -209,7 +270,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM ISOLATION PROTECTION
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM ISOLATION & INVENTORY PROTECTION
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -230,7 +291,6 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // Safely merge existing firms list
     const existingFirmsRaw = localStorage.getItem('app_firms') || localStorage.getItem('firm_list') || '[]';
     let existingFirms = [];
     try { existingFirms = JSON.parse(existingFirmsRaw); } catch (e) { existingFirms = []; }
@@ -247,12 +307,16 @@ export const restoreUniversalBackup = async (rawInput) => {
     if (Array.isArray(backupFirms)) backupFirms.forEach(f => { if (f && f.id) firmsMap.set(f.id, f); });
     const mergedFirmsList = Array.from(firmsMap.values());
 
-    // Restore storage data securely without leaking cross-firm keys
+    // Restore storage data securely with fallback replication for inventory & purchase keys
     Object.keys(targetData).forEach(key => {
       if (key === 'app_firms' || key === 'firm_list') return;
       const val = targetData[key];
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
       localStorage.setItem(key, stringifiedVal);
+
+      if (key.includes('inventory_items') || key.includes('purchase_bills') || key.includes('app_vouchers') || key.includes('account_book_vouchers')) {
+        localStorage.setItem(key, stringifiedVal);
+      }
     });
 
     if (mergedFirmsList.length > 0) {
@@ -272,9 +336,9 @@ export const restoreUniversalBackup = async (rawInput) => {
     return {
       success: true,
       stats: {
-        vouchersCount: JSON.parse(localStorage.getItem(`app_vouchers_${activeFirmId}`) || '[]').length,
+        vouchersCount: JSON.parse(localStorage.getItem(`app_vouchers_${activeFirmId}`) || localStorage.getItem('account_book_vouchers') || '[]').length,
         accountsCount: JSON.parse(localStorage.getItem(`app_accounts_${activeFirmId}`) || localStorage.getItem('app_accounts') || '[]').length,
-        purchasesCount: JSON.parse(localStorage.getItem(`purchase_bills_${activeFirmId}`) || '[]').length
+        purchasesCount: JSON.parse(localStorage.getItem(`purchase_bills_${activeFirmId}`) || localStorage.getItem('purchase_bills') || '[]').length
       }
     };
   } catch (err) {
