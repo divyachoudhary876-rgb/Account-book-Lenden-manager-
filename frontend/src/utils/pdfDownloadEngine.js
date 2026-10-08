@@ -20,44 +20,32 @@ const getCleanFirmName = (firmInput) => {
 
 /**
  * Ultra-Robust Typography & Spacing Normalizer
- * Eliminates weird spacing around colons, rates, parentheses, and multiple spaces
  */
 export const cleanTypographySpacing = (rawText) => {
   if (!rawText) return '';
   let str = String(rawText);
 
-  // Normalize colon spacing: "Issue : 100" -> "Issue: 100"
   str = str.replace(/\s*:\s*/g, ': ');
-
-  // Normalize rate symbol spacing: "@ 102" or "@Rs 102" -> " @ Rs "
   str = str.replace(/\s*@\s*(?:rs\.?|₹)?\s*/gi, ' @ Rs ');
-
-  // Normalize commas and hyphens
   str = str.replace(/\s*,\s*/g, ', ');
   str = str.replace(/\s*-\s*/g, ' - ');
-
-  // Clean brackets inner spacing: "( 141 Liters )" -> "(141 Liters)"
   str = str.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
-
-  // Collapse multiple whitespaces/tabs into a single neat space
   str = str.replace(/\s{2,}/g, ' ');
 
   return str.trim();
 };
 
 /**
- * Ultra-Robust Account Name Sanitizer (Completely eliminates '(OK !<)', '(OK !-)', etc.)
+ * Ultra-Robust Account Name Sanitizer
  */
 const cleanAccountTitle = (rawName) => {
   if (!rawName) return '';
   let str = String(rawName).trim();
 
-  // Special case: Cash account ko hamesha pure 'Cash in Hand' me convert karein
   if (/cash\s*in\s*hand/i.test(str) || /^cash$/i.test(str)) {
     return 'Cash in Hand';
   }
 
-  // Remove any bracket containing 'OK', exclamation marks, or comparison symbols
   str = str.replace(/\s*\([^)]*OK[^)]*\)/gi, '');
   str = str.replace(/\s*\[[^\]]*OK[^\]]*\]/gi, '');
   str = str.replace(/\s*\([^)]*![^)]*\)/gi, '');
@@ -69,7 +57,7 @@ const cleanAccountTitle = (rawName) => {
 };
 
 /**
- * Safely convert ArrayBuffer to Base64 without text encoding corruption
+ * Safely convert ArrayBuffer to Base64
  */
 const arrayBufferToBase64 = (buffer) => {
   let binary = '';
@@ -82,7 +70,7 @@ const arrayBufferToBase64 = (buffer) => {
 };
 
 /**
- * 100% Corruption-Free True PDF Exporter (ArrayBuffer Binary Stream)
+ * 100% Corruption-Free True PDF Exporter
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -91,7 +79,6 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   try {
     const pdfArrayBuffer = doc.output('arraybuffer');
 
-    // 1. Mobile Capacitor Native Environment (Android/iOS)
     if (Capacitor.isNativePlatform()) {
       const base64Data = arrayBufferToBase64(pdfArrayBuffer);
       const writeResult = await Filesystem.writeFile({
@@ -111,7 +98,6 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
       }
     }
 
-    // 2. Standard Web Browser Download via Blob
     const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
     const blobUrl = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
@@ -135,12 +121,18 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait - Fully Synced with entries/transactions)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
   const cleanParty = cleanAccountTitle(partyName);
-  const txs = (statementData && Array.isArray(statementData.transactions)) ? statementData.transactions : (Array.isArray(statementData) ? statementData : []);
+  
+  // Universal extractor supporting both .transactions, .entries, or direct array
+  const txs = (statementData && Array.isArray(statementData.transactions)) 
+    ? statementData.transactions 
+    : (statementData && Array.isArray(statementData.entries) 
+        ? statementData.entries 
+        : (Array.isArray(statementData) ? statementData : []));
 
   const doc = new jsPDF('p', 'mm', 'a4');
   let y = 18;
@@ -180,8 +172,8 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   printHeader();
 
   txs.forEach((t, index) => {
-    const rawTitle = cleanTypographySpacing(`${t.voucher_type || 'TX'} #${t.voucher_number || t.reference_no || ''}`);
-    const descText = cleanTypographySpacing(t.narration || '');
+    const rawTitle = cleanTypographySpacing(`${t.voucher_type || t.type || 'TX'} #${t.voucher_number || t.voucher_no || t.reference_no || ''}`);
+    const descText = cleanTypographySpacing(t.narration || t.particulars || '');
 
     const splitTitle = doc.splitTextToSize(rawTitle, 68);
     const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
@@ -209,12 +201,13 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 
     const deb = Number(t.debit || 0);
     const cr = Number(t.credit || 0);
-    const runBal = Number(t.runningBalance || t.amount || 0);
+    const runBal = Number(t.running_balance ?? t.runningBalance ?? t.amount ?? 0);
+    const bType = String(t.balance_type || t.balanceType || 'Dr');
 
     doc.text(deb > 0 ? deb.toFixed(2) : '-', 132, y, { align: 'right' });
     doc.text(cr > 0 ? cr.toFixed(2) : '-', 162, y, { align: 'right' });
     doc.setFont('helvetica', 'bold');
-    doc.text(`${runBal.toFixed(2)} ${t.balanceType || 'Dr'}`, 193, y, { align: 'right' });
+    doc.text(`${runBal.toFixed(2)} ${bType}`, 193, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
     if (splitDesc.length > 0) {
@@ -239,7 +232,6 @@ export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth G
   let data = reportData;
   let tab = tabType;
 
-  // Flexible argument parser to prevent UI crashes
   [firmInput, reportData, tabType].forEach(arg => {
     if (!arg) return;
     if (typeof arg === 'object') {
@@ -417,7 +409,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE - FIXED SAFE GUARDS)
+ * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
