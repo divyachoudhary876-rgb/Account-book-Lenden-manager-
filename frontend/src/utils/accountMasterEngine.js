@@ -65,7 +65,6 @@ export const ACCOUNT_HIERARCHY = {
   }
 };
 
-// Industry Suggestion Banks for CreateAccountHeadModal quick chips
 export const INDUSTRY_SUGGESTION_BANKS = {
   BRICK_KILN: [
     { name: 'Koyla / Coal Supplier Account', categoryId: 'CREDITOR', type: 'LIABILITIES', subGroup: 'Sundry Creditors (Suppliers / लेनदार)', balanceType: 'Cr' },
@@ -115,6 +114,17 @@ const resolveFirmId = (firmId) => {
     return firmId.trim();
   }
   return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+};
+
+/**
+ * Universal Bracket-Insensitive Account Matcher
+ * Eliminates mismatch issues caused by bilingual tags (e.g. "Cash in Hand (रोकड़)")
+ */
+export const normalizeAccountNameMatch = (nameA = '', nameB = '') => {
+  if (!nameA || !nameB) return false;
+  const cleanA = String(nameA).replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+  const cleanB = String(nameB).replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+  return cleanA === cleanB;
 };
 
 export const getFirmMasterAccounts = (firmId = 'FIRM-001') => {
@@ -190,8 +200,7 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
 
   const existingIdx = accounts.findIndex(
     a => (accountData.id && a.id === accountData.id) || 
-         (a.account_name && a.account_name.toLowerCase() === cleanName.toLowerCase()) ||
-         (a.name && a.name.toLowerCase() === cleanName.toLowerCase())
+         normalizeAccountNameMatch(a.account_name || a.name || '', cleanName)
   );
 
   let oldName = '';
@@ -221,7 +230,7 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   };
 
   if (existingIdx !== -1) {
-    if ((accounts[existingIdx].is_system_locked || accounts[existingIdx].isSystemLocked) && accounts[existingIdx].account_name !== payload.account_name) {
+    if ((accounts[existingIdx].is_system_locked || accounts[existingIdx].isSystemLocked) && !normalizeAccountNameMatch(accounts[existingIdx].account_name, payload.account_name)) {
       throw new Error(`System core account "${accounts[existingIdx].account_name}" ka naam nahi badla ja sakta.`);
     }
     accounts[existingIdx] = { ...accounts[existingIdx], ...payload };
@@ -232,8 +241,8 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
   localStorage.setItem(`app_accounts_${activeFirmId}`, JSON.stringify(accounts));
   localStorage.setItem(`account_heads_${activeFirmId}`, JSON.stringify(accounts));
 
-  if (oldName && oldName.trim().toLowerCase() !== cleanName.trim().toLowerCase()) {
-    const oldTarget = oldName.trim().toLowerCase();
+  if (oldName && !normalizeAccountNameMatch(oldName, cleanName)) {
+    const oldTarget = oldName.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
 
     const firmTargetKeys = [
       `app_vouchers_${activeFirmId}`,
@@ -274,9 +283,12 @@ export const saveMasterAccount = (firmId = 'FIRM-001', accountData = {}) => {
             node.forEach(item => deepReplace(item));
           } else if (typeof node === 'object') {
             matchFields.forEach(field => {
-              if (typeof node[field] === 'string' && node[field].trim().toLowerCase() === oldTarget) {
-                node[field] = cleanName;
-                modified = true;
+              if (typeof node[field] === 'string') {
+                const cleanVal = node[field].replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+                if (cleanVal === oldTarget) {
+                  node[field] = cleanName;
+                  modified = true;
+                }
               }
             });
 
@@ -335,17 +347,17 @@ export const deleteMasterAccount = (firmId = 'FIRM-001', accountId = '') => {
     throw new Error(`Core statutory ledger account "${target.account_name || target.name}" ko delete nahi kiya ja sakta.`);
   }
 
-  const targetName = (target.account_name || target.name || '').trim().toLowerCase();
+  const targetName = (target.account_name || target.name || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
 
   const existingVouchers = getUniversalVouchersByFirm(activeFirmId) || [];
   const hasActiveTransactions = existingVouchers.some(v => {
     if (!v) return false;
-    const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
-    const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim().toLowerCase();
+    const dr = (v.dr_account || v.debit_account || v.dr_party || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+    const cr = (v.cr_account || v.credit_account || v.cr_party || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
     if (dr === targetName || cr === targetName) return true;
 
     if (Array.isArray(v.entries)) {
-      return v.entries.some(e => (e.account_name || e.party || '').trim().toLowerCase() === targetName);
+      return v.entries.some(e => (e.account_name || e.party || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase() === targetName);
     }
     return false;
   });
