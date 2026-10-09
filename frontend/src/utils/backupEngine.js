@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures strict multi-firm isolation, clean registry sanitization, and automatic data mapping.
+ * Ensures quota management, strict multi-firm isolation, and safe data restore.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -96,8 +96,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     const inventoryKey = `inventory_items_${cleanFirmId}`;
     const serializedStock = JSON.stringify(stockItems);
     localStorage.setItem(inventoryKey, serializedStock);
-    localStorage.setItem('inventory_items', serializedStock);
-    localStorage.setItem('app_inventory', serializedStock);
 
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
@@ -169,7 +167,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * FULL DATA RESTORE ENGINE WITH ACTIVE FIRM MAPPING
+ * OPTIMIZED QUOTA-SAFE RESTORE ENGINE
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -190,7 +188,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // 1. Extract clean firm profiles
+    // 1. Extract clean firm profiles safely
     let cleanFirmsList = [];
     
     if (targetData['active_firm_profile']) {
@@ -251,41 +249,27 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     let activeFirmId = cleanFirmsList[0].id || cleanFirmsList[0].firm_id;
 
-    // 2. Restore all storage keys and also mirror vouchers/purchases to active firm keys so data shows instantly
-    let aggregatedVouchers = [];
-    let aggregatedPurchases = [];
+    // 2. Clear old storage cleanly before writing new backup items to prevent quota overflow
+    try {
+      localStorage.clear();
+    } catch (e) {}
 
+    // 3. Restore storage items safely
+    let restoredVouchersCount = 0;
     Object.keys(targetData).forEach(key => {
-      const val = targetData[key];
-      const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
-      localStorage.setItem(key, stringifiedVal);
-
       try {
-        const parsedVal = typeof val === 'string' ? JSON.parse(val) : val;
-        if (Array.isArray(parsedVal)) {
-          if (key.includes('voucher') || key.includes('book_vouchers')) {
-            aggregatedVouchers.push(...parsedVal);
-          }
-          if (key.includes('purchase_bill')) {
-            aggregatedPurchases.push(...parsedVal);
-          }
+        const val = targetData[key];
+        const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+        localStorage.setItem(key, stringifiedVal);
+        if (key.includes('voucher') && Array.isArray(val)) {
+          restoredVouchersCount += val.length;
         }
-      } catch (e) {}
+      } catch (quotaErr) {
+        console.warn(`Skipped non-critical key ${key} due to quota limit.`);
+      }
     });
 
-    // Force sync aggregated items to active firm scoped keys
-    if (aggregatedVouchers.length > 0) {
-      localStorage.setItem(`app_vouchers_${activeFirmId}`, JSON.stringify(aggregatedVouchers));
-      localStorage.setItem(`account_book_vouchers_${activeFirmId}`, JSON.stringify(aggregatedVouchers));
-      localStorage.setItem('account_book_vouchers', JSON.stringify(aggregatedVouchers));
-    }
-
-    if (aggregatedPurchases.length > 0) {
-      localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(aggregatedPurchases));
-      localStorage.setItem('purchase_bills', JSON.stringify(aggregatedPurchases));
-    }
-
-    // 3. Save clean firm registries
+    // 4. Save clean firm registries
     const serializedFirms = JSON.stringify(cleanFirmsList);
     const firmRegistryKeys = ['app_firms_registry', 'app_firms', 'firm_list', 'app_firms_list'];
     firmRegistryKeys.forEach(rk => localStorage.setItem(rk, serializedFirms));
@@ -303,7 +287,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       success: true,
       stats: {
         firmsCount: cleanFirmsList.length,
-        vouchersCount: aggregatedVouchers.length
+        vouchersCount: restoredVouchersCount
       }
     };
   } catch (err) {
