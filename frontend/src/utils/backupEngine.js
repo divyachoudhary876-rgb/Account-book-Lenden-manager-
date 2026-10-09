@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures multi-firm isolation, inventory stock reconciliation, and voucher integrity.
+ * Ensures multi-firm preservation, inventory stock reconciliation, and voucher integrity.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -270,7 +270,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM ISOLATION & INVENTORY PROTECTION
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH MULTI-FIRM PRESERVATION & INVENTORY RECONCILIATION
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -291,6 +291,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
+    // Safely merge existing local firms and backup firms without losing any profile
     const existingFirmsRaw = localStorage.getItem('app_firms') || localStorage.getItem('firm_list') || '[]';
     let existingFirms = [];
     try { existingFirms = JSON.parse(existingFirmsRaw); } catch (e) { existingFirms = []; }
@@ -298,7 +299,10 @@ export const restoreUniversalBackup = async (rawInput) => {
     let backupFirms = [];
     Object.keys(targetData).forEach(k => {
       if (k === 'app_firms' || k === 'firm_list') {
-        try { if (Array.isArray(targetData[k])) backupFirms = targetData[k]; } catch (e) {}
+        try { 
+          const parsedFirms = typeof targetData[k] === 'string' ? JSON.parse(targetData[k]) : targetData[k];
+          if (Array.isArray(parsedFirms)) backupFirms = parsedFirms; 
+        } catch (e) {}
       }
     });
 
@@ -307,7 +311,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     if (Array.isArray(backupFirms)) backupFirms.forEach(f => { if (f && f.id) firmsMap.set(f.id, f); });
     const mergedFirmsList = Array.from(firmsMap.values());
 
-    // Restore storage data securely with fallback replication for inventory & purchase keys
+    // Restore storage data securely with multi-key replication for inventory and purchase buckets
     Object.keys(targetData).forEach(key => {
       if (key === 'app_firms' || key === 'firm_list') return;
       const val = targetData[key];
