@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures multi-firm preservation, cross-key synchronization, and automatic inventory healing.
+ * Ensures strict multi-firm isolation, clean registry sanitization, and automatic data mapping.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -54,9 +54,6 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
   return null;
 };
 
-/**
- * Post-Restore Self-Healing & Stock Recalculation Engine
- */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
@@ -102,13 +99,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     localStorage.setItem('inventory_items', serializedStock);
     localStorage.setItem('app_inventory', serializedStock);
 
-    stockItems.forEach(item => {
-      const itemName = item?.name || item?.item_name || item?.itemName;
-      if (itemName && !item.is_service && item.item_type !== 'SERVICE') {
-        ensureStockItemLedgerAccount(cleanFirmId, itemName);
-      }
-    });
-
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
@@ -119,9 +109,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   }
 };
 
-/**
- * 1. DOWNLOAD FULL BACKUP ENGINE (Captures all active storage state across all firms and keys)
- */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
     const storageSnapshot = {};
@@ -182,7 +169,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH STRICT FIRM DEDUPLICATION & ISOLATION
+ * FULL DATA RESTORE ENGINE WITH ACTIVE FIRM MAPPING
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -203,79 +190,57 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    const firmRegistryKeys = ['app_firms_registry', 'app_firms', 'firm_list', 'app_firms_list', 'app_firm_profiles'];
-    let existingFirms = [];
-    firmRegistryKeys.forEach(rk => {
+    // 1. Extract clean firm profiles
+    let cleanFirmsList = [];
+    
+    if (targetData['active_firm_profile']) {
       try {
-        const raw = localStorage.getItem(rk);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) existingFirms.push(...parsed);
+        const prof = typeof targetData['active_firm_profile'] === 'string' ? JSON.parse(targetData['active_firm_profile']) : targetData['active_firm_profile'];
+        if (prof && (prof.legal_name || prof.trade_name) && !prof.account_name && !prof.item_name) {
+          cleanFirmsList.push(prof);
         }
       } catch (e) {}
-    });
+    }
 
-    let backupFirms = [];
     Object.keys(targetData).forEach(k => {
-      if (firmRegistryKeys.includes(k) || k.includes('firm') || k === 'active_firm_profile') {
-        try { 
+      if (k === 'app_firms_registry' || k === 'app_firms' || k === 'firm_list' || k === 'app_firms_list' || k === 'active_firm_profile') {
+        try {
           const rawVal = targetData[k];
-          const parsedFirms = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
-          
-          const processCandidate = (item) => {
-            if (item && typeof item === 'object') {
-              const name = (item.legal_name || item.trade_name || item.name || '').trim();
-              const hasFirmIdentity = name !== '' && !item.item_name && !item.account_name && !item.unit_purchase_price;
-              
-              if (hasFirmIdentity) {
-                backupFirms.push({
-                  id: item.id || item.firm_id || `FIRM-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-                  firm_id: item.firm_id || item.id || `FIRM-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-                  legal_name: name,
-                  trade_name: item.trade_name || name,
-                  business_category: item.business_category || item.category || 'BRICK_KILN',
-                  gstin: item.gstin || 'UNREGISTERED'
-                });
-              }
-            }
-          };
+          const parsed = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+          if (Array.isArray(parsed)) {
+            parsed.forEach(item => {
+              if (item && typeof item === 'object') {
+                const name = (item.legal_name || item.trade_name || item.name || '').trim();
+                const isRealFirm = name !== '' && 
+                                   !item.account_name && 
+                                   !item.item_name && 
+                                   !item.primary_type && 
+                                   !item.unit_purchase_price &&
+                                   !name.includes('Account') && 
+                                   !name.includes('Bank') &&
+                                   !name.includes('Cash');
 
-          if (Array.isArray(parsedFirms)) {
-            parsedFirms.forEach(processCandidate);
-          } else {
-            processCandidate(parsedFirms);
+                if (isRealFirm) {
+                  if (!cleanFirmsList.some(f => (f.legal_name || '').toLowerCase() === name.toLowerCase())) {
+                    cleanFirmsList.push({
+                      id: item.id || item.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`,
+                      firm_id: item.firm_id || item.id || `FIRM-${Math.floor(Math.random() * 100000)}`,
+                      legal_name: name,
+                      trade_name: item.trade_name || name,
+                      business_category: item.business_category || item.category || 'BRICK_KILN',
+                      gstin: item.gstin || 'UNREGISTERED'
+                    });
+                  }
+                }
+              }
+            });
           }
         } catch (e) {}
       }
     });
 
-    const firmsMap = new Map();
-    const allCandidates = [...existingFirms, ...backupFirms];
-    
-    // Strict Name-based Deduplication to avoid multiple identical firm profiles
-    allCandidates.forEach(f => {
-      if (f) {
-        const name = (f.legal_name || f.trade_name || '').trim();
-        const nameKey = name.toLowerCase();
-        if (nameKey && nameKey !== 'aaa' && nameKey !== 'item' && nameKey !== 'new firm') {
-          if (!firmsMap.has(nameKey)) {
-            firmsMap.set(nameKey, {
-              id: f.id || f.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`,
-              firm_id: f.firm_id || f.id || `FIRM-${Math.floor(Math.random() * 100000)}`,
-              legal_name: name,
-              trade_name: f.trade_name || name,
-              business_category: f.business_category || f.category || 'BRICK_KILN',
-              gstin: f.gstin || 'UNREGISTERED'
-            });
-          }
-        }
-      }
-    });
-
-    let mergedFirmsList = Array.from(firmsMap.values());
-
-    if (mergedFirmsList.length === 0) {
-      mergedFirmsList.push({
+    if (cleanFirmsList.length === 0) {
+      cleanFirmsList.push({
         id: 'FIRM-001',
         firm_id: 'FIRM-001',
         legal_name: 'Neelkanth Int Udyog',
@@ -284,31 +249,61 @@ export const restoreUniversalBackup = async (rawInput) => {
       });
     }
 
-    // Restore data keys securely into localStorage
+    let activeFirmId = cleanFirmsList[0].id || cleanFirmsList[0].firm_id;
+
+    // 2. Restore all storage keys and also mirror vouchers/purchases to active firm keys so data shows instantly
+    let aggregatedVouchers = [];
+    let aggregatedPurchases = [];
+
     Object.keys(targetData).forEach(key => {
-      if (firmRegistryKeys.includes(key)) return;
       const val = targetData[key];
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
       localStorage.setItem(key, stringifiedVal);
+
+      try {
+        const parsedVal = typeof val === 'string' ? JSON.parse(val) : val;
+        if (Array.isArray(parsedVal)) {
+          if (key.includes('voucher') || key.includes('book_vouchers')) {
+            aggregatedVouchers.push(...parsedVal);
+          }
+          if (key.includes('purchase_bill')) {
+            aggregatedPurchases.push(...parsedVal);
+          }
+        }
+      } catch (e) {}
     });
 
-    const serializedFirms = JSON.stringify(mergedFirmsList);
+    // Force sync aggregated items to active firm scoped keys
+    if (aggregatedVouchers.length > 0) {
+      localStorage.setItem(`app_vouchers_${activeFirmId}`, JSON.stringify(aggregatedVouchers));
+      localStorage.setItem(`account_book_vouchers_${activeFirmId}`, JSON.stringify(aggregatedVouchers));
+      localStorage.setItem('account_book_vouchers', JSON.stringify(aggregatedVouchers));
+    }
+
+    if (aggregatedPurchases.length > 0) {
+      localStorage.setItem(`purchase_bills_${activeFirmId}`, JSON.stringify(aggregatedPurchases));
+      localStorage.setItem('purchase_bills', JSON.stringify(aggregatedPurchases));
+    }
+
+    // 3. Save clean firm registries
+    const serializedFirms = JSON.stringify(cleanFirmsList);
+    const firmRegistryKeys = ['app_firms_registry', 'app_firms', 'firm_list', 'app_firms_list'];
     firmRegistryKeys.forEach(rk => localStorage.setItem(rk, serializedFirms));
 
-    let activeFirmId = localStorage.getItem('app_active_firm_id') || mergedFirmsList[0].id;
     localStorage.setItem('app_active_firm_id', activeFirmId);
-    
-    const activeProf = mergedFirmsList.find(f => f.id === activeFirmId || f.firm_id === activeFirmId) || mergedFirmsList[0];
-    localStorage.setItem('active_firm_profile', JSON.stringify(activeProf));
+    localStorage.setItem('active_firm_profile', JSON.stringify(cleanFirmsList[0]));
 
     autoHealRestoredInventoryAndAccounts(activeFirmId);
+
+    window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('app_state_updated'));
+    window.dispatchEvent(new Event('storage'));
 
     return {
       success: true,
       stats: {
-        firmsCount: mergedFirmsList.length,
-        vouchersCount: JSON.parse(localStorage.getItem(`app_vouchers_${activeFirmId}`) || localStorage.getItem('account_book_vouchers') || '[]').length,
-        accountsCount: JSON.parse(localStorage.getItem(`app_accounts_${activeFirmId}`) || localStorage.getItem('app_accounts') || '[]').length
+        firmsCount: cleanFirmsList.length,
+        vouchersCount: aggregatedVouchers.length
       }
     };
   } catch (err) {
