@@ -55,14 +55,19 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Post-Restore Self-Healing & Stock Recalculation Engine (Zero Inflation)
+ * Post-Restore Self-Healing & Stock Recalculation Engine
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   try {
     let stockItems = [];
-    const stockKeys = [`inventory_items_${cleanFirmId}`, 'inventory_items', 'inventory_items_FIRM-001', 'app_inventory'];
+    const stockKeys = [
+      `inventory_items_${cleanFirmId}`, 
+      'inventory_items', 
+      'inventory_items_default_firm_id', 
+      'app_inventory'
+    ];
 
     stockKeys.forEach(k => {
       try {
@@ -71,29 +76,24 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             parsed.forEach(it => {
-              const itName = it?.name || it?.item_name;
-              if (itName && !stockItems.some(x => (x.name || x.item_name) === itName)) {
-                stockItems.push(it);
+              const itName = it?.name || it?.item_name || it?.itemName;
+              if (itName) {
+                const existingIndex = stockItems.findIndex(x => (x.name || x.item_name || x.itemName).trim().toLowerCase() === String(itName).trim().toLowerCase());
+                if (existingIndex === -1) {
+                  stockItems.push(it);
+                } else {
+                  const currStock = parseFloat(it.current_stock || it.stock || it.qty || 0);
+                  if (currStock > 0) {
+                    stockItems[existingIndex].current_stock = currStock;
+                    stockItems[existingIndex].stock = currStock;
+                    stockItems[existingIndex].qty = currStock;
+                  }
+                }
               }
             });
           }
         }
       } catch (e) {}
-    });
-
-    // Clean inventory quantities to prevent inflation
-    stockItems = stockItems.map(item => {
-      const cleanName = String(item?.name || item?.item_name || '').trim();
-      const directStock = parseFloat(item?.current_stock ?? item?.stock ?? item?.qty ?? item?.current_qty ?? 0);
-      
-      return {
-        ...item,
-        name: cleanName,
-        item_name: cleanName,
-        current_stock: Math.max(0, directStock),
-        stock: Math.max(0, directStock),
-        qty: Math.max(0, directStock)
-      };
     });
 
     const inventoryKey = `inventory_items_${cleanFirmId}`;
@@ -103,7 +103,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     localStorage.setItem('app_inventory', serializedStock);
 
     stockItems.forEach(item => {
-      const itemName = item?.name || item?.item_name;
+      const itemName = item?.name || item?.item_name || item?.itemName;
       if (itemName && !item.is_service && item.item_type !== 'SERVICE') {
         ensureStockItemLedgerAccount(cleanFirmId, itemName);
       }
@@ -120,7 +120,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
 };
 
 /**
- * 1. DOWNLOAD FULL BACKUP ENGINE
+ * 1. DOWNLOAD FULL BACKUP ENGINE (Captures all active storage state across all firms and keys)
  */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
@@ -137,7 +137,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
           const parsed = JSON.parse(rawVal);
           storageSnapshot[key] = parsed;
           if (Array.isArray(parsed)) {
-            if (key.includes('voucher') || key.includes('invoice') || key.includes('purchase_bill')) vouchersCount += parsed.length;
+            if (key.includes('voucher') || key.includes('invoice') || key.includes('purchase_bill') || key.includes('book_vouchers')) vouchersCount += parsed.length;
             if (key.includes('account') || key.includes('inventory')) accountsCount += parsed.length;
           }
         } catch {
@@ -182,7 +182,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH TRUE MULTI-FIRM PRESERVATION
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM REGISTRY SANITIZATION & CROSS-KEY SYNC
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -203,7 +203,6 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // 1. Safely extract and Deep-Merge existing local firms and backup firms across ALL registry keys
     const firmRegistryKeys = ['app_firms_registry', 'app_firms', 'firm_list', 'app_firms_list'];
     let existingFirms = [];
     firmRegistryKeys.forEach(rk => {
@@ -218,69 +217,88 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     let backupFirms = [];
     Object.keys(targetData).forEach(k => {
-      if (firmRegistryKeys.includes(k) || k.includes('firm')) {
+      if (firmRegistryKeys.includes(k) || k.includes('firm') || k === 'active_firm_profile') {
         try { 
-          const parsedFirms = typeof targetData[k] === 'string' ? JSON.parse(targetData[k]) : targetData[k];
-          if (Array.isArray(parsedFirms)) backupFirms.push(...parsedFirms);
-          else if (parsedFirms && typeof parsedFirms === 'object' && parsedFirms.id) backupFirms.push(parsedFirms);
+          const rawVal = targetData[k];
+          const parsedFirms = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+          
+          const processCandidate = (item) => {
+            if (item && typeof item === 'object') {
+              const hasFirmIdentity = item.legal_name || item.trade_name || item.business_category || item.category || (item.id && item.id.startsWith('FIRM-'));
+              const isNotInventoryOrAcc = !item.item_name && !item.account_name && !item.unit_purchase_price && !item.primary_type;
+              
+              if (hasFirmIdentity && isNotInventoryOrAcc) {
+                backupFirms.push(item);
+              }
+            }
+          };
+
+          if (Array.isArray(parsedFirms)) {
+            parsedFirms.forEach(processCandidate);
+          } else {
+            processCandidate(parsedFirms);
+          }
         } catch (e) {}
       }
     });
 
     const firmsMap = new Map();
-    existingFirms.forEach(f => { if (f && (f.id || f.firm_id)) firmsMap.set(f.id || f.firm_id, f); });
-    backupFirms.forEach(f => { if (f && (f.id || f.firm_id)) firmsMap.set(f.id || f.firm_id, f); });
-    
-    // Also check if active_firm_profile exists in backup and add it
-    if (targetData['active_firm_profile']) {
-      try {
-        const prof = typeof targetData['active_firm_profile'] === 'string' ? JSON.parse(targetData['active_firm_profile']) : targetData['active_firm_profile'];
-        if (prof && (prof.id || prof.firm_id)) firmsMap.set(prof.id || prof.firm_id, prof);
-      } catch (e) {}
-    }
+    existingFirms.forEach(f => {
+      if (f && (f.id || f.firm_id)) {
+        const id = f.id || f.firm_id;
+        if (f.legal_name || f.trade_name) firmsMap.set(id, f);
+      }
+    });
+    backupFirms.forEach(f => {
+      if (f && (f.id || f.firm_id)) {
+        const id = f.id || f.firm_id;
+        if (f.legal_name || f.trade_name) firmsMap.set(id, f);
+      }
+    });
 
     const mergedFirmsList = Array.from(firmsMap.values());
 
-    // 2. Restore all storage data securely
+    if (mergedFirmsList.length === 0) {
+      mergedFirmsList.push({
+        id: 'FIRM-001',
+        firm_id: 'FIRM-001',
+        legal_name: 'Neelkanth Int Udyog',
+        trade_name: 'Neelkanth Int Udyog',
+        business_category: 'BRICK_KILN'
+      });
+    }
+
+    // Restore all data keys securely into localStorage
     Object.keys(targetData).forEach(key => {
       if (firmRegistryKeys.includes(key)) return;
       const val = targetData[key];
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
       localStorage.setItem(key, stringifiedVal);
-
-      if (key.includes('inventory_items') || key.includes('purchase_bills') || key.includes('app_vouchers') || key.includes('account_book_vouchers') || key.includes('app_accounts')) {
-        localStorage.setItem(key, stringifiedVal);
-      }
     });
 
-    // 3. Persist the merged firm profiles list across all registry keys
-    if (mergedFirmsList.length > 0) {
-      const serializedFirms = JSON.stringify(mergedFirmsList);
-      firmRegistryKeys.forEach(rk => localStorage.setItem(rk, serializedFirms));
-    }
+    const serializedFirms = JSON.stringify(mergedFirmsList);
+    firmRegistryKeys.forEach(rk => localStorage.setItem(rk, serializedFirms));
 
     let activeFirmId = localStorage.getItem('app_active_firm_id') || 
                        parsedContent?.meta?.active_firm_id || 
-                       targetData['app_active_firm_id'] || 
                        mergedFirmsList[0]?.id || 
                        'FIRM-001';
 
-    localStorage.setItem('app_active_firm_id', activeFirmId);
+    localStorage.getItem('app_active_firm_id', activeFirmId);
     
     const activeProf = mergedFirmsList.find(f => f.id === activeFirmId || f.firm_id === activeFirmId) || mergedFirmsList[0];
     if (activeProf) {
       localStorage.setItem('active_firm_profile', JSON.stringify(activeProf));
     }
 
-    // 4. Trigger Post-Restore Healing & Recalibration
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
       success: true,
       stats: {
+        firmsCount: mergedFirmsList.length,
         vouchersCount: JSON.parse(localStorage.getItem(`app_vouchers_${activeFirmId}`) || localStorage.getItem('account_book_vouchers') || '[]').length,
-        accountsCount: JSON.parse(localStorage.getItem(`app_accounts_${activeFirmId}`) || localStorage.getItem('app_accounts') || '[]').length,
-        purchasesCount: JSON.parse(localStorage.getItem(`purchase_bills_${activeFirmId}`) || localStorage.getItem('purchase_bills') || '[]').length
+        accountsCount: JSON.parse(localStorage.getItem(`app_accounts_${activeFirmId}`) || localStorage.getItem('app_accounts') || '[]').length
       }
     };
   } catch (err) {
