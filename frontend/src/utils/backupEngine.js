@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures quota management, strict multi-firm isolation, and safe data restore.
+ * Ensures quota protection, strict multi-firm isolation, and safe data restore.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -54,6 +54,9 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
   return null;
 };
 
+/**
+ * Post-Restore Self-Healing & Stock Recalculation Engine
+ */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
@@ -107,6 +110,9 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   }
 };
 
+/**
+ * 1. DOWNLOAD FULL BACKUP ENGINE
+ */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
     const storageSnapshot = {};
@@ -167,7 +173,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * OPTIMIZED QUOTA-SAFE RESTORE ENGINE
+ * 2. SECURE QUOTA-SAFE RESTORE ENGINE WITH FIRM SANITIZATION
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -249,12 +255,12 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     let activeFirmId = cleanFirmsList[0].id || cleanFirmsList[0].firm_id;
 
-    // 2. Clear old storage cleanly before writing new backup items to prevent quota overflow
+    // 2. Clear old storage cleanly before writing backup items to prevent quota overflow
     try {
       localStorage.clear();
     } catch (e) {}
 
-    // 3. Restore storage items safely
+    // 3. Restore storage items securely with quota handling
     let restoredVouchersCount = 0;
     Object.keys(targetData).forEach(key => {
       try {
@@ -265,7 +271,7 @@ export const restoreUniversalBackup = async (rawInput) => {
           restoredVouchersCount += val.length;
         }
       } catch (quotaErr) {
-        console.warn(`Skipped non-critical key ${key} due to quota limit.`);
+        console.warn(`Skipped key ${key} due to local storage quota limit.`);
       }
     });
 
