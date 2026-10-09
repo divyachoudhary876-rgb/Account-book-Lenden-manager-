@@ -1,60 +1,155 @@
 // frontend/src/utils/cleanFinancialEngine.js
-import { StorageService } from './storageSync';
 
-export const getCleanFirmVouchers = (activeFirmId = 'FIRM-001') => {
-  let rawTx = [];
-  
-  // संभावित सभी कीज़ की लिस्ट
-  const potentialKeys = [
-    'account_book_vouchers',
-    'app_vouchers',
-    'vouchers',
-    'transactions',
-    'daybook',
-    'app_payroll_entries',
-    `account_book_vouchers_${activeFirmId}`,
-    `app_vouchers_${activeFirmId}`,
-    `app_payroll_entries_${activeFirmId}`
-  ];
+import { StorageService } from './storageSync.js';
 
-  potentialKeys.forEach(k => {
-    const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
-    if (Array.isArray(val)) rawTx.push(...val);
-  });
+/**
+ * Unified Financial Engine for Trial Balance, P&L, Balance Sheet, and Ledger Statements
+ */
+export const CleanFinancialEngine = {
+  getVouchersForActiveFirm: (firmId) => {
+    const fId = firmId || StorageService.getActiveFirmId();
+    let vouchers = [];
+    
+    const possibleKeys = [
+      `app_vouchers_${fId}`,
+      `account_book_vouchers_${fId}`,
+      'account_book_vouchers',
+      'app_vouchers'
+    ];
 
-  // डुप्लीकेट हटाने और शुद्ध वाउचर बनाने के लिए Map का उपयोग
-  const uniqueMap = new Map();
+    possibleKeys.forEach(k => {
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(v => {
+              const vFirm = v?.firm_id || v?.firmId;
+              if (!vFirm || String(vFirm).trim() === String(fId).trim()) {
+                if (v && !vouchers.some(existing => existing.id === v.id && existing.voucher_number === v.voucher_number)) {
+                  vouchers.push(v);
+                }
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    });
 
-  rawTx.forEach(tx => {
-    if (!tx) return;
+    return vouchers;
+  },
 
-    // फर्म आइसोलेशन चेक
-    const txFirm = tx.firm_id || 'FIRM-001';
-    if (txFirm !== activeFirmId && txFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') {
-      return;
-    }
+  getAccountsForActiveFirm: (firmId) => {
+    const fId = firmId || StorageService.getActiveFirmId();
+    let accounts = [];
 
-    const uId = tx.id || tx.reference_no || `${tx.voucher_date || tx.date}-${Math.random()}`;
+    const possibleKeys = [
+      `app_accounts_${fId}`,
+      `account_heads_${fId}`,
+      'app_account_heads',
+      'account_heads'
+    ];
 
-    // यदि यह डायरेक्ट पेरोल/मजदूरी प्रविष्टि है, तो इसे स्टैंडर्ड JV वाउचर में बदलें
-    if (tx.worker && tx.expense_ledger && tx.total_amount) {
-      const formattedVoucher = {
-        id: tx.id || `PAY-${Date.now()}`,
-        firm_id: activeFirmId,
-        voucher_date: tx.date || '2026-09-13',
-        voucher_type: 'JV',
-        reference_no: tx.id ? tx.id.slice(-6) : '1001',
-        narration: `Wages credited to ${tx.worker} via ${tx.expense_ledger} - ${tx.description || ''}`,
-        entries: [
-          { account_name: tx.expense_ledger, type: 'Dr', amount: Number(tx.total_amount) },
-          { account_name: tx.worker, type: 'Cr', amount: Number(tx.total_amount) }
-        ]
+    possibleKeys.forEach(k => {
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(acc => {
+              const accFirm = acc?.firm_id;
+              if (!accFirm || String(accFirm).trim() === String(fId).trim()) {
+                const name = String(acc?.account_name || acc?.name || '').trim();
+                if (name && !accounts.some(existing => String(existing.account_name || existing.name).trim().toLowerCase() === name.toLowerCase())) {
+                  accounts.push({
+                    ...acc,
+                    account_name: name,
+                    name: name,
+                    primary_type: String(acc.primary_type || acc.type || 'ASSETS').toUpperCase()
+                  });
+                }
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    });
+
+    return accounts;
+  },
+
+  calculateTrialBalance: (firmId) => {
+    const fId = firmId || StorageService.getActiveFirmId();
+    const accounts = CleanFinancialEngine.getAccountsForActiveFirm(fId);
+    const vouchers = CleanFinancialEngine.getVouchersForActiveFirm(fId);
+
+    const ledgerBalances = {};
+    accounts.forEach(acc => {
+      const name = acc.account_name || acc.name;
+      ledgerBalances[name] = {
+        account_name: name,
+        primary_type: String(acc.primary_type || acc.type || 'ASSETS').toUpperCase(),
+        group: acc.group || acc.sub_group || 'General',
+        debit: parseFloat(acc.opening_balance || acc.openingBalance || 0) > 0 && (acc.balance_type || acc.balanceType) === 'Dr' ? parseFloat(acc.opening_balance || acc.openingBalance || 0) : 0,
+        credit: parseFloat(acc.opening_balance || acc.openingBalance || 0) > 0 && (acc.balance_type || acc.balanceType) === 'Cr' ? parseFloat(acc.opening_balance || acc.openingBalance || 0) : 0
       };
-      uniqueMap.set(formattedVoucher.id, formattedVoucher);
-    } else if (Array.isArray(tx.entries) && tx.entries.length > 0) {
-      uniqueMap.set(uId, tx);
-    }
-  });
+    });
 
-  return Array.from(uniqueMap.values());
+    vouchers.forEach(v => {
+      const entries = Array.isArray(v.entries) ? v.entries : [];
+      entries.forEach(e => {
+        const accName = String(e.account_name || e.party || '').trim();
+        if (!accName) return;
+
+        if (!ledgerBalances[accName]) {
+          ledgerBalances[accName] = {
+            account_name: accName,
+            primary_type: 'EXPENSES',
+            group: 'General',
+            debit: 0,
+            credit: 0
+          };
+        }
+
+        const drAmt = parseFloat(e.debit || (e.type === 'Dr' ? e.amount : 0) || 0);
+        const crAmt = parseFloat(e.credit || (e.type === 'Cr' ? e.amount : 0) || 0);
+
+        ledgerBalances[accName].debit += drAmt;
+        ledgerBalances[accName].credit += crAmt;
+      });
+    });
+
+    const rows = [];
+    let totalDr = 0;
+    let totalCr = 0;
+
+    Object.keys(ledgerBalances).forEach(name => {
+      const b = ledgerBalances[name];
+      const net = Math.round((b.debit - b.credit + Number.EPSILON) * 100) / 100;
+      
+      let drVal = 0;
+      let crVal = 0;
+
+      if (net >= 0) {
+        drVal = net;
+        totalDr += net;
+      } else {
+        crVal = Math.abs(net);
+        totalCr += Math.abs(net);
+      }
+
+      rows.push({
+        account_name: name,
+        category: b.primary_type,
+        debit: drVal,
+        credit: crVal
+      });
+    });
+
+    return {
+      rows,
+      totalDebit: Math.round((totalDr + Number.EPSILON) * 100) / 100,
+      totalCredit: Math.round((totalCr + Number.EPSILON) * 100) / 100
+    };
+  }
 };
