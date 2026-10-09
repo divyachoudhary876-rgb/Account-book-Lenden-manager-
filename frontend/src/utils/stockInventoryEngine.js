@@ -5,22 +5,49 @@ import { StorageService } from './storageSync.js';
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 /**
- * Retrieve inventory stock items strictly scoped to active firm
+ * Retrieve inventory stock items with dual-key synchronization across active firm
  */
 export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
   const activeFirmId = String(firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
-  const rawItems = StorageService.getInventoryItems(activeFirmId) || [];
   
-  return rawItems.map(item => {
+  let rawItems = [];
+  try {
+    const scopedKey = `inventory_items_${activeFirmId}`;
+    const scopedVal = localStorage.getItem(scopedKey);
+    if (scopedVal) {
+      rawItems = JSON.parse(scopedVal);
+    } else {
+      rawItems = StorageService.getInventoryItems(activeFirmId) || [];
+    }
+  } catch (e) {
+    rawItems = [];
+  }
+
+  // Fallback check to global inventory keys if scoped is empty
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    try {
+      const globalRaw = localStorage.getItem('inventory_items') || localStorage.getItem('app_inventory');
+      if (globalRaw) {
+        rawItems = JSON.parse(globalRaw);
+      }
+    } catch (e) {}
+  }
+
+  return (Array.isArray(rawItems) ? rawItems : []).filter(item => item && (item.name || item.item_name)).map(item => {
     const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.purchasePrice || item.rate || 0);
-    const stock = parseFloat(item.current_stock || item.stock || item.qty || 0);
+    const stock = parseFloat(item.current_stock || item.stock || item.qty || item.current_qty || 0);
+    const itemNameClean = String(item.item_name || item.name || item.itemName || 'Item').trim();
+    
     return {
       ...item,
+      id: item.id || `ITEM-${Math.random()}`,
       firm_id: activeFirmId,
-      item_name: (item.item_name || item.name || item.itemName || 'Item').trim(),
-      name: (item.item_name || item.name || item.itemName || 'Item').trim(),
+      item_name: itemNameClean,
+      name: itemNameClean,
       current_stock: stock,
       stock: stock,
+      qty: stock,
+      current_qty: stock,
       unit_purchase_price: rate,
       purchase_price: rate,
       rate: rate
@@ -29,7 +56,7 @@ export const getStockItemsByFirm = (firmId = 'FIRM-001') => {
 };
 
 /**
- * Atomic stock update (+IN on purchase, -OUT on sales/consumption)
+ * Atomic stock update (+IN on purchase, -OUT on sales/consumption) with Dual-Key Redundancy
  */
 export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyChange = 0, newUnitRate = 0) => {
   const activeFirmId = String(firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
@@ -53,6 +80,7 @@ export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyC
       current_stock: newQty,
       stock: newQty,
       qty: newQty,
+      current_qty: newQty,
       unit_purchase_price: effectiveRate,
       purchase_price: effectiveRate,
       rate: effectiveRate,
@@ -62,7 +90,7 @@ export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyC
   } else {
     // If not found, create item atomically
     updatedTarget = {
-      id: `ITEM-${Date.now()}`,
+      id: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       firm_id: activeFirmId,
       item_name: itemName.trim(),
       name: itemName.trim(),
@@ -72,6 +100,7 @@ export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyC
       current_stock: round2(Math.max(0, delta)),
       stock: round2(Math.max(0, delta)),
       qty: round2(Math.max(0, delta)),
+      current_qty: round2(Math.max(0, delta)),
       unit_purchase_price: rate,
       purchase_price: rate,
       rate: rate,
@@ -80,11 +109,36 @@ export const updateStockItemQuantity = (firmId = 'FIRM-001', itemName = '', qtyC
     items.push(updatedTarget);
   }
 
-  StorageService.saveInventoryItems(items, activeFirmId);
+  // Save to both firm-scoped and global storage buckets to prevent any sync miss
+  const scopedKey = `inventory_items_${activeFirmId}`;
+  const serialized = JSON.stringify(items);
+  localStorage.setItem(scopedKey, serialized);
+  localStorage.setItem('inventory_items', serialized);
+  localStorage.setItem('app_inventory', serialized);
 
   window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('app_inventory_updated'));
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('storage'));
 
   return updatedTarget;
+};
+
+/**
+ * Universal save utility for full inventory item lists
+ */
+export const saveStockItem = (firmId = 'FIRM-001', itemsList = []) => {
+  const activeFirmId = String(firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
+  const scopedKey = `inventory_items_${activeFirmId}`;
+  const serialized = JSON.stringify(itemsList);
+  
+  localStorage.setItem(scopedKey, serialized);
+  localStorage.setItem('inventory_items', serialized);
+  localStorage.setItem('app_inventory', serialized);
+
+  window.dispatchEvent(new Event('app_storage_updated'));
+  window.dispatchEvent(new Event('app_inventory_updated'));
+  window.dispatchEvent(new Event('app_state_updated'));
+  window.dispatchEvent(new Event('storage'));
+  return true;
 };
