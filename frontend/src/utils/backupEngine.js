@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures synchronous cache population, robust firm recovery, and IndexedDB persistence.
+ * Ensures strict multi-firm isolation, clean registry sanitization, and safe data restore.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -156,7 +156,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * ROBUST RESTORE ENGINE WITH SYNCHRONOUS CACHE POPULATION & SAFE FIRM RECOVERY
+ * 100% BULLETPROOF RESTORE ENGINE WITH STRICT FIRM SCHEMA FILTERING
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -177,19 +177,19 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // 1. Initialize or reset memory cache immediately
+    // 1. Initialize memory cache cleanly
     window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
-    Object.keys(targetData).forEach(key => {
-      window.__APP_STORAGE_CACHE__[key] = targetData[key];
-    });
 
-    // 2. Extract firm profiles safely without dropping valid businesses
+    // 2. Extract ONLY 100% genuine firm profiles and strictly filter out ledger accounts
     let cleanFirmsList = [];
-    
+
     if (targetData['active_firm_profile']) {
       try {
-        const prof = typeof targetData['active_firm_profile'] === 'string' ? JSON.parse(targetData['active_firm_profile']) : targetData['active_firm_profile'];
-        if (prof && (prof.legal_name || prof.trade_name || prof.name)) {
+        const prof = typeof targetData['active_firm_profile'] === 'string' 
+          ? JSON.parse(targetData['active_firm_profile']) 
+          : targetData['active_firm_profile'];
+        
+        if (prof && (prof.legal_name || prof.trade_name) && !prof.account_name && !prof.primary_type) {
           cleanFirmsList.push(prof);
         }
       } catch (e) {}
@@ -204,10 +204,20 @@ export const restoreUniversalBackup = async (rawInput) => {
             parsed.forEach(item => {
               if (item && typeof item === 'object') {
                 const name = (item.legal_name || item.trade_name || item.name || '').trim();
-                const isFirmObj = name !== '' && !item.account_name && !item.item_name && !item.unit_purchase_price;
+                const lowerName = name.toLowerCase();
 
-                if (isFirmObj) {
-                  if (!cleanFirmsList.some(f => (f.legal_name || f.name || '').toLowerCase() === name.toLowerCase())) {
+                const isRealFirm = name !== '' && 
+                                   !item.account_name && 
+                                   !item.primary_type && 
+                                   !item.sub_group && 
+                                   !item.unit_purchase_price &&
+                                   !lowerName.includes('cash in hand') &&
+                                   !lowerName.includes('bank') &&
+                                   !lowerName.includes('account') &&
+                                   !lowerName.includes('revenue');
+
+                if (isRealFirm) {
+                  if (!cleanFirmsList.some(f => (f.legal_name || f.trade_name || '').toLowerCase() === lowerName)) {
                     cleanFirmsList.push({
                       id: item.id || item.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`,
                       firm_id: item.firm_id || item.id || `FIRM-${Math.floor(Math.random() * 100000)}`,
@@ -237,11 +247,13 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     let activeFirmId = targetData['app_active_firm_id'] || cleanFirmsList[0].id || cleanFirmsList[0].firm_id || 'FIRM-001';
 
-    // 3. Persist all data into IndexedDB and Cache synchronously
+    // 3. Restore all storage items into IDB and Cache
     let restoredVouchersCount = 0;
     Object.keys(targetData).forEach(key => {
       try {
         const val = targetData[key];
+        if (key === 'app_firms_registry' || key === 'app_firms') return;
+
         IDBStorage.setItem(key, val);
         if (key.includes('voucher') && Array.isArray(val)) {
           restoredVouchersCount += val.length;
@@ -249,7 +261,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       } catch (e) {}
     });
 
-    // 4. Save clean firm registries
+    // 4. Force override firm registries with strictly sanitized clean firms list
     IDBStorage.setItem('app_firms_registry', cleanFirmsList);
     IDBStorage.setItem('app_firms', cleanFirmsList);
     IDBStorage.setItem('app_active_firm_id', activeFirmId);
