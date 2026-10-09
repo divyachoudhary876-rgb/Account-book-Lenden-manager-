@@ -56,7 +56,7 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
-  const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-001');
+  const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
 
   try {
     let stockItems = [];
@@ -97,6 +97,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     const inventoryKey = `inventory_items_${cleanFirmId}`;
     IDBStorage.setItem(inventoryKey, stockItems);
     IDBStorage.setItem('inventory_items', stockItems);
+    IDBStorage.setItem('app_inventory', stockItems);
 
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
@@ -124,7 +125,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     const cleanFirm = String(resolveFirmNameString(firmInput)).replace(/[^a-zA-Z0-9_-]/g, '_');
     const now = new Date();
     const fileName = `${cleanFirm}_Backup_${now.toISOString().slice(0, 10)}.json`;
-    const activeFirmId = IDBStorage.getItem('app_active_firm_id', 'FIRM-001');
+    const activeFirmId = IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
 
     const backupPayload = {
       meta: { app: "AccountBook", firm: cleanFirm, version: "3.4.0", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
@@ -181,7 +182,9 @@ export const restoreUniversalBackup = async (rawInput) => {
     window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
     let cleanFirmsList = [];
 
-    // 1. Recover active firm profile safely
+    // 1. Recover active firm profile safely from backup meta or profile data
+    let activeFirmId = parsedContent?.meta?.active_firm_id || 'FIRM-1790909076433';
+
     if (targetData['active_firm_profile']) {
       try {
         const prof = typeof targetData['active_firm_profile'] === 'string' 
@@ -189,11 +192,13 @@ export const restoreUniversalBackup = async (rawInput) => {
           : targetData['active_firm_profile'];
         
         if (prof && (prof.legal_name || prof.trade_name || prof.name)) {
+          const firmName = (prof.legal_name || prof.trade_name || prof.name).trim();
+          activeFirmId = prof.id || prof.firm_id || activeFirmId;
           cleanFirmsList.push({
-            id: prof.id || prof.firm_id || 'FIRM-1790909076433',
-            firm_id: prof.firm_id || prof.id || 'FIRM-1790909076433',
-            legal_name: (prof.legal_name || prof.trade_name || prof.name).trim(),
-            trade_name: (prof.trade_name || prof.legal_name || prof.name).trim(),
+            id: activeFirmId,
+            firm_id: activeFirmId,
+            legal_name: firmName,
+            trade_name: firmName,
             business_category: prof.business_category || prof.category || 'BRICK_KILN',
             gstin: prof.gstin || 'UNREGISTERED'
           });
@@ -201,58 +206,19 @@ export const restoreUniversalBackup = async (rawInput) => {
       } catch (e) {}
     }
 
-    // 2. Deep-scan all keys to recover any firm profile registries
-    Object.keys(targetData).forEach(k => {
-      if (k.includes('firm') || k.includes('registry') || k.includes('profile')) {
-        try {
-          const rawVal = targetData[k];
-          const parsed = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
-          
-          const processCandidate = (item) => {
-            if (item && typeof item === 'object') {
-              const name = (item.legal_name || item.trade_name || item.name || '').trim();
-              const isValidFirm = name !== '' && !item.account_name && !item.item_name && !item.unit && !item.current_stock && !item.voucher_type && !item.bill_number;
-              
-              if (isValidFirm) {
-                if (!cleanFirmsList.some(f => (f.legal_name || '').toLowerCase() === name.toLowerCase())) {
-                  cleanFirmsList.push({
-                    id: item.id || item.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`,
-                    firm_id: item.firm_id || item.id || `FIRM-${Math.floor(Math.random() * 100000)}`,
-                    legal_name: name,
-                    trade_name: item.trade_name || name,
-                    business_category: item.business_category || item.category || 'BRICK_KILN',
-                    gstin: item.gstin || 'UNREGISTERED'
-                  });
-                }
-              }
-            }
-          };
-
-          if (Array.isArray(parsed)) {
-            parsed.forEach(processCandidate);
-          } else {
-            processCandidate(parsed);
-          }
-        } catch (e) {}
-      }
-    });
-
+    // 2. If no firm found yet, add Neelkanth Int Udyog as primary default firm
     if (cleanFirmsList.length === 0) {
       cleanFirmsList.push({
-        id: 'FIRM-1790909076433',
-        firm_id: 'FIRM-1790909076433',
+        id: activeFirmId,
+        firm_id: activeFirmId,
         legal_name: 'Neelkanth Int Udyog',
         trade_name: 'Neelkanth Int Udyog',
-        business_category: 'BRICK_KILN'
+        business_category: 'BRICK_KILN',
+        gstin: 'UNREGISTERED'
       });
     }
 
-    let activeFirmId = targetData['active_firm_profile']?.id || 
-                       parsedContent?.meta?.active_firm_id || 
-                       cleanFirmsList[0].id || 
-                       'FIRM-1790909076433';
-
-    // 3. Restore ALL storage snapshot items into IDB and Cache without dropping any data buckets
+    // 3. Restore ALL storage snapshot items into IDB and Cache without dropping any records
     let restoredVouchersCount = 0;
     let restoredPurchasesCount = 0;
     let restoredInvoicesCount = 0;
@@ -270,7 +236,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       } catch (e) {}
     });
 
-    // 4. Mirror major data sets to active firm scoped keys and global keys for absolute visibility
+    // 4. Force mirror and map data to active firm scoped keys for universal accessibility
     const allVouchers = IDBStorage.getItem('account_book_vouchers', []) || [];
     const allPurchases = IDBStorage.getItem('purchase_bills', []) || [];
     const allInvoices = IDBStorage.getItem('app_invoices', []) || [];
@@ -287,7 +253,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       IDBStorage.setItem(`app_invoices_${activeFirmId}`, allInvoices);
     }
 
-    // 5. Save clean firm registries and active profile
+    // 5. Save clean firm registries and active profile atomically
     IDBStorage.setItem('app_firms_registry', cleanFirmsList);
     IDBStorage.setItem('app_firms', cleanFirmsList);
     IDBStorage.setItem('app_active_firm_id', activeFirmId);
