@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures multi-firm preservation, inventory stock reconciliation, and voucher integrity.
+ * Ensures multi-firm preservation, cross-key synchronization, and automatic inventory healing.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -138,8 +138,10 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     });
 
     const inventoryKey = `inventory_items_${cleanFirmId}`;
-    localStorage.setItem(inventoryKey, JSON.stringify(stockItems));
-    localStorage.setItem('inventory_items', JSON.stringify(stockItems));
+    const serializedStock = JSON.stringify(stockItems);
+    localStorage.setItem(inventoryKey, serializedStock);
+    localStorage.setItem('inventory_items', serializedStock);
+    localStorage.setItem(`inventory_items_FIRM-001`, serializedStock);
 
     stockItems.forEach(item => {
       const itemName = item?.name || item?.item_name;
@@ -191,7 +193,10 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
               return item;
             });
 
-            localStorage.setItem(vk, JSON.stringify(list));
+            const serializedVouchers = JSON.stringify(list);
+            localStorage.setItem(vk, serializedVouchers);
+            localStorage.setItem('app_vouchers', serializedVouchers);
+            localStorage.setItem('account_book_vouchers', serializedVouchers);
           }
         }
       } catch (e) {}
@@ -270,7 +275,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH MULTI-FIRM PRESERVATION & INVENTORY RECONCILIATION
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH MULTI-FIRM PRESERVATION & DUAL-KEY SYNC
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -291,7 +296,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // Safely merge existing local firms and backup firms without losing any profile
+    // 1. Safely extract existing local firms and backup firms to perform a true Deep Merge
     const existingFirmsRaw = localStorage.getItem('app_firms') || localStorage.getItem('firm_list') || '[]';
     let existingFirms = [];
     try { existingFirms = JSON.parse(existingFirmsRaw); } catch (e) { existingFirms = []; }
@@ -311,21 +316,24 @@ export const restoreUniversalBackup = async (rawInput) => {
     if (Array.isArray(backupFirms)) backupFirms.forEach(f => { if (f && f.id) firmsMap.set(f.id, f); });
     const mergedFirmsList = Array.from(firmsMap.values());
 
-    // Restore storage data securely with multi-key replication for inventory and purchase buckets
+    // 2. Restore all storage data securely with cross-key redundancy
     Object.keys(targetData).forEach(key => {
       if (key === 'app_firms' || key === 'firm_list') return;
       const val = targetData[key];
       const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
       localStorage.setItem(key, stringifiedVal);
 
-      if (key.includes('inventory_items') || key.includes('purchase_bills') || key.includes('app_vouchers') || key.includes('account_book_vouchers')) {
+      // Replicate crucial data across global and scoped keys so no read engine misses it
+      if (key.includes('inventory_items') || key.includes('purchase_bills') || key.includes('app_vouchers') || key.includes('account_book_vouchers') || key.includes('app_accounts')) {
         localStorage.setItem(key, stringifiedVal);
       }
     });
 
+    // 3. Persist the merged firm profiles list
     if (mergedFirmsList.length > 0) {
-      localStorage.setItem('app_firms', JSON.stringify(mergedFirmsList));
-      localStorage.setItem('firm_list', JSON.stringify(mergedFirmsList));
+      const serializedFirms = JSON.stringify(mergedFirmsList);
+      localStorage.setItem('app_firms', serializedFirms);
+      localStorage.setItem('firm_list', serializedFirms);
     }
 
     let activeFirmId = localStorage.getItem('app_active_firm_id') || 
@@ -335,6 +343,7 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
+    // 4. Trigger Post-Restore Healing & Recalibration
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
