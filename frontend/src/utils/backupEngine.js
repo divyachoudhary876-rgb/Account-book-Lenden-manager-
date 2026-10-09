@@ -1,12 +1,13 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures quota protection, strict multi-firm isolation, and safe data restore.
+ * Ensures synchronous cache population, robust firm recovery, and IndexedDB persistence.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
+import { IDBStorage } from './indexedDbStorage.js';
 
 const resolveFirmNameString = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
@@ -54,11 +55,8 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
   return null;
 };
 
-/**
- * Post-Restore Self-Healing & Stock Recalculation Engine
- */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
-  const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-001');
 
   try {
     let stockItems = [];
@@ -71,9 +69,9 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
 
     stockKeys.forEach(k => {
       try {
-        const raw = localStorage.getItem(k);
+        const raw = IDBStorage.getItem(k, null);
         if (raw) {
-          const parsed = JSON.parse(raw);
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
           if (Array.isArray(parsed)) {
             parsed.forEach(it => {
               const itName = it?.name || it?.item_name || it?.itemName;
@@ -97,8 +95,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     });
 
     const inventoryKey = `inventory_items_${cleanFirmId}`;
-    const serializedStock = JSON.stringify(stockItems);
-    localStorage.setItem(inventoryKey, serializedStock);
+    IDBStorage.setItem(inventoryKey, stockItems);
 
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
@@ -110,37 +107,23 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   }
 };
 
-/**
- * 1. DOWNLOAD FULL BACKUP ENGINE
- */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
     const storageSnapshot = {};
     let vouchersCount = 0;
     let accountsCount = 0;
 
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key) {
-        if (key.startsWith('temp_cache_') || key.startsWith('debug_log_')) continue;
-        const rawVal = localStorage.getItem(key);
-        try {
-          const parsed = JSON.parse(rawVal);
-          storageSnapshot[key] = parsed;
-          if (Array.isArray(parsed)) {
-            if (key.includes('voucher') || key.includes('invoice') || key.includes('purchase_bill') || key.includes('book_vouchers')) vouchersCount += parsed.length;
-            if (key.includes('account') || key.includes('inventory')) accountsCount += parsed.length;
-          }
-        } catch {
-          storageSnapshot[key] = rawVal;
-        }
+    const cache = window.__APP_STORAGE_CACHE__ || {};
+    Object.keys(cache).forEach(key => {
+      if (!key.startsWith('temp_cache_') && !key.startsWith('debug_log_')) {
+        storageSnapshot[key] = cache[key];
       }
-    }
+    });
 
     const cleanFirm = String(resolveFirmNameString(firmInput)).replace(/[^a-zA-Z0-9_-]/g, '_');
     const now = new Date();
     const fileName = `${cleanFirm}_Backup_${now.toISOString().slice(0, 10)}.json`;
-    const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+    const activeFirmId = IDBStorage.getItem('app_active_firm_id', 'FIRM-001');
 
     const backupPayload = {
       meta: { app: "AccountBook", firm: cleanFirm, version: "3.4.0", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
@@ -173,7 +156,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SECURE QUOTA-SAFE RESTORE ENGINE WITH FIRM SANITIZATION
+ * ROBUST RESTORE ENGINE WITH SYNCHRONOUS CACHE POPULATION & SAFE FIRM RECOVERY
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -194,20 +177,26 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // 1. Extract clean firm profiles safely
+    // 1. Initialize or reset memory cache immediately
+    window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
+    Object.keys(targetData).forEach(key => {
+      window.__APP_STORAGE_CACHE__[key] = targetData[key];
+    });
+
+    // 2. Extract firm profiles safely without dropping valid businesses
     let cleanFirmsList = [];
     
     if (targetData['active_firm_profile']) {
       try {
         const prof = typeof targetData['active_firm_profile'] === 'string' ? JSON.parse(targetData['active_firm_profile']) : targetData['active_firm_profile'];
-        if (prof && (prof.legal_name || prof.trade_name) && !prof.account_name && !prof.item_name) {
+        if (prof && (prof.legal_name || prof.trade_name || prof.name)) {
           cleanFirmsList.push(prof);
         }
       } catch (e) {}
     }
 
     Object.keys(targetData).forEach(k => {
-      if (k === 'app_firms_registry' || k === 'app_firms' || k === 'firm_list' || k === 'app_firms_list' || k === 'active_firm_profile') {
+      if (k.includes('firm') || k === 'app_firms_registry' || k === 'app_firms' || k === 'firm_list' || k === 'app_firms_list') {
         try {
           const rawVal = targetData[k];
           const parsed = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
@@ -215,17 +204,10 @@ export const restoreUniversalBackup = async (rawInput) => {
             parsed.forEach(item => {
               if (item && typeof item === 'object') {
                 const name = (item.legal_name || item.trade_name || item.name || '').trim();
-                const isRealFirm = name !== '' && 
-                                   !item.account_name && 
-                                   !item.item_name && 
-                                   !item.primary_type && 
-                                   !item.unit_purchase_price &&
-                                   !name.includes('Account') && 
-                                   !name.includes('Bank') &&
-                                   !name.includes('Cash');
+                const isFirmObj = name !== '' && !item.account_name && !item.item_name && !item.unit_purchase_price;
 
-                if (isRealFirm) {
-                  if (!cleanFirmsList.some(f => (f.legal_name || '').toLowerCase() === name.toLowerCase())) {
+                if (isFirmObj) {
+                  if (!cleanFirmsList.some(f => (f.legal_name || f.name || '').toLowerCase() === name.toLowerCase())) {
                     cleanFirmsList.push({
                       id: item.id || item.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`,
                       firm_id: item.firm_id || item.id || `FIRM-${Math.floor(Math.random() * 100000)}`,
@@ -253,35 +235,25 @@ export const restoreUniversalBackup = async (rawInput) => {
       });
     }
 
-    let activeFirmId = cleanFirmsList[0].id || cleanFirmsList[0].firm_id;
+    let activeFirmId = targetData['app_active_firm_id'] || cleanFirmsList[0].id || cleanFirmsList[0].firm_id || 'FIRM-001';
 
-    // 2. Clear old storage cleanly before writing backup items to prevent quota overflow
-    try {
-      localStorage.clear();
-    } catch (e) {}
-
-    // 3. Restore storage items securely with quota handling
+    // 3. Persist all data into IndexedDB and Cache synchronously
     let restoredVouchersCount = 0;
     Object.keys(targetData).forEach(key => {
       try {
         const val = targetData[key];
-        const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
-        localStorage.setItem(key, stringifiedVal);
+        IDBStorage.setItem(key, val);
         if (key.includes('voucher') && Array.isArray(val)) {
           restoredVouchersCount += val.length;
         }
-      } catch (quotaErr) {
-        console.warn(`Skipped key ${key} due to local storage quota limit.`);
-      }
+      } catch (e) {}
     });
 
     // 4. Save clean firm registries
-    const serializedFirms = JSON.stringify(cleanFirmsList);
-    const firmRegistryKeys = ['app_firms_registry', 'app_firms', 'firm_list', 'app_firms_list'];
-    firmRegistryKeys.forEach(rk => localStorage.setItem(rk, serializedFirms));
-
-    localStorage.setItem('app_active_firm_id', activeFirmId);
-    localStorage.setItem('active_firm_profile', JSON.stringify(cleanFirmsList[0]));
+    IDBStorage.setItem('app_firms_registry', cleanFirmsList);
+    IDBStorage.setItem('app_firms', cleanFirmsList);
+    IDBStorage.setItem('app_active_firm_id', activeFirmId);
+    IDBStorage.setItem('active_firm_profile', cleanFirmsList[0]);
 
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
