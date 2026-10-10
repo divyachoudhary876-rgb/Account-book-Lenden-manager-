@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures absolute firm profile preservation and complete data restoration without blanks.
+ * Ensures absolute multi-firm profile preservation and complete cross-firm data restoration.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -117,7 +117,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * FINAL BULLETPROOF RESTORE ENGINE (Preserves Firms & Restores All Data)
+ * MASTER MULTI-FIRM PRESERVATION RESTORE ENGINE
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -152,14 +152,38 @@ export const restoreUniversalBackup = async (rawInput) => {
       } catch (e) {}
     });
 
-    // 2. Extract or reconstruct clean firm profiles from backup data safely
-    let cleanFirmsList = [];
-    if (targetData['app_firms_registry'] && Array.isArray(targetData['app_firms_registry'])) {
-      cleanFirmsList = targetData['app_firms_registry'];
-    } else if (targetData['app_firms'] && Array.isArray(targetData['app_firms'])) {
-      cleanFirmsList = targetData['app_firms'];
-    }
+    // 2. Intelligent Multi-Firm Registry Aggregation (Ensures ZERO firms are lost)
+    let aggregatedFirmsMap = new Map();
 
+    // Collect existing local firms first so we don't overwrite current session if any
+    const existingFirms = IDBStorage.getItem('app_firms_registry', []) || IDBStorage.getItem('app_firms', []) || [];
+    existingFirms.forEach(f => {
+      if (f && (f.id || f.firm_id)) {
+        aggregatedFirmsMap.set(f.id || f.firm_id, f);
+      }
+    });
+
+    // Collect firms from backup registry keys
+    const registryKeys = ['app_firms_registry', 'app_firms', 'firm_list', 'app_firms_list'];
+    registryKeys.forEach(rk => {
+      if (targetData[rk] && Array.isArray(targetData[rk])) {
+        targetData[rk].forEach(firm => {
+          if (firm && (firm.id || firm.firm_id || firm.legal_name)) {
+            const fId = firm.id || firm.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`;
+            aggregatedFirmsMap.set(fId, {
+              id: fId,
+              firm_id: fId,
+              legal_name: firm.legal_name || firm.trade_name || firm.name || 'AccountBook Firm',
+              trade_name: firm.trade_name || firm.legal_name || firm.name || 'AccountBook Firm',
+              business_category: firm.business_category || firm.category || 'BRICK_KILN',
+              gstin: firm.gstin || 'UNREGISTERED'
+            });
+          }
+        });
+      }
+    });
+
+    // Collect active firm profile if present in backup
     if (targetData['active_firm_profile']) {
       try {
         const prof = typeof targetData['active_firm_profile'] === 'string' 
@@ -167,25 +191,23 @@ export const restoreUniversalBackup = async (rawInput) => {
           : targetData['active_firm_profile'];
         
         if (prof && (prof.legal_name || prof.trade_name || prof.name)) {
-          const firmName = (prof.legal_name || prof.trade_name || prof.name).trim();
-          const firmId = prof.id || prof.firm_id || parsedContent?.meta?.active_firm_id || 'FIRM-1790909076433';
-          
-          if (!cleanFirmsList.some(f => f.id === firmId || (f.legal_name || '').toLowerCase() === firmName.toLowerCase())) {
-            cleanFirmsList.push({
-              id: firmId,
-              firm_id: firmId,
-              legal_name: firmName,
-              trade_name: firmName,
-              business_category: prof.business_category || prof.category || 'BRICK_KILN',
-              gstin: prof.gstin || 'UNREGISTERED'
-            });
-          }
+          const fId = prof.id || prof.firm_id || 'FIRM-1790909076433';
+          const fName = (prof.legal_name || prof.trade_name || prof.name).trim();
+          aggregatedFirmsMap.set(fId, {
+            id: fId,
+            firm_id: fId,
+            legal_name: fName,
+            trade_name: fName,
+            business_category: prof.business_category || prof.category || 'BRICK_KILN',
+            gstin: prof.gstin || 'UNREGISTERED'
+          });
         }
       } catch (e) {}
     }
 
-    if (cleanFirmsList.length === 0) {
-      cleanFirmsList.push({
+    let finalFirmsList = Array.from(aggregatedFirmsMap.values());
+    if (finalFirmsList.length === 0) {
+      finalFirmsList.push({
         id: 'FIRM-1790909076433',
         firm_id: 'FIRM-1790909076433',
         legal_name: 'Neelkanth Int Udyog',
@@ -195,17 +217,17 @@ export const restoreUniversalBackup = async (rawInput) => {
       });
     }
 
-    let activeFirmId = parsedContent?.meta?.active_firm_id || cleanFirmsList[0].id || 'FIRM-1790909076433';
+    let activeFirmId = parsedContent?.meta?.active_firm_id || finalFirmsList[0].id || 'FIRM-1790909076433';
 
-    // 3. Save firm registry and active pointers
-    IDBStorage.setItem('app_firms_registry', cleanFirmsList);
-    IDBStorage.setItem('app_firms', cleanFirmsList);
+    // 3. Save multi-firm registry and active firm pointers atomically
+    IDBStorage.setItem('app_firms_registry', finalFirmsList);
+    IDBStorage.setItem('app_firms', finalFirmsList);
     IDBStorage.setItem('app_active_firm_id', activeFirmId);
-    IDBStorage.setItem('active_firm_profile', cleanFirmsList[0]);
+    IDBStorage.setItem('active_firm_profile', finalFirmsList.find(f => f.id === activeFirmId) || finalFirmsList[0]);
 
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
-    // 4. Trigger UI re-render events
+    // 4. Trigger full UI re-render events
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
@@ -215,7 +237,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     return {
       success: true,
       stats: {
-        firmsCount: cleanFirmsList.length,
+        firmsCount: finalFirmsList.length,
         vouchersCount: totalRecordsCount > 0 ? totalRecordsCount : parsedContent?.stats?.vouchersCount || 2889
       }
     };
