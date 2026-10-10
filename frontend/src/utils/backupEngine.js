@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures absolute multi-firm profile preservation and complete cross-firm data restoration.
+ * Ensures multi-firm merging so existing local firms are never wiped out during backup restore.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -117,7 +117,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * MASTER MULTI-FIRM PRESERVATION RESTORE ENGINE
+ * RESTORE ENGINE WITH EXISTING FIRM MERGE PROTECTION
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -140,11 +140,23 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
 
-    // 1. Dump all keys from backup data directly into storage cache and IDB
+    // 1. Capture existing local firms before applying backup data, so they are not lost
+    let existingFirms = [];
+    try {
+      const currentReg = IDBStorage.getItem('app_firms_registry', []) || IDBStorage.getItem('app_firms', []);
+      if (Array.isArray(currentReg)) {
+        existingFirms = currentReg;
+      }
+    } catch (e) {}
+
+    // 2. Dump all keys from backup data directly into storage cache and IDB
     let totalRecordsCount = 0;
     Object.keys(targetData).forEach(key => {
       try {
         const val = targetData[key];
+        // Do not blindly overwrite firm registry yet; we will merge them safely below
+        if (key === 'app_firms_registry' || key === 'app_firms') return;
+
         IDBStorage.setItem(key, val);
         if (Array.isArray(val)) {
           totalRecordsCount += val.length;
@@ -152,38 +164,33 @@ export const restoreUniversalBackup = async (rawInput) => {
       } catch (e) {}
     });
 
-    // 2. Intelligent Multi-Firm Registry Aggregation (Ensures ZERO firms are lost)
-    let aggregatedFirmsMap = new Map();
-
-    // Collect existing local firms first so we don't overwrite current session if any
-    const existingFirms = IDBStorage.getItem('app_firms_registry', []) || IDBStorage.getItem('app_firms', []) || [];
+    // 3. Merge existing local firms with backup firms (Ensuring no profile gets deleted)
+    let mergedFirmsMap = new Map();
     existingFirms.forEach(f => {
       if (f && (f.id || f.firm_id)) {
-        aggregatedFirmsMap.set(f.id || f.firm_id, f);
+        mergedFirmsMap.set(f.id || f.firm_id, f);
       }
     });
 
-    // Collect firms from backup registry keys
-    const registryKeys = ['app_firms_registry', 'app_firms', 'firm_list', 'app_firms_list'];
-    registryKeys.forEach(rk => {
-      if (targetData[rk] && Array.isArray(targetData[rk])) {
-        targetData[rk].forEach(firm => {
-          if (firm && (firm.id || firm.firm_id || firm.legal_name)) {
-            const fId = firm.id || firm.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`;
-            aggregatedFirmsMap.set(fId, {
-              id: fId,
-              firm_id: fId,
-              legal_name: firm.legal_name || firm.trade_name || firm.name || 'AccountBook Firm',
-              trade_name: firm.trade_name || firm.legal_name || firm.name || 'AccountBook Firm',
-              business_category: firm.business_category || firm.category || 'BRICK_KILN',
-              gstin: firm.gstin || 'UNREGISTERED'
-            });
-          }
-        });
-      }
-    });
+    // Add backup registry firms
+    const backupFirms = targetData['app_firms_registry'] || targetData['app_firms'] || [];
+    if (Array.isArray(backupFirms)) {
+      backupFirms.forEach(firm => {
+        if (firm && (firm.id || firm.firm_id || firm.legal_name)) {
+          const fId = firm.id || firm.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`;
+          mergedFirmsMap.set(fId, {
+            id: fId,
+            firm_id: fId,
+            legal_name: firm.legal_name || firm.trade_name || firm.name || 'AccountBook Firm',
+            trade_name: firm.trade_name || firm.legal_name || firm.name || 'AccountBook Firm',
+            business_category: firm.business_category || firm.category || 'BRICK_KILN',
+            gstin: firm.gstin || 'UNREGISTERED'
+          });
+        }
+      });
+    }
 
-    // Collect active firm profile if present in backup
+    // Add active firm profile from backup if present
     if (targetData['active_firm_profile']) {
       try {
         const prof = typeof targetData['active_firm_profile'] === 'string' 
@@ -193,7 +200,7 @@ export const restoreUniversalBackup = async (rawInput) => {
         if (prof && (prof.legal_name || prof.trade_name || prof.name)) {
           const fId = prof.id || prof.firm_id || 'FIRM-1790909076433';
           const fName = (prof.legal_name || prof.trade_name || prof.name).trim();
-          aggregatedFirmsMap.set(fId, {
+          mergedFirmsMap.set(fId, {
             id: fId,
             firm_id: fId,
             legal_name: fName,
@@ -205,21 +212,10 @@ export const restoreUniversalBackup = async (rawInput) => {
       } catch (e) {}
     }
 
-    let finalFirmsList = Array.from(aggregatedFirmsMap.values());
-    if (finalFirmsList.length === 0) {
-      finalFirmsList.push({
-        id: 'FIRM-1790909076433',
-        firm_id: 'FIRM-1790909076433',
-        legal_name: 'Neelkanth Int Udyog',
-        trade_name: 'Neelkanth Int Udyog',
-        business_category: 'BRICK_KILN',
-        gstin: 'UNREGISTERED'
-      });
-    }
-
+    let finalFirmsList = Array.from(mergedFirmsMap.values());
     let activeFirmId = parsedContent?.meta?.active_firm_id || finalFirmsList[0].id || 'FIRM-1790909076433';
 
-    // 3. Save multi-firm registry and active firm pointers atomically
+    // 4. Save merged firm registry and active pointers
     IDBStorage.setItem('app_firms_registry', finalFirmsList);
     IDBStorage.setItem('app_firms', finalFirmsList);
     IDBStorage.setItem('app_active_firm_id', activeFirmId);
@@ -227,7 +223,7 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
-    // 4. Trigger full UI re-render events
+    // 5. Trigger UI re-render events
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
