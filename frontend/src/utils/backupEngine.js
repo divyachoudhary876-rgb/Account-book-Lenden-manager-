@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures multi-firm merging so existing local firms are never wiped out during backup restore.
+ * Ensures strict multi-firm storage isolation so blank/new firms (Aa, Bb) remain empty.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -18,62 +18,18 @@ const resolveFirmNameString = (firmInput) => {
 
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
-
   try {
-    let stockItems = [];
-    const stockKeys = [
-      `inventory_items_${cleanFirmId}`, 
-      'inventory_items', 
-      'inventory_items_default_firm_id', 
-      'app_inventory'
-    ];
-
-    stockKeys.forEach(k => {
-      try {
-        const raw = IDBStorage.getItem(k, null);
-        if (raw) {
-          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          if (Array.isArray(parsed)) {
-            parsed.forEach(it => {
-              const itName = it?.name || it?.item_name || it?.itemName;
-              if (itName) {
-                const existingIndex = stockItems.findIndex(x => (x.name || x.item_name || x.itemName).trim().toLowerCase() === String(itName).trim().toLowerCase());
-                if (existingIndex === -1) {
-                  stockItems.push(it);
-                } else {
-                  const currStock = parseFloat(it.current_stock || it.stock || it.qty || 0);
-                  if (currStock > 0) {
-                    stockItems[existingIndex].current_stock = currStock;
-                    stockItems[existingIndex].stock = currStock;
-                    stockItems[existingIndex].qty = currStock;
-                  }
-                }
-              }
-            });
-          }
-        }
-      } catch (e) {}
-    });
-
     const inventoryKey = `inventory_items_${cleanFirmId}`;
-    IDBStorage.setItem(inventoryKey, stockItems);
-    IDBStorage.setItem('inventory_items', stockItems);
-    IDBStorage.setItem('app_inventory', stockItems);
-
-    window.dispatchEvent(new Event('app_accounts_updated'));
-    window.dispatchEvent(new Event('app_inventory_updated'));
-    window.dispatchEvent(new Event('app_storage_updated'));
-    window.dispatchEvent(new Event('app_state_updated'));
-    window.dispatchEvent(new Event('storage'));
+    const raw = IDBStorage.getItem(inventoryKey, null);
+    if (!raw) {
+      IDBStorage.setItem(inventoryKey, []);
+    }
   } catch (err) {}
 };
 
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
     const storageSnapshot = {};
-    let vouchersCount = 0;
-    let accountsCount = 0;
-
     const cache = window.__APP_STORAGE_CACHE__ || {};
     Object.keys(cache).forEach(key => {
       if (!key.startsWith('temp_cache_') && !key.startsWith('debug_log_')) {
@@ -88,7 +44,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 
     const backupPayload = {
       meta: { app: "AccountBook", firm: cleanFirm, version: "3.4.0", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
-      stats: { vouchersCount, accountsCount, total_keys: Object.keys(storageSnapshot).length },
+      stats: { total_keys: Object.keys(storageSnapshot).length },
       data: storageSnapshot
     };
 
@@ -117,7 +73,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * RESTORE ENGINE WITH EXISTING FIRM MERGE PROTECTION
+ * STRICT FIRM-ISOLATED RESTORE ENGINE (Prevents Data Leakage to Blank/New Firms)
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -140,7 +96,7 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
 
-    // 1. Capture existing local firms before applying backup data, so they are not lost
+    // 1. Preserve existing local firms registry so 'Aa', 'Bb' are never deleted
     let existingFirms = [];
     try {
       const currentReg = IDBStorage.getItem('app_firms_registry', []) || IDBStorage.getItem('app_firms', []);
@@ -149,14 +105,14 @@ export const restoreUniversalBackup = async (rawInput) => {
       }
     } catch (e) {}
 
-    // 2. Dump all keys from backup data directly into storage cache and IDB
+    // 2. Restore backup data keys, but EXCLUDE global fallback keys that leak data to other firms
     let totalRecordsCount = 0;
     Object.keys(targetData).forEach(key => {
       try {
+        if (key === 'inventory_items' || key === 'app_inventory' || key === 'app_account_heads') {
+          return; 
+        }
         const val = targetData[key];
-        // Do not blindly overwrite firm registry yet; we will merge them safely below
-        if (key === 'app_firms_registry' || key === 'app_firms') return;
-
         IDBStorage.setItem(key, val);
         if (Array.isArray(val)) {
           totalRecordsCount += val.length;
@@ -164,7 +120,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       } catch (e) {}
     });
 
-    // 3. Merge existing local firms with backup firms (Ensuring no profile gets deleted)
+    // 3. Merge firms safely
     let mergedFirmsMap = new Map();
     existingFirms.forEach(f => {
       if (f && (f.id || f.firm_id)) {
@@ -172,7 +128,6 @@ export const restoreUniversalBackup = async (rawInput) => {
       }
     });
 
-    // Add backup registry firms
     const backupFirms = targetData['app_firms_registry'] || targetData['app_firms'] || [];
     if (Array.isArray(backupFirms)) {
       backupFirms.forEach(firm => {
@@ -190,40 +145,25 @@ export const restoreUniversalBackup = async (rawInput) => {
       });
     }
 
-    // Add active firm profile from backup if present
-    if (targetData['active_firm_profile']) {
-      try {
-        const prof = typeof targetData['active_firm_profile'] === 'string' 
-          ? JSON.parse(targetData['active_firm_profile']) 
-          : targetData['active_firm_profile'];
-        
-        if (prof && (prof.legal_name || prof.trade_name || prof.name)) {
-          const fId = prof.id || prof.firm_id || 'FIRM-1790909076433';
-          const fName = (prof.legal_name || prof.trade_name || prof.name).trim();
-          mergedFirmsMap.set(fId, {
-            id: fId,
-            firm_id: fId,
-            legal_name: fName,
-            trade_name: fName,
-            business_category: prof.business_category || prof.category || 'BRICK_KILN',
-            gstin: prof.gstin || 'UNREGISTERED'
-          });
-        }
-      } catch (e) {}
+    let finalFirmsList = Array.from(mergedFirmsMap.values());
+    if (finalFirmsList.length === 0) {
+      finalFirmsList.push({
+        id: 'FIRM-1790909076433',
+        firm_id: 'FIRM-1790909076433',
+        legal_name: 'Neelkanth Int Udyog',
+        trade_name: 'Neelkanth Int Udyog',
+        business_category: 'BRICK_KILN',
+        gstin: 'UNREGISTERED'
+      });
     }
 
-    let finalFirmsList = Array.from(mergedFirmsMap.values());
-    let activeFirmId = parsedContent?.meta?.active_firm_id || finalFirmsList[0].id || 'FIRM-1790909076433';
+    const currentActiveFirm = IDBStorage.getItem('app_active_firm_id', finalFirmsList[0].id);
 
-    // 4. Save merged firm registry and active pointers
     IDBStorage.setItem('app_firms_registry', finalFirmsList);
     IDBStorage.setItem('app_firms', finalFirmsList);
-    IDBStorage.setItem('app_active_firm_id', activeFirmId);
-    IDBStorage.setItem('active_firm_profile', finalFirmsList.find(f => f.id === activeFirmId) || finalFirmsList[0]);
+    IDBStorage.setItem('app_active_firm_id', currentActiveFirm);
+    IDBStorage.setItem('active_firm_profile', finalFirmsList.find(f => f.id === currentActiveFirm) || finalFirmsList[0]);
 
-    autoHealRestoredInventoryAndAccounts(activeFirmId);
-
-    // 5. Trigger UI re-render events
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
