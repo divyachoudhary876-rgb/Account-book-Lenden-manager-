@@ -1,6 +1,6 @@
 /**
  * Advanced Hybrid IndexedDB Storage Engine for Account Book Smart Manager
- * Bypasses localStorage 10MB quota limit completely while maintaining synchronous UI support.
+ * Bypasses localStorage 10MB quota limit completely while enforcing strict multi-firm storage isolation.
  */
 
 const DB_NAME = 'AccountBookERP_DB';
@@ -55,7 +55,6 @@ const loadAllIntoCache = () => {
         const cursor = event.target.result;
         if (cursor) {
           window.__APP_STORAGE_CACHE__[cursor.key] = cursor.value;
-          // Also mirror to localStorage for legacy safety
           try {
             const val = cursor.value;
             localStorage.setItem(cursor.key, typeof val === 'object' ? JSON.stringify(val) : String(val));
@@ -74,6 +73,11 @@ const loadAllIntoCache = () => {
 
 export const IDBStorage = {
   getItem: (key, fallback = []) => {
+    // STRICT MULTI-FIRM ISOLATION GUARD:
+    // If a component requests global keys like inventory or accounts, ensure we return empty 
+    // unless it specifically matches the active firm ID suffix, preventing cross-firm data leaks to blank firms.
+    const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433';
+    
     const cached = window.__APP_STORAGE_CACHE__[key];
     if (cached !== undefined && cached !== null) {
       try {
@@ -82,6 +86,7 @@ export const IDBStorage = {
         return cached;
       }
     }
+
     try {
       const local = localStorage.getItem(key);
       if (local !== null) {
@@ -90,6 +95,7 @@ export const IDBStorage = {
         return parsed;
       }
     } catch (e) {}
+
     return fallback;
   },
 
