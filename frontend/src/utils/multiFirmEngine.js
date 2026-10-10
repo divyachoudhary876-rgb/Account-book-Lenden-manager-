@@ -1,14 +1,18 @@
 // frontend/src/utils/multiFirmEngine.js
 
 /**
- * Retrieve the list of all created enterprise firm profiles from localStorage
+ * Retrieve the list of all created enterprise firm profiles from localStorage with de-duplication
  */
 export const getFirmsRegistry = () => {
   try {
     const raw = localStorage.getItem('app_firms_registry');
+    let firms = [];
+    
     if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) firms = parsed;
+      } catch (e) {}
     }
     
     // Fallback: Check if there is an active firm profile created via initialization engine
@@ -16,23 +20,43 @@ export const getFirmsRegistry = () => {
     if (activeRaw) {
       try {
         const activeObj = JSON.parse(activeRaw);
-        if (activeObj && activeObj.id) {
-          const defaultList = [activeObj];
-          localStorage.setItem('app_firms_registry', JSON.stringify(defaultList));
-          localStorage.setItem('app_active_firm_id', activeObj.id);
-          return defaultList;
+        if (activeObj && (activeObj.id || activeObj.firm_id)) {
+          const activeId = activeObj.id || activeObj.firm_id;
+          if (!firms.some(f => (f.id === activeId || f.firm_id === activeId))) {
+            firms.push(activeObj);
+          }
         }
       } catch (e) {}
     }
 
-    return [];
+    // Intelligent De-duplication by Firm Name to prevent multiple profiles of the same firm
+    const uniqueMap = new Map();
+    firms.forEach(f => {
+      if (f && (f.id || f.firm_id || f.legal_name)) {
+        const fName = (f.legal_name || f.trade_name || f.name || 'AccountBook Firm').trim().toLowerCase();
+        if (!uniqueMap.has(fName)) {
+          uniqueMap.set(fName, {
+            ...f,
+            id: f.id || f.firm_id,
+            firm_id: f.id || f.firm_id
+          });
+        }
+      }
+    });
+
+    const finalFirms = Array.from(uniqueMap.values());
+    if (finalFirms.length > 0 && JSON.stringify(finalFirms) !== raw) {
+      localStorage.setItem('app_firms_registry', JSON.stringify(finalFirms));
+    }
+
+    return finalFirms;
   } catch {
     return [];
   }
 };
 
 /**
- * Get the currently active firm profile object
+ * Get the currently active firm profile object intelligently
  */
 export const getActiveFirm = () => {
   try {
@@ -40,11 +64,13 @@ export const getActiveFirm = () => {
     if (firms.length === 0) return null;
 
     const activeId = localStorage.getItem('app_active_firm_id');
-    const match = firms.find(f => f.id === activeId);
+    let match = firms.find(f => f.id === activeId || f.firm_id === activeId);
+    
     if (match) return match;
 
-    // Fallback to first available firm if active ID is not set or invalid
-    localStorage.setItem('app_active_firm_id', firms[0].id);
+    // Fallback to first available clean firm if active ID is not set or invalid
+    localStorage.setItem('app_active_firm_id', firms[0].id || firms[0].firm_id);
+    localStorage.setItem('active_firm_profile', JSON.stringify(firms[0]));
     return firms[0];
   } catch {
     return null;
@@ -58,13 +84,14 @@ export const switchActiveFirm = (firmId) => {
   if (!firmId) throw new Error("Invalid firm ID provided for switching.");
   
   const firms = getFirmsRegistry();
-  const targetFirm = firms.find(f => f.id === firmId);
+  const targetFirm = firms.find(f => f.id === firmId || f.firm_id === firmId);
   
   if (!targetFirm) {
     throw new Error(`Firm profile with ID "${firmId}" not found in registry.`);
   }
 
-  localStorage.setItem('app_active_firm_id', firmId);
+  const cleanId = targetFirm.id || targetFirm.firm_id;
+  localStorage.setItem('app_active_firm_id', cleanId);
   localStorage.setItem('active_firm_profile', JSON.stringify(targetFirm));
 
   // Broadcast events to trigger instant re-render across all active views & components
@@ -83,7 +110,7 @@ export const setActiveFirmId = switchActiveFirm;
 export const updateFirmProfile = (firmId, updatedFields) => {
   try {
     const firms = getFirmsRegistry();
-    const index = firms.findIndex(f => f.id === firmId);
+    const index = firms.findIndex(f => f.id === firmId || f.firm_id === firmId);
 
     if (index === -1) {
       throw new Error(`Firm with ID "${firmId}" not found.`);
@@ -93,7 +120,8 @@ export const updateFirmProfile = (firmId, updatedFields) => {
     const updatedFirm = {
       ...currentFirm,
       ...updatedFields,
-      id: currentFirm.id,
+      id: currentFirm.id || currentFirm.firm_id,
+      firm_id: currentFirm.id || currentFirm.firm_id,
       updated_at: new Date().toISOString()
     };
 
@@ -101,7 +129,7 @@ export const updateFirmProfile = (firmId, updatedFields) => {
     localStorage.setItem('app_firms_registry', JSON.stringify(firms));
     
     const activeFirm = getActiveFirm();
-    if (activeFirm && activeFirm.id === firmId) {
+    if (activeFirm && (activeFirm.id === firmId || activeFirm.firm_id === firmId)) {
       localStorage.setItem('active_firm_profile', JSON.stringify(updatedFirm));
     }
 
@@ -117,15 +145,13 @@ export const updateFirmProfile = (firmId, updatedFields) => {
 
 /**
  * Delete a firm profile and purge ALL of its strictly isolated storage buckets
- * Eliminates all orphan keys and memory leaks
  */
 export const deleteFirmProfile = (firmId) => {
   if (!firmId) return false;
 
-  const firms = getFirmsRegistry().filter(f => f.id !== firmId);
+  const firms = getFirmsRegistry().filter(f => f.id !== firmId && f.firm_id !== firmId);
   localStorage.setItem('app_firms_registry', JSON.stringify(firms));
   
-  // Comprehensive purge of all firm-scoped buckets
   const firmKeysToPurge = [
     `app_accounts_${firmId}`,
     `account_heads_${firmId}`,
@@ -148,7 +174,8 @@ export const deleteFirmProfile = (firmId) => {
   });
 
   if (firms.length > 0) {
-    localStorage.setItem('app_active_firm_id', firms[0].id);
+    const nextId = firms[0].id || firms[0].firm_id;
+    localStorage.setItem('app_active_firm_id', nextId);
     localStorage.setItem('active_firm_profile', JSON.stringify(firms[0]));
   } else {
     localStorage.removeItem('app_active_firm_id');
