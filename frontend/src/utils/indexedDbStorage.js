@@ -1,6 +1,6 @@
 /**
  * Advanced Hybrid IndexedDB Storage Engine for Account Book Smart Manager
- * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine (With Boot-up Timeout Guard)
+ * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine (With 1-Sec Timeout Guard)
  */
 
 const DB_NAME = 'AccountBookERP_DB';
@@ -15,11 +15,11 @@ export const initIndexedDB = () => {
   if (initPromise) return initPromise;
 
   initPromise = new Promise((resolve) => {
-    // Hard Timeout Guard (1.5 seconds max wait to prevent infinite loading screen)
+    // Hard Timeout Guard (1 second max wait to prevent infinite loading screen)
     const timeoutId = setTimeout(() => {
-      console.warn('[IDBStorage] IndexedDB initialization timed out. Falling back to fast-path LocalStorage cache.');
+      console.warn('[IDBStorage] IndexedDB initialization timed out. Fast-path localStorage active.');
       resolve(null);
-    }, 1500);
+    }, 1000);
 
     if (dbInstance) {
       clearTimeout(timeoutId);
