@@ -5,9 +5,6 @@
 
 import { IDBStorage } from './indexedDbStorage.js';
 
-/**
- * Retrieve the list of all created enterprise firm profiles with deduplication
- */
 export const getFirmsRegistry = () => {
   try {
     let firms = IDBStorage.getItem('app_firms_registry', null);
@@ -15,7 +12,6 @@ export const getFirmsRegistry = () => {
       firms = IDBStorage.getItem('app_firms', []);
     }
 
-    // Fallback: Check if there is an active firm profile created via initialization engine
     const activeObj = IDBStorage.getItem('active_firm_profile', null);
     if (activeObj && (activeObj.id || activeObj.firm_id)) {
       const activeId = activeObj.id || activeObj.firm_id;
@@ -24,7 +20,7 @@ export const getFirmsRegistry = () => {
       }
     }
 
-    // Intelligent De-duplication by Firm Legal Name & ID
+    // De-duplication by Legal Name & ID
     const uniqueMap = new Map();
     firms.forEach(f => {
       if (f && (f.id || f.firm_id || f.legal_name)) {
@@ -56,9 +52,6 @@ export const getFirmsRegistry = () => {
   }
 };
 
-/**
- * Get the currently active firm profile object
- */
 export const getActiveFirm = () => {
   try {
     const firms = getFirmsRegistry();
@@ -69,7 +62,6 @@ export const getActiveFirm = () => {
 
     if (match) return match;
 
-    // Fallback to first available firm
     const fallbackFirm = firms[0];
     const cleanId = fallbackFirm.id || fallbackFirm.firm_id;
     IDBStorage.setItem('app_active_firm_id', cleanId);
@@ -81,9 +73,6 @@ export const getActiveFirm = () => {
   }
 };
 
-/**
- * Switch active firm context cleanly without key leakage
- */
 export const switchActiveFirm = (firmId) => {
   if (!firmId) throw new Error("Invalid firm ID provided for switching.");
 
@@ -96,11 +85,11 @@ export const switchActiveFirm = (firmId) => {
 
   const cleanId = targetFirm.id || targetFirm.firm_id;
   
-  // Set both memory and storage keys
+  // Set memory and storage keys
   IDBStorage.setItem('app_active_firm_id', cleanId);
   IDBStorage.setItem('active_firm_profile', targetFirm);
 
-  // Synchronize Global View Keys for active firm
+  // Synchronize active view keys
   const scopedVouchers = IDBStorage.getItem(`account_book_vouchers_${cleanId}`, []);
   IDBStorage.setItem('account_book_vouchers', scopedVouchers);
   IDBStorage.setItem('app_vouchers', scopedVouchers);
@@ -114,7 +103,7 @@ export const switchActiveFirm = (firmId) => {
   const scopedInventory = IDBStorage.getItem(`inventory_items_${cleanId}`, []);
   IDBStorage.setItem('inventory_items', scopedInventory);
 
-  // Broadcast events to trigger instant UI refresh
+  // Broadcast events
   window.dispatchEvent(new Event('app_accounts_updated'));
   window.dispatchEvent(new Event('app_inventory_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
@@ -126,17 +115,12 @@ export const switchActiveFirm = (firmId) => {
 
 export const setActiveFirmId = switchActiveFirm;
 
-/**
- * Update an existing firm profile
- */
 export const updateFirmProfile = (firmId, updatedFields) => {
   try {
     const firms = getFirmsRegistry();
     const index = firms.findIndex(f => f.id === firmId || f.firm_id === firmId);
 
-    if (index === -1) {
-      throw new Error(`Firm with ID "${firmId}" not found.`);
-    }
+    if (index === -1) throw new Error(`Firm with ID "${firmId}" not found.`);
 
     const currentFirm = firms[index];
     const updatedFirm = {
@@ -166,9 +150,6 @@ export const updateFirmProfile = (firmId, updatedFields) => {
   }
 };
 
-/**
- * Delete a firm profile and purge ALL associated storage buckets from both IDB and LocalStorage
- */
 export const deleteFirmProfile = (firmId) => {
   if (!firmId) return false;
 
