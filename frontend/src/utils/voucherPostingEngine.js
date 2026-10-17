@@ -1,9 +1,6 @@
 // frontend/src/utils/voucherPostingEngine.js
 
 import { IDBStorage } from './indexedDbStorage.js';
-import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
-
-const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 export const normalizeLedgerAccountMatch = (targetAccount = '', candidateAccount = '') => {
   if (!targetAccount || !candidateAccount) return false;
@@ -40,7 +37,7 @@ export const getUniversalVouchersByFirm = (firmId) => {
 
     return firmFiltered;
   } catch (e) {
-    console.error('[voucherPostingEngine] Error fetching vouchers:', e);
+    console.error('[voucherPostingEngine] Error:', e);
     return [];
   }
 };
@@ -70,9 +67,6 @@ const getNextSequentialNumber = (existingVouchers, vType) => {
   return `${prefix}-${maxNum + 1}`;
 };
 
-/**
- * Enterprise Double-Entry Posting Engine with Compound Line Reconcile & Balance Update
- */
 export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
   const activeFirmId = String(firmId || IDBStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433').trim();
   const vouchersKey = `account_book_vouchers_${activeFirmId}`;
@@ -189,7 +183,6 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
     };
   }
 
-  // 1. Commit Voucher to Scoped Repository
   const existingIdx = existingVouchers.findIndex(v => v && String(v.id) === String(finalVoucher.id));
   if (existingIdx !== -1) {
     existingVouchers[existingIdx] = finalVoucher;
@@ -199,7 +192,7 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
   IDBStorage.setItem(vouchersKey, existingVouchers);
   IDBStorage.setItem(`app_vouchers_${activeFirmId}`, existingVouchers);
 
-  // 2. Reconcile & Update Master Accounts (Account Heads)
+  // Reconcile Master Account Balances
   const accountsKey = `account_heads_${activeFirmId}`;
   let accounts = IDBStorage.getItem(accountsKey, []) || [];
   
@@ -222,18 +215,16 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
       accounts.push(accObj);
     }
 
-    // GAAP Normal Balance Sign Multiplier
     const isAssetOrExpense = ['ASSETS', 'EXPENSES'].includes((accObj.primary_type || accObj.type || '').toUpperCase());
     const multiplier = isAssetOrExpense ? (entry.type === 'DR' ? 1 : -1) : (entry.type === 'CR' ? 1 : -1);
     
     const currentBal = parseFloat(accObj.current_balance !== undefined ? accObj.current_balance : (accObj.opening_balance || 0));
-    accObj.current_balance = round2(currentBal + (entry.amount * multiplier));
+    accObj.current_balance = Math.round((currentBal + (entry.amount * multiplier)) * 100) / 100;
   });
 
   IDBStorage.setItem(accountsKey, accounts);
   IDBStorage.setItem(`app_accounts_${activeFirmId}`, accounts);
 
-  // 3. Broadcast Global Reactivity Events
   window.dispatchEvent(new Event('app_accounts_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('app_state_updated'));
