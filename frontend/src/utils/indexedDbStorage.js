@@ -1,6 +1,6 @@
 /**
  * Advanced Hybrid IndexedDB Storage Engine for Account Book Smart Manager
- * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine (With 1-Sec Timeout Guard)
+ * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine
  */
 
 const DB_NAME = 'AccountBookERP_DB';
@@ -15,9 +15,7 @@ export const initIndexedDB = () => {
   if (initPromise) return initPromise;
 
   initPromise = new Promise((resolve) => {
-    // Hard Timeout Guard (1 second max wait to prevent infinite loading screen)
     const timeoutId = setTimeout(() => {
-      console.warn('[IDBStorage] IndexedDB initialization timed out. Fast-path localStorage active.');
       resolve(null);
     }, 1000);
 
@@ -36,9 +34,8 @@ export const initIndexedDB = () => {
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onerror = (e) => {
+      request.onerror = () => {
         clearTimeout(timeoutId);
-        console.error('[IDBStorage] Database open error:', e);
         resolve(null);
       };
 
@@ -133,26 +130,20 @@ export const IDBStorage = {
       try {
         const serialized = typeof value === 'object' ? JSON.stringify(value) : String(value);
         localStorage.setItem(key, serialized);
-      } catch (quotaErr) {
-        console.warn(`[IDBStorage] LocalStorage quota reached for key: ${key}. Retaining in IndexedDB.`);
-      }
+      } catch (quotaErr) {}
 
       if (dbInstance) {
         try {
           const transaction = dbInstance.transaction(STORE_NAME, 'readwrite');
           const store = transaction.objectStore(STORE_NAME);
           store.put(value, key);
-        } catch (idbErr) {
-          console.error('[IDBStorage] IndexedDB write failed:', idbErr);
-        }
+        } catch (idbErr) {}
       }
 
       window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value } }));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.error('[IDBStorage] SetItem exception:', e);
-    }
+    } catch (e) {}
   },
 
   removeItem: (key) => {
