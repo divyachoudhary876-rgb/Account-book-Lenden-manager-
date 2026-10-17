@@ -37,6 +37,7 @@ export const getUniversalVouchersByFirm = (firmId) => {
 
     return firmFiltered;
   } catch (e) {
+    console.error('[voucherPostingEngine] Error fetching vouchers:', e);
     return [];
   }
 };
