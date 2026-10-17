@@ -31,11 +31,14 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleCreateFirmClick = (e) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+    }
+    
     setErrorMessage(null);
-
-    const cleanName = firmName.trim();
+    const cleanName = String(firmName || '').trim();
     if (!cleanName) {
       setErrorMessage("⚠️ Legal Firm Name is mandatory.");
       return;
@@ -59,11 +62,13 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         created_at: new Date().toISOString()
       };
 
-      // 1. Register firm safely using IDBStorage
+      // 1. Safely retrieve and update firm registry
       let existingFirms = [];
       try {
-        existingFirms = IDBStorage.getItem('app_firms_registry', []) || IDBStorage.getItem('app_firms', []) || [];
-        if (!Array.isArray(existingFirms)) existingFirms = [];
+        const rawFirms = IDBStorage.getItem('app_firms_registry', null) || IDBStorage.getItem('app_firms', null);
+        if (Array.isArray(rawFirms)) {
+          existingFirms = rawFirms;
+        }
       } catch (err) {
         existingFirms = [];
       }
@@ -73,19 +78,19 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
       IDBStorage.setItem('app_firms_registry', updatedFirms);
       IDBStorage.setItem('app_firms', updatedFirms);
 
-      // 2. Initialize baseline ledger accounts strictly scoped to firmId
+      // 2. Initialize baseline accounts strictly scoped to this firm
       const starterAccounts = [
-        { id: `ACC-${firmId}-001`, firm_id: firmId, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true },
-        { id: `ACC-${firmId}-002`, firm_id: firmId, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false },
-        { id: `ACC-${firmId}-003`, firm_id: firmId, account_name: 'Sales & Revenue', name: 'Sales & Revenue', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', is_system_locked: true },
-        { id: `ACC-${firmId}-004`, firm_id: firmId, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', is_system_locked: true },
-        { id: `ACC-${firmId}-005`, firm_id: firmId, account_name: 'Proprietor Capital Account', name: 'Proprietor Capital Account', primary_type: 'EQUITY', type: 'Liabilities', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', is_system_locked: false }
+        { id: `ACC-${firmId}-001`, firm_id: firmId, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: true },
+        { id: `ACC-${firmId}-002`, firm_id: firmId, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: false },
+        { id: `ACC-${firmId}-003`, firm_id: firmId, account_name: 'Sales & Revenue', name: 'Sales & Revenue', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', current_balance: 0, is_system_locked: true },
+        { id: `ACC-${firmId}-004`, firm_id: firmId, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: true },
+        { id: `ACC-${firmId}-005`, firm_id: firmId, account_name: 'Proprietor Capital Account', name: 'Proprietor Capital Account', primary_type: 'EQUITY', type: 'Liabilities', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', current_balance: 0, is_system_locked: false }
       ];
 
       IDBStorage.setItem(`app_accounts_${firmId}`, starterAccounts);
       IDBStorage.setItem(`account_heads_${firmId}`, starterAccounts);
 
-      // 3. Initialize empty transaction buckets
+      // 3. Initialize empty transaction & inventory buckets
       IDBStorage.setItem(`account_book_vouchers_${firmId}`, []);
       IDBStorage.setItem(`app_vouchers_${firmId}`, []);
       IDBStorage.setItem(`inventory_items_${firmId}`, []);
@@ -97,7 +102,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
       IDBStorage.setItem('app_active_firm_id', firmId);
       IDBStorage.setItem('active_firm_profile', newFirmPayload);
 
-      // 5. Broadcast global state sync events
+      // 5. Broadcast global UI state sync events
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('storage'));
@@ -110,8 +115,9 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         window.location.reload();
       }
     } catch (err) {
+      console.error("[CreateFirmForm] Submission error:", err);
       setIsSubmitting(false);
-      setErrorMessage("Firm creation error: " + err.message);
+      setErrorMessage("Firm creation failed: " + (err.message || 'Unknown error'));
     }
   };
 
@@ -135,7 +141,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '12px' }}>
+      <form onSubmit={handleCreateFirmClick} style={{ display: 'grid', gap: '12px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
           <div>
             <label style={labelStyle}>Legal Firm Name (कानूनी व्यापार नाम) *</label>
@@ -180,7 +186,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
           {onCancel && (
             <button type="button" onClick={onCancel} style={{ flex: 1, backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
           )}
-          <button type="submit" disabled={isSubmitting} style={{ flex: 2, backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
+          <button type="button" onClick={handleCreateFirmClick} disabled={isSubmitting} style={{ flex: 2, backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
             {isSubmitting ? 'Creating Enterprise...' : '💾 Create Enterprise & Initialize Ledgers'}
           </button>
         </div>
