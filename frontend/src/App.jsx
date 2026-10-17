@@ -71,16 +71,15 @@ export default function App() {
     } catch (e) {
       console.error("[App] State sync warning:", e);
     } finally {
-      // GUARANTEE: App will never hang on loader screen
       setIsAppReady(true);
     }
   }, []);
 
   useEffect(() => {
-    // Fail-safe timeout fallback so app mounts instantly even if IDB takes time
+    // Fail-safe timeout: guarantees app renders within 500ms even if IDB lags
     const bootTimer = setTimeout(() => {
       setIsAppReady(true);
-    }, 800);
+    }, 500);
 
     initIndexedDB().then(() => {
       clearTimeout(bootTimer);
