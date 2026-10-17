@@ -46,7 +46,6 @@ export const getFirmsRegistry = () => {
 
     return finalFirms;
   } catch (err) {
-    console.error('[multiFirmEngine] getFirmsRegistry error:', err);
     return [];
   }
 };
@@ -67,7 +66,6 @@ export const getActiveFirm = () => {
     IDBStorage.setItem('active_firm_profile', fallbackFirm);
     return fallbackFirm;
   } catch (err) {
-    console.error('[multiFirmEngine] getActiveFirm error:', err);
     return null;
   }
 };
