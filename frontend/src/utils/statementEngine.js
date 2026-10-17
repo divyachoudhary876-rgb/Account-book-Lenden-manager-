@@ -1,57 +1,29 @@
 // frontend/src/utils/statementEngine.js
-import { getFirmScopedStorageKey, getActiveFirmId } from './firmIsolationEngine';
 
-/**
- * Helper to resolve exact sanitized firmId
- */
+import { IDBStorage } from './indexedDbStorage.js';
+
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
 const resolveFirmId = (firmInput) => {
-  if (typeof firmInput === 'string' && firmInput.trim() !== '') {
-    return firmInput.trim();
-  }
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
   if (firmInput && typeof firmInput === 'object') {
     return String(firmInput.id || firmInput.firm_id || firmInput.firmId || '').trim();
   }
-  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  return IDBStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433';
 };
 
-/**
- * Strictly Firm-Isolated voucher fetcher (Includes Simple, Compound, Sales Invoices & Purchases)
- */
-export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
+export const getAllUniversalVouchers = (firmInput) => {
   try {
     const firmId = resolveFirmId(firmInput);
-    let rawTx = [];
+    const vouchers = IDBStorage.getItem(`account_book_vouchers_${firmId}`, []) || [];
 
-    // 1. Fetch strictly from all firm-scoped transaction buckets
-    const scopedKeys = [
-      `app_vouchers_${firmId}`,
-      `account_book_vouchers_${firmId}`,
-      `app_invoices_${firmId}`,
-      `sales_invoices_${firmId}`,
-      `purchase_bills_${firmId}`,
-      `app_payroll_entries_${firmId}`
-    ];
-
-    scopedKeys.forEach(k => {
-      const val = localStorage.getItem(k);
-      if (val) {
-        try {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) rawTx.push(...parsed);
-        } catch (e) {}
-      }
-    });
-
-    // 2. Deduplicate by unique ID and enforce firm boundary
     const uniqueMap = new Map();
-    rawTx.forEach(tx => {
+    vouchers.forEach(tx => {
       if (!tx) return;
       const txFirm = String(tx.firm_id || tx.firmId || '').trim();
-      if (txFirm && txFirm !== firmId) {
-        return; // Strict cross-firm boundary enforcement
-      }
+      if (txFirm && txFirm !== firmId) return;
 
-      const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount || 0}-${Math.random()}`;
+      const uId = tx.id || tx.voucher_number || tx.reference_no || `${tx.voucher_date || tx.date}-${tx.amount || tx.total_amount || 0}`;
       if (!uniqueMap.has(uId)) {
         uniqueMap.set(uId, tx);
       }
@@ -59,42 +31,20 @@ export const getAllUniversalVouchers = (firmInput = 'FIRM-001') => {
 
     return Array.from(uniqueMap.values());
   } catch (e) {
-    console.error("Error loading universal vouchers:", e);
+    console.error("[statementEngine] Error loading vouchers:", e);
     return [];
   }
 };
 
-/**
- * Retrieve account heads strictly isolated for the active firm
- */
-export const getAccountHeads = (firmInput = 'FIRM-001') => {
+export const getAccountHeads = (firmInput) => {
   try {
     const firmId = resolveFirmId(firmInput);
-    let rawAccounts = [];
-
-    const scopedKeys = [
-      `app_accounts_${firmId}`,
-      `account_heads_${firmId}`
-    ];
-
-    scopedKeys.forEach(k => {
-      const val = localStorage.getItem(k);
-      if (val) {
-        try {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) rawAccounts.push(...parsed);
-        } catch (e) {}
-      }
-    });
+    const accounts = IDBStorage.getItem(`account_heads_${firmId}`, []) || 
+                     IDBStorage.getItem(`app_accounts_${firmId}`, []) || [];
 
     const uniqueMap = new Map();
-    rawAccounts.forEach(acc => {
+    accounts.forEach(acc => {
       if (!acc) return;
-      const accFirm = String(acc.firm_id || acc.firmId || '').trim();
-      if (accFirm && accFirm !== firmId) {
-        return;
-      }
-
       const name = (acc.account_name || acc.name || '').trim();
       if (name && !uniqueMap.has(name.toLowerCase())) {
         uniqueMap.set(name.toLowerCase(), {
@@ -113,10 +63,7 @@ export const getAccountHeads = (firmInput = 'FIRM-001') => {
   }
 };
 
-/**
- * Generate Double-Entry Account Milan Ledger Statement (Supports Compound & Itemized Lines)
- */
-export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccountName = '') => {
+export const getAccountLedgerStatement = (firmIdInput, targetAccountName = '') => {
   const cleanTarget = (targetAccountName || '').trim();
   if (!cleanTarget) {
     return {
@@ -147,21 +94,18 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
   let totalDebit = 0;
   let totalCredit = 0;
 
-  // Filter vouchers where account participates (in simple Dr/Cr OR inside compound entries array)
   const relevantVouchers = vouchers
     .filter(v => {
       if (!v) return false;
-      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim().toLowerCase();
-      const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim().toLowerCase();
+      const dr = (v.dr_account || v.debit_account || '').trim().toLowerCase();
+      const cr = (v.cr_account || v.credit_account || '').trim().toLowerCase();
       
       if (dr === targetLower || cr === targetLower) return true;
 
-      // Check compound entries array
       if (Array.isArray(v.entries) && v.entries.length > 0) {
         return v.entries.some(e => (e.account_name || e.party || '').trim().toLowerCase() === targetLower);
       }
 
-      // Check worker/contractor field
       if (v.worker && String(v.worker).trim().toLowerCase() === targetLower) return true;
       if (v.expense_ledger && String(v.expense_ledger).trim().toLowerCase() === targetLower) return true;
 
@@ -176,7 +120,6 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
     let creditAmount = 0;
     let counterParty = '';
 
-    // A. Compound entries evaluation
     if (Array.isArray(v.entries) && v.entries.length > 0) {
       let isMatched = false;
       const otherParties = [];
@@ -198,22 +141,9 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
       if (isMatched) {
         counterParty = otherParties.join(', ') || 'Various Account';
       }
-    } 
-    // B. Worker wage entry evaluation
-    else if (v.worker && (String(v.worker).toLowerCase() === targetLower || String(v.expense_ledger).toLowerCase() === targetLower)) {
-      const amt = parseFloat(v.total_amount || v.amount || 0);
-      if (String(v.worker).toLowerCase() === targetLower) {
-        creditAmount = amt;
-        counterParty = v.expense_ledger || 'Wages Expense';
-      } else {
-        debitAmount = amt;
-        counterParty = v.worker || 'Labour Party';
-      }
-    }
-    // C. Simple Dr/Cr evaluation
-    else {
-      const drName = (v.dr_account || v.debit_account || v.dr_party || '').trim();
-      const crName = (v.cr_account || v.credit_account || v.cr_party || '').trim();
+    } else {
+      const drName = (v.dr_account || v.debit_account || '').trim();
+      const crName = (v.cr_account || v.credit_account || '').trim();
       const amt = parseFloat(v.amount || v.total_amount || 0);
 
       if (drName.toLowerCase() === targetLower) {
@@ -233,13 +163,13 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
 
       let itemNote = '';
       if (Array.isArray(v.items) && v.items.length > 0) {
-        itemNote = v.items.map(it => `${it.itemName || it.name || 'Item'} (${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ â‚¹${it.rate || 0})`).join(', ');
+        itemNote = v.items.map(it => `${it.itemName || it.name || 'Item'} (${it.qty || it.quantity || 0} ${it.unit || 'Pcs'} @ ₹${it.rate || 0})`).join(', ');
       }
 
       const finalParticulars = [
         debitAmount > 0 ? `To ${counterParty}` : `By ${counterParty}`,
         itemNote,
-        v.narration || v.notes || ''
+        v.narration || ''
       ].filter(Boolean).join(' | ');
 
       ledgerEntries.push({
@@ -247,14 +177,14 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
         id: v.id,
         date: v.voucher_date || v.date || '2026-04-01',
         voucher_type: (v.voucher_type || v.type || 'JOURNAL').toUpperCase(),
-        voucher_no: v.reference_no || v.voucher_number || (v.id ? String(v.id).slice(-6) : `REF-${index + 1}`),
+        voucher_no: v.reference_no || v.voucher_number || `REF-${index + 1}`,
         particulars: finalParticulars,
         opposite_account: counterParty,
         debit: debitAmount,
         credit: creditAmount,
-        running_balance: Math.abs(runningBalance),
+        running_balance: Math.round(Math.abs(runningBalance) * 100) / 100,
         balance_type: runningBalance >= 0 ? 'Dr' : 'Cr',
-        narration: v.narration || v.notes || ''
+        narration: v.narration || ''
       });
     }
   });
@@ -266,16 +196,13 @@ export const getAccountLedgerStatement = (firmIdInput = 'FIRM-001', targetAccoun
     openingBalance: openingBal,
     openingBalanceType: balanceType,
     entries: ledgerEntries,
-    totalDebit: parseFloat(totalDebit.toFixed(2)),
-    totalCredit: parseFloat(totalCredit.toFixed(2)),
-    closingBalance: parseFloat(Math.abs(runningBalance).toFixed(2)),
+    totalDebit: round2(totalDebit),
+    totalCredit: round2(totalCredit),
+    closingBalance: round2(Math.abs(runningBalance)),
     closingBalanceType: runningBalance >= 0 ? 'Dr' : 'Cr'
   };
 };
 
-/**
- * Export account statement to CSV format
- */
 export const downloadCSVStatement = (statement, firmName = 'Firm') => {
   if (!statement || !statement.entries) return;
 
@@ -315,5 +242,4 @@ export const downloadCSVStatement = (statement, firmName = 'Firm') => {
   document.body.removeChild(link);
 };
 
-// Aliases for backwards compatibility
 export const getAccountStatement = getAccountLedgerStatement;
