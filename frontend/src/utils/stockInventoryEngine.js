@@ -13,7 +13,6 @@ export const getFirmItemStock = (firmId, itemName) => {
   if (!targetName) return 0;
 
   try {
-    // 1. Direct Item Master Stock Check
     const inventoryKey = `inventory_items_${cleanFirmId}`;
     const items = IDBStorage.getItem(inventoryKey, []) || [];
     const masterItem = items.find(i => 
@@ -25,14 +24,12 @@ export const getFirmItemStock = (firmId, itemName) => {
       return parseFloat(masterItem.current_stock || masterItem.stock || 0);
     }
 
-    // 2. Audit Calculation: Total Inward (Purchases) - Total Outward (Sales / Issues)
     const purchases = IDBStorage.getItem(`purchase_bills_${cleanFirmId}`, []) || [];
     const vouchers = IDBStorage.getItem(`account_book_vouchers_${cleanFirmId}`, []) || [];
 
     let totalInward = 0;
     let totalOutward = 0;
 
-    // A. Sum Purchases Inward
     purchases.forEach(p => {
       if (Array.isArray(p.items) && p.items.length > 0) {
         p.items.forEach(it => {
@@ -49,7 +46,6 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // B. Sum Outward (Sales & Material Adjustments via Items Array)
     vouchers.forEach(v => {
       const vType = String(v.voucher_type || v.type || '').toUpperCase();
       if (['SALES', 'MATERIAL_ISSUE', 'CONSUMPTION'].includes(vType)) {
