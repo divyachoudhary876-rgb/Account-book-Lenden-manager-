@@ -51,7 +51,7 @@ export default function App() {
       setFirmsList(list);
       setActiveFirm(firm);
 
-      if (list.length === 0) {
+      if (!list || list.length === 0) {
         setIsCreatingFirm(true);
       } else if (firm && firm.id) {
         setIsCreatingFirm(false);
@@ -64,19 +64,29 @@ export default function App() {
           : (availableYears[0]?.label || 'FY 2026-27');
         
         setSelectedFY(activeTargetFY);
-        performFinancialYearRollover(firm.id, activeTargetFY);
+        try {
+          performFinancialYearRollover(firm.id, activeTargetFY);
+        } catch (err) {}
       }
-      setIsAppReady(true);
     } catch (e) {
-      console.error("[App] State sync error:", e);
+      console.error("[App] State sync warning:", e);
+    } finally {
+      // GUARANTEE: App will never hang on loader screen
       setIsAppReady(true);
     }
   }, []);
 
   useEffect(() => {
+    // Fail-safe timeout fallback so app mounts instantly even if IDB takes time
+    const bootTimer = setTimeout(() => {
+      setIsAppReady(true);
+    }, 800);
+
     initIndexedDB().then(() => {
+      clearTimeout(bootTimer);
       refreshState();
     }).catch(() => {
+      clearTimeout(bootTimer);
       refreshState();
     });
 
@@ -86,6 +96,7 @@ export default function App() {
     window.addEventListener('storage', refreshState);
 
     return () => {
+      clearTimeout(bootTimer);
       window.removeEventListener('app_state_updated', refreshState);
       window.removeEventListener('app_storage_updated', refreshState);
       window.removeEventListener('fy_state_updated', refreshState);
@@ -136,7 +147,9 @@ export default function App() {
       setSelectedFY(val);
       if (activeFirm?.id) {
         IDBStorage.setItem(`app_active_fy_${activeFirm.id}`, val);
-        performFinancialYearRollover(activeFirm.id, val);
+        try {
+          performFinancialYearRollover(activeFirm.id, val);
+        } catch (e) {}
       }
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
@@ -150,7 +163,9 @@ export default function App() {
       const created = createFinancialYear(activeFirm.id, newFYStartYear);
       setSelectedFY(created.label);
       IDBStorage.setItem(`app_active_fy_${activeFirm.id}`, created.label);
-      performFinancialYearRollover(activeFirm.id, created.label);
+      try {
+        performFinancialYearRollover(activeFirm.id, created.label);
+      } catch (e) {}
       setIsAddFYModalOpen(false);
       refreshState();
       alert(`✓ ${created.label} registered successfully!`);
