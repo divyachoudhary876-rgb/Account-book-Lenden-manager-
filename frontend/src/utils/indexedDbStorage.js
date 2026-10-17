@@ -63,13 +63,10 @@ const loadAllIntoCache = () => {
         const cursor = event.target.result;
         if (cursor) {
           window.__APP_STORAGE_CACHE__[cursor.key] = cursor.value;
-          // Dual-write into localStorage if safe
           try {
             const val = cursor.value;
             localStorage.setItem(cursor.key, typeof val === 'object' ? JSON.stringify(val) : String(val));
-          } catch (e) {
-            // Quota limit safety
-          }
+          } catch (e) {}
           cursor.continue();
         } else {
           resolve();
@@ -86,7 +83,6 @@ export const IDBStorage = {
   getItem: (key, fallback = null) => {
     if (!key) return fallback;
 
-    // 1. Check in-memory fast cache first
     const cached = window.__APP_STORAGE_CACHE__[key];
     if (cached !== undefined && cached !== null) {
       try {
@@ -96,7 +92,6 @@ export const IDBStorage = {
       }
     }
 
-    // 2. Fallback to localStorage
     try {
       const local = localStorage.getItem(key);
       if (local !== null && local !== undefined) {
@@ -120,7 +115,6 @@ export const IDBStorage = {
     try {
       window.__APP_STORAGE_CACHE__[key] = value;
 
-      // 1. Dual write to LocalStorage
       try {
         const serialized = typeof value === 'object' ? JSON.stringify(value) : String(value);
         localStorage.setItem(key, serialized);
@@ -128,7 +122,6 @@ export const IDBStorage = {
         console.warn(`[IDBStorage] LocalStorage quota reached for key: ${key}. Retaining in IndexedDB.`);
       }
 
-      // 2. Dual write to IndexedDB
       if (dbInstance) {
         try {
           const transaction = dbInstance.transaction(STORE_NAME, 'readwrite');
@@ -139,7 +132,6 @@ export const IDBStorage = {
         }
       }
 
-      // 3. Dispatch reactive events
       window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value } }));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
