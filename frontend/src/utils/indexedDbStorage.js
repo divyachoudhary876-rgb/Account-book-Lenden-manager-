@@ -1,6 +1,6 @@
 /**
  * Advanced Hybrid IndexedDB Storage Engine for Account Book Smart Manager
- * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine
+ * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine (With Boot-up Timeout Guard)
  */
 
 const DB_NAME = 'AccountBookERP_DB';
@@ -15,34 +15,49 @@ export const initIndexedDB = () => {
   if (initPromise) return initPromise;
 
   initPromise = new Promise((resolve) => {
+    // Hard Timeout Guard (1.5 seconds max wait to prevent infinite loading screen)
+    const timeoutId = setTimeout(() => {
+      console.warn('[IDBStorage] IndexedDB initialization timed out. Falling back to fast-path LocalStorage cache.');
+      resolve(null);
+    }, 1500);
+
     if (dbInstance) {
+      clearTimeout(timeoutId);
       resolve(dbInstance);
       return;
     }
 
     if (typeof window === 'undefined' || !window.indexedDB) {
+      clearTimeout(timeoutId);
       resolve(null);
       return;
     }
 
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onerror = (e) => {
-      console.error('[IDBStorage] Database open error:', e);
+      request.onerror = (e) => {
+        clearTimeout(timeoutId);
+        console.error('[IDBStorage] Database open error:', e);
+        resolve(null);
+      };
+
+      request.onsuccess = (event) => {
+        clearTimeout(timeoutId);
+        dbInstance = event.target.result;
+        loadAllIntoCache().then(() => resolve(dbInstance)).catch(() => resolve(dbInstance));
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
       resolve(null);
-    };
-
-    request.onsuccess = (event) => {
-      dbInstance = event.target.result;
-      loadAllIntoCache().then(() => resolve(dbInstance));
-    };
-
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
+    }
   });
 
   return initPromise;
