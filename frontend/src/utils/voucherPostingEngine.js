@@ -37,7 +37,6 @@ export const getUniversalVouchersByFirm = (firmId) => {
 
     return firmFiltered;
   } catch (e) {
-    console.error('[voucherPostingEngine] Error:', e);
     return [];
   }
 };
@@ -192,7 +191,7 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
   IDBStorage.setItem(vouchersKey, existingVouchers);
   IDBStorage.setItem(`app_vouchers_${activeFirmId}`, existingVouchers);
 
-  // Reconcile Master Account Balances
+  // Reconcile Master Accounts
   const accountsKey = `account_heads_${activeFirmId}`;
   let accounts = IDBStorage.getItem(accountsKey, []) || [];
   
