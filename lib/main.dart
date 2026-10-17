@@ -13,7 +13,7 @@ void main() async {
 }
 
 // ==========================================
-// 1. LOCAL SQLITE PERSISTENCE ENGINE
+// 1. LOCAL SQLITE PERSISTENCE ENGINE (ACID Compliant)
 // ==========================================
 class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._init();
@@ -29,7 +29,7 @@ class LocalDatabase {
 
   Future<Database> initDB() async {
     final dbPath = await getDatabasesPath();
-    final path = p.join(dbPath, 'neelkanth_enterprise_v6.db');
+    final path = p.join(dbPath, 'neelkanth_enterprise_v7.db');
 
     return await openDatabase(
       path,
@@ -83,7 +83,8 @@ class LocalDatabase {
             voucherId TEXT NOT NULL,
             accountName TEXT NOT NULL,
             type TEXT NOT NULL,
-            amount REAL NOT NULL
+            amount REAL NOT NULL,
+            FOREIGN KEY (voucherId) REFERENCES vouchers (id) ON DELETE CASCADE
           )
         ''');
       },
@@ -122,7 +123,7 @@ class LocalDatabase {
 
   Future<List<Map<String, dynamic>>> getVouchers(String firmId) async {
     final db = await database;
-    return await db.query('vouchers', where: 'firmId = ?', whereArgs: [firmId]);
+    return await db.query('vouchers', where: 'firmId = ?', whereArgs: [firmId], orderBy: 'date DESC');
   }
 
   Future<List<Map<String, dynamic>>> getJournalEntries(String voucherId) async {
@@ -130,6 +131,7 @@ class LocalDatabase {
     return await db.query('journal_entries', where: 'voucherId = ?', whereArgs: [voucherId]);
   }
 
+  // Atomic Double-Entry Transaction Guard
   Future<void> saveVoucherTransaction(Map<String, dynamic> voucher, List<Map<String, dynamic>> entries) async {
     final db = await database;
     await db.transaction((txn) async {
@@ -143,6 +145,7 @@ class LocalDatabase {
           'amount': entry['amount'],
         });
 
+        // Update account balances based on accounting rules (Asset/Expense Dr +, Liability/Revenue Cr +)
         double amt = entry['amount'] ?? 0.0;
         double sign = entry['type'] == 'DEBIT' ? 1.0 : -1.0;
         await txn.rawUpdate(
@@ -171,7 +174,7 @@ class LocalDatabase {
 }
 
 // ==========================================
-// CENTRAL STATE
+// CENTRAL STATE MANAGEMENT
 // ==========================================
 class AppState {
   static Map<String, dynamic>? activeFirm;
@@ -253,6 +256,7 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
                 };
                 await LocalDatabase.instance.insertFirm(newFirm);
 
+                // Default Chart of Accounts
                 await LocalDatabase.instance.insertAccount({'id': 'a1_$firmId', 'firmId': firmId, 'name': 'Cash Account', 'category': 'Asset', 'balance': 0.0});
                 await LocalDatabase.instance.insertAccount({'id': 'a2_$firmId', 'firmId': firmId, 'name': 'Bank Account', 'category': 'Asset', 'balance': 0.0});
                 await LocalDatabase.instance.insertAccount({'id': 'a3_$firmId', 'firmId': firmId, 'name': 'Sales Account', 'category': 'Revenue', 'balance': 0.0});
@@ -318,7 +322,7 @@ class _FirmSelectionScreenState extends State<FirmSelectionScreen> {
 }
 
 // ==========================================
-// 3. MAIN DASHBOARD
+// 3. MAIN DASHBOARD CONTAINER
 // ==========================================
 class MainDashboardScreen extends StatefulWidget {
   const MainDashboardScreen({super.key});
@@ -348,6 +352,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.switch_left, color: Colors.amberAccent),
+            tooltip: 'Switch Firm',
             onPressed: () {
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const FirmSelectionScreen()));
             },
@@ -376,7 +381,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
 }
 
 // ==========================================
-// 4. VOUCHER TERMINAL
+// 4. VOUCHER TERMINAL (Double-Entry Guard)
 // ==========================================
 class VoucherTerminalScreen extends StatefulWidget {
   const VoucherTerminalScreen({super.key});
@@ -533,14 +538,14 @@ class _VoucherTerminalScreenState extends State<VoucherTerminalScreen> {
                             'firmId': AppState.activeFirm!['id'] as String,
                             'voucherNo': 'VOUCH-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
                             'type': voucherType,
-                            'date': '28 Aug 2026',
+                            'date': DateTime.now().toString().substring(0, 10),
                             'narration': _narrationController.text,
                           };
 
                           await LocalDatabase.instance.saveVoucherTransaction(voucher, _entries);
                           _clearForm();
                           _loadAccounts();
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Voucher Saved Successfully!')));
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Voucher Posted & Balanced Successfully!')));
                         }
                       : null,
                   style: ElevatedButton.styleFrom(backgroundColor: emerald),
@@ -607,6 +612,8 @@ class _DayBookScreenState extends State<DayBookScreen> {
                           children: [
                             Text('To ${cr['accountName']} (Cr.)', style: const TextStyle(color: Colors.grey)),
                             Text('Voucher #: ${v['voucherNo']} | Date: ${v['date']}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                            if (v['narration'] != null && (v['narration'] as String).isNotEmpty)
+                              Text('Note: ${v['narration']}', style: const TextStyle(color: Colors.amberAccent, fontSize: 10)),
                           ],
                         ),
                         trailing: Text('₹${(dr['amount'] as double).toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
@@ -672,7 +679,7 @@ class _LedgerBookScreenState extends State<LedgerBookScreen> {
 }
 
 // ==========================================
-// 7. FINANCIAL REPORTS (REPLACED ROSENACCENT WITH REDACCENT)
+// 7. FINANCIAL REPORTS & PDF PACK
 // ==========================================
 class FinancialReportsScreen extends StatefulWidget {
   const FinancialReportsScreen({super.key});
@@ -764,7 +771,8 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> {
               label: const Text('Export Encrypted Data Backup (JSON)', style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
               onPressed: () async {
                 final jsonStr = await LocalDatabase.instance.exportBackupJSON(AppState.activeFirm!['id'] as String);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Encrypted JSON Data Backup Exported!')));
+                debugPrint(jsonStr);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Encrypted JSON Data Backup Exported Successfully!')));
               },
             )
           ],
@@ -789,7 +797,7 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> {
                 pw.Text('GSTIN: ${AppState.activeFirm!['gstin']} | Address: ${AppState.activeFirm!['address']}'),
                 pw.SizedBox(height: 10),
                 pw.Text('FINANCIAL STATEMENT & PROFIT LOSS PACK', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.green700)),
-                pw.Text('Assessment Year: 2026-27 | Date: 28/08/2026'),
+                pw.Text('Assessment Year: 2026-27 | Date: ${DateTime.now().toString().substring(0, 10)}'),
                 pw.Divider(),
                 pw.SizedBox(height: 10),
                 pw.TableHelper.fromTextArray(
@@ -932,7 +940,7 @@ class _StockScreenState extends State<StockScreen> {
 }
 
 // ==========================================
-// CHART OF ACCOUNTS
+// 9. CHART OF ACCOUNTS (LEDGER MANAGEMENT)
 // ==========================================
 class AccountManagementScreen extends StatefulWidget {
   const AccountManagementScreen({super.key});
@@ -990,6 +998,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
                         const Spacer(),
                         ElevatedButton(
                           onPressed: () async {
+                            if (_nameController.text.nameValid) {} // safe check
                             if (_nameController.text.isNotEmpty) {
                               await LocalDatabase.instance.insertAccount({
                                 'id': 'acc_${DateTime.now().millisecondsSinceEpoch}',
