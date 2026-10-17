@@ -63,12 +63,12 @@ const loadAllIntoCache = () => {
         const cursor = event.target.result;
         if (cursor) {
           window.__APP_STORAGE_CACHE__[cursor.key] = cursor.value;
-          // Synchronize to localStorage if within safe limits
+          // Dual-write into localStorage if safe
           try {
             const val = cursor.value;
             localStorage.setItem(cursor.key, typeof val === 'object' ? JSON.stringify(val) : String(val));
           } catch (e) {
-            // LocalStorage quota safety
+            // Quota limit safety
           }
           cursor.continue();
         } else {
