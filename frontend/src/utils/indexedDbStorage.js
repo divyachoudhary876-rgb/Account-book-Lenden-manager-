@@ -10,7 +10,11 @@ const DB_VERSION = 1;
 
 let dbInstance = null;
 let initPromise = null;
-window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
+
+// Ensure global memory cache exists
+if (typeof window !== 'undefined') {
+  window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
+}
 
 export const initIndexedDB = () => {
   if (initPromise) return initPromise;
@@ -150,4 +154,20 @@ export const IDBStorage = {
   removeItem: (key) => {
     if (!key) return;
     delete window.__APP_STORAGE_CACHE__[key];
-    try
+    try { localStorage.removeItem(key); } catch (e) {}
+    if (dbInstance) {
+      try {
+        const transaction = dbInstance.transaction(STORE_Name, 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        store.delete(key);
+      } catch (e) {}
+    }
+    window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value: null } }));
+    window.dispatchEvent(new Event('app_state_updated'));
+    window.dispatchEvent(new Event('storage'));
+  },
+
+  clearMemoryCache: () => {
+    window.__APP_STORAGE_CACHE__ = {};
+  }
+};
