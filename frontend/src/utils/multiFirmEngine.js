@@ -20,7 +20,6 @@ export const getFirmsRegistry = () => {
       }
     }
 
-    // De-duplication by Legal Name & ID
     const uniqueMap = new Map();
     firms.forEach(f => {
       if (f && (f.id || f.firm_id || f.legal_name)) {
@@ -85,11 +84,9 @@ export const switchActiveFirm = (firmId) => {
 
   const cleanId = targetFirm.id || targetFirm.firm_id;
   
-  // Set memory and storage keys
   IDBStorage.setItem('app_active_firm_id', cleanId);
   IDBStorage.setItem('active_firm_profile', targetFirm);
 
-  // Synchronize active view keys
   const scopedVouchers = IDBStorage.getItem(`account_book_vouchers_${cleanId}`, []);
   IDBStorage.setItem('account_book_vouchers', scopedVouchers);
   IDBStorage.setItem('app_vouchers', scopedVouchers);
@@ -103,7 +100,6 @@ export const switchActiveFirm = (firmId) => {
   const scopedInventory = IDBStorage.getItem(`inventory_items_${cleanId}`, []);
   IDBStorage.setItem('inventory_items', scopedInventory);
 
-  // Broadcast events
   window.dispatchEvent(new Event('app_accounts_updated'));
   window.dispatchEvent(new Event('app_inventory_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
@@ -175,9 +171,7 @@ export const deleteFirmProfile = (firmId) => {
     `universal_material_adjustments_${firmId}`
   ];
 
-  firmKeysToPurge.forEach(k => {
-    IDBStorage.removeItem(k);
-  });
+  firmKeysToPurge.forEach(k => IDBStorage.removeItem(k));
 
   if (firms.length > 0) {
     const nextId = firms[0].id || firms[0].firm_id;
