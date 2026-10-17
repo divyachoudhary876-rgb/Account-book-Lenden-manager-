@@ -1,3 +1,4 @@
+// frontend/src/utils/indexedDbStorage.js
 /**
  * Advanced Hybrid IndexedDB Storage Engine for Account Book Smart Manager
  * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine
@@ -149,20 +150,4 @@ export const IDBStorage = {
   removeItem: (key) => {
     if (!key) return;
     delete window.__APP_STORAGE_CACHE__[key];
-    try { localStorage.removeItem(key); } catch (e) {}
-    if (dbInstance) {
-      try {
-        const transaction = dbInstance.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        store.delete(key);
-      } catch (e) {}
-    }
-    window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value: null } }));
-    window.dispatchEvent(new Event('app_state_updated'));
-    window.dispatchEvent(new Event('storage'));
-  },
-
-  clearMemoryCache: () => {
-    window.__APP_STORAGE_CACHE__ = {};
-  }
-};
+    try
