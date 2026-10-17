@@ -1,7 +1,9 @@
 // frontend/src/utils/voucherPostingEngine.js
 
 import { IDBStorage } from './indexedDbStorage.js';
-import { getFirmMasterAccounts } from './accountMasterEngine.js';
+import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
+
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 export const normalizeLedgerAccountMatch = (targetAccount = '', candidateAccount = '') => {
   if (!targetAccount || !candidateAccount) return false;
@@ -38,7 +40,7 @@ export const getUniversalVouchersByFirm = (firmId) => {
 
     return firmFiltered;
   } catch (e) {
-    console.error('[voucherPostingEngine] Error:', e);
+    console.error('[voucherPostingEngine] Error fetching vouchers:', e);
     return [];
   }
 };
@@ -68,6 +70,9 @@ const getNextSequentialNumber = (existingVouchers, vType) => {
   return `${prefix}-${maxNum + 1}`;
 };
 
+/**
+ * Enterprise Double-Entry Posting Engine with Compound Line Reconcile & Balance Update
+ */
 export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
   const activeFirmId = String(firmId || IDBStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433').trim();
   const vouchersKey = `account_book_vouchers_${activeFirmId}`;
@@ -184,6 +189,7 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
     };
   }
 
+  // 1. Commit Voucher to Scoped Repository
   const existingIdx = existingVouchers.findIndex(v => v && String(v.id) === String(finalVoucher.id));
   if (existingIdx !== -1) {
     existingVouchers[existingIdx] = finalVoucher;
@@ -193,36 +199,41 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
   IDBStorage.setItem(vouchersKey, existingVouchers);
   IDBStorage.setItem(`app_vouchers_${activeFirmId}`, existingVouchers);
 
-  // Update Account Balances
+  // 2. Reconcile & Update Master Accounts (Account Heads)
   const accountsKey = `account_heads_${activeFirmId}`;
-  const accounts = IDBStorage.getItem(accountsKey, []) || [];
-  const accountMap = new Map();
-  accounts.forEach(a => accountMap.set((a.name || a.account_name || '').trim().toLowerCase(), a));
-
+  let accounts = IDBStorage.getItem(accountsKey, []) || [];
+  
   processedEntries.forEach(entry => {
-    const accKey = entry.account_name.toLowerCase();
-    let accObj = accountMap.get(accKey);
+    const accName = entry.account_name.trim();
+    let accObj = accounts.find(a => (a.name || a.account_name || '').trim().toLowerCase() === accName.toLowerCase());
 
     if (!accObj) {
       accObj = {
         id: `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        account_name: entry.account_name,
-        name: entry.account_name,
+        firm_id: activeFirmId,
+        account_name: accName,
+        name: accName,
         primary_type: entry.type === 'DR' ? 'EXPENSES' : 'INCOME',
         sub_group: 'General Ledger',
         opening_balance: 0,
         current_balance: 0,
         balance_type: entry.type === 'DR' ? 'Dr' : 'Cr'
       };
-      accountMap.set(accKey, accObj);
+      accounts.push(accObj);
     }
 
-    const balChange = entry.type === 'DR' ? entry.amount : -entry.amount;
-    accObj.current_balance = (parseFloat(accObj.current_balance || 0) + balChange);
+    // GAAP Normal Balance Sign Multiplier
+    const isAssetOrExpense = ['ASSETS', 'EXPENSES'].includes((accObj.primary_type || accObj.type || '').toUpperCase());
+    const multiplier = isAssetOrExpense ? (entry.type === 'DR' ? 1 : -1) : (entry.type === 'CR' ? 1 : -1);
+    
+    const currentBal = parseFloat(accObj.current_balance !== undefined ? accObj.current_balance : (accObj.opening_balance || 0));
+    accObj.current_balance = round2(currentBal + (entry.amount * multiplier));
   });
 
-  IDBStorage.setItem(accountsKey, Array.from(accountMap.values()));
+  IDBStorage.setItem(accountsKey, accounts);
+  IDBStorage.setItem(`app_accounts_${activeFirmId}`, accounts);
 
+  // 3. Broadcast Global Reactivity Events
   window.dispatchEvent(new Event('app_accounts_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('app_state_updated'));
