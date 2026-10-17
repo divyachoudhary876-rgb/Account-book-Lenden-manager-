@@ -2,22 +2,42 @@
 
 import React, { useState } from 'react';
 import { IDBStorage } from '../utils/indexedDbStorage.js';
-import { INDUSTRY_SECTORS } from '../utils/industryEngine.js';
+
+const SAFE_INDUSTRY_SECTORS = {
+  MANUFACTURING: {
+    label: 'Manufacturing & Industrial',
+    categories: [
+      { code: 'BRICK_KILN', icon: '🧱', label: 'Brick Kiln & Clay Works (ईंट भट्ठा उद्योग)' },
+      { code: 'BIOMASS_BRIQUETTES', icon: '🔥', label: 'Biomass Briquettes & Biofuel (बायोमास ब्रिकेट्स)' },
+      { code: 'GENERAL_MANUFACTURING', icon: '🏭', label: 'General Manufacturing & Factory' }
+    ]
+  },
+  TRADING: {
+    label: 'Trading & Distribution',
+    categories: [
+      { code: 'WHOLESALE_TRADING', icon: '📦', label: 'Wholesale & General Trading' },
+      { code: 'RETAIL', icon: '🛒', label: 'Retail Store / Shop' }
+    ]
+  }
+};
 
 export default function CreateFirmForm({ onFirmCreated, onCancel }) {
-  const [firmName, setFirmName] = useState('');
+  const [firmName, setFirmName] = useState('Neelkanth Int Udyog');
   const [tradeName, setTradeName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('BRICK_KILN');
-  const [gstin, setGstin] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+  const [gstin, setGstin] = useState('08AAAAA0000A1Z5');
+  const [phone, setPhone] = useState('98290XXXXX');
+  const [address, setAddress] = useState('Industrial Area, Hanumangarh, Rajasthan');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setErrorMessage(null);
+
     const cleanName = firmName.trim();
     if (!cleanName) {
-      alert("⚠️ Legal Business / Firm Name is required.");
+      setErrorMessage("⚠️ Legal Firm Name is mandatory.");
       return;
     }
 
@@ -39,14 +59,21 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         created_at: new Date().toISOString()
       };
 
-      // 1. Register firm using IDBStorage
-      const existingFirms = IDBStorage.getItem('app_firms_registry', []) || IDBStorage.getItem('app_firms', []) || [];
+      // 1. Register firm safely using IDBStorage
+      let existingFirms = [];
+      try {
+        existingFirms = IDBStorage.getItem('app_firms_registry', []) || IDBStorage.getItem('app_firms', []) || [];
+        if (!Array.isArray(existingFirms)) existingFirms = [];
+      } catch (err) {
+        existingFirms = [];
+      }
+
       const updatedFirms = [...existingFirms.filter(f => f && (f.id || f.firm_id) !== firmId), newFirmPayload];
       
       IDBStorage.setItem('app_firms_registry', updatedFirms);
       IDBStorage.setItem('app_firms', updatedFirms);
 
-      // 2. Initialize baseline ledger accounts strictly scoped to this firmId
+      // 2. Initialize baseline ledger accounts strictly scoped to firmId
       const starterAccounts = [
         { id: `ACC-${firmId}-001`, firm_id: firmId, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', is_system_locked: true },
         { id: `ACC-${firmId}-002`, firm_id: firmId, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', is_system_locked: false },
@@ -84,7 +111,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
       }
     } catch (err) {
       setIsSubmitting(false);
-      alert("Failed to create firm: " + err.message);
+      setErrorMessage("Firm creation error: " + err.message);
     }
   };
 
@@ -102,6 +129,12 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         )}
       </div>
 
+      {errorMessage && (
+        <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', marginBottom: '12px' }}>
+          {errorMessage}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '12px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
           <div>
@@ -117,20 +150,13 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         <div>
           <label style={labelStyle}>Business Category & Industry Type (व्यापार श्रेणी) *</label>
           <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0f172a' }}>
-            {INDUSTRY_SECTORS && Object.entries(INDUSTRY_SECTORS).map(([secKey, sec]) => (
+            {Object.entries(SAFE_INDUSTRY_SECTORS).map(([secKey, sec]) => (
               <optgroup key={secKey} label={sec.label}>
                 {sec.categories.map(cat => (
                   <option key={cat.code} value={cat.code}>{cat.icon} {cat.label}</option>
                 ))}
               </optgroup>
             ))}
-            {!INDUSTRY_SECTORS && (
-              <>
-                <option value="BRICK_KILN">🧱 Brick Kiln Manufacturing (ईंट भट्टा उद्योग)</option>
-                <option value="BIOMASS_BRIQUETTES">🔥 Biomass Briquettes & Biofuel (बायोमास ब्रिकेट्स)</option>
-                <option value="TRADING">📦 General Trading & Wholesale</option>
-              </>
-            )}
           </select>
         </div>
 
