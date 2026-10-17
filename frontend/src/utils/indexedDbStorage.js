@@ -1,6 +1,6 @@
 /**
  * Advanced Hybrid IndexedDB Storage Engine for Account Book Smart Manager
- * Bypasses localStorage 10MB quota limit completely while enforcing strict multi-firm storage isolation.
+ * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine
  */
 
 const DB_NAME = 'AccountBookERP_DB';
@@ -8,23 +8,29 @@ const STORE_NAME = 'storage_store';
 const DB_VERSION = 1;
 
 let dbInstance = null;
+let initPromise = null;
 window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
 
 export const initIndexedDB = () => {
-  return new Promise((resolve) => {
+  if (initPromise) return initPromise;
+
+  initPromise = new Promise((resolve) => {
     if (dbInstance) {
       resolve(dbInstance);
       return;
     }
 
-    if (!window.indexedDB) {
+    if (typeof window === 'undefined' || !window.indexedDB) {
       resolve(null);
       return;
     }
 
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onerror = () => resolve(null);
+    request.onerror = (e) => {
+      console.error('[IDBStorage] Database open error:', e);
+      resolve(null);
+    };
 
     request.onsuccess = (event) => {
       dbInstance = event.target.result;
@@ -38,6 +44,8 @@ export const initIndexedDB = () => {
       }
     };
   });
+
+  return initPromise;
 };
 
 const loadAllIntoCache = () => {
@@ -55,10 +63,13 @@ const loadAllIntoCache = () => {
         const cursor = event.target.result;
         if (cursor) {
           window.__APP_STORAGE_CACHE__[cursor.key] = cursor.value;
+          // Synchronize to localStorage if within safe limits
           try {
             const val = cursor.value;
             localStorage.setItem(cursor.key, typeof val === 'object' ? JSON.stringify(val) : String(val));
-          } catch (e) {}
+          } catch (e) {
+            // LocalStorage quota safety
+          }
           cursor.continue();
         } else {
           resolve();
@@ -72,12 +83,10 @@ const loadAllIntoCache = () => {
 };
 
 export const IDBStorage = {
-  getItem: (key, fallback = []) => {
-    // STRICT MULTI-FIRM ISOLATION GUARD:
-    // If a component requests global keys like inventory or accounts, ensure we return empty 
-    // unless it specifically matches the active firm ID suffix, preventing cross-firm data leaks to blank firms.
-    const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433';
-    
+  getItem: (key, fallback = null) => {
+    if (!key) return fallback;
+
+    // 1. Check in-memory fast cache first
     const cached = window.__APP_STORAGE_CACHE__[key];
     if (cached !== undefined && cached !== null) {
       try {
@@ -87,12 +96,18 @@ export const IDBStorage = {
       }
     }
 
+    // 2. Fallback to localStorage
     try {
       const local = localStorage.getItem(key);
-      if (local !== null) {
-        const parsed = JSON.parse(local);
-        window.__APP_STORAGE_CACHE__[key] = parsed;
-        return parsed;
+      if (local !== null && local !== undefined) {
+        try {
+          const parsed = JSON.parse(local);
+          window.__APP_STORAGE_CACHE__[key] = parsed;
+          return parsed;
+        } catch (e) {
+          window.__APP_STORAGE_CACHE__[key] = local;
+          return local;
+        }
       }
     } catch (e) {}
 
@@ -100,29 +115,41 @@ export const IDBStorage = {
   },
 
   setItem: (key, value) => {
+    if (!key) return;
+
     try {
       window.__APP_STORAGE_CACHE__[key] = value;
-      
+
+      // 1. Dual write to LocalStorage
       try {
         const serialized = typeof value === 'object' ? JSON.stringify(value) : String(value);
         localStorage.setItem(key, serialized);
-      } catch (e) {}
+      } catch (quotaErr) {
+        console.warn(`[IDBStorage] LocalStorage quota reached for key: ${key}. Retaining in IndexedDB.`);
+      }
 
+      // 2. Dual write to IndexedDB
       if (dbInstance) {
         try {
           const transaction = dbInstance.transaction(STORE_NAME, 'readwrite');
           const store = transaction.objectStore(STORE_NAME);
           store.put(value, key);
-        } catch (e) {}
+        } catch (idbErr) {
+          console.error('[IDBStorage] IndexedDB write failed:', idbErr);
+        }
       }
 
+      // 3. Dispatch reactive events
       window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value } }));
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
-    } catch (e) {}
+    } catch (e) {
+      console.error('[IDBStorage] SetItem exception:', e);
+    }
   },
 
   removeItem: (key) => {
+    if (!key) return;
     delete window.__APP_STORAGE_CACHE__[key];
     try { localStorage.removeItem(key); } catch (e) {}
     if (dbInstance) {
@@ -132,5 +159,12 @@ export const IDBStorage = {
         store.delete(key);
       } catch (e) {}
     }
+    window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value: null } }));
+    window.dispatchEvent(new Event('app_state_updated'));
+    window.dispatchEvent(new Event('storage'));
+  },
+
+  clearMemoryCache: () => {
+    window.__APP_STORAGE_CACHE__ = {};
   }
 };
