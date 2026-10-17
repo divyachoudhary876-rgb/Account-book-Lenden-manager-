@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Resilient Backup & Restore Engine
- * Multi-Firm Deep Auto-Healing & Legacy ID Reconciliation Architecture
+ * Multi-Firm Deep Auto-Healing & Legacy Scattered-ID Reconciliation Architecture
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -17,7 +17,7 @@ const resolveFirmNameString = (firmInput) => {
 };
 
 /**
- * Normalizes and heals purchases with domain-specific brick kiln classifications
+ * Normalizes brick kiln material names & purchase numbers automatically
  */
 export const normalizePurchaseRecords = (purchases, targetFirmId) => {
   if (!Array.isArray(purchases)) return [];
@@ -30,19 +30,22 @@ export const normalizePurchaseRecords = (purchases, targetFirmId) => {
     let itemName = pCopy.itemName || pCopy.item_name;
     const narration = (pCopy.narration || '').toLowerCase();
     const drAcc = (pCopy.dr_account || '').toLowerCase();
-    const party = (pCopy.party || pCopy.cr_account || pCopy.supplier_name || '').toLowerCase();
+    const party = (pCopy.party || pCopy.cr_account || pCopy.supplier_name || pCopy.supplier || '').toLowerCase();
 
-    if (!itemName || ['stock item', 'stock account', 'purchase a/c', 'purchase raw material account'].includes(itemName.toLowerCase())) {
+    // Auto-heal generic placeholders into real brick kiln commodities
+    if (!itemName || ['stock item', 'stock account', 'purchase a/c', 'purchase raw material account', 'material'].includes(itemName.toLowerCase())) {
       if (narration.includes('diesel') || drAcc.includes('diesel') || party.includes('padgad') || party.includes('driver')) {
         itemName = 'Diesel';
       } else if (narration.includes('grade a') || drAcc.includes('grade a')) {
         itemName = 'Mitti Grade A';
       } else if (narration.includes('grade b') || drAcc.includes('grade b') || party.includes('sabeer') || party.includes('vinod sihag')) {
         itemName = 'Mitti Grade B';
-      } else if (narration.includes('greet') || narration.includes('crusher')) {
+      } else if (narration.includes('greet') || narration.includes('crusher') || party.includes('chelasari')) {
         itemName = 'Greet & Crusher';
       } else if (narration.includes('kitchen')) {
         itemName = 'Kitchen Accessories';
+      } else if (narration.includes('coal') || narration.includes('koyla')) {
+        itemName = 'Coal / Fuel';
       } else {
         itemName = 'Raw Material Stock';
       }
@@ -62,7 +65,7 @@ export const normalizePurchaseRecords = (purchases, targetFirmId) => {
 };
 
 /**
- * Universal Auto-Heal & Multi-Key Synchronization
+ * Auto-Heal & Synchronize All Restored Records
  */
 export const autoHealAndRepostRestoredPurchases = (firmId) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
@@ -71,40 +74,31 @@ export const autoHealAndRepostRestoredPurchases = (firmId) => {
     const rawPurchases = IDBStorage.getItem(`purchase_bills_${cleanFirmId}`, []) || [];
     const healedPurchases = normalizePurchaseRecords(rawPurchases, cleanFirmId);
 
-    // Persist to both IDB and LocalStorage
+    // Persist to IDBStorage (Dual write buffer)
     IDBStorage.setItem(`purchase_bills_${cleanFirmId}`, healedPurchases);
     IDBStorage.setItem('purchase_bills', healedPurchases);
-    try {
-      localStorage.setItem(`purchase_bills_${cleanFirmId}`, JSON.stringify(healedPurchases));
-      localStorage.setItem('purchase_bills', JSON.stringify(healedPurchases));
-    } catch (e) {
-      console.warn('LocalStorage limit exceeded, data retained in IndexedDB');
-    }
 
-    // Mirror vouchers
+    // Mirror vouchers for Daybook
     const vouchers = IDBStorage.getItem(`account_book_vouchers_${cleanFirmId}`, []) || [];
     if (vouchers.length > 0) {
       IDBStorage.setItem('account_book_vouchers', vouchers);
       IDBStorage.setItem('app_vouchers', vouchers);
-      try {
-        localStorage.setItem(`account_book_vouchers_${cleanFirmId}`, JSON.stringify(vouchers));
-        localStorage.setItem('account_book_vouchers', JSON.stringify(vouchers));
-      } catch (e) {}
     }
 
-    // Dispatch system events
+    // Dispatch global UI reactivity
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('storage'));
   } catch (err) {
-    console.error('Error during bulk auto-heal:', err);
+    console.error('[backupEngine] Error during bulk auto-heal:', err);
   }
 };
 
 /**
- * Universal Zero-Loss Restore Engine (Handles all Legacy & Scattered Firm IDs)
+ * Universal Zero-Loss Restore Engine:
+ * Scans ALL scattered firm keys from legacy backups and aggregates them cleanly.
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -133,11 +127,12 @@ export const restoreUniversalBackup = async (rawInput) => {
                          targetData?.active_firm_profile?.firm_id || 
                          'FIRM-1790909076433';
 
-    // 2. Aggregate Scattered Legacy Records
+    // 2. Aggregate Scattered Legacy Records across all keys
     const voucherMap = new Map();
     const purchaseMap = new Map();
     const accountMap = new Map();
     const itemMap = new Map();
+    const adjustmentMap = new Map();
 
     Object.keys(targetData).forEach(key => {
       const val = targetData[key];
@@ -146,10 +141,9 @@ export const restoreUniversalBackup = async (rawInput) => {
       // Save raw key directly into IDBStorage
       try {
         IDBStorage.setItem(key, val);
-        localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
       } catch (e) {}
 
-      // A. Aggregate Vouchers
+      // A. Aggregate Vouchers & Invoices
       if (key.includes('vouchers') || key.includes('invoices') || key.includes('app_invoices')) {
         if (Array.isArray(val)) {
           val.forEach(v => {
@@ -162,7 +156,10 @@ export const restoreUniversalBackup = async (rawInput) => {
       if (key.includes('purchase_bills') || key.includes('purchases')) {
         if (Array.isArray(val)) {
           val.forEach(p => {
-            if (p && p.id) purchaseMap.set(p.id, { ...p, firm_id: targetFirmId, firmId: targetFirmId });
+            if (p && (p.id || p.bill_number)) {
+              const uKey = p.id || p.bill_number;
+              purchaseMap.set(uKey, { ...p, firm_id: targetFirmId, firmId: targetFirmId });
+            }
           });
         }
       }
@@ -171,16 +168,42 @@ export const restoreUniversalBackup = async (rawInput) => {
       if (key.includes('account_heads') || key.includes('app_accounts')) {
         if (Array.isArray(val)) {
           val.forEach(a => {
-            if (a && a.id) accountMap.set(a.id, a);
+            if (a && (a.id || a.name || a.account_name)) {
+              const aKey = (a.name || a.account_name || a.id).trim().toLowerCase();
+              if (!accountMap.has(aKey)) accountMap.set(aKey, a);
+            }
           });
         }
       }
 
       // D. Aggregate Inventory Items
-      if (key.includes('inventory_items')) {
+      if (key.includes('inventory_items') || key.includes('app_inventory')) {
         if (Array.isArray(val)) {
           val.forEach(item => {
-            if (item && item.id) itemMap.set(item.id, { ...item, firm_id: targetFirmId });
+            if (item && (item.id || item.name || item.item_name)) {
+              const iKey = (item.name || item.item_name || item.id).trim().toLowerCase();
+              if (!itemMap.has(iKey)) {
+                itemMap.set(iKey, { ...item, firm_id: targetFirmId });
+              } else {
+                // If item exists with 0 stock, take higher stock from duplicate entry
+                const existing = itemMap.get(iKey);
+                const cur = parseFloat(item.current_stock || item.stock || item.qty || 0);
+                if (cur > parseFloat(existing.current_stock || 0)) {
+                  existing.current_stock = cur;
+                  existing.stock = cur;
+                  existing.qty = cur;
+                }
+              }
+            }
+          });
+        }
+      }
+
+      // E. Aggregate Material Adjustments
+      if (key.includes('universal_material_adjustments') || key.includes('material_consumptions')) {
+        if (Array.isArray(val)) {
+          val.forEach(adj => {
+            if (adj && adj.id) adjustmentMap.set(adj.id, { ...adj, firm_id: targetFirmId });
           });
         }
       }
@@ -190,6 +213,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     const consolidatedPurchases = normalizePurchaseRecords(Array.from(purchaseMap.values()), targetFirmId);
     const consolidatedAccounts = Array.from(accountMap.values());
     const consolidatedItems = Array.from(itemMap.values());
+    const consolidatedAdjustments = Array.from(adjustmentMap.values());
 
     // 3. Write Consolidated Data to Target Firm Keys
     IDBStorage.setItem(`account_book_vouchers_${targetFirmId}`, consolidatedVouchers);
@@ -206,15 +230,7 @@ export const restoreUniversalBackup = async (rawInput) => {
     IDBStorage.setItem(`inventory_items_${targetFirmId}`, consolidatedItems);
     IDBStorage.setItem('inventory_items', consolidatedItems);
 
-    // Sync critical caches to localStorage
-    try {
-      localStorage.setItem(`account_book_vouchers_${targetFirmId}`, JSON.stringify(consolidatedVouchers));
-      localStorage.setItem('account_book_vouchers', JSON.stringify(consolidatedVouchers));
-      localStorage.setItem(`purchase_bills_${targetFirmId}`, JSON.stringify(consolidatedPurchases));
-      localStorage.setItem('purchase_bills', JSON.stringify(consolidatedPurchases));
-      localStorage.setItem(`account_heads_${targetFirmId}`, JSON.stringify(consolidatedAccounts));
-      localStorage.setItem(`inventory_items_${targetFirmId}`, JSON.stringify(consolidatedItems));
-    } catch (e) {}
+    IDBStorage.setItem(`universal_material_adjustments_${targetFirmId}`, consolidatedAdjustments);
 
     // 4. Firm Profile Registry Reconciliation
     let finalFirmsList = targetData['app_firms_registry'] || targetData['app_firms'] || [];
@@ -234,9 +250,8 @@ export const restoreUniversalBackup = async (rawInput) => {
     IDBStorage.setItem('app_firms', finalFirmsList);
     IDBStorage.setItem('app_active_firm_id', targetFirmId);
     IDBStorage.setItem('active_firm_profile', finalFirmsList.find(f => f.id === targetFirmId) || finalFirmsList[0]);
-    localStorage.setItem('app_active_firm_id', targetFirmId);
 
-    // 5. Run Auto-Heal
+    // 5. Run Auto-Heal & Reconcile
     autoHealAndRepostRestoredPurchases(targetFirmId);
 
     return {
@@ -249,17 +264,20 @@ export const restoreUniversalBackup = async (rawInput) => {
       }
     };
   } catch (err) {
-    console.error("Universal Restore Error:", err);
+    console.error("[backupEngine] Universal Restore Error:", err);
     throw new Error(err.message || 'Backup restore karne mein asafalta hui.');
   }
 };
 
+/**
+ * Universal Complete Backup Exporter (Merges IndexedDB, Memory Cache, and LocalStorage)
+ */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
     const storageSnapshot = {};
     const cache = window.__APP_STORAGE_CACHE__ || {};
     
-    // Merge memory cache & localStorage keys for a complete snapshot
+    // 1. Pull all active localStorage entries
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k && !k.startsWith('temp_cache_') && !k.startsWith('debug_log_')) {
@@ -270,6 +288,8 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
         }
       }
     }
+
+    // 2. Merge memory buffer & IndexedDB snapshot
     Object.keys(cache).forEach(key => {
       if (!key.startsWith('temp_cache_') && !key.startsWith('debug_log_')) {
         storageSnapshot[key] = cache[key];
@@ -282,14 +302,28 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     const activeFirmId = IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
 
     const backupPayload = {
-      meta: { app: "AccountBook", firm: cleanFirm, version: "3.4.1", export_timestamp: now.toISOString(), active_firm_id: activeFirmId },
-      stats: { total_keys: Object.keys(storageSnapshot).length },
+      meta: { 
+        app: "AccountBook", 
+        firm: cleanFirm, 
+        version: "3.5.0", 
+        export_timestamp: now.toISOString(), 
+        active_firm_id: activeFirmId 
+      },
+      stats: { 
+        total_keys: Object.keys(storageSnapshot).length 
+      },
       data: storageSnapshot
     };
 
-    const jsonString = JSON.stringify(backupPayload);
+    const jsonString = JSON.stringify(backupPayload, null, 2);
+
     if (Capacitor.isNativePlatform()) {
-      const writeResult = await Filesystem.writeFile({ path: fileName, data: jsonString, directory: Directory.Cache, encoding: Encoding.UTF8 });
+      const writeResult = await Filesystem.writeFile({ 
+        path: fileName, 
+        data: jsonString, 
+        directory: Directory.Cache, 
+        encoding: Encoding.UTF8 
+      });
       if (writeResult?.uri) {
         await Share.share({ title: 'Account Book Backup', url: writeResult.uri });
         return { success: true };
@@ -303,7 +337,10 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+    setTimeout(() => { 
+      document.body.removeChild(a); 
+      URL.revokeObjectURL(url); 
+    }, 1500);
 
     return { success: true };
   } catch (err) {
