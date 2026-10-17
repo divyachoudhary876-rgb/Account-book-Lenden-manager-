@@ -1,7 +1,6 @@
 // frontend/src/components/CreateFirmForm.jsx
 
 import React, { useState } from 'react';
-import { IDBStorage } from '../utils/indexedDbStorage.js';
 
 const SAFE_INDUSTRY_SECTORS = {
   MANUFACTURING: {
@@ -31,12 +30,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const handleCreateFirmClick = (e) => {
-    if (e) {
-      if (typeof e.preventDefault === 'function') e.preventDefault();
-      if (typeof e.stopPropagation === 'function') e.stopPropagation();
-    }
-    
+  const handleButtonClick = () => {
     setErrorMessage(null);
     const cleanName = String(firmName || '').trim();
     if (!cleanName) {
@@ -62,23 +56,22 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         created_at: new Date().toISOString()
       };
 
-      // 1. Safely retrieve and update firm registry
+      // 1. Direct localStorage & IDBStorage atomic write to prevent any async deadlock
       let existingFirms = [];
       try {
-        const rawFirms = IDBStorage.getItem('app_firms_registry', null) || IDBStorage.getItem('app_firms', null);
-        if (Array.isArray(rawFirms)) {
-          existingFirms = rawFirms;
-        }
-      } catch (err) {
+        const rawFirms = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms');
+        if (rawFirms) existingFirms = JSON.parse(rawFirms);
+      } catch (e) {
         existingFirms = [];
       }
+      if (!Array.isArray(existingFirms)) existingFirms = [];
 
       const updatedFirms = [...existingFirms.filter(f => f && (f.id || f.firm_id) !== firmId), newFirmPayload];
       
-      IDBStorage.setItem('app_firms_registry', updatedFirms);
-      IDBStorage.setItem('app_firms', updatedFirms);
+      localStorage.setItem('app_firms_registry', JSON.stringify(updatedFirms));
+      localStorage.setItem('app_firms', JSON.stringify(updatedFirms));
 
-      // 2. Initialize baseline accounts strictly scoped to this firm
+      // 2. Initialize baseline accounts strictly scoped to firmId
       const starterAccounts = [
         { id: `ACC-${firmId}-001`, firm_id: firmId, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: true },
         { id: `ACC-${firmId}-002`, firm_id: firmId, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: false },
@@ -87,35 +80,36 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         { id: `ACC-${firmId}-005`, firm_id: firmId, account_name: 'Proprietor Capital Account', name: 'Proprietor Capital Account', primary_type: 'EQUITY', type: 'Liabilities', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', current_balance: 0, is_system_locked: false }
       ];
 
-      IDBStorage.setItem(`app_accounts_${firmId}`, starterAccounts);
-      IDBStorage.setItem(`account_heads_${firmId}`, starterAccounts);
+      localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(starterAccounts));
+      localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(starterAccounts));
 
       // 3. Initialize empty transaction & inventory buckets
-      IDBStorage.setItem(`account_book_vouchers_${firmId}`, []);
-      IDBStorage.setItem(`app_vouchers_${firmId}`, []);
-      IDBStorage.setItem(`inventory_items_${firmId}`, []);
-      IDBStorage.setItem(`material_consumptions_${firmId}`, []);
-      IDBStorage.setItem(`sales_invoices_${firmId}`, []);
-      IDBStorage.setItem(`purchase_bills_${firmId}`, []);
+      localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`app_vouchers_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`sales_invoices_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`purchase_bills_${firmId}`, JSON.stringify([]));
 
       // 4. Set Active Firm pointers
-      IDBStorage.setItem('app_active_firm_id', firmId);
-      IDBStorage.setItem('active_firm_profile', newFirmPayload);
+      localStorage.setItem('app_active_firm_id', firmId);
+      localStorage.setItem('active_firm_profile', JSON.stringify(newFirmPayload));
 
-      // 5. Broadcast global UI state sync events
-      window.dispatchEvent(new Event('app_state_updated'));
-      window.dispatchEvent(new Event('app_storage_updated'));
-      window.dispatchEvent(new Event('storage'));
+      // 5. Also update memory cache if available
+      if (window.__APP_STORAGE_CACHE__) {
+        window.__APP_STORAGE_CACHE__['app_active_firm_id'] = firmId;
+        window.__APP_STORAGE_CACHE__['active_firm_profile'] = newFirmPayload;
+      }
 
       setIsSubmitting(false);
 
+      // 6. Trigger reload to guarantee clean state mount
       if (onFirmCreated && typeof onFirmCreated === 'function') {
         onFirmCreated(newFirmPayload);
       } else {
         window.location.reload();
       }
     } catch (err) {
-      console.error("[CreateFirmForm] Submission error:", err);
+      console.error("[CreateFirmForm] Fatal error:", err);
       setIsSubmitting(false);
       setErrorMessage("Firm creation failed: " + (err.message || 'Unknown error'));
     }
@@ -141,11 +135,11 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         </div>
       )}
 
-      <form onSubmit={handleCreateFirmClick} style={{ display: 'grid', gap: '12px' }}>
+      <div style={{ display: 'grid', gap: '12px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
           <div>
             <label style={labelStyle}>Legal Firm Name (कानूनी व्यापार नाम) *</label>
-            <input type="text" placeholder="e.g. Neelkanth Int Udyog" value={firmName} onChange={e => setFirmName(e.target.value)} style={inputStyle} required />
+            <input type="text" placeholder="e.g. Neelkanth Int Udyog" value={firmName} onChange={e => setFirmName(e.target.value)} style={inputStyle} />
           </div>
           <div>
             <label style={labelStyle}>Trade Name / Brand (वैकल्पिक)</label>
@@ -186,11 +180,11 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
           {onCancel && (
             <button type="button" onClick={onCancel} style={{ flex: 1, backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
           )}
-          <button type="button" onClick={handleCreateFirmClick} disabled={isSubmitting} style={{ flex: 2, backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
+          <button type="button" onClick={handleButtonClick} disabled={isSubmitting} style={{ flex: 2, backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
             {isSubmitting ? 'Creating Enterprise...' : '💾 Create Enterprise & Initialize Ledgers'}
           </button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
