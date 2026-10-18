@@ -4,6 +4,8 @@
  */
 
 import { StorageService } from './storageSync';
+import { exportTruePDF, cleanTypographySpacing } from './pdfDownloadEngine';
+import { jsPDF } from 'jspdf';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
@@ -16,7 +18,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     throw new Error("Invalid Stock Item selected for statement.");
   }
 
-  // 1. Gather Purchase Bills (Stock Inward)
+  // 1. Gather Purchase Bills (Stock Inward / Plus)
   const purchaseBills = StorageService.getItem(`purchase_bills_${cleanFirmId}`, []) || StorageService.getItem('purchase_bills', []);
   const relevantPurchases = purchaseBills.filter(p => {
     const pItemId = String(p?.itemId || p?.item_id || '');
@@ -24,7 +26,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     return pItemId === itemId || pItemName === itemName.toLowerCase();
   });
 
-  // 2. Gather Sales Invoices (Stock Outward)
+  // 2. Gather Sales Invoices (Stock Outward / Minus)
   const salesInvoices = StorageService.getItem(`sales_invoices_${cleanFirmId}`, []) || StorageService.getItem('sales_invoices', []) || StorageService.getItem('app_invoices', []);
   const relevantSales = [];
   salesInvoices.forEach(s => {
@@ -38,7 +40,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     });
   });
 
-  // 3. Gather Material Consumptions / Adjustments (Stock Outward / Inward)
+  // 3. Gather Material Consumptions / Adjustments
   const adjustments = StorageService.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || StorageService.getItem('universal_material_adjustments', []);
   const relevantAdjustments = adjustments.filter(a => {
     const aItemName = String(a?.item_name || a?.itemName || '').trim().toLowerCase();
@@ -55,7 +57,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
       date: p?.voucher_date || p?.date || new Date().toISOString().slice(0, 10),
       type: 'PURCHASE (IN)',
       ref: p?.voucher_number || p?.reference_no || p?.bill_number || 'PUR',
-      particulars: `Purchase from ${p?.supplier || p?.party || p?.cr_account || 'Supplier'}`,
+      particulars: cleanTypographySpacing(`Purchase from ${p?.supplier || p?.party || p?.cr_account || 'Supplier'}`),
       in_qty: qty,
       out_qty: 0,
       rate: rate,
@@ -70,7 +72,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
       date: s?.voucher_date || s?.date || new Date().toISOString().slice(0, 10),
       type: 'SALE (OUT)',
       ref: s?.reference_no || s?.voucher_number || 'INV',
-      particulars: `Sale to ${s?.dr_account || s?.party || 'Customer'}`,
+      particulars: cleanTypographySpacing(`Sale to ${s?.dr_account || s?.party || 'Customer'}`),
       in_qty: 0,
       out_qty: qty,
       rate: rate,
@@ -81,12 +83,12 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
   relevantAdjustments.forEach(a => {
     const qty = parseFloat(a?.quantity || a?.qty || 0);
     const rate = parseFloat(a?.rate || 0);
-    const isOutward = true; // Material issue/consumption is generally outward
+    const isOutward = true; // Material issue / consumption
     ledgerEntries.push({
       date: a?.date || new Date().toISOString().slice(0, 10),
-      type: isOutward ? 'CONSUMPTION / ADJUSTMENT (OUT)' : 'ADJUSTMENT (IN)',
+      type: isOutward ? 'CONSUMPTION (OUT)' : 'ADJUSTMENT (IN)',
       ref: a?.id || 'ADJ',
-      particulars: `Adjustment / Issue to ${a?.party || 'Factory'} (${a?.remarks || 'N/A'})`,
+      particulars: cleanTypographySpacing(`Issue to ${a?.party || 'Factory'} (${a?.remarks || 'N/A'})`),
       in_qty: isOutward ? 0 : qty,
       out_qty: isOutward ? qty : 0,
       rate: rate,
@@ -109,102 +111,97 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
 
   return {
     item_name: itemName,
-    unit: item?.unit || 'Units',
+    unit: item?.unit || 'Pcs',
     current_stock: item?.current_stock || item?.stock || runningStock,
     entries: processedLedger
   };
 };
 
 /**
- * Generates an HTML Printable / PDF Report for the Stock Ledger
+ * Generates true PDF Report for Stock Item Movement using jsPDF & Capacitor exportTruePDF
  */
-export const exportStockLedgerPDF = (firmProfile, itemData, statementResult) => {
-  const firmName = firmProfile?.legal_name || firmProfile?.trade_name || 'Neelkanth Int Udyog';
-  const nowStr = new Date().toLocaleDateString('hi-IN');
+export const exportStockLedgerPDF = async (firmProfile, itemData, statementResult) => {
+  const firmName = firmProfile?.legal_name || firmProfile?.trade_name || firmProfile?.name || 'Neelkanth Int Udyog';
+  const itemName = statementResult.item_name;
+  const unit = statementResult.unit;
+  const rows = statementResult.entries;
 
-  let rowsHtml = '';
-  if (statementResult.entries.length === 0) {
-    rowsHtml = `<tr><td colspan="7" style="text-align: center; padding: 20px;">Is item ke liye koi transaction record nahi mila.</td></tr>`;
-  } else {
-    statementResult.entries.forEach((row, index) => {
-      rowsHtml += `
-        <tr>
-          <td>${index + 1}</td>
-          <td>${row.date}</td>
-          <td><b>${row.type}</b><br/><small>${row.ref}</small></td>
-          <td>${row.particulars}</td>
-          <td style="color: green; font-weight: bold;">${row.in_qty > 0 ? `+${row.in_qty}` : '-'}</td>
-          <td style="color: red; font-weight: bold;">${row.out_qty > 0 ? `-${row.out_qty}` : '-'}</td>
-          <td style="background: #f4f6f8; font-weight: bold;">${row.balance_qty} ${statementResult.unit}</td>
-        </tr>
-      `;
-    });
-  }
+  const doc = new jsPDF('p', 'mm', 'a4');
+  let y = 18;
+  let pageNum = 1;
 
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>Stock Item Ledger Statement - ${statementResult.item_name}</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
-        .header { text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; margin-bottom: 20px; }
-        .header h2 { margin: 0; color: #2c3e50; }
-        .header p { margin: 5px 0; color: #666; font-size: 14px; }
-        .item-info { background: #ecf0f1; padding: 12px; border-radius: 6px; margin-bottom: 15px; display: flex; justify-content: space-between; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-        th, td { border: 1px solid #bdc3c7; padding: 8px 10px; text-align: left; }
-        th { background-color: #2c3e50; color: white; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-        .footer { margin-top: 30px; text-align: right; font-size: 12px; color: #7f8c8d; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <h2>${firmName}</h2>
-        <p><b>Stock Item Ledger / Movement Statement</b></p>
-        <p>Generated On: ${nowStr}</p>
-      </div>
+  const printHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
 
-      <div class="item-info">
-        <div><b>Item Name:</b> ${statementResult.item_name}</div>
-        <div><b>Unit:</b> ${statementResult.unit}</div>
-        <div><b>Current Stock Balance:</b> <span style="color: #27ae60; font-weight: bold;">${statementResult.current_stock} ${statementResult.unit}</span></div>
-      </div>
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Stock Item Ledger & Movement Statement: ${itemName}`, 14, y);
+    y += 5;
 
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Date</th>
-            <th>Type / Ref</th>
-            <th>Particulars & Description</th>
-            <th>Inward (+)</th>
-            <th>Outward (-)</th>
-            <th>Remaining Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
-      </table>
+    doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Unit: ${unit} | Page ${pageNum}`, 14, y);
+    y += 6;
 
-      <div class="footer">
-        <p>AccountBook Smart Manager - Certified Inventory Module</p>
-      </div>
-    </body>
-    </html>
-  `;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
 
-  // Open print/PDF window
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 500);
-  }
+    doc.text('Date', 16, y + 4.8);
+    doc.text('Type / Ref', 38, y + 4.8);
+    doc.text('Particulars & Description', 85, y + 4.8);
+    doc.text('In (+)', 152, y + 4.8, { align: 'right' });
+    doc.text('Out (-)', 172, y + 4.8, { align: 'right' });
+    doc.text('Balance', 193, y + 4.8, { align: 'right' });
+    y += 9;
+  };
+
+  printHeader();
+
+  rows.forEach((row, index) => {
+    const rawParticulars = cleanTypographySpacing(row.particulars);
+    const splitPart = doc.splitTextToSize(rawParticulars, 64);
+    const rowHeight = Math.max(7, 3 + (splitPart.length * 3.4));
+
+    if (y + rowHeight > 280) {
+      doc.addPage();
+      pageNum += 1;
+      y = 18;
+      printHeader();
+    }
+
+    if (index % 2 === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y - 3, 182, rowHeight, 'F');
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
+
+    doc.text(String(row.date || '-'), 16, y);
+    doc.text(String(row.type.split(' ')[0]), 38, y);
+    doc.text(splitPart, 85, y);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(row.in_qty > 0 ? 5 : 15, row.in_qty > 0 ? 150 : 23, row.in_qty > 0 ? 105 : 42);
+    doc.text(row.in_qty > 0 ? `+${row.in_qty}` : '-', 152, y, { align: 'right' });
+
+    doc.setTextColor(row.out_qty > 0 ? 220 : 15, row.out_qty > 0 ? 38 : 23, row.out_qty > 0 ? 38 : 42);
+    doc.text(row.out_qty > 0 ? `-${row.out_qty}` : '-', 172, y, { align: 'right' });
+
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${row.balance_qty} ${unit}`, 193, y, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+
+    y += rowHeight;
+  });
+
+  return await exportTruePDF(doc, `Stock_Statement_${itemName.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
 };
