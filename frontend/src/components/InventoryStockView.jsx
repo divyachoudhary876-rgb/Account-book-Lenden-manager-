@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
+import { generateStockItemLedgerStatement, exportStockLedgerPDF } from '../utils/inventoryLedgerReport';
+import { StorageService } from '../utils/storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
@@ -229,7 +231,6 @@ export default function InventoryStockView({ firm, onClose }) {
     try {
       const stock = loadFirmInventory(firm);
       setItems(Array.isArray(stock) ? stock : []);
-      // Self-healing: auto ensure all stock accounts exist in Account Master
       syncAllStockLedgers();
     } catch (err) {
       console.error('Error loading inventory items:', err);
@@ -336,6 +337,23 @@ export default function InventoryStockView({ firm, onClose }) {
     loadStockItems();
   };
 
+  // Handler for Generating Stock Item Movement PDF Statement on Card Click
+  const handlePrintStockStatement = (e, item) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    try {
+      const firms = StorageService.getItem('app_firms_registry', []) || [];
+      const currentFirm = firms.find(f => String(f.id || f.firm_id) === String(activeFirmId)) || {};
+
+      const statementData = generateStockItemLedgerStatement(activeFirmId, item);
+      exportStockLedgerPDF(currentFirm, item, statementData);
+    } catch (err) {
+      alert("Stock Statement PDF generate karne mein asafalta hui: " + err.message);
+    }
+  };
+
   const filteredItems = items.filter(i => {
     if (!i) return false;
     const q = searchQuery.toLowerCase();
@@ -354,7 +372,7 @@ export default function InventoryStockView({ firm, onClose }) {
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
               {editingItem ? '✏️ Edit Stock Item' : '📦 Inventory & Stock Items Master'}
             </h3>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>Item bante hi uska Stock Asset Ledger automatic ban jayega</span>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>Item par click karke PDF statement nikalein (Inward/Outward/Balance)</span>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button 
@@ -492,10 +510,11 @@ export default function InventoryStockView({ firm, onClose }) {
 
       {/* Stock Items List */}
       <div style={cardStyle}>
-        <div style={{ marginBottom: '10px' }}>
+        <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong style={{ fontSize: '13px', color: '#0f172a' }}>
             📋 All Stock Items ({filteredItems.length})
           </strong>
+          <span style={{ fontSize: '10px', color: '#0369a1', fontStyle: 'italic' }}>* Click item card to print statement</span>
         </div>
 
         <input 
@@ -519,20 +538,26 @@ export default function InventoryStockView({ firm, onClose }) {
               return (
                 <div 
                   key={item.id} 
+                  onClick={(e) => handlePrintStockStatement(e, item)}
+                  title="Click to generate complete Stock Movement PDF Statement"
                   style={{ 
                     backgroundColor: '#f8fafc', 
-                    border: '1px solid #e2e8f0', 
+                    border: '1px solid #cbd5e1', 
                     borderRadius: '8px', 
                     padding: '10px 12px', 
                     display: 'flex', 
                     justifyContent: 'space-between', 
                     alignItems: 'center',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
                 >
                   <div>
                     <strong style={{ fontSize: '13px', color: '#0f172a' }}>
-                      {item.name || item.item_name}
+                      📄 {item.name || item.item_name}
                     </strong>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                       Unit: {item.unit || 'Pcs'} | Default Rate: ₹{rate.toFixed(2)}
@@ -546,7 +571,7 @@ export default function InventoryStockView({ firm, onClose }) {
                     <span style={{ fontSize: '14px', fontWeight: '900', color: stockQty > 0 ? '#0284c7' : '#94a3b8' }}>
                       {stockQty} {item.unit || 'Pcs'}
                     </span>
-                    <div style={{ display: 'flex', gap: '4px' }}>
+                    <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
                       <button 
                         type="button" 
                         onClick={(e) => handleEdit(e, item)} 
