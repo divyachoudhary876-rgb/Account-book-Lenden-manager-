@@ -1,6 +1,6 @@
 /**
- * Frontend Utility: Inventory Posting Engine
- * Handles Purchase, Sales, Consumption, and Material Adjustments with strict firm isolation.
+ * Frontend Utility: Unified Inventory Posting Engine
+ * Handles automatic stock adjustment for Purchases, Sales, and Material Consumptions.
  */
 
 import { StorageService } from './storageSync';
@@ -30,7 +30,7 @@ const ensureStockLedger = (firmId, rawItemName) => {
         name: stockAccountName,
         primary_type: 'ASSETS',
         type: 'Assets',
-        sub_group: 'Inventory / Current Assets',
+        sub_group: 'Raw Material Inventory (कच्चा माल)',
         group: 'Current Assets',
         balance_type: 'Dr',
         opening_balance: 0,
@@ -46,7 +46,7 @@ const ensureStockLedger = (firmId, rawItemName) => {
 };
 
 /**
- * 1. PROCESS PURCHASE STOCK POSTING (Increases Stock)
+ * 1. PURCHASE ENTRY: Automatically INCREASES Stock (+)
  */
 export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001') => {
   const activeFirmId = String(
@@ -226,7 +226,7 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
 };
 
 /**
- * 2. PROCESS SALES / CONSUMPTION STOCK DEDUCTION (Decreases Stock)
+ * 2. SALES / CONSUMPTION ENTRY: Automatically DECREASES Stock (-)
  */
 export const processSalesOrConsumptionStockDeduction = (payload, firmId = 'FIRM-001') => {
   const activeFirmId = String(
@@ -272,87 +272,5 @@ export const processSalesOrConsumptionStockDeduction = (payload, firmId = 'FIRM-
 
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
-  }
-};
-
-/**
- * 3. REVERT PURCHASE STOCK ON DELETION
- */
-export const revertPurchaseStockOnDeletion = (voucherId, firmId = 'FIRM-001') => {
-  try {
-    if (!voucherId) return;
-    const activeFirmId = String(firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
-    const cleanVoucherRef = String(voucherId).replace(/^#/, '');
-
-    const vouchersKey = `account_book_vouchers_${activeFirmId}`;
-    const primaryVouchersKey = `app_vouchers_${activeFirmId}`;
-    const purchaseBillsKey = `purchase_bills_${activeFirmId}`;
-    const inventoryKey = `inventory_items_${activeFirmId}`;
-
-    const vouchers = StorageService.getItem(vouchersKey, []);
-    const primaryVouchers = StorageService.getItem(primaryVouchersKey, []);
-    const purchaseBills = StorageService.getItem(purchaseBillsKey, []);
-
-    const targetVoucher = 
-      vouchers.find(v => v && (String(v.id) === String(voucherId) || String(v.reference_no) === String(voucherId) || String(v.reference_no) === cleanVoucherRef)) ||
-      primaryVouchers.find(v => v && (String(v.id) === String(voucherId) || String(v.reference_no) === String(voucherId) || String(v.reference_no) === cleanVoucherRef)) ||
-      purchaseBills.find(v => v && (String(v.id) === String(voucherId) || String(v.reference_no) === String(voucherId) || String(v.reference_no) === cleanVoucherRef));
-
-    if (!targetVoucher) return;
-
-    const targetItemId = targetVoucher.itemId || targetVoucher.item_id || targetVoucher.item;
-    const targetItemName = targetVoucher.itemName || targetVoucher.item_name;
-    const purchasedQty = parseFloat(targetVoucher.qty || targetVoucher.quantity || targetVoucher.stock || 0);
-
-    if (purchasedQty > 0) {
-      let inventory = StorageService.getItem(inventoryKey, []);
-      if (!Array.isArray(inventory) || inventory.length === 0) {
-        inventory = StorageService.getItem('inventory_items', []);
-      }
-
-      if (Array.isArray(inventory) && inventory.length > 0) {
-        const itemIndex = inventory.findIndex(i => 
-          i && (
-            (targetItemId && String(i.id) === String(targetItemId)) || 
-            (targetItemName && String(i.item_name || i.name || '').trim().toLowerCase() === String(targetItemName).trim().toLowerCase())
-          )
-        );
-
-        if (itemIndex !== -1) {
-          const stockItem = { ...inventory[itemIndex] };
-          const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || stockItem.current_qty || stockItem.qty || 0);
-          const newQty = round2(Math.max(0, currentQty - purchasedQty));
-
-          stockItem.current_stock = newQty;
-          stockItem.stock = newQty;
-          stockItem.current_qty = newQty;
-          stockItem.qty = newQty;
-          stockItem.updated_at = new Date().toISOString();
-          inventory[itemIndex] = stockItem;
-
-          StorageService.setItem(inventoryKey, inventory);
-          localStorage.setItem(inventoryKey, JSON.stringify(inventory));
-          localStorage.setItem('inventory_items', JSON.stringify(inventory));
-        }
-      }
-    }
-
-    const filterFn = v => v && 
-      String(v.id) !== String(voucherId) && 
-      String(v.reference_no) !== String(voucherId) && 
-      String(v.reference_no) !== cleanVoucherRef;
-    
-    StorageService.setItem(vouchersKey, vouchers.filter(filterFn));
-    StorageService.setItem(primaryVouchersKey, primaryVouchers.filter(filterFn));
-    StorageService.setItem(purchaseBillsKey, purchaseBills.filter(filterFn));
-    localStorage.setItem(purchaseBillsKey, JSON.stringify(purchaseBills.filter(filterFn)));
-
-    window.dispatchEvent(new Event('app_inventory_updated'));
-    window.dispatchEvent(new Event('app_accounts_updated'));
-    window.dispatchEvent(new Event('app_storage_updated'));
-    window.dispatchEvent(new Event('app_state_updated'));
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {
-    console.error("Error reverting purchase stock on deletion:", e);
   }
 };
