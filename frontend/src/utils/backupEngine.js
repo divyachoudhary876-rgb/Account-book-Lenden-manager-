@@ -16,10 +16,6 @@ const resolveFirmNameString = (firmInput) => {
   return 'AccountBook';
 };
 
-/**
- * MASTER DEEP HEALING PASS FOR PURCHASE BILLS & VOUCHERS
- * Normalizes all imported records so they render identically to manual UI updates.
- */
 export const autoHealRestoredPurchasesAndStock = (firmId) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
 
@@ -96,9 +92,7 @@ export const autoHealRestoredPurchasesAndStock = (firmId) => {
     window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('app_state_updated'));
     window.dispatchEvent(new Event('storage'));
-  } catch (err) {
-    console.error('Error during autoHealRestoredPurchasesAndStock:', err);
-  }
+  } catch (err) {}
 };
 
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
@@ -146,9 +140,6 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   }
 };
 
-/**
- * MASTER UNIVERSAL RESTORE ENGINE WITH INSTANT HEALING & MIRRORING
- */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
     if (!rawInput) throw new Error("No backup data provided.");
