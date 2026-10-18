@@ -54,7 +54,6 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 md:p-8 space-y-6 my-8 border border-gray-100">
         
-        {/* Header Title */}
         <div className="space-y-1">
           <div className="flex items-center space-x-2 text-slate-800">
             <span className="text-2xl">🏢</span>
@@ -75,7 +74,6 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* Row 1: Legal Name & Trade Name */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
@@ -106,7 +104,6 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
             </div>
           </div>
 
-          {/* Business Category */}
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
               Business Category & Industry Type (व्यापार श्रेणी) *
@@ -124,7 +121,6 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
             </select>
           </div>
 
-          {/* Row 2: GSTIN & Mobile */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
@@ -154,7 +150,6 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
             </div>
           </div>
 
-          {/* Factory / Office Address */}
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
               Factory / Office Address
@@ -169,7 +164,6 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
             ></textarea>
           </div>
 
-          {/* Action Buttons */}
           <div className="pt-2 flex flex-col md:flex-row gap-3">
             {onCancel && (
               <button
