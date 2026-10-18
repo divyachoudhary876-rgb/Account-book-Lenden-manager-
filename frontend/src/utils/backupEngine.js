@@ -61,7 +61,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   try {
-    // 1. Gather unique inventory items
     let stockItems = [];
     const seenItems = new Set();
     Object.keys(localStorage).forEach(k => {
@@ -97,7 +96,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // 2. Gather purchase bills with strict deduplication and permanent item healing
     let rawPurchases = [];
     Object.keys(localStorage).forEach(k => {
       if (k.includes('purchase_bill') || k.includes('purchases')) {
@@ -116,7 +114,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       if (!p) return;
       const uniqueKey = p.id || `${p.bill_number || p.voucher_number || ''}_${p.supplier || p.party || p.cr_account || ''}_${p.date || p.voucher_date || ''}`;
       if (!uniquePurchasesMap.has(uniqueKey)) {
-        // PERMANENT ITEM NAME HEALING FOR PURCHASE BILLS & ITEMS ARRAY
         let itemName = p.itemName || p.item_name || p.name || '';
         const narration = (p.narration || '').toLowerCase();
         const supplier = (p.supplier || p.supplier_name || p.party || p.cr_account || '').toLowerCase();
@@ -137,7 +134,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         p.item_name = itemName;
         p.name = itemName;
 
-        // Ensure items array has the correct permanent item name
         if (!Array.isArray(p.items) || p.items.length === 0 || p.items[0]?.itemName === 'Stock Item') {
           p.items = [{
             itemId: p.itemId || p.item_id || `ITEM-${Date.now()}`,
@@ -166,7 +162,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     });
     const allPurchases = Array.from(uniquePurchasesMap.values());
 
-    // 3. Gather sales invoices
     let rawSales = [];
     Object.keys(localStorage).forEach(k => {
       if (k.includes('invoice') || k.includes('sales')) {
@@ -190,7 +185,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     });
     const allSales = Array.from(uniqueSalesMap.values());
 
-    // 4. Accurate stock recalculation
     stockItems = stockItems.map(item => {
       const itemName = (item?.name || item?.item_name || item?.itemName || '').trim().toLowerCase();
       const itemId = String(item?.id || '');
@@ -224,7 +218,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       return item;
     });
 
-    // Save cleaned data back to active firm keys
     localStorage.setItem(`inventory_items_${cleanFirmId}`, JSON.stringify(stockItems));
     localStorage.setItem('inventory_items', JSON.stringify(stockItems));
 
@@ -246,7 +239,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // 5. Consolidate and sort vouchers uniquely
     let allVouchers = [];
     Object.keys(localStorage).forEach(k => {
       if (k.includes('voucher') || k.includes('account_book_vouchers')) {
@@ -388,7 +380,7 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     const firmsMap = new Map();
     if (Array.isArray(existingFirms)) existingFirms.forEach(f => { if (f && (f.id || f.firm_id)) firmsMap.set(f.id || f.firm_id, f); });
-    if (Array.isArray(backupFinstances || backupFirms)) backupFirms.forEach(f => { if (f && (f.id || f.firm_id)) firmsMap.set(f.id || f.firm_id, f); });
+    if (Array.isArray(backupFirms)) backupFirms.forEach(f => { if (f && (f.id || f.firm_id)) firmsMap.set(f.id || f.firm_id, f); });
     const mergedFirmsList = Array.from(firmsMap.values());
 
     Object.keys(targetData).forEach(key => {
@@ -405,31 +397,4 @@ export const restoreUniversalBackup = async (rawInput) => {
     }
 
     let activeFirmId = localStorage.getItem('app_active_firm_id') || 
-                       parsedContent?.meta?.active_firm_id || 
-                       targetData['app_active_firm_id'] || 
-                       mergedFirmsList[0]?.id || 
-                       'FIRM-1790909076433';
-
-    localStorage.setItem('app_active_firm_id', activeFirmId);
-
-    // Trigger Post-Restore Healing & Reconstruction
-    autoHealRestoredInventoryAndAccounts(activeFirmId);
-
-    return {
-      success: true,
-      stats: {
-        vouchersCount: JSON.parse(localStorage.getItem(`account_book_vouchers_${activeFirmId}`) || localStorage.getItem('account_book_vouchers') || '[]').length,
-        accountsCount: JSON.parse(localStorage.getItem(`account_heads_${activeFirmId}`) || localStorage.getItem('app_accounts') || '[]').length,
-        purchasesCount: JSON.parse(localStorage.getItem(`purchase_bills_${activeFirmId}`) || localStorage.getItem('purchase_bills') || '[]').length
-      }
-    };
-  } catch (err) {
-    throw new Error(err.message || 'Backup restore karne mein asafalta hui.');
-  }
-};
-
-export const exportUniversalBackup = downloadAppBackup;
-export const downloadAppBackupFromFile = restoreUniversalBackup;
-export const restoreAppBackupFromFile = restoreUniversalBackup;
-export const exportAppBackupJSON = downloadAppBackup;
-export const restoreAppBackupJSON = restoreUniversalBackup;
+                       
