@@ -1,21 +1,32 @@
 /**
- * CreateFirmForm Component: UI modal/form to register a new enterprise firm profile safely.
+ * CreateFirmForm Component: Original Enterprise Firm Registration UI
+ * Configures multi-firm tenant with automated industry-tailored ledger heads.
  */
 
 import React, { useState } from 'react';
 import { createNewFirm } from '../utils/multiFirmEngine.js';
 
 export default function CreateFirmForm({ onSuccess, onCancel }) {
-  const [firmName, setFirmName] = useState('');
-  const [category, setCategory] = useState('BRICK_KILN');
-  const [gstin, setGstin] = useState('UNREGISTERED');
+  const [formData, setFormData] = useState({
+    legal_name: '',
+    trade_name: '',
+    business_category: 'BRICK_KILN',
+    gstin: '',
+    mobile: '',
+    address: ''
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!firmName.trim()) {
-      setError('Firm Name bharna anivarya hai.');
+    if (!formData.legal_name.trim()) {
+      setError('Legal Firm Name bharna anivarya hai.');
       return;
     }
 
@@ -23,74 +34,148 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
       setLoading(true);
       setError(null);
       const newFirm = createNewFirm({
-        legal_name: firmName.trim(),
-        trade_name: firmName.trim(),
-        business_category: category,
-        gstin: gstin.trim()
+        legal_name: formData.legal_name.trim(),
+        trade_name: formData.trade_name.trim() || formData.legal_name.trim(),
+        business_category: formData.business_category,
+        gstin: formData.gstin.trim() || 'UNREGISTERED',
+        mobile: formData.mobile.trim(),
+        address: formData.address.trim()
       });
 
       if (onSuccess) onSuccess(newFirm);
     } catch (err) {
-      setError(err.message || 'Firm banane mein asafalta hui.');
+      setError(err.message || 'Enterprise banane mein asafalta hui.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4">
-        <h3 className="text-xl font-bold text-gray-800">🏢 Create New Firm Profile</h3>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 md:p-8 space-y-6 my-8 border border-gray-100">
         
+        {/* Header Title */}
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2 text-slate-800">
+            <span className="text-2xl">🏢</span>
+            <h2 className="text-xl md:text-2xl font-bold tracking-tight">
+              Register New Business Enterprise / Firm
+            </h2>
+          </div>
+          <p className="text-sm text-gray-500">
+            Configure multi-firm tenant with automated industry-tailored ledger heads
+          </p>
+        </div>
+
         {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
+          <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm font-medium border border-red-100">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Firm Legal Name *</label>
-            <input
-              type="text"
-              value={firmName}
-              onChange={(e) => setFirmName(e.target.value)}
-              placeholder="e.g. Neelkanth Int Udyog"
-              className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              required
-            />
+          
+          {/* Row 1: Legal Name & Trade Name */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
+                Legal Firm Name (कानूनी व्यापार नाम) *
+              </label>
+              <input
+                type="text"
+                name="legal_name"
+                value={formData.legal_name}
+                onChange={handleChange}
+                placeholder="e.g. Neelkanth Int Udyog"
+                className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/50"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
+                Trade Name / Brand (वैकालिक)
+              </label>
+              <input
+                type="text"
+                name="trade_name"
+                value={formData.trade_name}
+                onChange={handleChange}
+                placeholder="e.g. Neelkanth Group"
+                className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/50"
+              />
+            </div>
           </div>
 
+          {/* Business Category */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Business Category</label>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
+              Business Category & Industry Type (व्यापार श्रेणी) *
+            </label>
             <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              name="business_category"
+              value={formData.business_category}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/50 font-medium text-slate-800"
             >
-              <option value="BRICK_KILN">Brick Kiln (Eent Bhatta)</option>
-              <option value="BIOMASS">Biomass Briquette</option>
-              <option value="TRADING">General Trading</option>
+              <option value="BRICK_KILN">🧱 Brick Kiln & Clay Works (ईंट भट्ठा उद्योग)</option>
+              <option value="BIOMASS">🌿 Biomass Briquette & Fuel</option>
+              <option value="TRADING">📦 General Trading & Supplies</option>
+              <option value="CONSTRUCTION">🏗️ Construction & Civil Works</option>
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN</label>
-            <input
-              type="text"
-              value={gstin}
-              onChange={(e) => setGstin(e.target.value)}
-              placeholder="UNREGISTERED or GSTIN Number"
-              className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
+          {/* Row 2: GSTIN & Mobile */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
+                GSTIN Number (Optional)
+              </label>
+              <input
+                type="text"
+                name="gstin"
+                value={formData.gstin}
+                onChange={handleChange}
+                placeholder="08AAAAA0000A1Z5"
+                className="w-full border border-gray-300 rounded-xl p-3 text-sm uppercase focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/50"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
+                Registered Mobile / Contact
+              </label>
+              <input
+                type="tel"
+                name="mobile"
+                value={formData.mobile}
+                onChange={handleChange}
+                placeholder="98290XXXXX"
+                className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/50"
+              />
+            </div>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-2">
+          {/* Factory / Office Address */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider">
+              Factory / Office Address
+            </label>
+            <textarea
+              name="address"
+              value={formData.address}
+              onChange={handleChange}
+              rows="2"
+              placeholder="e.g. Industrial Area, Hanumangarh, Rajasthan"
+              className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/50 resize-none"
+            ></textarea>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="pt-2 flex flex-col md:flex-row gap-3">
             {onCancel && (
               <button
                 type="button"
                 onClick={onCancel}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                className="w-full md:w-auto px-5 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold text-sm transition"
               >
                 Cancel
               </button>
@@ -98,11 +183,13 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow"
+              className="w-full py-3.5 px-6 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-600/20 transition flex items-center justify-center space-x-2"
             >
-              {loading ? 'Creating...' : 'Save Firm'}
+              <span>💾</span>
+              <span>{loading ? 'Initializing Enterprise...' : 'Create Enterprise & Initialize Ledgers'}</span>
             </button>
           </div>
+
         </form>
       </div>
     </div>
