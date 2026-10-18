@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Inventory Item Ledger & Statement Generator (PDF Export)
- * Traces all Inward (Purchases) and Outward (Sales, Consumption, Adjustments) transactions date-wise.
+ * Exact Synchronization with App Inventory Stock Calculation & Running Balance.
  */
 
 import { StorageService } from './storageSync';
@@ -12,7 +12,7 @@ const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 
 export const generateStockItemLedgerStatement = (firmId, item) => {
   const cleanFirmId = String(firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
   const itemId = String(item?.id || '');
-  const itemName = String(item?.item_name || item?.name || item?.itemName || '').trim();
+  const itemName = String(item?.item_name || item?.name || item?.itemName || '').trim().toLowerCase();
 
   if (!itemName) {
     throw new Error("Invalid Stock Item selected for statement.");
@@ -21,20 +21,23 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
   // 1. Gather Purchase Bills (Stock Inward / Plus)
   const purchaseBills = StorageService.getItem(`purchase_bills_${cleanFirmId}`, []) || StorageService.getItem('purchase_bills', []);
   const relevantPurchases = purchaseBills.filter(p => {
-    const pItemId = String(p?.itemId || p?.item_id || '');
+    if (!p) return false;
+    const pItemId = String(p?.itemId || p?.item_id || p?.item || '');
     const pItemName = String(p?.itemName || p?.item_name || p?.name || '').trim().toLowerCase();
-    return pItemId === itemId || pItemName === itemName.toLowerCase();
+    return pItemId === itemId || pItemName === itemName;
   });
 
   // 2. Gather Sales Invoices (Stock Outward / Minus)
   const salesInvoices = StorageService.getItem(`sales_invoices_${cleanFirmId}`, []) || StorageService.getItem('sales_invoices', []) || StorageService.getItem('app_invoices', []);
   const relevantSales = [];
   salesInvoices.forEach(s => {
+    if (!s) return;
     const itemsList = Array.isArray(s?.items) ? s.items : [];
     itemsList.forEach(si => {
+      if (!si) return;
       const sItemId = String(si?.itemId || si?.item_id || '');
       const sItemName = String(si?.itemName || si?.item_name || si?.name || '').trim().toLowerCase();
-      if (sItemId === itemId || sItemName === itemName.toLowerCase()) {
+      if (sItemId === itemId || sItemName === itemName) {
         relevantSales.push({ ...s, specific_item: si });
       }
     });
@@ -43,8 +46,9 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
   // 3. Gather Material Consumptions / Adjustments
   const adjustments = StorageService.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || StorageService.getItem('universal_material_adjustments', []);
   const relevantAdjustments = adjustments.filter(a => {
+    if (!a) return false;
     const aItemName = String(a?.item_name || a?.itemName || '').trim().toLowerCase();
-    return aItemName === itemName.toLowerCase();
+    return aItemName === itemName;
   });
 
   // 4. Combine and Sort Chronologically by Date
@@ -53,54 +57,59 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
   relevantPurchases.forEach(p => {
     const qty = parseFloat(p?.quantity || p?.qty || p?.items?.[0]?.qty || 0);
     const rate = parseFloat(p?.rate || p?.unit_rate || p?.items?.[0]?.rate || 0);
-    ledgerEntries.push({
-      date: p?.voucher_date || p?.date || new Date().toISOString().slice(0, 10),
-      type: 'PURCHASE (IN)',
-      ref: p?.voucher_number || p?.reference_no || p?.bill_number || 'PUR',
-      particulars: cleanTypographySpacing(`Purchase from ${p?.supplier || p?.party || p?.cr_account || 'Supplier'}`),
-      in_qty: qty,
-      out_qty: 0,
-      rate: rate,
-      amount: round2(qty * rate)
-    });
+    if (qty > 0) {
+      ledgerEntries.push({
+        date: p?.voucher_date || p?.date || p?.purchase_date || new Date().toISOString().slice(0, 10),
+        type: 'PURCHASE (IN)',
+        ref: p?.voucher_number || p?.reference_no || p?.bill_number || 'PUR',
+        particulars: cleanTypographySpacing(`Purchase from ${p?.supplier || p?.supplier_name || p?.party || p?.cr_account || 'Supplier'}`),
+        in_qty: qty,
+        out_qty: 0,
+        rate: rate,
+        amount: round2(qty * rate)
+      });
+    }
   });
 
   relevantSales.forEach(s => {
     const qty = parseFloat(s?.specific_item?.quantity || s?.specific_item?.qty || 0);
     const rate = parseFloat(s?.specific_item?.rate || 0);
-    ledgerEntries.push({
-      date: s?.voucher_date || s?.date || new Date().toISOString().slice(0, 10),
-      type: 'SALE (OUT)',
-      ref: s?.reference_no || s?.voucher_number || 'INV',
-      particulars: cleanTypographySpacing(`Sale to ${s?.dr_account || s?.party || 'Customer'}`),
-      in_qty: 0,
-      out_qty: qty,
-      rate: rate,
-      amount: round2(qty * rate)
-    });
+    if (qty > 0) {
+      ledgerEntries.push({
+        date: s?.voucher_date || s?.date || new Date().toISOString().slice(0, 10),
+        type: 'SALE (OUT)',
+        ref: s?.reference_no || s?.voucher_number || 'INV',
+        particulars: cleanTypographySpacing(`Sale to ${s?.dr_account || s?.party || 'Customer'}`),
+        in_qty: 0,
+        out_qty: qty,
+        rate: rate,
+        amount: round2(qty * rate)
+      });
+    }
   });
 
   relevantAdjustments.forEach(a => {
     const qty = parseFloat(a?.quantity || a?.qty || 0);
     const rate = parseFloat(a?.rate || 0);
-    const isOutward = true; // Material issue / consumption
-    ledgerEntries.push({
-      date: a?.date || new Date().toISOString().slice(0, 10),
-      type: isOutward ? 'CONSUMPTION (OUT)' : 'ADJUSTMENT (IN)',
-      ref: a?.id || 'ADJ',
-      particulars: cleanTypographySpacing(`Issue to ${a?.party || 'Factory'} (${a?.remarks || 'N/A'})`),
-      in_qty: isOutward ? 0 : qty,
-      out_qty: isOutward ? qty : 0,
-      rate: rate,
-      amount: round2(qty * rate)
-    });
+    if (qty > 0) {
+      ledgerEntries.push({
+        date: a?.date || new Date().toISOString().slice(0, 10),
+        type: 'CONSUMPTION (OUT)',
+        ref: a?.id || 'ADJ',
+        particulars: cleanTypographySpacing(`Issued to ${a?.party || 'Factory'} (${a?.remarks || 'Material Issue'})`),
+        in_qty: 0,
+        out_qty: qty,
+        rate: rate,
+        amount: round2(qty * rate)
+      });
+    }
   });
 
   // Sort ascending by date
   ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  // 5. Calculate Running Balance
-  let runningStock = 0;
+  // 5. Calculate Running Balance accurately
+  let runningStock = round2(parseFloat(item?.opening_stock || item?.openingStock || 0));
   const processedLedger = ledgerEntries.map(entry => {
     runningStock = round2(runningStock + entry.in_qty - entry.out_qty);
     return {
@@ -110,9 +119,9 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
   });
 
   return {
-    item_name: itemName,
+    item_name: item?.item_name || item?.name || itemName,
     unit: item?.unit || 'Pcs',
-    current_stock: item?.current_stock || item?.stock || runningStock,
+    current_stock: item?.current_stock || item?.stock || item?.qty || runningStock,
     entries: processedLedger
   };
 };
