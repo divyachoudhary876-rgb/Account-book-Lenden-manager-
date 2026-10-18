@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Pure Snapshot Mode: Exact state preservation without any artificial calculations or data mutation.
+ * Pure Snapshot Mode with Intelligent Multi-Firm Registry Merging.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -15,9 +15,6 @@ const resolveFirmNameString = (firmInput) => {
   return 'AccountBook';
 };
 
-/**
- * Broadcast storage and state updates to instantly re-render all application views
- */
 const broadcastAppEvents = () => {
   try {
     window.dispatchEvent(new Event('app_accounts_updated'));
@@ -29,7 +26,7 @@ const broadcastAppEvents = () => {
 };
 
 /**
- * 1. DOWNLOAD FULL BACKUP (Exports exact current localStorage state including updates)
+ * 1. DOWNLOAD FULL BACKUP (Exports exact current localStorage state)
  */
 export async function exportUniversalBackup(firmInput = 'AccountBook') {
   try {
@@ -93,7 +90,7 @@ export async function exportUniversalBackup(firmInput = 'AccountBook') {
 export const downloadAppBackup = exportUniversalBackup;
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE (Verbatim Snapshot Restoration)
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM REGISTRY MERGING
  */
 export async function restoreUniversalBackup(rawInput) {
   try {
@@ -109,7 +106,6 @@ export async function restoreUniversalBackup(rawInput) {
       parsedContent = rawInput;
     }
 
-    // Universal schema wrapper extractor
     let targetData = null;
     if (parsedContent?.data && typeof parsedContent.data === 'object' && !Array.isArray(parsedContent.data)) {
       targetData = parsedContent.data;
@@ -120,26 +116,54 @@ export async function restoreUniversalBackup(rawInput) {
     }
 
     if (!targetData || typeof targetData !== 'object' || Array.isArray(targetData)) {
-      throw new Error("Invalid backup schema structure. Data object nahi mila.");
+      throw new Error("Invalid backup schema structure.");
     }
+
+    // Capture existing local firms before overwriting so newly created firms aren't lost
+    const existingFirmsRaw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms') || localStorage.getItem('firm_list') || '[]';
+    let existingFirms = [];
+    try { existingFirms = JSON.parse(existingFirmsRaw); } catch (e) { existingFirms = []; }
+
+    // Extract backup firms from various possible registry keys in the snapshot
+    let backupFirms = [];
+    ['app_firms', 'firm_list', 'app_firms_registry'].forEach(regKey => {
+      if (targetData[regKey]) {
+        try {
+          const parsed = typeof targetData[regKey] === 'string' ? JSON.parse(targetData[regKey]) : targetData[regKey];
+          if (Array.isArray(parsed)) backupFirms.push(...parsed);
+        } catch (e) {}
+      }
+    });
+
+    // Merge existing and backup firms uniquely by ID or Name
+    const firmsMap = new Map();
+    if (Array.isArray(existingFirms)) {
+      existingFirms.forEach(f => {
+        if (f) firmsMap.set(f.id || f.firm_id || f.name, f);
+      });
+    }
+    if (Array.isArray(backupFirms)) {
+      backupFirms.forEach(f => {
+        if (f) firmsMap.set(f.id || f.firm_id || f.name, f);
+      });
+    }
+    const mergedFirmsList = Array.from(firmsMap.values());
 
     let restoredKeysCount = 0;
     let vCount = 0;
     let aCount = 0;
     let pCount = 0;
 
-    // Write all keys verbatim into localStorage and mirror to active keys for instant UI rendering
+    // Restore all storage keys verbatim
     Object.keys(targetData).forEach(key => {
       if (key === 'app_firms' || key === 'firm_list' || key === 'app_firms_registry') return;
       try {
         const val = targetData[key];
         const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
-        
-        // 1. Store exact key from backup
         localStorage.setItem(key, stringifiedVal);
         restoredKeysCount++;
 
-        // 2. Mirror to active/generic keys so components reading generic keys don't fail
+        // Mirror critical keys for instant UI rendering
         if (key.includes('account_book_vouchers_') || key.includes('app_vouchers_')) {
           localStorage.setItem('account_book_vouchers', stringifiedVal);
           localStorage.setItem('app_vouchers', stringifiedVal);
@@ -165,14 +189,22 @@ export async function restoreUniversalBackup(rawInput) {
           if (key.includes('purchase')) pCount += val.length;
         }
       } catch (e) {
-        console.warn(`Error writing storage key ${key}:`, e);
+        console.warn(`Error writing key ${key}:`, e);
       }
     });
 
-    // Restore active firm ID safely
-    const activeFirmId = parsedContent?.meta?.active_firm_id || 
+    // Persist the merged firms list securely
+    if (mergedFirmsList.length > 0) {
+      const serializedFirms = JSON.stringify(mergedFirmsList);
+      localStorage.setItem('app_firms_registry', serializedFirms);
+      localStorage.setItem('app_firms', serializedFirms);
+      localStorage.setItem('firm_list', serializedFirms);
+    }
+
+    const activeFirmId = localStorage.getItem('app_active_firm_id') || 
+                         parsedContent?.meta?.active_firm_id || 
                          targetData['app_active_firm_id'] || 
-                         localStorage.getItem('app_active_firm_id') || 
+                         mergedFirmsList[0]?.id || 
                          'FIRM-1790909076433';
 
     localStorage.setItem('app_active_firm_id', activeFirmId);
@@ -181,7 +213,7 @@ export async function restoreUniversalBackup(rawInput) {
       localStorage.setItem('active_firm_profile', typeof targetData['active_firm_profile'] === 'object' ? JSON.stringify(targetData['active_firm_profile']) : targetData['active_firm_profile']);
     }
 
-    // Broadcast UI refresh events so the application instantly displays all loaded data
+    // Broadcast UI refresh events
     broadcastAppEvents();
 
     return {
