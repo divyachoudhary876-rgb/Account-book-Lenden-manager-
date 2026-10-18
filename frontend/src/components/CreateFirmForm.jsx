@@ -1,5 +1,4 @@
 // frontend/src/components/CreateFirmForm.jsx
-
 import React, { useState } from 'react';
 import { INDUSTRY_SECTORS, getStarterAccountsForCategory } from '../utils/industryEngine.js';
 
@@ -86,7 +85,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
       localStorage.setItem(`sales_invoices_${firmId}`, JSON.stringify([]));
       localStorage.setItem(`purchase_bills_${firmId}`, JSON.stringify([]));
 
-      // 4. Set Active Firm pointer
+      // 4. Set Active Firm pointers
       localStorage.setItem('app_active_firm_id', firmId);
       localStorage.setItem('active_firm_profile', JSON.stringify(newFirmPayload));
 
