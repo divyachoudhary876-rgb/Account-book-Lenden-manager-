@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Pure Snapshot Mode with Active Firm ID Synchronization.
+ * Pure Snapshot Mode: Direct verbatim storage mapping without any data loss.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -90,7 +90,7 @@ export async function exportUniversalBackup(firmInput = 'AccountBook') {
 export const downloadAppBackup = exportUniversalBackup;
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH ACTIVE FIRM SYNC
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE (Handles both wrapped and flat backup schemas)
  */
 export async function restoreUniversalBackup(rawInput) {
   try {
@@ -98,38 +98,29 @@ export async function restoreUniversalBackup(rawInput) {
 
     let parsedContent;
     if (typeof rawInput === 'string') {
-      try {
-        parsedContent = JSON.parse(rawInput);
-      } catch (e) {
-        throw new Error("Backup file valid JSON format mein nahi hai.");
-      }
+      parsedContent = JSON.parse(rawInput);
     } else if (rawInput instanceof Blob || rawInput instanceof File) {
       const text = await rawInput.text();
-      try {
-        parsedContent = JSON.parse(text);
-      } catch (e) {
-        throw new Error("Uploaded file valid JSON backup nahi hai.");
-      }
+      parsedContent = JSON.parse(text);
     } else {
       parsedContent = rawInput;
     }
 
-    let targetData = parsedContent?.data && typeof parsedContent.data === 'object' && !Array.isArray(parsedContent.data) 
-      ? parsedContent.data 
-      : parsedContent?.storage_dump || parsedContent;
+    // Automatically detect where the storage data map resides
+    let targetData = null;
+    if (parsedContent?.data && typeof parsedContent.data === 'object' && !Array.isArray(parsedContent.data)) {
+      targetData = parsedContent.data;
+    } else if (parsedContent?.storage_dump && typeof parsedContent.storage_dump === 'object') {
+      targetData = parsedContent.storage_dump;
+    } else if (typeof parsedContent === 'object' && !Array.isArray(parsedContent)) {
+      targetData = parsedContent;
+    }
 
     if (!targetData || typeof targetData !== 'object' || Array.isArray(targetData)) {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // Determine correct active firm ID from backup meta or data
-    const backupActiveFirmId = parsedContent?.meta?.active_firm_id || 
-                                targetData['app_active_firm_id'] || 
-                                'FIRM-1790909076433';
-
-    localStorage.setItem('app_active_firm_id', backupActiveFirmId);
-
-    // Restore all storage keys verbatim
+    // Write all keys directly into localStorage verbatim
     let restoredKeysCount = 0;
     let vCount = 0;
     let aCount = 0;
@@ -143,22 +134,6 @@ export async function restoreUniversalBackup(rawInput) {
         localStorage.setItem(key, stringifiedVal);
         restoredKeysCount++;
 
-        // Also duplicate firm-specific keys to generic active keys so UI components never miss them
-        if (key.includes('purchase_bills_')) {
-          localStorage.setItem('purchase_bills', stringifiedVal);
-        }
-        if (key.includes('inventory_items_')) {
-          localStorage.setItem('inventory_items', stringifiedVal);
-        }
-        if (key.includes('account_book_vouchers_') || key.includes('app_vouchers_')) {
-          localStorage.setItem('account_book_vouchers', stringifiedVal);
-          localStorage.setItem('app_vouchers', stringifiedVal);
-        }
-        if (key.includes('account_heads_') || key.includes('app_accounts_')) {
-          localStorage.setItem('app_accounts', stringifiedVal);
-          localStorage.setItem('account_heads', stringifiedVal);
-        }
-
         if (Array.isArray(val)) {
           if (key.includes('voucher') || key.includes('invoice')) vCount += val.length;
           if (key.includes('account') || key.includes('head')) aCount += val.length;
@@ -169,12 +144,15 @@ export async function restoreUniversalBackup(rawInput) {
       }
     });
 
-    // If active_firm_profile exists in backup, restore it
-    if (targetData['active_firm_profile']) {
-      localStorage.setItem('active_firm_profile', typeof targetData['active_firm_profile'] === 'object' ? JSON.stringify(targetData['active_firm_profile']) : targetData['active_firm_profile']);
-    }
+    // Restore active firm ID
+    const activeFirmId = parsedContent?.meta?.active_firm_id || 
+                         targetData['app_active_firm_id'] || 
+                         localStorage.getItem('app_active_firm_id') || 
+                         'FIRM-1790909076433';
 
-    // Broadcast UI refresh events
+    localStorage.setItem('app_active_firm_id', activeFirmId);
+
+    // Broadcast update events so UI refreshes immediately with the restored data
     broadcastAppEvents();
 
     return {
