@@ -1,6 +1,6 @@
 /**
  * Main Application Root Component: Account Book ERP
- * Automatically prompts Create Firm view on fresh start if no firm exists.
+ * Manages clean firm bootstrapping, modal states, and instant UI re-rendering.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -42,6 +42,10 @@ export default function App() {
       } else {
         const currentActive = getActiveFirm();
         setActiveFirm(currentActive);
+        // Agar firms hain lekin modal khula tha aur koi active firm set nahi thi, toh modal band kar dein
+        if (currentActive) {
+          setShowNewFirmModal(false);
+        }
       }
     } catch (err) {
       console.error("Error refreshing firm context:", err);
@@ -65,6 +69,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
+      {/* Top Header / Navigation Bar */}
       <header className="bg-slate-900 text-white shadow px-4 py-3 flex justify-between items-center">
         <div className="flex items-center space-x-3">
           <span className="text-xl font-black tracking-wide text-blue-400">Account Book ERP</span>
@@ -88,26 +93,31 @@ export default function App() {
         )}
       </header>
 
+      {/* Main View Container */}
       <main className="flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full">
         {activeFirm ? (
           <EnterpriseDashboard activeFirm={activeFirm} />
         ) : (
-          <div className="text-center py-16 text-gray-500">
-            <h2 className="text-2xl font-bold mb-2">Koi Firm Profile Uplabdh Nahi Hai</h2>
-            <p className="mb-4">Shuru karne ke liye kripya apni pehli enterprise firm banayein.</p>
-            <button
-              onClick={() => setShowNewFirmModal(true)}
-              className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium shadow hover:bg-blue-700"
-            >
-              + Create First Firm
-            </button>
-          </div>
+          !showNewFirmModal && (
+            <div className="text-center py-20 bg-white rounded-2xl shadow-sm border border-gray-200 mt-6 max-w-lg mx-auto p-8">
+              <div className="text-4xl mb-3">🏢</div>
+              <h2 className="text-xl font-bold mb-2 text-slate-800">Koi Firm Profile Uplabdh Nahi Hai</h2>
+              <p className="text-sm text-gray-500 mb-6">Shuru karne ke liye kripya apni pehli enterprise firm banayein.</p>
+              <button
+                onClick={() => setShowNewFirmModal(true)}
+                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition"
+              >
+                + Create First Firm
+              </button>
+            </div>
+          )
         )}
       </main>
 
+      {/* Modal for creating a new firm */}
       {showNewFirmModal && (
         <CreateFirmForm
-          onSuccess={() => {
+          onSuccess={(newFirm) => {
             setShowNewFirmModal(false);
             refreshFirmContext();
           }}
