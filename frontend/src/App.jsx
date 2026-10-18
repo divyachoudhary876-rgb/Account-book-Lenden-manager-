@@ -1,5 +1,4 @@
 // frontend/src/App.jsx
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { IDBStorage, initIndexedDB } from './utils/indexedDbStorage.js';
 import { getActiveFirm, getFirmsRegistry, setActiveFirmId } from './utils/multiFirmEngine.js';
