@@ -21,12 +21,12 @@ const SAFE_INDUSTRY_SECTORS = {
 };
 
 export default function CreateFirmForm({ onFirmCreated, onCancel }) {
-  const [firmName, setFirmName] = useState('Neelkanth Int Udyog');
+  const [firmName, setFirmName] = useState('');
   const [tradeName, setTradeName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('BRICK_KILN');
-  const [gstin, setGstin] = useState('08AAAAA0000A1Z5');
-  const [phone, setPhone] = useState('98290XXXXX');
-  const [address, setAddress] = useState('Industrial Area, Hanumangarh, Rajasthan');
+  const [gstin, setGstin] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
@@ -58,7 +58,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         created_at: new Date().toISOString()
       };
 
-      // Direct synchronous localStorage write
+      // 1. Fetch existing firms
       let existingFirms = [];
       try {
         const raw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms');
@@ -70,6 +70,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
 
       const updatedFirms = [...existingFirms.filter(f => f && (f.id || f.firm_id) !== firmId), newFirmPayload];
       
+      // 2. Save registry and scoped storage synchronously
       localStorage.setItem('app_firms_registry', JSON.stringify(updatedFirms));
       localStorage.setItem('app_firms', JSON.stringify(updatedFirms));
 
@@ -91,6 +92,10 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
 
       setIsSubmitting(false);
 
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('storage'));
+
       if (onFirmCreated && typeof onFirmCreated === 'function') {
         onFirmCreated(newFirmPayload);
       } else {
@@ -104,7 +109,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
   };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', boxShadow: '0 4px 14px rgba(0,0,0,0.05)', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
+    <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', boxShadow: '0 4px 14px rgba(0,0,0,0.05)', maxWidth: '650px', margin: '20px auto', boxSizing: 'border-box', position: 'relative', zIndex: 10, pointerEvents: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
         <div>
           <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -113,7 +118,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
           <span style={{ fontSize: '11px', color: '#64748b' }}>Configure multi-firm tenant with automated industry-tailored ledger heads</span>
         </div>
         {onCancel && (
-          <button type="button" onClick={onCancel} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+          <button type="button" onClick={onCancel} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b', pointerEvents: 'auto' }}>✕</button>
         )}
       </div>
 
@@ -123,7 +128,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         </div>
       )}
 
-      <form onSubmit={handleCreateFirmSubmit} style={{ display: 'grid', gap: '12px' }}>
+      <form onSubmit={handleCreateFirmSubmit} style={{ display: 'grid', gap: '12px', pointerEvents: 'auto' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
           <div>
             <label style={labelStyle}>Legal Firm Name (कानूनी व्यापार नाम) *</label>
@@ -137,7 +142,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
 
         <div>
           <label style={labelStyle}>Business Category & Industry Type (व्यापार श्रेणी) *</label>
-          <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0f172a' }}>
+          <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0f172a', pointerEvents: 'auto' }}>
             {Object.entries(SAFE_INDUSTRY_SECTORS).map(([secKey, sec]) => (
               <optgroup key={secKey} label={sec.label}>
                 {sec.categories.map(cat => (
@@ -164,9 +169,9 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
           <input type="text" placeholder="e.g. Industrial Area, Hanumangarh, Rajasthan" value={address} onChange={e => setAddress(e.target.value)} style={inputStyle} />
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+        <div style={{ display: 'flex', gap: '10px', marginTop: '8px', pointerEvents: 'auto' }}>
           {onCancel && (
-            <button type="button" onClick={onCancel} style={{ flex: 1, backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+            <button type="button" onClick={onCancel} style={{ flex: 1, backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', pointerEvents: 'auto' }}>Cancel</button>
           )}
           <button 
             type="submit" 
@@ -181,7 +186,9 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
               fontWeight: 'bold', 
               fontSize: '13px', 
               cursor: 'pointer', 
-              opacity: isSubmitting ? 0.7 : 1 
+              opacity: isSubmitting ? 0.7 : 1,
+              pointerEvents: 'auto',
+              boxShadow: '0 4px 10px rgba(5, 150, 105, 0.3)'
             }}
           >
             {isSubmitting ? 'Creating Enterprise...' : '💾 Create Enterprise & Initialize Ledgers'}
@@ -193,4 +200,4 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
 }
 
 const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
-const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a' };
+const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a', pointerEvents: 'auto' };
