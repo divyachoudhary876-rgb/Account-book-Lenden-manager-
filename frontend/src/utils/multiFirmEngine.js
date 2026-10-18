@@ -1,10 +1,15 @@
 // frontend/src/utils/multiFirmEngine.js
+/**
+ * Enterprise Multi-Firm Registry & Context Switching Engine
+ * Strict Scoped Tenant Architecture for Account Book Smart Manager
+ */
+
 import { IDBStorage } from './indexedDbStorage.js';
 
 export const getFirmsRegistry = () => {
   try {
     let firms = [];
-    const raw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms') || localStorage.getItem('app_firms_list');
+    const raw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms');
     if (raw) {
       firms = JSON.parse(raw);
     }
@@ -38,10 +43,7 @@ export const getFirmsRegistry = () => {
       }
     });
 
-    let finalFirms = Array.from(uniqueMap.values());
-    // NOTE: Automatic default firm injection removed. 
-    // On fresh first launch, registry will be empty so CreateFirmForm will appear naturally.
-    return finalFirms;
+    return Array.from(uniqueMap.values());
   } catch (err) {
     return [];
   }
