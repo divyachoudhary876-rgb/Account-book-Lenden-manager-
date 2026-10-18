@@ -1,0 +1,443 @@
+// frontend/src/App.jsx
+
+import React, { useState, useEffect } from 'react';
+import { getActiveFirm, getFirmsRegistry, setActiveFirmId } from './utils/multiFirmEngine.js';
+import { getDynamicWorkflowMenu } from './utils/navigationRegistry.js';
+import { getFirmFinancialYears, createFinancialYear } from './utils/financialYearEngine.js';
+import { performFinancialYearRollover } from './utils/autoRolloverEngine.js';
+
+// Application Core Views
+import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
+import FirmProfileSettingsView from './components/FirmProfileSettingsView.jsx';
+import CreateInvoice from './components/CreateInvoice.jsx';
+import PurchaseStockEntryForm from './components/PurchaseStockEntryForm.jsx';
+import VoucherEntryForm from './components/VoucherEntryForm.jsx';
+import MaterialAdjustmentView from './components/MaterialAdjustmentView.jsx';
+import BhattaProductionMasterView from './components/BhattaProductionMasterView.jsx';
+import PayrollManagementView from './components/PayrollManagementView.jsx';
+import BillSettlementView from './components/BillSettlementView.jsx';
+import CreateAccountHeadModal from './components/CreateAccountHeadModal.jsx';
+import InventoryStockView from './components/InventoryStockView.jsx';
+import AccountStatementView from './components/AccountStatementView.jsx';
+import JournalRegisterView from './components/JournalRegisterView.jsx';
+import FinancialReportsView from './components/FinancialReportsView.jsx';
+import CashFlowStatementView from './components/CashFlowStatementView.jsx';
+import SecurityBackupSettings from './components/SecurityBackupSettings.jsx';
+import DataPurgeView from './components/DataPurgeView.jsx';
+import CreateFirmForm from './components/CreateFirmForm.jsx';
+import AppUpdateBanner from './components/AppUpdateBanner.jsx';
+
+// Sector-Specific Views
+import TransportTripView from './components/TransportTripView.jsx';
+import TradingInventoryCatalogView from './components/TradingInventoryCatalogView.jsx';
+
+export default function App() {
+  const [activeFirm, setActiveFirm] = useState(null);
+  const [firmsList, setFirmsList] = useState([]);
+  const [currentView, setCurrentView] = useState('dashboard');
+  
+  // Navigation & Drawer States
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCreatingFirm, setIsCreatingFirm] = useState(false);
+
+  // Financial Year State
+  const [fyList, setFyList] = useState([]);
+  const [selectedFY, setSelectedFY] = useState('FY 2026-27');
+  const [isAddFYModalOpen, setIsAddFYModalOpen] = useState(false);
+  const [newFYStartYear, setNewFYStartYear] = useState('2027');
+
+  const refreshState = () => {
+    try {
+      const list = getFirmsRegistry() || [];
+      const firm = getActiveFirm();
+      setFirmsList(list);
+      setActiveFirm(firm);
+
+      if (list.length === 0) {
+        setIsCreatingFirm(true);
+      } else if (firm) {
+        const availableYears = getFirmFinancialYears(firm.id) || [];
+        setFyList(availableYears);
+        
+        const savedFY = localStorage.getItem(`app_active_fy_${firm.id}`);
+        let activeTargetFY = savedFY && availableYears.some(y => y.label === savedFY) 
+          ? savedFY 
+          : (availableYears[0]?.label || 'FY 2026-27');
+        
+        setSelectedFY(activeTargetFY);
+        performFinancialYearRollover(firm.id, activeTargetFY);
+      }
+    } catch (e) {
+      console.error("State load error:", e);
+      setIsCreatingFirm(true);
+    }
+  };
+
+  useEffect(() => {
+    refreshState();
+    window.addEventListener('app_state_updated', refreshState);
+    window.addEventListener('fy_state_updated', refreshState);
+
+    const safetyTimer = setTimeout(() => {
+      const list = getFirmsRegistry() || [];
+      if (list.length === 0) {
+        setIsCreatingFirm(true);
+      }
+    }, 1500);
+
+    return () => {
+      window.removeEventListener('app_state_updated', refreshState);
+      window.removeEventListener('fy_state_updated', refreshState);
+      clearTimeout(safetyTimer);
+    };
+  }, []);
+
+  const firmCat = String(activeFirm?.category || 'BRICK_KILN').toUpperCase();
+  const menuItems = getDynamicWorkflowMenu(firmCat);
+
+  // Universal Navigation Handler that bridges Dashboard and Menu Keys seamlessly
+  const handleNavigate = (rawKey) => {
+    setIsMenuOpen(false);
+    setIsCreatingFirm(false);
+
+    if (!rawKey) return;
+    const key = String(rawKey).trim().toLowerCase();
+
+    // Map route keys cleanly
+    if (key === 'dashboard') {
+      setCurrentView('dashboard');
+    } else if (key === 'add_account' || key === 'create_account') {
+      setCurrentView('ADD_ACCOUNT');
+    } else if (key === 'sales' || key === 'invoice') {
+      setCurrentView('sales');
+    } else if (key === 'purchase') {
+      setCurrentView('purchase');
+    } else if (key === 'voucher' || key === 'vouchers') {
+      setCurrentView('vouchers');
+    } else if (key === 'fuel' || key === 'consumption' || key === 'material_adjustment' || key === 'stock_adjustment' || key === 'diesel_cut') {
+      setCurrentView('material_adjustment');
+    } else if (key === 'production') {
+      setCurrentView('production');
+    } else if (key === 'labour' || key === 'payroll') {
+      setCurrentView('payroll');
+    } else if (key === 'settlement') {
+      setCurrentView('settlement');
+    } else if (key === 'inventory') {
+      setCurrentView('inventory');
+    } else if (key === 'ledger' || key === 'milan') {
+      setCurrentView('milan');
+    } else if (key === 'journal' || key === 'journal_register') {
+      setCurrentView('journal');
+    } else if (key === 'reports' || key === 'financial_reports') {
+      setCurrentView('reports');
+    } else if (key === 'cash_flow') {
+      setCurrentView('cash_flow');
+    } else if (key === 'settings' || key === 'firm_settings') {
+      setCurrentView('firm_settings');
+    } else if (key === 'backup' || key === 'backup_center') {
+      setCurrentView('backup');
+    } else if (key === 'reset' || key === 'purge') {
+      setCurrentView('purge');
+    } else {
+      setCurrentView(rawKey);
+    }
+  };
+
+  const handleMenuClick = (item) => {
+    handleNavigate(item.key);
+  };
+
+  const handleFYSelectChange = (e) => {
+    const val = e.target.value;
+    if (val === 'ADD_NEW_FY') {
+      setIsAddFYModalOpen(true);
+    } else {
+      setSelectedFY(val);
+      if (activeFirm?.id) {
+        localStorage.setItem(`app_active_fy_${activeFirm.id}`, val);
+        performFinancialYearRollover(activeFirm.id, val);
+      }
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+    }
+  };
+
+  const handleCreateFYSubmit = (e) => {
+    e.preventDefault();
+    try {
+      const created = createFinancialYear(activeFirm?.id || 'FIRM-001', newFYStartYear);
+      setSelectedFY(created.label);
+      if (activeFirm?.id) {
+        localStorage.setItem(`app_active_fy_${activeFirm.id}`, created.label);
+        performFinancialYearRollover(activeFirm.id, created.label);
+      }
+      setIsAddFYModalOpen(false);
+      refreshState();
+      alert(`✓ ${created.label} registered & balances rolled over successfully!`);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const renderProductionOrSectorView = () => {
+    if (firmCat.includes('TRANSPORT') || firmCat.includes('LOGISTICS')) {
+      return <TransportTripView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />;
+    }
+    if (firmCat.includes('TRADING') || firmCat.includes('RETAIL') || firmCat.includes('WHOLESALE')) {
+      return <TradingInventoryCatalogView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />;
+    }
+    return <BhattaProductionMasterView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />;
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
+      
+      <AppUpdateBanner />
+
+      {/* Top Header */}
+      {!isCreatingFirm && activeFirm && (
+        <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', width: '100%', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', flexWrap: 'wrap' }}>
+          
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {currentView !== 'dashboard' ? (
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                ← Dashboard
+              </button>
+            ) : (
+              <div style={{ backgroundColor: '#0f172a', color: '#fff', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '11px' }}>
+                AB
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: '220px', justifyContent: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: '110px' }}>
+              <select
+                value={activeFirm?.id || ''}
+                onChange={(e) => {
+                  if (e.target.value === 'CREATE_NEW') {
+                    setIsCreatingFirm(true);
+                    setIsMenuOpen(false);
+                  } else {
+                    setActiveFirmId(e.target.value);
+                    setIsCreatingFirm(false);
+                    setIsMenuOpen(false);
+                    refreshState();
+                  }
+                }}
+                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
+              >
+                {firmsList.map(f => (
+                  <option key={f.id} value={f.id}>🏢 {f.legal_name || f.trade_name || f.name}</option>
+                ))}
+                <option value="CREATE_NEW">➕ New Firm...</option>
+              </select>
+            </div>
+
+            <div style={{ width: '100px' }}>
+              <select
+                value={selectedFY}
+                onChange={handleFYSelectChange}
+                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box' }}
+              >
+                {fyList.map(fy => (
+                  <option key={fy.id} value={fy.label}>{fy.label}</option>
+                ))}
+                <option value="ADD_NEW_FY">➕ Add FY</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              {isMenuOpen ? '✕' : '☰ Menu'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Workflow Menu Drawer - Completely Uniform & Clean (No Highlights) */}
+      {isMenuOpen && (
+        <div style={{
+          backgroundColor: '#ffffff',
+          padding: '14px',
+          borderBottom: '2px solid #e2e8f0',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.08)',
+          width: '100%',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{ color: '#64748b', fontSize: '10px', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>
+            ACCOUNTING WORKFLOW MENU ({firmCat})
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {menuItems.map(item => (
+              <button
+                key={item.key}
+                onClick={() => handleMenuClick(item)}
+                style={{
+                  backgroundColor: '#f8fafc',
+                  color: item.isDanger ? '#dc2626' : '#0f172a',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <span>{item.icon}</span>
+                <span style={{ flex: 1 }}>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main Screen Routing */}
+      <main style={{ width: '100%', maxWidth: '850px', margin: '0 auto', padding: '16px', boxSizing: 'border-box' }}>
+        {isCreatingFirm || !activeFirm ? (
+          <CreateFirmForm 
+            onFirmCreated={(newFirm) => {
+              setIsCreatingFirm(false);
+              setIsMenuOpen(false);
+              setActiveFirmId(newFirm.id);
+              refreshState();
+              setCurrentView('dashboard');
+            }} 
+            onCancel={firmsList.length > 0 ? () => setIsCreatingFirm(false) : null} 
+          />
+        ) : (
+          <>
+            {currentView === 'dashboard' && (
+              <EnterpriseDashboard 
+                firm={activeFirm} 
+                selectedFY={selectedFY}
+                onNavigate={handleNavigate} 
+              />
+            )}
+            {currentView === 'ADD_ACCOUNT' && (
+              <CreateAccountHeadModal 
+                firm={activeFirm} 
+                selectedFY={selectedFY} 
+                isOpen={true}
+                onClose={() => setCurrentView('dashboard')} 
+              />
+            )}
+            {currentView === 'firm_settings' && (
+              <FirmProfileSettingsView 
+                firm={activeFirm} 
+                selectedFY={selectedFY}
+                onNavigateToCreate={() => setIsCreatingFirm(true)}
+                onNavigateDashboard={() => setCurrentView('dashboard')}
+              />
+            )}
+            {currentView === 'sales' && <CreateInvoice firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'purchase' && <PurchaseStockEntryForm firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'vouchers' && <VoucherEntryForm firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'material_adjustment' && <MaterialAdjustmentView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'production' && renderProductionOrSectorView()}
+            {currentView === 'payroll' && <PayrollManagementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'settlement' && <BillSettlementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'inventory' && <InventoryStockView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'milan' && <AccountStatementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'journal' && <JournalRegisterView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'reports' && <FinancialReportsView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'cash_flow' && <CashFlowStatementView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />} 
+            {currentView === 'backup' && <SecurityBackupSettings firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+            {currentView === 'purge' && <DataPurgeView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />}
+          </>
+        )}
+      </main>
+
+      {/* Add New FY Modal */}
+      {isAddFYModalOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={modalCardStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px', fontWeight: 'bold' }}>
+                📅 Add New Financial Year
+              </h3>
+              <button onClick={() => setIsAddFYModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleCreateFYSubmit}>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+                  Starting Year (1st April)
+                </label>
+                <input
+                  type="number"
+                  min="2020"
+                  max="2040"
+                  value={newFYStartYear}
+                  onChange={(e) => setNewFYStartYear(e.target.value)}
+                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a' }}
+                  required
+                />
+              </div>
+
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: '#166534' }}>
+                <strong>Generated Period:</strong><br />
+                01-Apr-{newFYStartYear} to 31-Mar-{parseInt(newFYStartYear || 0, 10) + 1} (FY {newFYStartYear}-{((parseInt(newFYStartYear || 0, 10) + 1) % 100).toString().padStart(2, '0')})
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAddFYModalOpen(false)}
+                  style={{ flex: 1, backgroundColor: '#e2e8f0', color: '#475569', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{ flex: 1.5, backgroundColor: '#0284c7', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  💾 Create FY
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+const modalOverlayStyle = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: 'rgba(15, 23, 42, 0.5)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 9999,
+  padding: '16px',
+  boxSizing: 'border-box'
+};
+
+const modalCardStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '16px',
+  padding: '20px',
+  width: '100%',
+  maxWidth: '400px',
+  border: '1px solid #e2e8f0',
+  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+  boxSizing: 'border-box'
+};
