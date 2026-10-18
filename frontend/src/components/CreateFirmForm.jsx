@@ -58,7 +58,6 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         created_at: new Date().toISOString()
       };
 
-      // 1. Fetch existing firms
       let existingFirms = [];
       try {
         const raw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms');
@@ -70,7 +69,6 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
 
       const updatedFirms = [...existingFirms.filter(f => f && (f.id || f.firm_id) !== firmId), newFirmPayload];
       
-      // 2. Save registry and scoped storage synchronously
       localStorage.setItem('app_firms_registry', JSON.stringify(updatedFirms));
       localStorage.setItem('app_firms', JSON.stringify(updatedFirms));
 
