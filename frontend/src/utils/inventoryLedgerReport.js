@@ -18,7 +18,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     throw new Error("Invalid Stock Item selected for statement.");
   }
 
-  // 1. Gather Purchase Bills (Stock Inward / Plus)
+  // 1. Gather Purchase Bills (Stock Inward / Plus) strictly for this item
   const purchaseBills = StorageService.getItem(`purchase_bills_${cleanFirmId}`, []) || StorageService.getItem('purchase_bills', []);
   const relevantPurchases = purchaseBills.filter(p => {
     if (!p) return false;
@@ -43,15 +43,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     });
   });
 
-  // 3. Gather Material Consumptions / Adjustments
-  const adjustments = StorageService.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || StorageService.getItem('universal_material_adjustments', []);
-  const relevantAdjustments = adjustments.filter(a => {
-    if (!a) return false;
-    const aItemName = String(a?.item_name || a?.itemName || '').trim().toLowerCase();
-    return aItemName === itemName;
-  });
-
-  // 4. Combine and Sort Chronologically by Date
+  // 3. Compile Chronological Ledger Entries (Opening Balance = 0)
   const ledgerEntries = [];
 
   relevantPurchases.forEach(p => {
@@ -60,7 +52,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     if (qty > 0) {
       ledgerEntries.push({
         date: p?.voucher_date || p?.date || p?.purchase_date || new Date().toISOString().slice(0, 10),
-        type: 'PURCHASE (IN)',
+        type: 'PURCHASE',
         ref: p?.voucher_number || p?.reference_no || p?.bill_number || 'PUR',
         particulars: cleanTypographySpacing(`Purchase from ${p?.supplier || p?.supplier_name || p?.party || p?.cr_account || 'Supplier'}`),
         in_qty: qty,
@@ -77,9 +69,9 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     if (qty > 0) {
       ledgerEntries.push({
         date: s?.voucher_date || s?.date || new Date().toISOString().slice(0, 10),
-        type: 'SALE (OUT)',
+        type: 'SALE / ISSUE',
         ref: s?.reference_no || s?.voucher_number || 'INV',
-        particulars: cleanTypographySpacing(`Sale to ${s?.dr_account || s?.party || 'Customer'}`),
+        particulars: cleanTypographySpacing(`Issued to ${s?.dr_account || s?.party || 'Party'}`),
         in_qty: 0,
         out_qty: qty,
         rate: rate,
@@ -88,28 +80,11 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     }
   });
 
-  relevantAdjustments.forEach(a => {
-    const qty = parseFloat(a?.quantity || a?.qty || 0);
-    const rate = parseFloat(a?.rate || 0);
-    if (qty > 0) {
-      ledgerEntries.push({
-        date: a?.date || new Date().toISOString().slice(0, 10),
-        type: 'CONSUMPTION (OUT)',
-        ref: a?.id || 'ADJ',
-        particulars: cleanTypographySpacing(`Issued to ${a?.party || 'Factory'} (${a?.remarks || 'Material Issue'})`),
-        in_qty: 0,
-        out_qty: qty,
-        rate: rate,
-        amount: round2(qty * rate)
-      });
-    }
-  });
-
-  // Sort ascending by date
+  // Sort ascending by date chronologically
   ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  // 5. Calculate Running Balance accurately
-  let runningStock = round2(parseFloat(item?.opening_stock || item?.openingStock || 0));
+  // 4. Calculate Running Balance accurately starting strictly from 0
+  let runningStock = 0;
   const processedLedger = ledgerEntries.map(entry => {
     runningStock = round2(runningStock + entry.in_qty - entry.out_qty);
     return {
@@ -121,13 +96,13 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
   return {
     item_name: item?.item_name || item?.name || itemName,
     unit: item?.unit || 'Pcs',
-    current_stock: item?.current_stock || item?.stock || item?.qty || runningStock,
+    current_stock: runningStock, // Guaranteed to match exact net movement
     entries: processedLedger
   };
 };
 
 /**
- * Generates true PDF Report for Stock Item Movement using jsPDF & Capacitor exportTruePDF
+ * Generates true PDF Report for Stock Item Movement
  */
 export const exportStockLedgerPDF = async (firmProfile, itemData, statementResult) => {
   const firmName = firmProfile?.legal_name || firmProfile?.trade_name || firmProfile?.name || 'Neelkanth Int Udyog';
@@ -195,7 +170,7 @@ export const exportStockLedgerPDF = async (firmProfile, itemData, statementResul
     doc.setTextColor(15, 23, 42);
 
     doc.text(String(row.date || '-'), 16, y);
-    doc.text(String(row.type.split(' ')[0]), 38, y);
+    doc.text(String(row.type), 38, y);
     doc.text(splitPart, 85, y);
 
     doc.setFont('helvetica', 'bold');
