@@ -34,7 +34,9 @@ export default function App() {
   const [activeFirm, setActiveFirm] = useState(null);
   const [firmsList, setFirmsList] = useState([]);
   const [currentView, setCurrentView] = useState('dashboard');
-  const [isAppReady, setIsAppReady] = useState(false);
+  
+  // FORCE READY TRUE BY DEFAULT TO PREVENT ANY LOADER HANG
+  const [isAppReady, setIsAppReady] = useState(true);
   
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCreatingFirm, setIsCreatingFirm] = useState(false);
@@ -76,19 +78,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Instant synchronous boot check
+    // Initial synchronous read
     refreshState();
 
-    const bootTimer = setTimeout(() => {
-      setIsAppReady(true);
-    }, 300);
-
+    // Run IndexedDB in background without blocking render
     initIndexedDB().then(() => {
-      clearTimeout(bootTimer);
       refreshState();
-    }).catch(() => {
-      clearTimeout(bootTimer);
-    });
+    }).catch(() => {});
 
     const handleStorageChange = () => {
       refreshState();
@@ -96,11 +92,12 @@ export default function App() {
 
     window.addEventListener('app_state_updated', handleStorageChange);
     window.addEventListener('app_storage_updated', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
 
     return () => {
-      clearTimeout(bootTimer);
       window.removeEventListener('app_state_updated', handleStorageChange);
       window.removeEventListener('app_storage_updated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, [refreshState]);
 
@@ -182,16 +179,6 @@ export default function App() {
     }
     return <BhattaProductionMasterView firm={activeFirm} selectedFY={selectedFY} onClose={() => setCurrentView('dashboard')} />;
   };
-
-  if (!isAppReady) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: '#0f172a', color: '#ffffff', fontFamily: 'sans-serif' }}>
-        <div style={{ width: '36px', height: '36px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#2563eb', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <h3 style={{ marginTop: '16px', fontSize: '15px', fontWeight: 'bold' }}>Account Book Smart Manager</h3>
-        <span style={{ fontSize: '11px', color: '#94a3b8' }}>Synchronizing Multi-Firm Database...</span>
-      </div>
-    );
-  }
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
