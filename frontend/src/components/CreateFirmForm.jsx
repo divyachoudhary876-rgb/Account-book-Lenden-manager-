@@ -1,6 +1,6 @@
 /**
- * CreateFirmForm Component: Professional Modal Enterprise Registration UI
- * Perfectly centered card layout matching the original design.
+ * CreateFirmForm Component: Original Professional Modal Form
+ * Perfectly centered card layout matching your exact requirements.
  */
 
 import React, { useState } from 'react';
@@ -51,36 +51,55 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 md:p-8 space-y-6 my-8 border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(15, 23, 42, 0.75)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 9999,
+      padding: '16px',
+      overflowY: 'auto'
+    }}>
+      <div style={{
+        backgroundColor: '#ffffff',
+        borderRadius: '24px',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        maxWidth: '500px',
+        width: '100%',
+        padding: '28px',
+        boxSizing: 'border-box'
+      }}>
         
-        {/* Header Title */}
-        <div className="space-y-1.5 border-b border-gray-100 pb-4">
-          <div className="flex items-center space-x-3 text-slate-900">
-            <span className="text-3xl p-2 bg-slate-50 rounded-2xl border border-slate-100">🏢</span>
-            <h2 className="text-xl md:text-2xl font-bold tracking-tight">
+        {/* Header */}
+        <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+            <span style={{ fontSize: '28px', background: '#f8fafc', padding: '8px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>🏢</span>
+            <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>
               Register New Business Enterprise / Firm
             </h2>
           </div>
-          <p className="text-xs md:text-sm text-gray-500 pl-1">
+          <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
             Configure multi-firm tenant with automated industry-tailored ledger heads
           </p>
         </div>
 
         {error && (
-          <div className="bg-red-50 text-red-600 p-3.5 rounded-2xl text-sm font-medium border border-red-100 flex items-center space-x-2">
-            <span>⚠️</span>
-            <span>{error}</span>
+          <div style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '12px 16px', borderRadius: '12px', fontSize: '13px', marginBottom: '16px', border: '1px solid #fee2e2' }}>
+            ⚠️ {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           
-          {/* Row 1: Legal Name & Trade Name */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                Legal Firm Name (कानूनी व्यापार नाम) *
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px', textTransform: 'uppercase' }}>
+                Legal Firm Name *
               </label>
               <input
                 type="text"
@@ -88,13 +107,13 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
                 value={formData.legal_name}
                 onChange={handleChange}
                 placeholder="e.g. Neelkanth Int Udyog"
-                className="w-full border border-gray-300 rounded-2xl p-3.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/40 text-slate-800 font-medium"
+                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: '#f8fafc' }}
                 required
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                Trade Name / Brand (वैकालिक)
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px', textTransform: 'uppercase' }}>
+                Trade Name / Brand
               </label>
               <input
                 type="text"
@@ -102,21 +121,20 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
                 value={formData.trade_name}
                 onChange={handleChange}
                 placeholder="e.g. Neelkanth Group"
-                className="w-full border border-gray-300 rounded-2xl p-3.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/40 text-slate-800 font-medium"
+                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: '#f8fafc' }}
               />
             </div>
           </div>
 
-          {/* Business Category */}
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-              Business Category & Industry Type (व्यापार श्रेणी) *
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px', textTransform: 'uppercase' }}>
+              Business Category & Industry Type *
             </label>
             <select
               name="business_category"
               value={formData.business_category}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-2xl p-3.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/40 font-semibold text-slate-800"
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: '#f8fafc', fontWeight: '600', color: '#0f172a' }}
             >
               <option value="BRICK_KILN">🧱 Brick Kiln & Clay Works (ईंट भट्ठा उद्योग)</option>
               <option value="BIOMASS">🌿 Biomass Briquette & Fuel</option>
@@ -125,10 +143,9 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
             </select>
           </div>
 
-          {/* Row 2: GSTIN & Mobile */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px', textTransform: 'uppercase' }}>
                 GSTIN Number (Optional)
               </label>
               <input
@@ -137,12 +154,12 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
                 value={formData.gstin}
                 onChange={handleChange}
                 placeholder="08AAAAA0000A1Z5"
-                className="w-full border border-gray-300 rounded-2xl p-3.5 text-sm uppercase focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/40 text-slate-800 font-medium"
+                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: '#f8fafc', textTransform: 'uppercase' }}
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                Registered Mobile / Contact
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px', textTransform: 'uppercase' }}>
+                Registered Mobile
               </label>
               <input
                 type="tel"
@@ -150,14 +167,13 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
                 value={formData.mobile}
                 onChange={handleChange}
                 placeholder="98290XXXXX"
-                className="w-full border border-gray-300 rounded-2xl p-3.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/40 text-slate-800 font-medium"
+                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: '#f8fafc' }}
               />
             </div>
           </div>
 
-          {/* Factory / Office Address */}
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px', textTransform: 'uppercase' }}>
               Factory / Office Address
             </label>
             <textarea
@@ -166,17 +182,16 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
               onChange={handleChange}
               rows="2"
               placeholder="e.g. Industrial Area, Hanumangarh, Rajasthan"
-              className="w-full border border-gray-300 rounded-2xl p-3.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/40 text-slate-800 font-medium resize-none"
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: '#f8fafc', resize: 'none' }}
             ></textarea>
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-3 flex flex-col md:flex-row gap-3">
+          <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
             {onCancel && (
               <button
                 type="button"
                 onClick={onCancel}
-                className="w-full md:w-auto px-6 py-3.5 border border-gray-300 text-gray-700 rounded-2xl hover:bg-gray-50 font-semibold text-sm transition"
+                style={{ flex: 1, padding: '14px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}
               >
                 Cancel
               </button>
@@ -184,10 +199,9 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl font-bold text-sm shadow-xl shadow-emerald-600/25 transition flex items-center justify-center space-x-2"
+              style={{ flex: 2, padding: '14px', background: '#059669', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', boxShadow: '0 10px 15px -3px rgba(5, 150, 105, 0.3)' }}
             >
-              <span>💾</span>
-              <span>{loading ? 'Initializing Enterprise...' : 'Create Enterprise & Initialize Ledgers'}</span>
+              {loading ? 'Initializing...' : '💾 Create Enterprise & Initialize Ledgers'}
             </button>
           </div>
 
