@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
 import { generateStockItemLedgerStatement, exportStockLedgerPDF } from '../utils/inventoryLedgerReport';
+import { getStockItemsByFirm, getFirmItemStock } from '../utils/stockInventoryEngine';
 import { StorageService } from '../utils/storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
@@ -77,17 +78,10 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
 
 const loadFirmInventory = (firmInput) => {
   const firmId = resolveActiveFirmId(firmInput);
-  let items = loadFirmData('inventory_items', firmInput, []);
+  let items = getStockItemsByFirm(firmId);
 
   if (!Array.isArray(items) || items.length === 0) {
-    try {
-      const raw = localStorage.getItem(`inventory_items_${firmId}`) || localStorage.getItem('inventory_items');
-      if (raw) {
-        items = JSON.parse(raw);
-      }
-    } catch (e) {
-      items = [];
-    }
+    items = loadFirmData('inventory_items', firmInput, []);
   }
 
   return Array.isArray(items) ? items.filter(item => item && (item.name || item.item_name)) : [];
@@ -321,7 +315,6 @@ export default function InventoryStockView({ firm, onClose }) {
     loadStockItems();
   };
 
-  // Handler for Generating & Downloading Stock Movement PDF Statement on Card Click
   const handleDownloadStockPDF = async (e, item) => {
     if (e) {
       e.preventDefault();
@@ -516,7 +509,9 @@ export default function InventoryStockView({ firm, onClose }) {
             </div>
           ) : (
             filteredItems.map((item) => {
-              const stockQty = parseFloat(item.current_stock || item.stock || item.qty || 0);
+              // Fetch live calculated stock dynamically using getFirmItemStock
+              const stockName = item.name || item.item_name;
+              const stockQty = getFirmItemStock(activeFirmId, stockName);
               const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
 
               return (
@@ -541,13 +536,13 @@ export default function InventoryStockView({ firm, onClose }) {
                 >
                   <div>
                     <strong style={{ fontSize: '13px', color: '#0f172a' }}>
-                      📄 {item.name || item.item_name}
+                      📄 {stockName}
                     </strong>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                       Unit: {item.unit || 'Pcs'} | Default Rate: ₹{rate.toFixed(2)}
                     </div>
                     <div style={{ fontSize: '10px', color: '#059669', fontWeight: 'bold', marginTop: '1px' }}>
-                      🔗 Linked Ledger: {item.name || item.item_name} Stock Account
+                      🔗 Linked Ledger: {stockName} Stock Account
                     </div>
                   </div>
 
