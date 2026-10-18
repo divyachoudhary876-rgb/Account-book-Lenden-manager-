@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Inventory Item Ledger & Statement Generator (PDF Export)
- * Exact Synchronization with App Inventory Stock Calculation & Running Balance.
+ * Includes Purchases (Inward), Sales (Outward), and Material Consumptions / Adjustments (Outward).
  */
 
 import { StorageService } from './storageSync';
@@ -27,7 +27,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     return pItemId === itemId || pItemName === itemName;
   });
 
-  // 2. Gather Sales Invoices / Issues (Stock Outward / Minus)
+  // 2. Gather Sales Invoices (Stock Outward / Minus)
   const salesInvoices = StorageService.getItem(`sales_invoices_${cleanFirmId}`, []) || StorageService.getItem('sales_invoices', []) || StorageService.getItem('app_invoices', []);
   const relevantSales = [];
   salesInvoices.forEach(s => {
@@ -43,9 +43,19 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     });
   });
 
-  // 3. Compile Chronological Ledger Entries
+  // 3. Gather Material Consumptions / Adjustments (Stock Outward / Minus)
+  const adjustments = StorageService.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || StorageService.getItem('universal_material_adjustments', []) || [];
+  const relevantAdjustments = adjustments.filter(a => {
+    if (!a) return false;
+    const aItemName = String(a?.item_name || a?.itemName || '').trim().toLowerCase();
+    const aStockId = String(a?.stock_id || a?.itemId || '');
+    return aItemName === itemName || aStockId === itemId;
+  });
+
+  // 4. Combine and Format All Entries
   const ledgerEntries = [];
 
+  // Inward: Purchases
   relevantPurchases.forEach(p => {
     const qty = parseFloat(p?.quantity || p?.qty || p?.items?.[0]?.qty || 0);
     const rate = parseFloat(p?.rate || p?.unit_rate || p?.items?.[0]?.rate || 0);
@@ -63,15 +73,16 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     }
   });
 
+  // Outward: Sales
   relevantSales.forEach(s => {
     const qty = parseFloat(s?.specific_item?.quantity || s?.specific_item?.qty || 0);
     const rate = parseFloat(s?.specific_item?.rate || 0);
     if (qty > 0) {
       ledgerEntries.push({
         date: s?.voucher_date || s?.date || new Date().toISOString().slice(0, 10),
-        type: 'SALE / ISSUE',
+        type: 'SALE',
         ref: s?.reference_no || s?.voucher_number || 'INV',
-        particulars: cleanTypographySpacing(`Issued to ${s?.dr_account || s?.party || 'Party'}`),
+        particulars: cleanTypographySpacing(`Sale to ${s?.dr_account || s?.party || 'Customer'}`),
         in_qty: 0,
         out_qty: qty,
         rate: rate,
@@ -80,10 +91,28 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     }
   });
 
-  // Sort ascending by date chronologically
+  // Outward: Material Consumptions & Adjustments
+  relevantAdjustments.forEach(a => {
+    const qty = parseFloat(a?.quantity || a?.qty || 0);
+    const rate = parseFloat(a?.rate || 0);
+    if (qty > 0) {
+      ledgerEntries.push({
+        date: a?.date || new Date().toISOString().slice(0, 10),
+        type: 'CONSUMPTION',
+        ref: a?.id || 'ADJ',
+        particulars: cleanTypographySpacing(`Issued to ${a?.party || 'Factory'} (${a?.remarks || 'Material Issue'})`),
+        in_qty: 0,
+        out_qty: qty,
+        rate: rate,
+        amount: round2(qty * rate)
+      });
+    }
+  });
+
+  // Sort ascending chronologically by date
   ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  // 4. Calculate Running Balance accurately starting strictly from 0
+  // 5. Calculate Running Balance starting strictly from 0
   let runningStock = 0;
   const processedLedger = ledgerEntries.map(entry => {
     runningStock = round2(runningStock + entry.in_qty - entry.out_qty);
