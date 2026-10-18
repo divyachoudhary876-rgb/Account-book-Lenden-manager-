@@ -397,4 +397,31 @@ export const restoreUniversalBackup = async (rawInput) => {
     }
 
     let activeFirmId = localStorage.getItem('app_active_firm_id') || 
-                       
+                       parsedContent?.meta?.active_firm_id || 
+                       targetData['app_active_firm_id'] || 
+                       mergedFirmsList[0]?.id || 
+                       'FIRM-1790909076433';
+
+    localStorage.setItem('app_active_firm_id', activeFirmId);
+
+    // Trigger Post-Restore Healing & Reconstruction
+    autoHealRestoredInventoryAndAccounts(activeFirmId);
+
+    return {
+      success: true,
+      stats: {
+        vouchersCount: JSON.parse(localStorage.getItem(`account_book_vouchers_${activeFirmId}`) || localStorage.getItem('account_book_vouchers') || '[]').length,
+        accountsCount: JSON.parse(localStorage.getItem(`account_heads_${activeFirmId}`) || localStorage.getItem('app_accounts') || '[]').length,
+        purchasesCount: JSON.parse(localStorage.getItem(`purchase_bills_${activeFirmId}`) || localStorage.getItem('purchase_bills') || '[]').length
+      }
+    };
+  } catch (err) {
+    throw new Error(err.message || 'Backup restore karne mein asafalta hui.');
+  }
+};
+
+export const exportUniversalBackup = downloadAppBackup;
+export const downloadAppBackupFromFile = restoreUniversalBackup;
+export const restoreAppBackupFromFile = restoreUniversalBackup;
+export const exportAppBackupJSON = downloadAppBackup;
+export const restoreAppBackupJSON = restoreUniversalBackup;
