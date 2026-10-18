@@ -31,7 +31,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const handleCreateFirmSubmit = async (e) => {
+  const handleCreateFirmSubmit = (e) => {
     if (e) e.preventDefault();
     setErrorMessage(null);
 
@@ -59,13 +59,11 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         created_at: new Date().toISOString()
       };
 
-      // 1. Fetch existing firms from SSOT Storage
+      // 1. Synchronous localStorage + IDB write for zero latency
       let existingFirms = [];
       try {
-        const rawFirms = IDBStorage.getItem('app_firms_registry', null) || IDBStorage.getItem('app_firms', null);
-        if (rawFirms) {
-          existingFirms = typeof rawFirms === 'string' ? JSON.parse(rawFirms) : rawFirms;
-        }
+        const raw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms');
+        if (raw) existingFirms = JSON.parse(raw);
       } catch (err) {
         existingFirms = [];
       }
@@ -73,11 +71,11 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
 
       const updatedFirms = [...existingFirms.filter(f => f && (f.id || f.firm_id) !== firmId), newFirmPayload];
       
-      // 2. Atomic persistence via IDBStorage (Dual write buffer to IDB & localStorage)
-      IDBStorage.setItem('app_firms_registry', updatedFirms);
-      IDBStorage.setItem('app_firms', updatedFirms);
+      const serializedFirms = JSON.stringify(updatedFirms);
+      localStorage.setItem('app_firms_registry', serializedFirms);
+      localStorage.setItem('app_firms', serializedFirms);
 
-      // 3. Initialize baseline accounts strictly scoped to firmId
+      // 2. Initialize baseline accounts strictly scoped to firmId
       const starterAccounts = [
         { id: `ACC-${firmId}-001`, firm_id: firmId, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: true },
         { id: `ACC-${firmId}-002`, firm_id: firmId, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: false },
@@ -86,30 +84,36 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         { id: `ACC-${firmId}-005`, firm_id: firmId, account_name: 'Proprietor Capital Account', name: 'Proprietor Capital Account', primary_type: 'EQUITY', type: 'Liabilities', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', current_balance: 0, is_system_locked: false }
       ];
 
-      IDBStorage.setItem(`app_accounts_${firmId}`, starterAccounts);
-      IDBStorage.setItem(`account_heads_${firmId}`, starterAccounts);
+      localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(starterAccounts));
+      localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(starterAccounts));
+      localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify([]));
+      localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify([]));
 
-      // 4. Initialize empty transaction & inventory buckets
-      IDBStorage.setItem(`account_book_vouchers_${firmId}`, []);
-      IDBStorage.setItem(`app_vouchers_${firmId}`, []);
-      IDBStorage.setItem(`inventory_items_${firmId}`, []);
-      IDBStorage.setItem(`sales_invoices_${firmId}`, []);
-      IDBStorage.setItem(`purchase_bills_${firmId}`, []);
+      // 3. Set Active Firm pointers instantly
+      localStorage.setItem('app_active_firm_id', firmId);
+      localStorage.setItem('active_firm_profile', JSON.stringify(newFirmPayload));
 
-      // 5. Set Active Firm pointers
-      IDBStorage.setItem('app_active_firm_id', firmId);
-      IDBStorage.setItem('active_firm_profile', newFirmPayload);
+      // Also mirror to IDBStorage if available
+      try {
+        IDBStorage.setItem('app_firms_registry', updatedFirms);
+        IDBStorage.setItem('app_active_firm_id', firmId);
+        IDBStorage.setItem('active_firm_profile', newFirmPayload);
+      } catch (e) {}
 
       setIsSubmitting(false);
 
-      // 6. Trigger callback or clean reload
+      // 4. Dispatch global events and trigger callback
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('storage'));
+
       if (onFirmCreated && typeof onFirmCreated === 'function') {
         onFirmCreated(newFirmPayload);
       } else {
         window.location.reload();
       }
     } catch (err) {
-      console.error("[CreateFirmForm] Fatal submission error:", err);
+      console.error("[CreateFirmForm] Submission error:", err);
       setIsSubmitting(false);
       setErrorMessage("Firm creation failed: " + (err.message || 'Unknown error'));
     }
