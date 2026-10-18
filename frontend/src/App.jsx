@@ -51,7 +51,7 @@ export default function App() {
       setFirmsList(list);
       setActiveFirm(firm);
 
-      if (!list || list.length === 0) {
+      if (!list || list.length === 0 || !firm) {
         setIsCreatingFirm(true);
       } else if (firm && firm.id) {
         setIsCreatingFirm(false);
@@ -76,30 +76,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // GUARANTEE: Never hang on loader. Force render within 400ms.
+    // Instant synchronous boot check
+    refreshState();
+
     const bootTimer = setTimeout(() => {
       setIsAppReady(true);
-    }, 400);
+    }, 300);
 
     initIndexedDB().then(() => {
       clearTimeout(bootTimer);
       refreshState();
     }).catch(() => {
       clearTimeout(bootTimer);
-      refreshState();
     });
 
-    window.addEventListener('app_state_updated', refreshState);
-    window.addEventListener('app_storage_updated', refreshState);
-    window.addEventListener('fy_state_updated', refreshState);
-    window.addEventListener('storage', refreshState);
+    const handleStorageChange = () => {
+      refreshState();
+    };
+
+    window.addEventListener('app_state_updated', handleStorageChange);
+    window.addEventListener('app_storage_updated', handleStorageChange);
 
     return () => {
       clearTimeout(bootTimer);
-      window.removeEventListener('app_state_updated', refreshState);
-      window.removeEventListener('app_storage_updated', refreshState);
-      window.removeEventListener('fy_state_updated', refreshState);
-      window.removeEventListener('storage', refreshState);
+      window.removeEventListener('app_state_updated', handleStorageChange);
+      window.removeEventListener('app_storage_updated', handleStorageChange);
     };
   }, [refreshState]);
 
@@ -151,7 +152,6 @@ export default function App() {
         } catch (e) {}
       }
       window.dispatchEvent(new Event('app_storage_updated'));
-      window.dispatchEvent(new Event('app_state_updated'));
     }
   };
 
