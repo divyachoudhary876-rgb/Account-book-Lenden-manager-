@@ -1,5 +1,5 @@
 /**
- * CreateFirmForm Component: UI modal/form to register a new enterprise firm profile.
+ * CreateFirmForm Component: UI modal/form to register a new enterprise firm profile safely.
  */
 
 import React, { useState } from 'react';
