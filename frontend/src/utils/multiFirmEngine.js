@@ -1,59 +1,38 @@
 /**
- * Multi-Firm Isolation Engine for Account Book ERP
- * Manages enterprise firm profiles, active session context, and isolated storage buckets.
+ * Multi-Firm Isolation Engine for Account Book ERP (Crash-Proof Version)
+ * Manages enterprise firm profiles, active session context, and isolated storage buckets safely.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
 
 export const getFirmsRegistry = () => {
   try {
-    let firms = IDBStorage.getItem('app_firms_registry', []);
-    if (!Array.isArray(firms) || firms.length === 0) {
-      firms = IDBStorage.getItem('app_firms', []);
+    let firms = [];
+    const rawFirms = IDBStorage.getItem('app_firms_registry', null) || IDBStorage.getItem('app_firms', null);
+    
+    if (rawFirms) {
+      firms = typeof rawFirms === 'string' ? JSON.parse(rawFirms) : rawFirms;
     }
 
-    const activeRaw = IDBStorage.getItem('active_firm_profile', null);
-    if (activeRaw) {
-      try {
-        const activeObj = typeof activeRaw === 'string' ? JSON.parse(activeRaw) : activeRaw;
-        if (activeObj && (activeObj.id || activeObj.firm_id)) {
-          const activeId = activeObj.id || activeObj.firm_id;
-          if (!firms.some(f => (f.id === activeId || f.firm_id === activeId))) {
-            firms.push(activeObj);
-          }
-        }
-      } catch (e) {}
+    if (!Array.isArray(firms)) {
+      firms = [];
     }
 
+    // Ensure default firm exists if registry is empty
     if (firms.length === 0) {
-      const defaultFirm = {
+      firms = [{
         id: 'FIRM-1790909076433',
         firm_id: 'FIRM-1790909076433',
         legal_name: 'Neelkanth Int Udyog',
         trade_name: 'Neelkanth Int Udyog',
         business_category: 'BRICK_KILN',
         gstin: 'UNREGISTERED'
-      };
-      firms = [defaultFirm];
+      }];
     }
 
-    const uniqueMap = new Map();
-    firms.forEach(f => {
-      if (f && (f.id || f.firm_id || f.legal_name)) {
-        const fId = f.id || f.firm_id || `FIRM-${Math.floor(Math.random() * 100000)}`;
-        uniqueMap.set(fId, {
-          ...f,
-          id: fId,
-          firm_id: fId,
-          legal_name: f.legal_name || f.trade_name || f.name || 'AccountBook Firm'
-        });
-      }
-    });
-
-    const finalFirms = Array.from(uniqueMap.values());
-    IDBStorage.setItem('app_firms_registry', finalFirms);
-    return finalFirms;
+    return firms;
   } catch (err) {
+    console.error("Error reading firms registry:", err);
     return [{
       id: 'FIRM-1790909076433',
       firm_id: 'FIRM-1790909076433',
@@ -68,36 +47,51 @@ export const getFirmsRegistry = () => {
 export const getActiveFirm = () => {
   try {
     const firms = getFirmsRegistry();
-    const activeId = IDBStorage.getItem('app_active_firm_id', firms[0].id);
-    let match = firms.find(f => f.id === activeId || f.firm_id === activeId);
+    if (firms.length === 0) return null;
 
-    if (match) return match;
+    let activeId = IDBStorage.getItem('app_active_firm_id', null);
+    let match = firms.find(f => f && (f.id === activeId || f.firm_id === activeId));
 
-    IDBStorage.setItem('app_active_firm_id', firms[0].id);
-    IDBStorage.setItem('active_firm_profile', firms[0]);
-    return firms[0];
+    if (!match) {
+      match = firms[0];
+      IDBStorage.setItem('app_active_firm_id', match.id || match.firm_id);
+      IDBStorage.setItem('active_firm_profile', match);
+    }
+
+    return match;
   } catch (err) {
-    return null;
+    console.error("Error getting active firm:", err);
+    return {
+      id: 'FIRM-1790909076433',
+      firm_id: 'FIRM-1790909076433',
+      legal_name: 'Neelkanth Int Udyog',
+      trade_name: 'Neelkanth Int Udyog',
+      business_category: 'BRICK_KILN',
+      gstin: 'UNREGISTERED'
+    };
   }
 };
 
 export const switchActiveFirm = (firmId) => {
-  if (!firmId) throw new Error("Invalid firm ID provided.");
-  const firms = getFirmsRegistry();
-  const targetFirm = firms.find(f => f.id === firmId || f.firm_id === firmId);
+  if (!firmId) return false;
+  try {
+    const firms = getFirmsRegistry();
+    const targetFirm = firms.find(f => f && (f.id === firmId || f.firm_id === firmId));
 
-  if (!targetFirm) {
-    throw new Error(`Firm profile with ID "${firmId}" not found.`);
+    if (!targetFirm) return false;
+
+    const cleanId = targetFirm.id || targetFirm.firm_id;
+    IDBStorage.setItem('app_active_firm_id', cleanId);
+    IDBStorage.setItem('active_firm_profile', targetFirm);
+
+    window.dispatchEvent(new Event('app_state_updated'));
+    window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('storage'));
+    return true;
+  } catch (err) {
+    console.error("Error switching firm:", err);
+    return false;
   }
-
-  const cleanId = targetFirm.id || targetFirm.firm_id;
-  IDBStorage.setItem('app_active_firm_id', cleanId);
-  IDBStorage.setItem('active_firm_profile', targetFirm);
-
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  window.dispatchEvent(new Event('storage'));
-  return true;
 };
 
 export const setActiveFirmId = switchActiveFirm;
@@ -109,10 +103,10 @@ export const createNewFirm = (firmData) => {
     const newFirm = {
       id: newId,
       firm_id: newId,
-      legal_name: firmData.legal_name || firmData.name || 'New Firm',
-      trade_name: firmData.trade_name || firmData.legal_name || 'New Firm',
-      business_category: firmData.business_category || 'BRICK_KILN',
-      gstin: firmData.gstin || 'UNREGISTERED',
+      legal_name: firmData?.legal_name || firmData?.name || 'New Firm',
+      trade_name: firmData?.trade_name || firmData?.legal_name || 'New Firm',
+      business_category: firmData?.business_category || 'BRICK_KILN',
+      gstin: firmData?.gstin || 'UNREGISTERED',
       created_at: new Date().toISOString()
     };
 
@@ -127,17 +121,15 @@ export const createNewFirm = (firmData) => {
 
     return newFirm;
   } catch (err) {
+    console.error("Error creating firm:", err);
     throw new Error("Failed to create firm: " + err.message);
   }
 };
 
-/**
- * Update specific fields of an existing firm profile
- */
 export const updateFirmProfile = (firmId, updatedFields) => {
   try {
     const firms = getFirmsRegistry();
-    const index = firms.findIndex(f => f.id === firmId || f.firm_id === firmId);
+    const index = firms.findIndex(f => f && (f.id === firmId || f.firm_id === firmId));
 
     if (index === -1) {
       throw new Error(`Firm with ID "${firmId}" not found.`);
@@ -170,39 +162,40 @@ export const updateFirmProfile = (firmId, updatedFields) => {
   }
 };
 
-/**
- * Delete a firm profile and purge its isolated storage buckets
- */
 export const deleteFirmProfile = (firmId) => {
   if (!firmId) return false;
+  try {
+    const firms = getFirmsRegistry().filter(f => f && f.id !== firmId && f.firm_id !== firmId);
+    IDBStorage.setItem('app_firms_registry', firms);
+    
+    const firmKeysToPurge = [
+      `app_accounts_${firmId}`,
+      `account_heads_${firmId}`,
+      `app_vouchers_${firmId}`,
+      `account_book_vouchers_${firmId}`,
+      `inventory_items_${firmId}`,
+      `purchase_bills_${firmId}`
+    ];
 
-  const firms = getFirmsRegistry().filter(f => f.id !== firmId && f.firm_id !== firmId);
-  IDBStorage.setItem('app_firms_registry', firms);
-  
-  const firmKeysToPurge = [
-    `app_accounts_${firmId}`,
-    `account_heads_${firmId}`,
-    `app_vouchers_${firmId}`,
-    `account_book_vouchers_${firmId}`,
-    `inventory_items_${firmId}`,
-    `purchase_bills_${firmId}`
-  ];
+    firmKeysToPurge.forEach(k => {
+      IDBStorage.removeItem(k);
+    });
 
-  firmKeysToPurge.forEach(k => {
-    IDBStorage.removeItem(k);
-  });
+    if (firms.length > 0) {
+      const nextId = firms[0].id || firms[0].firm_id;
+      IDBStorage.setItem('app_active_firm_id', nextId);
+      IDBStorage.setItem('active_firm_profile', firms[0]);
+    } else {
+      IDBStorage.removeItem('app_active_firm_id');
+      IDBStorage.removeItem('active_firm_profile');
+    }
 
-  if (firms.length > 0) {
-    const nextId = firms[0].id || firms[0].firm_id;
-    IDBStorage.setItem('app_active_firm_id', nextId);
-    IDBStorage.setItem('active_firm_profile', firms[0]);
-  } else {
-    IDBStorage.removeItem('app_active_firm_id');
-    IDBStorage.removeItem('active_firm_profile');
+    window.dispatchEvent(new Event('app_state_updated'));
+    window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('storage'));
+    return true;
+  } catch (err) {
+    console.error("Error deleting firm:", err);
+    return false;
   }
-
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  window.dispatchEvent(new Event('storage'));
-  return true;
 };
