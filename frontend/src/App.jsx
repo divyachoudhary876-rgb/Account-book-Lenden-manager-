@@ -1,12 +1,13 @@
 // frontend/src/App.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { IDBStorage, initIndexedDB } from './utils/indexedDbStorage.js';
 import { getActiveFirm, getFirmsRegistry, setActiveFirmId } from './utils/multiFirmEngine.js';
 import { getDynamicWorkflowMenu } from './utils/navigationRegistry.js';
 import { getFirmFinancialYears, createFinancialYear } from './utils/financialYearEngine.js';
 import { performFinancialYearRollover } from './utils/autoRolloverEngine.js';
 
-// Application Core Views
+// Core Components
 import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
 import FirmProfileSettingsView from './components/FirmProfileSettingsView.jsx';
 import CreateInvoice from './components/CreateInvoice.jsx';
@@ -26,8 +27,6 @@ import SecurityBackupSettings from './components/SecurityBackupSettings.jsx';
 import DataPurgeView from './components/DataPurgeView.jsx';
 import CreateFirmForm from './components/CreateFirmForm.jsx';
 import AppUpdateBanner from './components/AppUpdateBanner.jsx';
-
-// Sector-Specific Views
 import TransportTripView from './components/TransportTripView.jsx';
 import TradingInventoryCatalogView from './components/TradingInventoryCatalogView.jsx';
 
@@ -35,67 +34,77 @@ export default function App() {
   const [activeFirm, setActiveFirm] = useState(null);
   const [firmsList, setFirmsList] = useState([]);
   const [currentView, setCurrentView] = useState('dashboard');
+  const [isAppReady, setIsAppReady] = useState(true);
   
-  // Navigation & Drawer States
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCreatingFirm, setIsCreatingFirm] = useState(false);
 
-  // Financial Year State
   const [fyList, setFyList] = useState([]);
   const [selectedFY, setSelectedFY] = useState('FY 2026-27');
   const [isAddFYModalOpen, setIsAddFYModalOpen] = useState(false);
   const [newFYStartYear, setNewFYStartYear] = useState('2027');
 
-  const refreshState = () => {
+  const refreshState = useCallback(() => {
     try {
       const list = getFirmsRegistry() || [];
       const firm = getActiveFirm();
       setFirmsList(list);
       setActiveFirm(firm);
 
-      if (list.length === 0) {
+      if (!list || list.length === 0 || !firm) {
         setIsCreatingFirm(true);
-      } else if (firm) {
+      } else if (firm && firm.id) {
+        setIsCreatingFirm(false);
         const availableYears = getFirmFinancialYears(firm.id) || [];
         setFyList(availableYears);
         
-        const savedFY = localStorage.getItem(`app_active_fy_${firm.id}`);
+        const savedFY = IDBStorage.getItem(`app_active_fy_${firm.id}`, null);
         let activeTargetFY = savedFY && availableYears.some(y => y.label === savedFY) 
           ? savedFY 
           : (availableYears[0]?.label || 'FY 2026-27');
         
         setSelectedFY(activeTargetFY);
-        performFinancialYearRollover(firm.id, activeTargetFY);
+        try {
+          performFinancialYearRollover(firm.id, activeTargetFY);
+        } catch (err) {}
       }
     } catch (e) {
-      console.error("State load error:", e);
-      setIsCreatingFirm(true);
+      console.error("[App] State sync warning:", e);
+    } finally {
+      setIsAppReady(true);
     }
-  };
+  }, []);
 
   useEffect(() => {
     refreshState();
-    window.addEventListener('app_state_updated', refreshState);
-    window.addEventListener('fy_state_updated', refreshState);
 
-    const safetyTimer = setTimeout(() => {
-      const list = getFirmsRegistry() || [];
-      if (list.length === 0) {
-        setIsCreatingFirm(true);
-      }
-    }, 1500);
+    initIndexedDB().then(() => {
+      refreshState();
+    }).catch(() => {});
+
+    const handleStorageChange = () => {
+      refreshState();
+    };
+
+    window.addEventListener('app_state_updated', handleStorageChange);
+    window.addEventListener('app_storage_updated', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
 
     return () => {
-      window.removeEventListener('app_state_updated', refreshState);
-      window.removeEventListener('fy_state_updated', refreshState);
-      clearTimeout(safetyTimer);
+      window.removeEventListener('app_state_updated', handleStorageChange);
+      window.removeEventListener('app_storage_updated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
     };
-  }, []);
+  }, [refreshState]);
 
-  const firmCat = String(activeFirm?.category || 'BRICK_KILN').toUpperCase();
-  const menuItems = getDynamicWorkflowMenu(firmCat);
+  const firmCat = useMemo(() => {
+    return String(activeFirm?.category || activeFirm?.business_category || 'BRICK_KILN').toUpperCase();
+  }, [activeFirm]);
 
-  // Universal Navigation Handler that bridges Dashboard and Menu Keys seamlessly
+  const menuItems = useMemo(() => {
+    return getDynamicWorkflowMenu(firmCat);
+  }, [firmCat]);
+
   const handleNavigate = (rawKey) => {
     setIsMenuOpen(false);
     setIsCreatingFirm(false);
@@ -103,48 +112,24 @@ export default function App() {
     if (!rawKey) return;
     const key = String(rawKey).trim().toLowerCase();
 
-    // Map route keys cleanly
-    if (key === 'dashboard') {
-      setCurrentView('dashboard');
-    } else if (key === 'add_account' || key === 'create_account') {
-      setCurrentView('ADD_ACCOUNT');
-    } else if (key === 'sales' || key === 'invoice') {
-      setCurrentView('sales');
-    } else if (key === 'purchase') {
-      setCurrentView('purchase');
-    } else if (key === 'voucher' || key === 'vouchers') {
-      setCurrentView('vouchers');
-    } else if (key === 'fuel' || key === 'consumption' || key === 'material_adjustment' || key === 'stock_adjustment' || key === 'diesel_cut') {
-      setCurrentView('material_adjustment');
-    } else if (key === 'production') {
-      setCurrentView('production');
-    } else if (key === 'labour' || key === 'payroll') {
-      setCurrentView('payroll');
-    } else if (key === 'settlement') {
-      setCurrentView('settlement');
-    } else if (key === 'inventory') {
-      setCurrentView('inventory');
-    } else if (key === 'ledger' || key === 'milan') {
-      setCurrentView('milan');
-    } else if (key === 'journal' || key === 'journal_register') {
-      setCurrentView('journal');
-    } else if (key === 'reports' || key === 'financial_reports') {
-      setCurrentView('reports');
-    } else if (key === 'cash_flow') {
-      setCurrentView('cash_flow');
-    } else if (key === 'settings' || key === 'firm_settings') {
-      setCurrentView('firm_settings');
-    } else if (key === 'backup' || key === 'backup_center') {
-      setCurrentView('backup');
-    } else if (key === 'reset' || key === 'purge') {
-      setCurrentView('purge');
-    } else {
-      setCurrentView(rawKey);
-    }
-  };
-
-  const handleMenuClick = (item) => {
-    handleNavigate(item.key);
+    if (key === 'dashboard') setCurrentView('dashboard');
+    else if (key === 'add_account' || key === 'create_account') setCurrentView('ADD_ACCOUNT');
+    else if (key === 'sales' || key === 'invoice' || key === 'invoices') setCurrentView('sales');
+    else if (key === 'purchase' || key === 'purchases') setCurrentView('purchase');
+    else if (key === 'voucher' || key === 'vouchers') setCurrentView('vouchers');
+    else if (key === 'fuel' || key === 'consumption' || key === 'material_adjustment' || key === 'stock_adjustment' || key === 'diesel_cut') setCurrentView('material_adjustment');
+    else if (key === 'production') setCurrentView('production');
+    else if (key === 'labour' || key === 'payroll' || key === 'wages') setCurrentView('payroll');
+    else if (key === 'settlement' || key === 'bill_settlement') setCurrentView('settlement');
+    else if (key === 'inventory' || key === 'stock') setCurrentView('inventory');
+    else if (key === 'ledger' || key === 'milan' || key === 'account_statement') setCurrentView('milan');
+    else if (key === 'journal' || key === 'journal_register' || key === 'daybook') setCurrentView('journal');
+    else if (key === 'reports' || key === 'financial_reports' || key === 'pnl' || key === 'balance_sheet') setCurrentView('reports');
+    else if (key === 'cash_flow') setCurrentView('cash_flow');
+    else if (key === 'settings' || key === 'firm_settings') setCurrentView('firm_settings');
+    else if (key === 'backup' || key === 'backup_center') setCurrentView('backup');
+    else if (key === 'reset' || key === 'purge') setCurrentView('purge');
+    else setCurrentView(rawKey);
   };
 
   const handleFYSelectChange = (e) => {
@@ -154,26 +139,28 @@ export default function App() {
     } else {
       setSelectedFY(val);
       if (activeFirm?.id) {
-        localStorage.setItem(`app_active_fy_${activeFirm.id}`, val);
-        performFinancialYearRollover(activeFirm.id, val);
+        IDBStorage.setItem(`app_active_fy_${activeFirm.id}`, val);
+        try {
+          performFinancialYearRollover(activeFirm.id, val);
+        } catch (e) {}
       }
       window.dispatchEvent(new Event('app_storage_updated'));
-      window.dispatchEvent(new Event('app_state_updated'));
     }
   };
 
   const handleCreateFYSubmit = (e) => {
     e.preventDefault();
+    if (!activeFirm?.id) return;
     try {
-      const created = createFinancialYear(activeFirm?.id || 'FIRM-001', newFYStartYear);
+      const created = createFinancialYear(activeFirm.id, newFYStartYear);
       setSelectedFY(created.label);
-      if (activeFirm?.id) {
-        localStorage.setItem(`app_active_fy_${activeFirm.id}`, created.label);
+      IDBStorage.setItem(`app_active_fy_${activeFirm.id}`, created.label);
+      try {
         performFinancialYearRollover(activeFirm.id, created.label);
-      }
+      } catch (e) {}
       setIsAddFYModalOpen(false);
       refreshState();
-      alert(`鉁� ${created.label} registered & balances rolled over successfully!`);
+      alert(`✓ ${created.label} registered successfully!`);
     } catch (err) {
       alert(err.message);
     }
@@ -191,20 +178,17 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#f8fafc', color: '#0f172a', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box' }}>
-      
       <AppUpdateBanner />
 
-      {/* Top Header */}
       {!isCreatingFirm && activeFirm && (
         <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', width: '100%', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', flexWrap: 'wrap' }}>
-          
           <div style={{ display: 'flex', alignItems: 'center' }}>
             {currentView !== 'dashboard' ? (
               <button
                 onClick={() => setCurrentView('dashboard')}
                 style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
-                鈫� Dashboard
+                ← Dashboard
               </button>
             ) : (
               <div style={{ backgroundColor: '#0f172a', color: '#fff', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '11px' }}>
@@ -228,12 +212,12 @@ export default function App() {
                     refreshState();
                   }
                 }}
-                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box', outline: 'none' }}
               >
                 {firmsList.map(f => (
-                  <option key={f.id} value={f.id}>馃彚 {f.legal_name || f.trade_name || f.name}</option>
+                  <option key={f.id} value={f.id}>Firm: {f.legal_name || f.trade_name || f.name}</option>
                 ))}
-                <option value="CREATE_NEW">鉃� New Firm...</option>
+                <option value="CREATE_NEW">+ New Firm...</option>
               </select>
             </div>
 
@@ -241,12 +225,12 @@ export default function App() {
               <select
                 value={selectedFY}
                 onChange={handleFYSelectChange}
-                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box', outline: 'none' }}
               >
                 {fyList.map(fy => (
                   <option key={fy.id} value={fy.label}>{fy.label}</option>
                 ))}
-                <option value="ADD_NEW_FY">鉃� Add FY</option>
+                <option value="ADD_NEW_FY">+ Add FY</option>
               </select>
             </div>
 
@@ -254,47 +238,23 @@ export default function App() {
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
-              {isMenuOpen ? '鉁�' : '鈽� Menu'}
+              {isMenuOpen ? '✕' : '☰ Menu'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Workflow Menu Drawer - Completely Uniform & Clean (No Highlights) */}
       {isMenuOpen && (
-        <div style={{
-          backgroundColor: '#ffffff',
-          padding: '14px',
-          borderBottom: '2px solid #e2e8f0',
-          boxShadow: '0 10px 25px rgba(0,0,0,0.08)',
-          width: '100%',
-          boxSizing: 'border-box'
-        }}>
+        <div style={{ backgroundColor: '#ffffff', padding: '14px', borderBottom: '2px solid #e2e8f0', boxShadow: '0 10px 25px rgba(0,0,0,0.08)', width: '100%', boxSizing: 'border-box' }}>
           <div style={{ color: '#64748b', fontSize: '10px', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>
             ACCOUNTING WORKFLOW MENU ({firmCat})
           </div>
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {menuItems.map(item => (
               <button
                 key={item.key}
-                onClick={() => handleMenuClick(item)}
-                style={{
-                  backgroundColor: '#f8fafc',
-                  color: item.isDanger ? '#dc2626' : '#0f172a',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  width: '100%',
-                  boxSizing: 'border-box'
-                }}
+                onClick={() => handleNavigate(item.key)}
+                style={{ backgroundColor: '#f8fafc', color: item.isDanger ? '#dc2626' : '#0f172a', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', width: '100%', boxSizing: 'border-box' }}
               >
                 <span>{item.icon}</span>
                 <span style={{ flex: 1 }}>{item.label}</span>
@@ -304,7 +264,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Screen Routing */}
       <main style={{ width: '100%', maxWidth: '850px', margin: '0 auto', padding: '16px', boxSizing: 'border-box' }}>
         {isCreatingFirm || !activeFirm ? (
           <CreateFirmForm 
@@ -319,21 +278,8 @@ export default function App() {
           />
         ) : (
           <>
-            {currentView === 'dashboard' && (
-              <EnterpriseDashboard 
-                firm={activeFirm} 
-                selectedFY={selectedFY}
-                onNavigate={handleNavigate} 
-              />
-            )}
-            {currentView === 'ADD_ACCOUNT' && (
-              <CreateAccountHeadModal 
-                firm={activeFirm} 
-                selectedFY={selectedFY} 
-                isOpen={true}
-                onClose={() => setCurrentView('dashboard')} 
-              />
-            )}
+            {currentView === 'dashboard' && <EnterpriseDashboard firm={activeFirm} selectedFY={selectedFY} onNavigate={handleNavigate} />}
+            {currentView === 'ADD_ACCOUNT' && <CreateAccountHeadModal firm={activeFirm} selectedFY={selectedFY} isOpen={true} onClose={() => setCurrentView('dashboard')} />}
             {currentView === 'firm_settings' && (
               <FirmProfileSettingsView 
                 firm={activeFirm} 
@@ -360,22 +306,16 @@ export default function App() {
         )}
       </main>
 
-      {/* Add New FY Modal */}
       {isAddFYModalOpen && (
         <div style={modalOverlayStyle}>
           <div style={modalCardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px', fontWeight: 'bold' }}>
-                馃搮 Add New Financial Year
-              </h3>
-              <button onClick={() => setIsAddFYModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>鉁�</button>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px', fontWeight: 'bold' }}>📅 Add New Financial Year</h3>
+              <button onClick={() => setIsAddFYModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>✕</button>
             </div>
-
             <form onSubmit={handleCreateFYSubmit}>
               <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
-                  Starting Year (1st April)
-                </label>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>Starting Year (1st April)</label>
                 <input
                   type="number"
                   min="2020"
@@ -386,32 +326,18 @@ export default function App() {
                   required
                 />
               </div>
-
               <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: '#166534' }}>
                 <strong>Generated Period:</strong><br />
                 01-Apr-{newFYStartYear} to 31-Mar-{parseInt(newFYStartYear || 0, 10) + 1} (FY {newFYStartYear}-{((parseInt(newFYStartYear || 0, 10) + 1) % 100).toString().padStart(2, '0')})
               </div>
-
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsAddFYModalOpen(false)}
-                  style={{ flex: 1, backgroundColor: '#e2e8f0', color: '#475569', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  style={{ flex: 1.5, backgroundColor: '#0284c7', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  馃捑 Create FY
-                </button>
+                <button type="button" onClick={() => setIsAddFYModalOpen(false)} style={{ flex: 1, backgroundColor: '#e2e8f0', color: '#475569', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ flex: 1.5, backgroundColor: '#0284c7', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>💾 Create FY</button>
               </div>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
