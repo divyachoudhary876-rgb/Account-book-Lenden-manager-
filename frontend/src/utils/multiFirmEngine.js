@@ -3,6 +3,9 @@
  * Manages enterprise firm profiles, active session context, and isolated storage buckets.
  */
 
+/**
+ * Retrieve the list of all created enterprise firm profiles from localStorage
+ */
 export const getFirmsRegistry = () => {
   try {
     const raw = localStorage.getItem('app_firms_registry');
@@ -11,6 +14,7 @@ export const getFirmsRegistry = () => {
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
     
+    // Fallback: Check if there is an active firm profile created via initialization engine
     const activeRaw = localStorage.getItem('active_firm_profile');
     if (activeRaw) {
       try {
@@ -29,6 +33,9 @@ export const getFirmsRegistry = () => {
   }
 };
 
+/**
+ * Get the currently active firm profile object
+ */
 export const getActiveFirm = () => {
   try {
     const firms = getFirmsRegistry();
@@ -38,6 +45,7 @@ export const getActiveFirm = () => {
     const match = firms.find(f => f.id === activeId);
     if (match) return match;
     
+    // Fallback to first available firm if active ID is not set or invalid
     localStorage.setItem('app_active_firm_id', firms[0].id);
     localStorage.setItem('active_firm_profile', JSON.stringify(firms[0]));
     return firms[0];
@@ -46,6 +54,9 @@ export const getActiveFirm = () => {
   }
 };
 
+/**
+ * Switch the active firm context safely across the application
+ */
 export const switchActiveFirm = (firmId) => {
   if (!firmId) throw new Error("Invalid firm ID provided for switching.");
   
@@ -58,6 +69,7 @@ export const switchActiveFirm = (firmId) => {
   localStorage.setItem('app_active_firm_id', firmId);
   localStorage.setItem('active_firm_profile', JSON.stringify(targetFirm));
   
+  // Broadcast events to trigger instant re-render across all active views & components
   window.dispatchEvent(new Event('app_state_updated'));
   window.dispatchEvent(new Event('app_storage_updated'));
   window.dispatchEvent(new Event('storage'));
@@ -66,6 +78,9 @@ export const switchActiveFirm = (firmId) => {
 
 export const setActiveFirmId = switchActiveFirm;
 
+/**
+ * Create a new enterprise firm profile
+ */
 export const createNewFirm = (firmData) => {
   try {
     const firms = getFirmsRegistry();
@@ -97,6 +112,9 @@ export const createNewFirm = (firmData) => {
   }
 };
 
+/**
+ * Update specific fields of an existing firm profile
+ */
 export const updateFirmProfile = (firmId, updatedFields) => {
   try {
     const firms = getFirmsRegistry();
@@ -131,12 +149,17 @@ export const updateFirmProfile = (firmId, updatedFields) => {
   }
 };
 
+/**
+ * Delete a firm profile and purge ALL of its strictly isolated storage buckets
+ * Eliminates all orphan keys and memory leaks
+ */
 export const deleteFirmProfile = (firmId) => {
   if (!firmId) return false;
   
   const firms = getFirmsRegistry().filter(f => f.id !== firmId);
   localStorage.setItem('app_firms_registry', JSON.stringify(firms));
   
+  // Comprehensive purge of all firm-scoped buckets
   const firmKeysToPurge = [
     `app_accounts_${firmId}`,
     `account_heads_${firmId}`,
