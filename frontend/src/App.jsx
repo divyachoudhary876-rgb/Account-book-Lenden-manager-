@@ -1,10 +1,10 @@
 /**
  * Main Application Root Component: Account Book ERP
- * Initializes IndexedDB, manages firm context, navigation, and renders active views.
+ * Safely bootstraps IndexedDB, manages firm registry, and handles fresh installations.
  */
 
 import React, { useState, useEffect } from 'react';
-import { initIndexedDB, IDBStorage } from './utils/indexedDbStorage.js';
+import { initIndexedDB } from './utils/indexedDbStorage.js';
 import { getFirmsRegistry, getActiveFirm, switchActiveFirm } from './utils/multiFirmEngine.js';
 import CreateFirmForm from './components/CreateFirmForm.jsx';
 import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
@@ -37,10 +37,21 @@ export default function App() {
   }, []);
 
   const refreshFirmContext = () => {
-    const firms = getFirmsRegistry();
-    setFirmsList(firms);
-    const currentActive = getActiveFirm();
-    setActiveFirm(currentActive);
+    try {
+      const firms = getFirmsRegistry();
+      setFirmsList(firms);
+      
+      if (!Array.isArray(firms) || firms.length === 0) {
+        setShowNewFirmModal(true);
+        setActiveFirm(null);
+      } else {
+        const currentActive = getActiveFirm();
+        setActiveFirm(currentActive);
+      }
+    } catch (err) {
+      console.error("Error refreshing firm context:", err);
+      setShowNewFirmModal(true);
+    }
   };
 
   const handleFirmChange = (e) => {
@@ -73,20 +84,22 @@ export default function App() {
           <span className="text-xl font-black tracking-wide text-blue-400">Account Book ERP</span>
         </div>
 
-        <div className="flex items-center space-x-4">
-          <select
-            value={activeFirm?.id || activeFirm?.firm_id || ''}
-            onChange={handleFirmChange}
-            className="bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {firmsList.map(f => (
-              <option key={f.id || f.firm_id} value={f.id || f.firm_id}>
-                🏢 {f.legal_name || f.trade_name || f.name}
-              </option>
-            ))}
-            <option value="NEW_FIRM" className="text-blue-300 font-semibold">+ New Firm...</option>
-          </select>
-        </div>
+        {firmsList.length > 0 && (
+          <div className="flex items-center space-x-4">
+            <select
+              value={activeFirm?.id || activeFirm?.firm_id || ''}
+              onChange={handleFirmChange}
+              className="bg-slate-800 border border-slate-700 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {firmsList.map(f => (
+                <option key={f.id || f.firm_id} value={f.id || f.firm_id}>
+                  🏢 {f.legal_name || f.trade_name || f.name}
+                </option>
+              ))}
+              <option value="NEW_FIRM" className="text-blue-300 font-semibold">+ New Firm...</option>
+            </select>
+          </div>
+        )}
       </header>
 
       {/* Main View Container */}
@@ -94,7 +107,16 @@ export default function App() {
         {activeFirm ? (
           <EnterpriseDashboard activeFirm={activeFirm} />
         ) : (
-          <div className="text-center py-12 text-gray-500">No firm profile selected. Kripya firm banayein.</div>
+          <div className="text-center py-16 text-gray-500">
+            <h2 className="text-2xl font-bold mb-2">Koi Firm Profile Uplabdh Nahi Hai</h2>
+            <p className="mb-4">Shuru karne ke liye kripya apni pehli enterprise firm banayein.</p>
+            <button
+              onClick={() => setShowNewFirmModal(true)}
+              className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium shadow hover:bg-blue-700"
+            >
+              + Create First Firm
+            </button>
+          </div>
         )}
       </main>
 
@@ -105,7 +127,7 @@ export default function App() {
             setShowNewFirmModal(false);
             refreshFirmContext();
           }}
-          onCancel={() => setShowNewFirmModal(false)}
+          onCancel={firmsList.length > 0 ? () => setShowNewFirmModal(false) : undefined}
         />
       )}
     </div>
