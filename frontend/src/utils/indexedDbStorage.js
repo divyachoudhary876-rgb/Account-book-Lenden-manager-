@@ -11,7 +11,6 @@ const DB_VERSION = 1;
 let dbInstance = null;
 let initPromise = null;
 
-// Ensure global memory cache exists
 if (typeof window !== 'undefined') {
   window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
 }
@@ -157,7 +156,7 @@ export const IDBStorage = {
     try { localStorage.removeItem(key); } catch (e) {}
     if (dbInstance) {
       try {
-        const transaction = dbInstance.transaction(STORE_Name, 'readwrite');
+        const transaction = dbInstance.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
         store.delete(key);
       } catch (e) {}
