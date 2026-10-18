@@ -207,7 +207,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       });
 
       const netStock = Math.max(0, totalPurchased - totalSold);
-      // Clean up floating point decimal precision (e.g. 7785.340000000002 -> 7785.34)
       const cleanStock = parseFloat(netStock.toFixed(2));
       item.current_stock = cleanStock;
       item.stock = cleanStock;
@@ -216,6 +215,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       return item;
     });
 
+    // Save strictly to active firm keys and synced global keys
     localStorage.setItem(`inventory_items_${cleanFirmId}`, JSON.stringify(stockItems));
     localStorage.setItem('inventory_items', JSON.stringify(stockItems));
 
@@ -279,7 +279,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
 };
 
 /**
- * 1. DOWNLOAD FULL BACKUP ENGINE
+ * 1. DOWNLOAD FULL BACKUP ENGINE (Pulls latest localStorage state including updates)
  */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
