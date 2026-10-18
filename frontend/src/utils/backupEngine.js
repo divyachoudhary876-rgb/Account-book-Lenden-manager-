@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Pure Snapshot Mode with Intelligent Multi-Firm Registry Merging.
+ * Pure Snapshot Mode with Intelligent Multi-Firm Registry Merging & Cross-Key Synchronization.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -26,7 +26,7 @@ const broadcastAppEvents = () => {
 };
 
 /**
- * 1. DOWNLOAD FULL BACKUP (Exports exact current localStorage state)
+ * 1. DOWNLOAD FULL BACKUP (Exports exact current localStorage state including updates)
  */
 export async function exportUniversalBackup(firmInput = 'AccountBook') {
   try {
@@ -90,7 +90,7 @@ export async function exportUniversalBackup(firmInput = 'AccountBook') {
 export const downloadAppBackup = exportUniversalBackup;
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM REGISTRY MERGING
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM REGISTRY MERGING & VERBATIM MAPPING
  */
 export async function restoreUniversalBackup(rawInput) {
   try {
@@ -119,12 +119,11 @@ export async function restoreUniversalBackup(rawInput) {
       throw new Error("Invalid backup schema structure.");
     }
 
-    // Capture existing local firms before overwriting so newly created firms aren't lost
+    // Capture existing local firms before restoring to protect newly created firms (like "Aa")
     const existingFirmsRaw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms') || localStorage.getItem('firm_list') || '[]';
     let existingFirms = [];
     try { existingFirms = JSON.parse(existingFirmsRaw); } catch (e) { existingFirms = []; }
 
-    // Extract backup firms from various possible registry keys in the snapshot
     let backupFirms = [];
     ['app_firms', 'firm_list', 'app_firms_registry'].forEach(regKey => {
       if (targetData[regKey]) {
@@ -135,18 +134,9 @@ export async function restoreUniversalBackup(rawInput) {
       }
     });
 
-    // Merge existing and backup firms uniquely by ID or Name
     const firmsMap = new Map();
-    if (Array.isArray(existingFirms)) {
-      existingFirms.forEach(f => {
-        if (f) firmsMap.set(f.id || f.firm_id || f.name, f);
-      });
-    }
-    if (Array.isArray(backupFirms)) {
-      backupFirms.forEach(f => {
-        if (f) firmsMap.set(f.id || f.firm_id || f.name, f);
-      });
-    }
+    if (Array.isArray(existingFirms)) existingFirms.forEach(f => { if (f) firmsMap.set(f.id || f.firm_id || f.name, f); });
+    if (Array.isArray(backupFirms)) backupFirms.forEach(f => { if (f) firmsMap.set(f.id || f.firm_id || f.name, f); });
     const mergedFirmsList = Array.from(firmsMap.values());
 
     let restoredKeysCount = 0;
@@ -154,16 +144,16 @@ export async function restoreUniversalBackup(rawInput) {
     let aCount = 0;
     let pCount = 0;
 
-    // Restore all storage keys verbatim
+    // Write all keys verbatim into localStorage and mirror critical keys for instant UI rendering
     Object.keys(targetData).forEach(key => {
       if (key === 'app_firms' || key === 'firm_list' || key === 'app_firms_registry') return;
       try {
         const val = targetData[key];
         const stringifiedVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+        
         localStorage.setItem(key, stringifiedVal);
         restoredKeysCount++;
 
-        // Mirror critical keys for instant UI rendering
         if (key.includes('account_book_vouchers_') || key.includes('app_vouchers_')) {
           localStorage.setItem('account_book_vouchers', stringifiedVal);
           localStorage.setItem('app_vouchers', stringifiedVal);
@@ -189,11 +179,10 @@ export async function restoreUniversalBackup(rawInput) {
           if (key.includes('purchase')) pCount += val.length;
         }
       } catch (e) {
-        console.warn(`Error writing key ${key}:`, e);
+        console.warn(`Error writing storage key ${key}:`, e);
       }
     });
 
-    // Persist the merged firms list securely
     if (mergedFirmsList.length > 0) {
       const serializedFirms = JSON.stringify(mergedFirmsList);
       localStorage.setItem('app_firms_registry', serializedFirms);
@@ -213,7 +202,6 @@ export async function restoreUniversalBackup(rawInput) {
       localStorage.setItem('active_firm_profile', typeof targetData['active_firm_profile'] === 'object' ? JSON.stringify(targetData['active_firm_profile']) : targetData['active_firm_profile']);
     }
 
-    // Broadcast UI refresh events
     broadcastAppEvents();
 
     return {
