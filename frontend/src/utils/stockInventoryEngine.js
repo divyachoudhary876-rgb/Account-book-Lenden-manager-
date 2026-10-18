@@ -13,30 +13,27 @@ export const getFirmItemStock = (firmId, itemName) => {
   if (!targetName) return 0;
 
   try {
-    const inventoryKey = `inventory_items_${cleanFirmId}`;
-    const items = IDBStorage.getItem(inventoryKey, []) || [];
-    
-    // 1. Agar item master mein current_stock saved hai aur woh valid hai, toh wahi lo
-    const masterItem = items.find(i => 
-      (i.item_name || i.name || '').trim().toLowerCase() === targetName ||
-      (i.id || '') === itemName
-    );
-
-    if (masterItem && masterItem.current_stock !== undefined && masterItem.current_stock !== null) {
-      // Check if it has been explicitly set or initialized
-      const directStock = parseFloat(masterItem.current_stock || masterItem.stock || masterItem.qty || 0);
-      if (directStock > 0 || masterItem.is_manually_set) {
-        return directStock;
-      }
-    }
-
-    // 2. Fallback: Chronological calculation strictly from Purchase Bills & Sales/Issues
+    // 1. Gather all Inward (Purchases) strictly for this firm
     const purchases = IDBStorage.getItem(`purchase_bills_${cleanFirmId}`, []) || IDBStorage.getItem('purchase_bills', []) || [];
-    const vouchers = IDBStorage.getItem(`account_book_vouchers_${cleanFirmId}`, []) || IDBStorage.getItem('account_book_vouchers', []) || [];
+    
+    // 2. Gather all Outward (Sales)
+    const salesInvoices = [
+      ...(IDBStorage.getItem(`sales_invoices_${cleanFirmId}`, []) || []),
+      ...(IDBStorage.getItem(`app_invoices_${cleanFirmId}`, []) || []),
+      ...(IDBStorage.getItem('sales_invoices', []) || [])
+    ];
+
+    // 3. Gather all Outward (Material Consumptions / Adjustments)
+    const adjustments = [
+      ...(IDBStorage.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || []),
+      ...(IDBStorage.getItem('universal_material_adjustments', []) || []),
+      ...(IDBStorage.getItem(`material_consumptions_${cleanFirmId}`, []) || [])
+    ];
 
     let totalInward = 0;
     let totalOutward = 0;
 
+    // Calculate Inward Qty (+)
     purchases.forEach(p => {
       if (!p) return;
       if (Array.isArray(p.items) && p.items.length > 0) {
@@ -55,28 +52,33 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    vouchers.forEach(v => {
-      if (!v) return;
-      const vType = String(v.voucher_type || v.type || '').toUpperCase();
-      if (['SALES', 'MATERIAL_ISSUE', 'CONSUMPTION', 'INVOICE'].includes(vType)) {
-        if (Array.isArray(v.items) && v.items.length > 0) {
-          v.items.forEach(it => {
-            if (!it) return;
-            const itName = String(it.itemName || it.item_name || it.name || '').trim().toLowerCase();
-            if (itName === targetName) {
-              totalOutward += parseFloat(it.qty || it.quantity || 0);
-            }
-          });
-        } else if (v.item_name || v.itemName) {
-          const vItemName = String(v.item_name || v.itemName || '').trim().toLowerCase();
-          if (vItemName === targetName) {
-            totalOutward += parseFloat(v.qty || v.quantity || 0);
+    // Calculate Outward Qty from Sales (-)
+    salesInvoices.forEach(s => {
+      if (!s) return;
+      if (Array.isArray(s.items) && s.items.length > 0) {
+        s.items.forEach(si => {
+          if (!si) return;
+          const sName = String(si.itemName || si.item_name || si.name || '').trim().toLowerCase();
+          if (sName === targetName) {
+            totalOutward += parseFloat(si.qty || si.quantity || 0);
           }
-        }
+        });
       }
     });
 
-    return Math.max(0, round2(totalInward - totalOutward));
+    // Calculate Outward Qty from Material Adjustments / Consumptions (-)
+    adjustments.forEach(a => {
+      if (!a) return;
+      const aName = String(a.item_name || a.itemName || '').trim().toLowerCase();
+      const aStockId = String(a.stock_id || a.itemId || '');
+      if (aName === targetName || aStockId === targetName) {
+        totalOutward += parseFloat(a.quantity || a.qty || 0);
+      }
+    });
+
+    // Net Stock starting strictly from zero opening balance
+    const netStock = round2(totalInward - totalOutward);
+    return Math.max(0, netStock);
   } catch (err) {
     console.error('[stockInventoryEngine] Error computing item stock:', err);
     return 0;
