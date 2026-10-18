@@ -87,7 +87,8 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       { id: 'ITEM-DIESEL', name: 'Diesel', item_name: 'Diesel', itemName: 'Diesel', unit: 'Liters' },
       { id: 'ITEM-MITTI-A', name: 'Mitti Grade A', item_name: 'Mitti Grade A', itemName: 'Mitti Grade A', unit: 'Quintal' },
       { id: 'ITEM-MITTI-B', name: 'Mitti Grade B', item_name: 'Mitti Grade B', itemName: 'Mitti Grade B', unit: 'Quintal' },
-      { id: 'ITEM-GREET', name: 'Greet & Crusher', item_name: 'Greet & Crusher', itemName: 'Greet & Crusher', unit: 'Quintal' }
+      { id: 'ITEM-GREET', name: 'Greet & Crusher', item_name: 'Greet & Crusher', itemName: 'Greet & Crusher', unit: 'Quintal' },
+      { id: 'ITEM-CEMENT', name: 'Cement', item_name: 'Cement', itemName: 'Cement', unit: 'Pcs' }
     ];
 
     defaultItems.forEach(def => {
@@ -126,6 +127,8 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
             itemName = 'Mitti Grade A';
           } else if (narration.includes('mitti grade b') || supplier.includes('sabeer') || supplier.includes('vinod sihag')) {
             itemName = 'Mitti Grade B';
+          } else if (narration.includes('greet') || narration.includes('crusher')) {
+            itemName = 'Greet & Crusher';
           } else {
             itemName = 'Diesel';
           }
@@ -177,42 +180,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     });
     const allSales = Array.from(uniqueSalesMap.values());
 
-    // Gather material consumptions / adjustments
-    let rawConsumptions = [];
-    Object.keys(localStorage).forEach(k => {
-      if (k.includes('material_consumption') || k.includes('material_adjustment')) {
-        try {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) rawConsumptions.push(...parsed);
-          }
-        } catch (e) {}
-      }
-    });
-
-    const uniqueConsumptionsMap = new Map();
-    rawConsumptions.forEach(c => {
-      if (!c) return;
-      const uniqueKey = c.id || `${c.date || ''}_${c.party || ''}_${c.quantity || c.qty || ''}`;
-      if (!uniqueConsumptionsMap.has(uniqueKey)) {
-        // Auto-heal consumption item name if missing
-        let cItem = c.item_name || c.itemName || c.name || '';
-        const rem = (c.remarks || c.narration || '').toLowerCase();
-        if (!cItem || cItem === 'Stock Item') {
-          if (rem.includes('diesel') || parseFloat(c.rate || 0) > 50) cItem = 'Diesel';
-          else if (rem.includes('mitti grade a')) cItem = 'Mitti Grade A';
-          else if (rem.includes('mitti grade b')) cItem = 'Mitti Grade B';
-          else cItem = 'Diesel';
-        }
-        c.item_name = cItem;
-        c.itemName = cItem;
-        uniqueConsumptionsMap.set(uniqueKey, c);
-      }
-    });
-    const allConsumptions = Array.from(uniqueConsumptionsMap.values());
-
-    // Precise stock calculation (Purchased - Sold - Consumed)
+    // Precise stock calculation (Purchased - Sold)
     stockItems = stockItems.map(item => {
       const itemName = (item?.name || item?.item_name || item?.itemName || '').trim().toLowerCase();
       const itemId = String(item?.id || '');
@@ -238,18 +206,12 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         });
       });
 
-      let totalConsumed = 0;
-      allConsumptions.forEach(c => {
-        const cItemName = String(c?.item_name || c?.itemName || c?.name || '').trim().toLowerCase();
-        if (cItemName === itemName) {
-          totalConsumed += parseFloat(c?.quantity || c?.qty || 0);
-        }
-      });
-
-      const netStock = Math.max(0, totalPurchased - totalSold - totalConsumed);
-      item.current_stock = netStock;
-      item.stock = netStock;
-      item.qty = netStock;
+      const netStock = Math.max(0, totalPurchased - totalSold);
+      // Clean up floating point decimal precision (e.g. 7785.340000000002 -> 7785.34)
+      const cleanStock = parseFloat(netStock.toFixed(2));
+      item.current_stock = cleanStock;
+      item.stock = cleanStock;
+      item.qty = cleanStock;
       item.firm_id = cleanFirmId;
       return item;
     });
@@ -268,17 +230,43 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       localStorage.setItem('app_invoices', JSON.stringify(allSales));
     }
 
-    if (allConsumptions.length > 0) {
-      localStorage.setItem(`universal_material_adjustments_${cleanFirmId}`, JSON.stringify(allConsumptions));
-      localStorage.setItem('universal_material_adjustments', JSON.stringify(allConsumptions));
-    }
-
     stockItems.forEach(item => {
       const itemName = item?.name || item?.item_name || item?.itemName;
       if (itemName && !item.is_service && item.item_type !== 'SERVICE') {
         ensureStockItemLedgerAccount(cleanFirmId, itemName);
       }
     });
+
+    let allVouchers = [];
+    Object.keys(localStorage).forEach(k => {
+      if (k.includes('voucher') || k.includes('account_book_vouchers')) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) allVouchers.push(...parsed);
+          }
+        } catch (e) {}
+      }
+    });
+
+    if (allVouchers.length > 0) {
+      const uniqueVouchersMap = new Map();
+      allVouchers.forEach(v => {
+        if (!v) return;
+        const vKey = v.id || `${v.reference_no || v.voucher_number || ''}_${v.date || v.voucher_date || ''}_${v.amount || v.total_amount || ''}`;
+        uniqueVouchersMap.set(vKey, v);
+      });
+      allVouchers = Array.from(uniqueVouchersMap.values());
+
+      allVouchers.sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
+
+      const serializedVouchers = JSON.stringify(allVouchers);
+      localStorage.setItem(`account_book_vouchers_${cleanFirmId}`, serializedVouchers);
+      localStorage.setItem(`app_vouchers_${cleanFirmId}`, serializedVouchers);
+      localStorage.setItem('account_book_vouchers', serializedVouchers);
+      localStorage.setItem('app_vouchers', serializedVouchers);
+    }
 
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
