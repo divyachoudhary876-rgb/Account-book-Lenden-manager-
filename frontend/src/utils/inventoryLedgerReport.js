@@ -18,7 +18,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     throw new Error("Invalid Stock Item selected for statement.");
   }
 
-  // 1. Gather Purchase Bills (Stock Inward / Plus) strictly for this item
+  // 1. Gather Purchase Bills (Stock Inward / Plus)
   const purchaseBills = StorageService.getItem(`purchase_bills_${cleanFirmId}`, []) || StorageService.getItem('purchase_bills', []);
   const relevantPurchases = purchaseBills.filter(p => {
     if (!p) return false;
@@ -27,7 +27,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     return pItemId === itemId || pItemName === itemName;
   });
 
-  // 2. Gather Sales Invoices (Stock Outward / Minus)
+  // 2. Gather Sales Invoices / Issues (Stock Outward / Minus)
   const salesInvoices = StorageService.getItem(`sales_invoices_${cleanFirmId}`, []) || StorageService.getItem('sales_invoices', []) || StorageService.getItem('app_invoices', []);
   const relevantSales = [];
   salesInvoices.forEach(s => {
@@ -43,7 +43,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     });
   });
 
-  // 3. Compile Chronological Ledger Entries (Opening Balance = 0)
+  // 3. Compile Chronological Ledger Entries
   const ledgerEntries = [];
 
   relevantPurchases.forEach(p => {
@@ -96,7 +96,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
   return {
     item_name: item?.item_name || item?.name || itemName,
     unit: item?.unit || 'Pcs',
-    current_stock: runningStock, // Guaranteed to match exact net movement
+    current_stock: runningStock,
     entries: processedLedger
   };
 };
