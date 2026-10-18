@@ -55,14 +55,15 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Post-Restore Self-Healing & Stock Recalculation Engine (Aggregates across all keys)
+ * Post-Restore Self-Healing & Stock Recalculation Engine with Strict Deduplication
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   try {
-    // 1. Gather all inventory items across any firm-suffixed or global keys
+    // 1. Gather unique inventory items
     let stockItems = [];
+    const seenItems = new Set();
     Object.keys(localStorage).forEach(k => {
       if (k.includes('inventory_items')) {
         try {
@@ -71,8 +72,9 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) {
               parsed.forEach(it => {
-                const itName = it?.name || it?.item_name || it?.itemName;
-                if (itName && !stockItems.some(x => (x.name || x.item_name || x.itemName) === itName)) {
+                const itName = (it?.name || it?.item_name || it?.itemName || '').trim().toLowerCase();
+                if (itName && !seenItems.has(itName)) {
+                  seenItems.add(itName);
                   stockItems.push(it);
                 }
               });
@@ -82,35 +84,55 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // 2. Gather all purchase bills across any firm-suffixed or global keys
-    let allPurchases = [];
+    // 2. Gather purchase bills with STRICT DEDUPLICATION (using id or bill_number + supplier)
+    let rawPurchases = [];
     Object.keys(localStorage).forEach(k => {
       if (k.includes('purchase_bill') || k.includes('purchases')) {
         try {
           const raw = localStorage.getItem(k);
           if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) allPurchases.push(...parsed);
+            if (Array.isArray(parsed)) rawPurchases.push(...parsed);
           }
         } catch (e) {}
       }
     });
 
-    // 3. Gather all sales invoices / sales across keys
-    let allSales = [];
+    const uniquePurchasesMap = new Map();
+    rawPurchases.forEach(p => {
+      if (!p) return;
+      const uniqueKey = p.id || `${p.bill_number || p.voucher_number || ''}_${p.supplier || p.party || p.cr_account || ''}_${p.date || p.voucher_date || ''}`;
+      if (!uniquePurchasesMap.has(uniqueKey)) {
+        uniquePurchasesMap.set(uniqueKey, p);
+      }
+    });
+    const allPurchases = Array.from(uniquePurchasesMap.values());
+
+    // 3. Gather sales invoices with strict deduplication
+    let rawSales = [];
     Object.keys(localStorage).forEach(k => {
       if (k.includes('invoice') || k.includes('sales')) {
         try {
           const raw = localStorage.getItem(k);
           if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) allSales.push(...parsed);
+            if (Array.isArray(parsed)) rawSales.push(...parsed);
           }
         } catch (e) {}
       }
     });
 
-    // 4. Recalculate stock levels accurately
+    const uniqueSalesMap = new Map();
+    rawSales.forEach(s => {
+      if (!s) return;
+      const uniqueKey = s.id || `${s.reference_no || s.voucher_number || ''}_${s.dr_account || s.party || ''}_${s.date || s.voucher_date || ''}`;
+      if (!uniqueSalesMap.has(uniqueKey)) {
+        uniqueSalesMap.set(uniqueKey, s);
+      }
+    });
+    const allSales = Array.from(uniqueSalesMap.values());
+
+    // 4. Accurate stock recalculation
     stockItems = stockItems.map(item => {
       const itemName = (item?.name || item?.item_name || item?.itemName || '').trim().toLowerCase();
       const itemId = String(item?.id || '');
@@ -144,17 +166,19 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       return item;
     });
 
-    // Save consolidated inventory to active firm key and global key
-    const targetInventoryKey = `inventory_items_${cleanFirmId}`;
-    const serializedStock = JSON.stringify(stockItems);
-    localStorage.setItem(targetInventoryKey, serializedStock);
-    localStorage.setItem('inventory_items', serializedStock);
+    // Save cleaned data back to active firm keys
+    localStorage.setItem(`inventory_items_${cleanFirmId}`, JSON.stringify(stockItems));
+    localStorage.setItem('inventory_items', JSON.stringify(stockItems));
 
-    // Save consolidated purchase bills to active firm key
     if (allPurchases.length > 0) {
-      const targetPurchaseKey = `purchase_bills_${cleanFirmId}`;
-      localStorage.setItem(targetPurchaseKey, JSON.stringify(allPurchases));
+      localStorage.setItem(`purchase_bills_${cleanFirmId}`, JSON.stringify(allPurchases));
       localStorage.setItem('purchase_bills', JSON.stringify(allPurchases));
+    }
+
+    if (allSales.length > 0) {
+      localStorage.setItem(`sales_invoices_${cleanFirmId}`, JSON.stringify(allSales));
+      localStorage.setItem('sales_invoices', JSON.stringify(allSales));
+      localStorage.setItem('app_invoices', JSON.stringify(allSales));
     }
 
     // Ensure Ledger Accounts for Stock Items
@@ -165,7 +189,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
       }
     });
 
-    // 5. Consolidate and sort vouchers
+    // 5. Consolidate and sort vouchers uniquely
     let allVouchers = [];
     Object.keys(localStorage).forEach(k => {
       if (k.includes('voucher') || k.includes('account_book_vouchers')) {
@@ -180,22 +204,19 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
     });
 
     if (allVouchers.length > 0) {
-      // Remove duplicates based on ID
       const uniqueVouchersMap = new Map();
       allVouchers.forEach(v => {
-        if (v && v.id) uniqueVouchersMap.set(v.id, v);
-        else if (v) uniqueVouchersMap.set(JSON.stringify(v), v);
+        if (!v) return;
+        const vKey = v.id || `${v.reference_no || v.voucher_number || ''}_${v.date || v.voucher_date || ''}_${v.amount || v.total_amount || ''}`;
+        uniqueVouchersMap.set(vKey, v);
       });
       allVouchers = Array.from(uniqueVouchersMap.values());
 
       allVouchers.sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
 
-      const targetVoucherKey = `account_book_vouchers_${cleanFirmId}`;
-      const targetAppVoucherKey = `app_vouchers_${cleanFirmId}`;
       const serializedVouchers = JSON.stringify(allVouchers);
-
-      localStorage.setItem(targetVoucherKey, serializedVouchers);
-      localStorage.setItem(targetAppVoucherKey, serializedVouchers);
+      localStorage.setItem(`account_book_vouchers_${cleanFirmId}`, serializedVouchers);
+      localStorage.setItem(`app_vouchers_${cleanFirmId}`, serializedVouchers);
       localStorage.setItem('account_book_vouchers', serializedVouchers);
       localStorage.setItem('app_vouchers', serializedVouchers);
     }
@@ -337,7 +358,7 @@ export const restoreUniversalBackup = async (rawInput) => {
 
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
-    // 4. Trigger Post-Restore Healing & Recalibration across all imported keys
+    // 4. Trigger Post-Restore Healing & Recalibration with Deduplication
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
