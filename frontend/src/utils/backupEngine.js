@@ -1,6 +1,5 @@
 /**
- * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Strict Multi-Firm Isolation, Full Data Mirroring & Lightning-Fast Auto-Healing Architecture
+ * Frontend Utility: Universal Zero-Loss Backup & Restore Engine (Stable Baseline)
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
