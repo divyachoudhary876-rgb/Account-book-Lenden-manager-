@@ -26,7 +26,7 @@ export const getFirmsRegistry = () => {
     firms.forEach(f => {
       if (f && (f.id || f.firm_id || f.legal_name || f.name)) {
         const cleanId = f.id || f.firm_id || `FIRM-${Date.now()}`;
-        const fName = f.legal_name || f.trade_name || f.name || 'Neelkanth Int Udyog';
+        const fName = f.legal_name || f.trade_name || f.name || 'Enterprise Firm';
         uniqueMap.set(cleanId, {
           ...f,
           id: cleanId,
@@ -39,35 +39,18 @@ export const getFirmsRegistry = () => {
     });
 
     let finalFirms = Array.from(uniqueMap.values());
-    if (finalFirms.length === 0) {
-      const defaultFirm = {
-        id: 'FIRM-1790909076433',
-        firm_id: 'FIRM-1790909076433',
-        legal_name: 'Neelkanth Int Udyog',
-        trade_name: 'Neelkanth Int Udyog',
-        business_category: 'BRICK_KILN',
-        gstin: '08AAAAA0000A1Z5'
-      };
-      finalFirms = [defaultFirm];
-      localStorage.setItem('app_firms_registry', JSON.stringify(finalFirms));
-    }
-
+    // NOTE: Automatic default firm injection removed. 
+    // On fresh first launch, registry will be empty so CreateFirmForm will appear naturally.
     return finalFirms;
   } catch (err) {
-    return [{
-      id: 'FIRM-1790909076433',
-      firm_id: 'FIRM-1790909076433',
-      legal_name: 'Neelkanth Int Udyog',
-      trade_name: 'Neelkanth Int Udyog',
-      business_category: 'BRICK_KILN'
-    }];
+    return [];
   }
 };
 
 export const getActiveFirm = () => {
   try {
     const firms = getFirmsRegistry();
-    if (firms.length === 0) return null;
+    if (!firms || firms.length === 0) return null;
 
     let activeId = localStorage.getItem('app_active_firm_id');
     let match = firms.find(f => f && (f.id === activeId || f.firm_id === activeId));
