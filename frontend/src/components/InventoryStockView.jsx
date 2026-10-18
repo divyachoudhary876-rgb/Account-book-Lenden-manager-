@@ -8,7 +8,6 @@ import { StorageService } from '../utils/storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-// Universal Safe Firm ID Resolver (Zero external named-export dependency)
 const resolveActiveFirmId = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
   if (firmInput && typeof firmInput === 'object') {
@@ -17,10 +16,6 @@ const resolveActiveFirmId = (firmInput) => {
   return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 };
 
-/**
- * Self-Contained Helper: Auto-creates Stock Asset Ledger in Master Accounts
- * Aligns perfectly with 'Raw Material Inventory (कच्चा माल)' & 'ASSETS'
- */
 const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) => {
   if (!firmId || !rawItemName) return null;
 
@@ -57,7 +52,6 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
       return matchedAcc;
     }
 
-    // Create New Master Account Entry matching Accounting Standard Chart of Accounts
     const newAccountObj = {
       id: `ACC-STK-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
       firm_id: firmId,
@@ -81,9 +75,6 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
   }
 };
 
-/**
- * Self-Contained Helper: Read inventory items with firm-scoped fallback
- */
 const loadFirmInventory = (firmInput) => {
   const firmId = resolveActiveFirmId(firmInput);
   let items = loadFirmData('inventory_items', firmInput, []);
@@ -102,9 +93,6 @@ const loadFirmInventory = (firmInput) => {
   return Array.isArray(items) ? items.filter(item => item && (item.name || item.item_name)) : [];
 };
 
-/**
- * Self-Contained Helper: Save inventory item atomically
- */
 const saveFirmInventory = (firmInput, itemData) => {
   const firmId = resolveActiveFirmId(firmInput);
   const cleanName = String(itemData.name || itemData.item_name || '').trim();
@@ -166,9 +154,6 @@ const saveFirmInventory = (firmInput, itemData) => {
   return normalizedItem;
 };
 
-/**
- * Self-Contained Helper: Delete inventory item cleanly
- */
 const deleteFirmInventory = (firmInput, itemId) => {
   const firmId = resolveActiveFirmId(firmInput);
   if (!firmId || !itemId) return false;
@@ -206,7 +191,6 @@ export default function InventoryStockView({ firm, onClose }) {
   const [hsnSac, setHsnSac] = useState('');
   const [statusMessage, setStatusMessage] = useState(null);
 
-  // Automated Batch Synchronizer: Scans all items and guarantees master ledgers exist
   const syncAllStockLedgers = useCallback(() => {
     try {
       const currentList = loadFirmInventory(firm);
@@ -337,8 +321,8 @@ export default function InventoryStockView({ firm, onClose }) {
     loadStockItems();
   };
 
-  // Handler for Generating Stock Item Movement PDF Statement on Card Click
-  const handlePrintStockStatement = (e, item) => {
+  // Handler for Generating & Downloading Stock Movement PDF Statement on Card Click
+  const handleDownloadStockPDF = async (e, item) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -348,9 +332,9 @@ export default function InventoryStockView({ firm, onClose }) {
       const currentFirm = firms.find(f => String(f.id || f.firm_id) === String(activeFirmId)) || {};
 
       const statementData = generateStockItemLedgerStatement(activeFirmId, item);
-      exportStockLedgerPDF(currentFirm, item, statementData);
+      await exportStockLedgerPDF(currentFirm, item, statementData);
     } catch (err) {
-      alert("Stock Statement PDF generate karne mein asafalta hui: " + err.message);
+      alert("Stock Statement PDF download karne mein asafalta hui: " + err.message);
     }
   };
 
@@ -372,7 +356,7 @@ export default function InventoryStockView({ firm, onClose }) {
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
               {editingItem ? '✏️ Edit Stock Item' : '📦 Inventory & Stock Items Master'}
             </h3>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>Item par click karke PDF statement nikalein (Inward/Outward/Balance)</span>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>Item par click karke direct PDF statement download karein</span>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button 
@@ -514,7 +498,7 @@ export default function InventoryStockView({ firm, onClose }) {
           <strong style={{ fontSize: '13px', color: '#0f172a' }}>
             📋 All Stock Items ({filteredItems.length})
           </strong>
-          <span style={{ fontSize: '10px', color: '#0369a1', fontStyle: 'italic' }}>* Click item card to print statement</span>
+          <span style={{ fontSize: '10px', color: '#0369a1', fontStyle: 'italic' }}>* Click card to download PDF statement</span>
         </div>
 
         <input 
@@ -538,8 +522,8 @@ export default function InventoryStockView({ firm, onClose }) {
               return (
                 <div 
                   key={item.id} 
-                  onClick={(e) => handlePrintStockStatement(e, item)}
-                  title="Click to generate complete Stock Movement PDF Statement"
+                  onClick={(e) => handleDownloadStockPDF(e, item)}
+                  title="Click to download complete Stock Movement PDF Statement"
                   style={{ 
                     backgroundColor: '#f8fafc', 
                     border: '1px solid #cbd5e1', 
