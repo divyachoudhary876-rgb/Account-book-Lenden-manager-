@@ -1,7 +1,6 @@
 // frontend/src/components/CreateFirmForm.jsx
 
 import React, { useState } from 'react';
-import { IDBStorage } from '../utils/indexedDbStorage';
 
 const SAFE_INDUSTRY_SECTORS = {
   MANUFACTURING: {
@@ -59,7 +58,7 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
         created_at: new Date().toISOString()
       };
 
-      // 1. Synchronous localStorage + IDB write for zero latency
+      // Direct synchronous localStorage write
       let existingFirms = [];
       try {
         const raw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms');
@@ -71,11 +70,9 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
 
       const updatedFirms = [...existingFirms.filter(f => f && (f.id || f.firm_id) !== firmId), newFirmPayload];
       
-      const serializedFirms = JSON.stringify(updatedFirms);
-      localStorage.setItem('app_firms_registry', serializedFirms);
-      localStorage.setItem('app_firms', serializedFirms);
+      localStorage.setItem('app_firms_registry', JSON.stringify(updatedFirms));
+      localStorage.setItem('app_firms', JSON.stringify(updatedFirms));
 
-      // 2. Initialize baseline accounts strictly scoped to firmId
       const starterAccounts = [
         { id: `ACC-${firmId}-001`, firm_id: firmId, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: true },
         { id: `ACC-${firmId}-002`, firm_id: firmId, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: false },
@@ -89,23 +86,10 @@ export default function CreateFirmForm({ onFirmCreated, onCancel }) {
       localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify([]));
       localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify([]));
 
-      // 3. Set Active Firm pointers instantly
       localStorage.setItem('app_active_firm_id', firmId);
       localStorage.setItem('active_firm_profile', JSON.stringify(newFirmPayload));
 
-      // Also mirror to IDBStorage if available
-      try {
-        IDBStorage.setItem('app_firms_registry', updatedFirms);
-        IDBStorage.setItem('app_active_firm_id', firmId);
-        IDBStorage.setItem('active_firm_profile', newFirmPayload);
-      } catch (e) {}
-
       setIsSubmitting(false);
-
-      // 4. Dispatch global events and trigger callback
-      window.dispatchEvent(new Event('app_state_updated'));
-      window.dispatchEvent(new Event('app_storage_updated'));
-      window.dispatchEvent(new Event('storage'));
 
       if (onFirmCreated && typeof onFirmCreated === 'function') {
         onFirmCreated(newFirmPayload);
