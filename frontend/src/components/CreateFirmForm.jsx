@@ -1,210 +1,110 @@
-// frontend/src/components/CreateFirmForm.jsx
-import React, { useState } from 'react';
-import { INDUSTRY_SECTORS, getStarterAccountsForCategory } from '../utils/industryEngine.js';
+/**
+ * CreateFirmForm Component: UI modal/form to register a new enterprise firm profile.
+ */
 
-export default function CreateFirmForm({ onFirmCreated, onCancel }) {
+import React, { useState } from 'react';
+import { createNewFirm } from '../utils/multiFirmEngine.js';
+
+export default function CreateFirmForm({ onSuccess, onCancel }) {
   const [firmName, setFirmName] = useState('');
-  const [tradeName, setTradeName] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('BRICK_KILN');
-  const [gstin, setGstin] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState(null);
+  const [category, setCategory] = useState('BRICK_KILN');
+  const [gstin, setGstin] = useState('UNREGISTERED');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const handleSubmit = (e) => {
-    if (e) e.preventDefault();
-    setErrorMessage(null);
-
-    const cleanName = String(firmName || '').trim();
-    if (!cleanName) {
-      setErrorMessage("⚠️ Legal Business / Firm Name is required.");
+    e.preventDefault();
+    if (!firmName.trim()) {
+      setError('Firm Name bharna anivarya hai.');
       return;
     }
 
-    setIsSubmitting(true);
-
     try {
-      const firmId = `FIRM-${Date.now()}`;
-      const newFirmPayload = {
-        id: firmId,
-        firm_id: firmId,
-        legal_name: cleanName,
-        trade_name: tradeName.trim() || cleanName,
-        category: selectedCategory,
-        business_category: selectedCategory,
-        businessCategory: selectedCategory,
-        gstin: gstin.trim().toUpperCase() || 'UNREGISTERED',
-        phone: phone.trim(),
-        address: address.trim(),
-        created_at: new Date().toISOString()
-      };
+      setLoading(true);
+      setError(null);
+      const newFirm = createNewFirm({
+        legal_name: firmName.trim(),
+        trade_name: firmName.trim(),
+        business_category: category,
+        gstin: gstin.trim()
+      });
 
-      // 1. Register firm in registry synchronously
-      let existingFirms = [];
-      try {
-        const raw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms');
-        if (raw) existingFirms = JSON.parse(raw);
-      } catch (err) {
-        existingFirms = [];
-      }
-      if (!Array.isArray(existingFirms)) existingFirms = [];
-
-      const updatedFirms = [...existingFirms.filter(f => f && (f.id || f.firm_id) !== firmId), newFirmPayload];
-      localStorage.setItem('app_firms_registry', JSON.stringify(updatedFirms));
-      localStorage.setItem('app_firms', JSON.stringify(updatedFirms));
-
-      // 2. Initialize isolated starter accounts strictly scoped to firmId
-      let starterAccounts = [];
-      try {
-        if (typeof getStarterAccountsForCategory === 'function') {
-          starterAccounts = getStarterAccountsForCategory(selectedCategory) || [];
-        }
-      } catch (err) {
-        starterAccounts = [];
-      }
-      
-      if (!starterAccounts || starterAccounts.length === 0) {
-        starterAccounts = [
-          { id: `ACC-${firmId}-001`, firm_id: firmId, account_name: 'Cash in Hand (रोकड़)', name: 'Cash in Hand (रोकड़)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Cash in Hand (रोकड़)', group: 'Cash-in-Hand', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: true },
-          { id: `ACC-${firmId}-002`, firm_id: firmId, account_name: 'State Bank of India (बैंक)', name: 'State Bank of India (बैंक)', primary_type: 'ASSETS', type: 'Assets', sub_group: 'Bank Accounts (बैंक खाते)', group: 'Bank Accounts', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: false },
-          { id: `ACC-${firmId}-003`, firm_id: firmId, account_name: 'Sales Revenue Account', name: 'Sales Revenue Account', primary_type: 'INCOME', type: 'Income', sub_group: 'Direct Sales Revenue (बिक्री)', group: 'Sales / Revenue Accounts', opening_balance: 0, balance_type: 'Cr', current_balance: 0, is_system_locked: true },
-          { id: `ACC-${firmId}-004`, firm_id: firmId, account_name: 'Purchase Raw Material Account', name: 'Purchase Raw Material Account', primary_type: 'EXPENSES', type: 'Expenses', sub_group: 'Direct Production Expenses', group: 'Raw Material Consumed', opening_balance: 0, balance_type: 'Dr', current_balance: 0, is_system_locked: true },
-          { id: `ACC-${firmId}-005`, firm_id: firmId, account_name: 'Capital Account (स्वामी की पूंजी)', name: 'Capital Account (स्वामी की पूंजी)', primary_type: 'EQUITY', type: 'Liabilities', sub_group: 'Proprietor / Partner Capital Account', group: 'Capital / Owner Equity', opening_balance: 0, balance_type: 'Cr', current_balance: 0, is_system_locked: false }
-        ];
-      }
-
-      localStorage.setItem(`app_accounts_${firmId}`, JSON.stringify(starterAccounts));
-      localStorage.setItem(`account_heads_${firmId}`, JSON.stringify(starterAccounts));
-
-      // 3. Clean transaction and inventory buckets for firm isolation
-      localStorage.setItem(`app_vouchers_${firmId}`, JSON.stringify([]));
-      localStorage.setItem(`account_book_vouchers_${firmId}`, JSON.stringify([]));
-      localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify([]));
-      localStorage.setItem(`material_consumptions_${firmId}`, JSON.stringify([]));
-      localStorage.setItem(`sales_invoices_${firmId}`, JSON.stringify([]));
-      localStorage.setItem(`purchase_bills_${firmId}`, JSON.stringify([]));
-
-      // 4. Set Active Firm pointers
-      localStorage.setItem('app_active_firm_id', firmId);
-      localStorage.setItem('active_firm_profile', JSON.stringify(newFirmPayload));
-
-      setIsSubmitting(false);
-
-      // 5. Broadcast global state updates
-      window.dispatchEvent(new Event('app_state_updated'));
-      window.dispatchEvent(new Event('app_storage_updated'));
-      window.dispatchEvent(new Event('storage'));
-
-      if (onFirmCreated && typeof onFirmCreated === 'function') {
-        onFirmCreated(newFirmPayload);
-      } else {
-        window.location.reload();
-      }
+      if (onSuccess) onSuccess(newFirm);
     } catch (err) {
-      console.error("[CreateFirmForm] Fatal error:", err);
-      setIsSubmitting(false);
-      setErrorMessage("Failed to save firm: " + (err.message || 'Unknown error'));
+      setError(err.message || 'Firm banane mein asafalta hui.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', boxShadow: '0 4px 14px rgba(0,0,0,0.05)', maxWidth: '650px', margin: '20px auto', boxSizing: 'border-box', position: 'relative', zIndex: 10, pointerEvents: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
-        <div>
-          <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>🏢</span> Register New Business Enterprise / Firm
-          </h3>
-          <span style={{ fontSize: '11px', color: '#64748b' }}>Configure multi-firm tenant with automated industry-tailored ledger heads</span>
-        </div>
-        {onCancel && (
-          <button type="button" onClick={onCancel} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b', pointerEvents: 'auto' }}>✕</button>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4">
+        <h3 className="text-xl font-bold text-gray-800">🏢 Create New Firm Profile</h3>
+        
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
+            {error}
+          </div>
         )}
-      </div>
 
-      {errorMessage && (
-        <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', marginBottom: '12px' }}>
-          {errorMessage}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '12px', pointerEvents: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label style={labelStyle}>Legal Firm Name (कानूनी व्यापार नाम) *</label>
-            <input type="text" placeholder="e.g. Neelkanth Int Udyog" value={firmName} onChange={e => setFirmName(e.target.value)} style={inputStyle} required />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Firm Legal Name *</label>
+            <input
+              type="text"
+              value={firmName}
+              onChange={(e) => setFirmName(e.target.value)}
+              placeholder="e.g. Neelkanth Int Udyog"
+              className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              required
+            />
           </div>
-          <div>
-            <label style={labelStyle}>Trade Name / Brand (वैकल्पिक)</label>
-            <input type="text" placeholder="e.g. Neelkanth Group" value={tradeName} onChange={e => setTradeName(e.target.value)} style={inputStyle} />
-          </div>
-        </div>
 
-        <div>
-          <label style={labelStyle}>Business Category & Industry Type (व्यापार श्रेणी) *</label>
-          <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0f172a', pointerEvents: 'auto' }}>
-            {INDUSTRY_SECTORS && Object.entries(INDUSTRY_SECTORS).map(([secKey, sec]) => (
-              <optgroup key={secKey} label={sec.label}>
-                {sec.categories.map(cat => (
-                  <option key={cat.code} value={cat.code}>{cat.icon} {cat.label}</option>
-                ))}
-              </optgroup>
-            ))}
-            {!INDUSTRY_SECTORS && (
-              <>
-                <option value="BRICK_KILN">🧱 Brick Kiln Manufacturing (ईंट भट्टा उद्योग)</option>
-                <option value="BIOMASS_BRIQUETTES">🔥 Biomass Briquettes & Biofuel (बायोमास ब्रिकेट्स)</option>
-                <option value="TRADING">📦 General Trading & Wholesale</option>
-              </>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Business Category</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
+              <option value="BRICK_KILN">Brick Kiln (Eent Bhatta)</option>
+              <option value="BIOMASS">Biomass Briquette</option>
+              <option value="TRADING">General Trading</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN</label>
+            <input
+              type="text"
+              value={gstin}
+              onChange={(e) => setGstin(e.target.value)}
+              placeholder="UNREGISTERED or GSTIN Number"
+              className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-2">
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+              >
+                Cancel
+              </button>
             )}
-          </select>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div>
-            <label style={labelStyle}>GSTIN Number (Optional)</label>
-            <input type="text" placeholder="08AAAAA0000A1Z5" value={gstin} onChange={e => setGstin(e.target.value)} style={inputStyle} maxLength={15} />
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow"
+            >
+              {loading ? 'Creating...' : 'Save Firm'}
+            </button>
           </div>
-          <div>
-            <label style={labelStyle}>Registered Mobile / Contact</label>
-            <input type="tel" placeholder="98290XXXXX" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} />
-          </div>
-        </div>
-
-        <div>
-          <label style={labelStyle}>Factory / Office Address</label>
-          <input type="text" placeholder="e.g. Industrial Area, Hanumangarh, Rajasthan" value={address} onChange={e => setAddress(e.target.value)} style={inputStyle} />
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', marginTop: '8px', pointerEvents: 'auto' }}>
-          {onCancel && (
-            <button type="button" onClick={onCancel} style={{ flex: 1, backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', pointerEvents: 'auto' }}>Cancel</button>
-          )}
-          <button 
-            type="submit" 
-            disabled={isSubmitting} 
-            style={{ 
-              flex: 2, 
-              backgroundColor: '#059669', 
-              color: '#ffffff', 
-              border: 'none', 
-              padding: '12px', 
-              borderRadius: '8px', 
-              fontWeight: 'bold', 
-              fontSize: '13px', 
-              cursor: 'pointer', 
-              opacity: isSubmitting ? 0.7 : 1,
-              pointerEvents: 'auto',
-              boxShadow: '0 4px 10px rgba(5, 150, 105, 0.3)'
-            }}
-          >
-            {isSubmitting ? 'Creating Enterprise...' : '💾 Create Enterprise & Initialize Ledgers'}
-          </button>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
-
-const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
-const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a', pointerEvents: 'auto' };
