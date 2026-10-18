@@ -18,7 +18,6 @@ export const getFirmsRegistry = () => {
       firms = [];
     }
 
-    // Ensure default firm exists if registry is empty
     if (firms.length === 0) {
       firms = [{
         id: 'FIRM-1790909076433',
@@ -32,7 +31,6 @@ export const getFirmsRegistry = () => {
 
     return firms;
   } catch (err) {
-    console.error("Error reading firms registry:", err);
     return [{
       id: 'FIRM-1790909076433',
       firm_id: 'FIRM-1790909076433',
@@ -60,7 +58,6 @@ export const getActiveFirm = () => {
 
     return match;
   } catch (err) {
-    console.error("Error getting active firm:", err);
     return {
       id: 'FIRM-1790909076433',
       firm_id: 'FIRM-1790909076433',
@@ -89,7 +86,6 @@ export const switchActiveFirm = (firmId) => {
     window.dispatchEvent(new Event('storage'));
     return true;
   } catch (err) {
-    console.error("Error switching firm:", err);
     return false;
   }
 };
@@ -121,7 +117,6 @@ export const createNewFirm = (firmData) => {
 
     return newFirm;
   } catch (err) {
-    console.error("Error creating firm:", err);
     throw new Error("Failed to create firm: " + err.message);
   }
 };
@@ -195,7 +190,6 @@ export const deleteFirmProfile = (firmId) => {
     window.dispatchEvent(new Event('storage'));
     return true;
   } catch (err) {
-    console.error("Error deleting firm:", err);
     return false;
   }
 };
