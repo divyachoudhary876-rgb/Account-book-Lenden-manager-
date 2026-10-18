@@ -76,10 +76,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Fail-safe timeout: guarantees app renders within 500ms even if IDB lags
+    // GUARANTEE: Never hang on loader. Force render within 400ms.
     const bootTimer = setTimeout(() => {
       setIsAppReady(true);
-    }, 500);
+    }, 400);
 
     initIndexedDB().then(() => {
       clearTimeout(bootTimer);
