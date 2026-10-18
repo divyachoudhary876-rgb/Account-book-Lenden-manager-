@@ -1,4 +1,7 @@
-// frontend/src/utils/inventoryPostingEngine.js
+/**
+ * Frontend Utility: Inventory Posting Engine
+ * Handles Purchase, Sales, Consumption, and Material Adjustments with strict firm isolation.
+ */
 
 import { StorageService } from './storageSync';
 import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine';
@@ -43,7 +46,7 @@ const ensureStockLedger = (firmId, rawItemName) => {
 };
 
 /**
- * Process purchase stock posting with strict firm-isolation and instant inventory update
+ * 1. PROCESS PURCHASE STOCK POSTING (Increases Stock)
  */
 export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001') => {
   const activeFirmId = String(
@@ -93,7 +96,6 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
   const primaryVouchers = StorageService.getItem(primaryVouchersKey, []);
   const purchaseBills = StorageService.getItem(purchaseBillsKey, []);
 
-  // Find stock item by ID or Name
   let itemIndex = inventory.findIndex(i => i && (
     String(i.id) === String(resolvedItemId) || 
     String(i.item_name || i.name || '').trim().toLowerCase() === String(resolvedItemId).trim().toLowerCase()
@@ -112,7 +114,6 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
   const newStockQty = round2(currentStockQty + numericQty);
   const newAvgRate = newStockQty > 0 ? round2(newTotalVal / newStockQty) : numericRate;
 
-  // Update Stock Quantities Across All Keys
   stockItem.current_stock = newStockQty;
   stockItem.stock = newStockQty;
   stockItem.current_qty = newStockQty;
@@ -123,12 +124,10 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
   stockItem.updated_at = new Date().toISOString();
   inventory[itemIndex] = stockItem;
 
-  // Save to all inventory storage fallback keys
   StorageService.setItem(inventoryKey, inventory);
   localStorage.setItem(inventoryKey, JSON.stringify(inventory));
   localStorage.setItem('inventory_items', JSON.stringify(inventory));
 
-  // Resolve Supplier
   let supplierName = 'Cash Supplier';
   const supplierIndex = accounts.findIndex(a => a && (
     String(a.id) === String(resolvedSupplier) || 
@@ -216,7 +215,6 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
   StorageService.setItem(purchaseBillsKey, updatedPurchaseBills);
   localStorage.setItem(purchaseBillsKey, JSON.stringify(updatedPurchaseBills));
 
-  // Immediate Full App State Sync & UI Refresh Events
   window.dispatchEvent(new CustomEvent('ACCOUNT_BOOK_VOUCHER_POSTED', { detail: newVoucher }));
   window.dispatchEvent(new Event('app_accounts_updated'));
   window.dispatchEvent(new Event('app_inventory_updated'));
@@ -228,7 +226,57 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
 };
 
 /**
- * Revert stock and reverse entry on purchase deletion strictly per firm
+ * 2. PROCESS SALES / CONSUMPTION STOCK DEDUCTION (Decreases Stock)
+ */
+export const processSalesOrConsumptionStockDeduction = (payload, firmId = 'FIRM-001') => {
+  const activeFirmId = String(
+    payload?.firmId || 
+    payload?.firm_id || 
+    firmId || 
+    localStorage.getItem('app_active_firm_id') || 
+    'FIRM-001'
+  ).trim();
+
+  const { itemId, item_id, item, quantity, qty } = payload || {};
+  const resolvedItemId = itemId || item_id || item;
+  const numericQty = parseFloat(quantity || qty || 0);
+
+  if (numericQty <= 0 || !resolvedItemId) return;
+
+  const inventoryKey = `inventory_items_${activeFirmId}`;
+  let inventory = StorageService.getItem(inventoryKey, []);
+  if (!Array.isArray(inventory) || inventory.length === 0) {
+    inventory = StorageService.getItem('inventory_items', []);
+  }
+
+  let itemIndex = inventory.findIndex(i => i && (
+    String(i.id) === String(resolvedItemId) || 
+    String(i.item_name || i.name || '').trim().toLowerCase() === String(resolvedItemId).trim().toLowerCase()
+  ));
+
+  if (itemIndex !== -1) {
+    const stockItem = { ...inventory[itemIndex] };
+    const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || stockItem.current_qty || stockItem.qty || 0);
+    const newQty = round2(Math.max(0, currentQty - numericQty));
+
+    stockItem.current_stock = newQty;
+    stockItem.stock = newQty;
+    stockItem.current_qty = newQty;
+    stockItem.qty = newQty;
+    stockItem.updated_at = new Date().toISOString();
+    inventory[itemIndex] = stockItem;
+
+    StorageService.setItem(inventoryKey, inventory);
+    localStorage.setItem(inventoryKey, JSON.stringify(inventory));
+    localStorage.setItem('inventory_items', JSON.stringify(inventory));
+
+    window.dispatchEvent(new Event('app_inventory_updated'));
+    window.dispatchEvent(new Event('app_storage_updated'));
+  }
+};
+
+/**
+ * 3. REVERT PURCHASE STOCK ON DELETION
  */
 export const revertPurchaseStockOnDeletion = (voucherId, firmId = 'FIRM-001') => {
   try {
@@ -256,7 +304,6 @@ export const revertPurchaseStockOnDeletion = (voucherId, firmId = 'FIRM-001') =>
     const targetItemName = targetVoucher.itemName || targetVoucher.item_name;
     const purchasedQty = parseFloat(targetVoucher.qty || targetVoucher.quantity || targetVoucher.stock || 0);
 
-    // Revert Inventory Quantity Instantly
     if (purchasedQty > 0) {
       let inventory = StorageService.getItem(inventoryKey, []);
       if (!Array.isArray(inventory) || inventory.length === 0) {
@@ -295,16 +342,11 @@ export const revertPurchaseStockOnDeletion = (voucherId, firmId = 'FIRM-001') =>
       String(v.reference_no) !== String(voucherId) && 
       String(v.reference_no) !== cleanVoucherRef;
     
-    const updatedV = vouchers.filter(filterFn);
-    const updatedPV = primaryVouchers.filter(filterFn);
-    const updatedPB = purchaseBills.filter(filterFn);
+    StorageService.setItem(vouchersKey, vouchers.filter(filterFn));
+    StorageService.setItem(primaryVouchersKey, primaryVouchers.filter(filterFn));
+    StorageService.setItem(purchaseBillsKey, purchaseBills.filter(filterFn));
+    localStorage.setItem(purchaseBillsKey, JSON.stringify(purchaseBills.filter(filterFn)));
 
-    StorageService.setItem(vouchersKey, updatedV);
-    StorageService.setItem(primaryVouchersKey, updatedPV);
-    StorageService.setItem(purchaseBillsKey, updatedPB);
-    localStorage.setItem(purchaseBillsKey, JSON.stringify(updatedPB));
-
-    // Broadcast Refresh Events
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
