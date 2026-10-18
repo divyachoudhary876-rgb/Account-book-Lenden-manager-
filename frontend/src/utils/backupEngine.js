@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Pure Snapshot Mode with Cross-Key Mirroring for Instant Data Loading.
+ * Ensures 100% exact state preservation, cross-key mirroring, and instant UI loading.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -90,7 +90,7 @@ export async function exportUniversalBackup(firmInput = 'AccountBook') {
 export const downloadAppBackup = exportUniversalBackup;
 
 /**
- * 2. UNIVERSAL ZERO-LOSS RESTORE ENGINE WITH CROSS-KEY MIRRORING
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH FIRM & KEY SYNC
  */
 export async function restoreUniversalBackup(rawInput) {
   try {
@@ -106,6 +106,7 @@ export async function restoreUniversalBackup(rawInput) {
       parsedContent = rawInput;
     }
 
+    // Flexible target data extraction supporting wrapped and flat JSON schemas
     let targetData = null;
     if (parsedContent?.data && typeof parsedContent.data === 'object' && !Array.isArray(parsedContent.data)) {
       targetData = parsedContent.data;
@@ -119,12 +120,20 @@ export async function restoreUniversalBackup(rawInput) {
       throw new Error("Invalid backup schema structure. Data object nahi mila.");
     }
 
+    // Determine active firm ID from backup meta or data
+    const activeFirmId = parsedContent?.meta?.active_firm_id || 
+                         targetData['app_active_firm_id'] || 
+                         localStorage.getItem('app_active_firm_id') || 
+                         'FIRM-1790909076433';
+
+    localStorage.setItem('app_active_firm_id', activeFirmId);
+
     let restoredKeysCount = 0;
     let vCount = 0;
     let aCount = 0;
     let pCount = 0;
 
-    // Restore all keys verbatim and mirror them to generic keys for instant UI rendering
+    // Restore all keys verbatim and mirror them to generic keys so UI components load instantly
     Object.keys(targetData).forEach(key => {
       if (key === 'app_firms' || key === 'firm_list' || key === 'app_firms_registry') return;
       try {
@@ -135,7 +144,7 @@ export async function restoreUniversalBackup(rawInput) {
         localStorage.setItem(key, stringifiedVal);
         restoredKeysCount++;
 
-        // 2. Mirror to active / generic keys so UI never shows blank screen
+        // 2. Mirror to active / generic keys so UI components never miss data
         if (key.includes('account_book_vouchers_') || key.includes('app_vouchers_')) {
           localStorage.setItem('account_book_vouchers', stringifiedVal);
           localStorage.setItem('app_vouchers', stringifiedVal);
@@ -150,7 +159,7 @@ export async function restoreUniversalBackup(rawInput) {
         if (key.includes('inventory_items_')) {
           localStorage.setItem('inventory_items', stringifiedVal);
         }
-        if (key.includes('sales_invoices_') || key.includes('invoices_')) {
+        if (key.includes('sales_invoices_') || key.includes('app_invoices_')) {
           localStorage.setItem('sales_invoices', stringifiedVal);
           localStorage.setItem('app_invoices', stringifiedVal);
         }
@@ -165,12 +174,9 @@ export async function restoreUniversalBackup(rawInput) {
       }
     });
 
-    const activeFirmId = parsedContent?.meta?.active_firm_id || 
-                         targetData['app_active_firm_id'] || 
-                         localStorage.getItem('app_active_firm_id') || 
-                         'FIRM-1790909076433';
-
-    localStorage.setItem('app_active_firm_id', activeFirmId);
+    if (targetData['active_firm_profile']) {
+      localStorage.setItem('active_firm_profile', typeof targetData['active_firm_profile'] === 'object' ? JSON.stringify(targetData['active_firm_profile']) : targetData['active_firm_profile']);
+    }
 
     // Broadcast UI refresh events
     broadcastAppEvents();
