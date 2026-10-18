@@ -119,7 +119,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         const supplier = (p.supplier || p.supplier_name || p.party || p.cr_account || '').toLowerCase();
 
         if (!itemName || itemName === 'Stock Item' || itemName === 'Stock Account' || itemName === 'Purchase A/c' || itemName === 'Purchase Raw Material Account') {
-          if (narration.includes('diesel') || supplier.includes('munsari') || supplier.includes('driver') || parseFloat(p.rate || p.unit_rate || 0) > 50) {
+          if (narration.includes('diesel') || supplier.includes('munsari') || supplier.includes('driver') || parseFloat(p.rate || p.unit_rate || p.purchase_rate || 0) > 50) {
             itemName = 'Diesel';
           } else if (narration.includes('mitti grade a') || supplier.includes('aslam')) {
             itemName = 'Mitti Grade A';
@@ -134,27 +134,19 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         p.item_name = itemName;
         p.name = itemName;
 
-        if (!Array.isArray(p.items) || p.items.length === 0 || p.items[0]?.itemName === 'Stock Item') {
-          p.items = [{
-            itemId: p.itemId || p.item_id || `ITEM-${Date.now()}`,
-            itemName: itemName,
-            item_name: itemName,
-            qty: parseFloat(p.quantity || p.qty || 0),
-            quantity: parseFloat(p.quantity || p.qty || 0),
-            rate: parseFloat(p.rate || p.unit_rate || 0),
-            total: parseFloat(p.amount || p.total_amount || 0)
-          }];
-        } else {
-          p.items = p.items.map(si => ({
-            ...si,
-            itemName: si.itemName === 'Stock Item' ? itemName : si.itemName,
-            item_name: si.item_name === 'Stock Item' ? itemName : si.item_name
-          }));
-        }
+        p.items = [{
+          itemId: p.itemId || p.item_id || `ITEM-${Date.now()}`,
+          itemName: itemName,
+          item_name: itemName,
+          qty: parseFloat(p.quantity || p.qty || 0),
+          quantity: parseFloat(p.quantity || p.qty || 0),
+          rate: parseFloat(p.rate || p.unit_rate || p.purchase_rate || 0),
+          total: parseFloat(p.amount || p.total_amount || 0)
+        }];
 
-        p.quantity = parseFloat(p.quantity || p.qty || p.items?.[0]?.qty || 0);
+        p.quantity = parseFloat(p.quantity || p.qty || p.items[0].qty || 0);
         p.qty = p.quantity;
-        p.amount = parseFloat(p.amount || p.total_amount || p.items?.[0]?.total || 0);
+        p.amount = parseFloat(p.amount || p.total_amount || p.items[0].total || 0);
         p.total_amount = p.amount;
 
         uniquePurchasesMap.set(uniqueKey, p);
