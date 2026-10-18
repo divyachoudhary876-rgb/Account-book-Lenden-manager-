@@ -1,7 +1,6 @@
-// frontend/src/utils/indexedDbStorage.js
 /**
  * Advanced Hybrid IndexedDB Storage Engine for Account Book Smart Manager
- * Enterprise Grade Ind-AS / Multi-Firm Strictly Isolated Zero-Loss Engine
+ * Bypasses localStorage 10MB quota limit completely while maintaining synchronous UI support.
  */
 
 const DB_NAME = 'AccountBookERP_DB';
@@ -9,59 +8,36 @@ const STORE_NAME = 'storage_store';
 const DB_VERSION = 1;
 
 let dbInstance = null;
-let initPromise = null;
-
-if (typeof window !== 'undefined') {
-  window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
-}
+window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
 
 export const initIndexedDB = () => {
-  if (initPromise) return initPromise;
-
-  initPromise = new Promise((resolve) => {
-    const timeoutId = setTimeout(() => {
-      resolve(null);
-    }, 1000);
-
+  return new Promise((resolve) => {
     if (dbInstance) {
-      clearTimeout(timeoutId);
       resolve(dbInstance);
       return;
     }
 
-    if (typeof window === 'undefined' || !window.indexedDB) {
-      clearTimeout(timeoutId);
+    if (!window.indexedDB) {
       resolve(null);
       return;
     }
 
-    try {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onerror = () => {
-        clearTimeout(timeoutId);
-        resolve(null);
-      };
+    request.onerror = () => resolve(null);
 
-      request.onsuccess = (event) => {
-        clearTimeout(timeoutId);
-        dbInstance = event.target.result;
-        loadAllIntoCache().then(() => resolve(dbInstance)).catch(() => resolve(dbInstance));
-      };
+    request.onsuccess = (event) => {
+      dbInstance = event.target.result;
+      loadAllIntoCache().then(() => resolve(dbInstance));
+    };
 
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME);
-        }
-      };
-    } catch (err) {
-      clearTimeout(timeoutId);
-      resolve(null);
-    }
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
   });
-
-  return initPromise;
 };
 
 const loadAllIntoCache = () => {
@@ -96,9 +72,7 @@ const loadAllIntoCache = () => {
 };
 
 export const IDBStorage = {
-  getItem: (key, fallback = null) => {
-    if (!key) return fallback;
-
+  getItem: (key, fallback = []) => {
     const cached = window.__APP_STORAGE_CACHE__[key];
     if (cached !== undefined && cached !== null) {
       try {
@@ -107,41 +81,32 @@ export const IDBStorage = {
         return cached;
       }
     }
-
     try {
       const local = localStorage.getItem(key);
-      if (local !== null && local !== undefined) {
-        try {
-          const parsed = JSON.parse(local);
-          window.__APP_STORAGE_CACHE__[key] = parsed;
-          return parsed;
-        } catch (e) {
-          window.__APP_STORAGE_CACHE__[key] = local;
-          return local;
-        }
+      if (local !== null) {
+        const parsed = JSON.parse(local);
+        window.__APP_STORAGE_CACHE__[key] = parsed;
+        return parsed;
       }
     } catch (e) {}
-
     return fallback;
   },
 
   setItem: (key, value) => {
-    if (!key) return;
-
     try {
       window.__APP_STORAGE_CACHE__[key] = value;
-
+      
       try {
         const serialized = typeof value === 'object' ? JSON.stringify(value) : String(value);
         localStorage.setItem(key, serialized);
-      } catch (quotaErr) {}
+      } catch (e) {}
 
       if (dbInstance) {
         try {
           const transaction = dbInstance.transaction(STORE_NAME, 'readwrite');
           const store = transaction.objectStore(STORE_NAME);
           store.put(value, key);
-        } catch (idbErr) {}
+        } catch (e) {}
       }
 
       window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value } }));
@@ -151,7 +116,6 @@ export const IDBStorage = {
   },
 
   removeItem: (key) => {
-    if (!key) return;
     delete window.__APP_STORAGE_CACHE__[key];
     try { localStorage.removeItem(key); } catch (e) {}
     if (dbInstance) {
@@ -161,12 +125,5 @@ export const IDBStorage = {
         store.delete(key);
       } catch (e) {}
     }
-    window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value: null } }));
-    window.dispatchEvent(new Event('app_state_updated'));
-    window.dispatchEvent(new Event('storage'));
-  },
-
-  clearMemoryCache: () => {
-    window.__APP_STORAGE_CACHE__ = {};
   }
 };
