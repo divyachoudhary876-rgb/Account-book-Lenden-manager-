@@ -141,4 +141,58 @@ export default function CreateFirmForm({ onSuccess, onCancel }) {
               />
             </div>
             <div>
-              
+              <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                Registered Mobile / Contact
+              </label>
+              <input
+                type="tel"
+                name="mobile"
+                value={formData.mobile}
+                onChange={handleChange}
+                placeholder="98290XXXXX"
+                className="w-full border border-gray-300 rounded-2xl p-3.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/40 text-slate-800 font-medium"
+              />
+            </div>
+          </div>
+
+          {/* Factory / Office Address */}
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+              Factory / Office Address
+            </label>
+            <textarea
+              name="address"
+              value={formData.address}
+              onChange={handleChange}
+              rows="2"
+              placeholder="e.g. Industrial Area, Hanumangarh, Rajasthan"
+              className="w-full border border-gray-300 rounded-2xl p-3.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-gray-50/40 text-slate-800 font-medium resize-none"
+            ></textarea>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="pt-3 flex flex-col md:flex-row gap-3">
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="w-full md:w-auto px-6 py-3.5 border border-gray-300 text-gray-700 rounded-2xl hover:bg-gray-50 font-semibold text-sm transition"
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl font-bold text-sm shadow-xl shadow-emerald-600/25 transition flex items-center justify-center space-x-2"
+            >
+              <span>💾</span>
+              <span>{loading ? 'Initializing Enterprise...' : 'Create Enterprise & Initialize Ledgers'}</span>
+            </button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  );
+}
