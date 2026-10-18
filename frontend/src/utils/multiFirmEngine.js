@@ -1,6 +1,5 @@
 /**
- * Multi-Firm Isolation Engine for Account Book ERP (Crash-Proof Version)
- * Manages enterprise firm profiles, active session context, and isolated storage buckets safely.
+ * Multi-Firm Isolation Engine for Account Book ERP (Stable Baseline)
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
