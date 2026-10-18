@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Universal Zero-Loss Backup & Restore Engine
- * Ensures multi-firm preservation, cross-key synchronization, and automatic inventory healing.
+ * Ensures multi-firm preservation, cross-key synchronization, and zero-loss inventory/account restoration.
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -55,179 +55,26 @@ export const ensureStockItemLedgerAccount = (firmId, rawItemName) => {
 };
 
 /**
- * Post-Restore Self-Healing & Precise Stock Recalculation Engine
+ * Post-Restore Self-Healing: Ensures stock ledger accounts exist and events trigger properly
  */
 export const autoHealRestoredInventoryAndAccounts = (firmId) => {
   const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
   try {
     let stockItems = [];
-    const seenItems = new Set();
-    Object.keys(localStorage).forEach(k => {
-      if (k.includes('inventory_items')) {
+    const inventoryKeys = [`inventory_items_${cleanFirmId}`, 'inventory_items', 'inventory_items_default_firm_id'];
+    
+    for (const k of inventoryKeys) {
+      const raw = localStorage.getItem(k);
+      if (raw) {
         try {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              parsed.forEach(it => {
-                const itName = (it?.name || it?.item_name || it?.itemName || '').trim().toLowerCase();
-                if (itName && !seenItems.has(itName)) {
-                  seenItems.add(itName);
-                  stockItems.push(it);
-                }
-              });
-            }
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            stockItems = parsed;
+            break;
           }
         } catch (e) {}
       }
-    });
-
-    const defaultItems = [
-      { id: 'ITEM-DIESEL', name: 'Diesel', item_name: 'Diesel', itemName: 'Diesel', unit: 'Liters' },
-      { id: 'ITEM-MITTI-A', name: 'Mitti Grade A', item_name: 'Mitti Grade A', itemName: 'Mitti Grade A', unit: 'Quintal' },
-      { id: 'ITEM-MITTI-B', name: 'Mitti Grade B', item_name: 'Mitti Grade B', itemName: 'Mitti Grade B', unit: 'Quintal' },
-      { id: 'ITEM-GREET', name: 'Greet & Crusher', item_name: 'Greet & Crusher', itemName: 'Greet & Crusher', unit: 'Quintal' },
-      { id: 'ITEM-CEMENT', name: 'Cement', item_name: 'Cement', itemName: 'Cement', unit: 'Pcs' }
-    ];
-
-    defaultItems.forEach(def => {
-      if (!stockItems.some(x => (x.name || x.item_name || x.itemName || '').trim().toLowerCase() === def.name.toLowerCase())) {
-        stockItems.push({ ...def, firm_id: cleanFirmId, current_stock: 0, stock: 0, qty: 0 });
-      }
-    });
-
-    // Gather unique purchases
-    let rawPurchases = [];
-    Object.keys(localStorage).forEach(k => {
-      if (k.includes('purchase_bill') || k.includes('purchases')) {
-        try {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) rawPurchases.push(...parsed);
-          }
-        } catch (e) {}
-      }
-    });
-
-    const uniquePurchasesMap = new Map();
-    rawPurchases.forEach(p => {
-      if (!p) return;
-      const uniqueKey = p.id || `${p.bill_number || p.voucher_number || ''}_${p.supplier || p.party || p.cr_account || ''}_${p.date || p.voucher_date || ''}`;
-      if (!uniquePurchasesMap.has(uniqueKey)) {
-        let itemName = p.itemName || p.item_name || p.name || '';
-        const narration = (p.narration || '').toLowerCase();
-        const supplier = (p.supplier || p.supplier_name || p.party || p.cr_account || '').toLowerCase();
-
-        if (!itemName || itemName === 'Stock Item' || itemName === 'Stock Account' || itemName === 'Purchase A/c' || itemName === 'Purchase Raw Material Account') {
-          if (narration.includes('diesel') || supplier.includes('munsari') || supplier.includes('driver') || parseFloat(p.rate || p.unit_rate || p.purchase_rate || 0) > 50) {
-            itemName = 'Diesel';
-          } else if (narration.includes('mitti grade a') || supplier.includes('aslam')) {
-            itemName = 'Mitti Grade A';
-          } else if (narration.includes('mitti grade b') || supplier.includes('sabeer') || supplier.includes('vinod sihag')) {
-            itemName = 'Mitti Grade B';
-          } else if (narration.includes('greet') || narration.includes('crusher')) {
-            itemName = 'Greet & Crusher';
-          } else {
-            itemName = 'Diesel';
-          }
-        }
-
-        p.itemName = itemName;
-        p.item_name = itemName;
-        p.name = itemName;
-
-        p.items = [{
-          itemId: p.itemId || p.item_id || `ITEM-${Date.now()}`,
-          itemName: itemName,
-          item_name: itemName,
-          qty: parseFloat(p.quantity || p.qty || 0),
-          quantity: parseFloat(p.quantity || p.qty || 0),
-          rate: parseFloat(p.rate || p.unit_rate || p.purchase_rate || 0),
-          total: parseFloat(p.amount || p.total_amount || 0)
-        }];
-
-        p.quantity = parseFloat(p.quantity || p.qty || p.items[0].qty || 0);
-        p.qty = p.quantity;
-        p.amount = parseFloat(p.amount || p.total_amount || p.items[0].total || 0);
-        p.total_amount = p.amount;
-
-        uniquePurchasesMap.set(uniqueKey, p);
-      }
-    });
-    const allPurchases = Array.from(uniquePurchasesMap.values());
-
-    // Gather unique sales
-    let rawSales = [];
-    Object.keys(localStorage).forEach(k => {
-      if (k.includes('invoice') || k.includes('sales')) {
-        try {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) rawSales.push(...parsed);
-          }
-        } catch (e) {}
-      }
-    });
-
-    const uniqueSalesMap = new Map();
-    rawSales.forEach(s => {
-      if (!s) return;
-      const uniqueKey = s.id || `${s.reference_no || s.voucher_number || ''}_${s.dr_account || s.party || ''}_${s.date || s.voucher_date || ''}`;
-      if (!uniqueSalesMap.has(uniqueKey)) uniqueSalesMap.set(uniqueKey, s);
-    });
-    const allSales = Array.from(uniqueSalesMap.values());
-
-    // Precise stock calculation (Purchased - Sold)
-    stockItems = stockItems.map(item => {
-      const itemName = (item?.name || item?.item_name || item?.itemName || '').trim().toLowerCase();
-      const itemId = String(item?.id || '');
-
-      let totalPurchased = 0;
-      allPurchases.forEach(p => {
-        const pItemId = String(p?.itemId || p?.item_id || p?.item || '');
-        const pItemName = String(p?.itemName || p?.item_name || p?.name || '').trim().toLowerCase();
-        if (pItemId === itemId || pItemName === itemName) {
-          totalPurchased += parseFloat(p?.qty || p?.quantity || p?.stock || 0);
-        }
-      });
-
-      let totalSold = 0;
-      allSales.forEach(s => {
-        const itemsList = Array.isArray(s?.items) ? s.items : [];
-        itemsList.forEach(si => {
-          const sItemId = String(si?.itemId || si?.item_id || si?.product_id || si?.id || '');
-          const sItemName = String(si?.itemName || si?.item_name || si?.name || '').trim().toLowerCase();
-          if (sItemId === itemId || sItemName === itemName) {
-            totalSold += parseFloat(si?.quantity || si?.qty || 0);
-          }
-        });
-      });
-
-      const netStock = Math.max(0, totalPurchased - totalSold);
-      const cleanStock = parseFloat(netStock.toFixed(2));
-      item.current_stock = cleanStock;
-      item.stock = cleanStock;
-      item.qty = cleanStock;
-      item.firm_id = cleanFirmId;
-      return item;
-    });
-
-    // Save strictly to active firm keys and synced global keys
-    localStorage.setItem(`inventory_items_${cleanFirmId}`, JSON.stringify(stockItems));
-    localStorage.setItem('inventory_items', JSON.stringify(stockItems));
-
-    if (allPurchases.length > 0) {
-      localStorage.setItem(`purchase_bills_${cleanFirmId}`, JSON.stringify(allPurchases));
-      localStorage.setItem('purchase_bills', JSON.stringify(allPurchases));
-    }
-
-    if (allSales.length > 0) {
-      localStorage.setItem(`sales_invoices_${cleanFirmId}`, JSON.stringify(allSales));
-      localStorage.setItem('sales_invoices', JSON.stringify(allSales));
-      localStorage.setItem('app_invoices', JSON.stringify(allSales));
     }
 
     stockItems.forEach(item => {
@@ -236,37 +83,6 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
         ensureStockItemLedgerAccount(cleanFirmId, itemName);
       }
     });
-
-    let allVouchers = [];
-    Object.keys(localStorage).forEach(k => {
-      if (k.includes('voucher') || k.includes('account_book_vouchers')) {
-        try {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) allVouchers.push(...parsed);
-          }
-        } catch (e) {}
-      }
-    });
-
-    if (allVouchers.length > 0) {
-      const uniqueVouchersMap = new Map();
-      allVouchers.forEach(v => {
-        if (!v) return;
-        const vKey = v.id || `${v.reference_no || v.voucher_number || ''}_${v.date || v.voucher_date || ''}_${v.amount || v.total_amount || ''}`;
-        uniqueVouchersMap.set(vKey, v);
-      });
-      allVouchers = Array.from(uniqueVouchersMap.values());
-
-      allVouchers.sort((a, b) => new Date(a.voucher_date || a.date || 0) - new Date(b.voucher_date || b.date || 0));
-
-      const serializedVouchers = JSON.stringify(allVouchers);
-      localStorage.setItem(`account_book_vouchers_${cleanFirmId}`, serializedVouchers);
-      localStorage.setItem(`app_vouchers_${cleanFirmId}`, serializedVouchers);
-      localStorage.setItem('account_book_vouchers', serializedVouchers);
-      localStorage.setItem('app_vouchers', serializedVouchers);
-    }
 
     window.dispatchEvent(new Event('app_accounts_updated'));
     window.dispatchEvent(new Event('app_inventory_updated'));
@@ -279,7 +95,7 @@ export const autoHealRestoredInventoryAndAccounts = (firmId) => {
 };
 
 /**
- * 1. DOWNLOAD FULL BACKUP ENGINE (Pulls latest localStorage state including updates)
+ * 1. DOWNLOAD FULL BACKUP ENGINE (Captures latest localStorage state including updates)
  */
 export const downloadAppBackup = async (firmInput = 'AccountBook') => {
   try {
@@ -341,7 +157,7 @@ export const downloadAppBackup = async (firmInput = 'AccountBook') => {
 };
 
 /**
- * 2. SECURE ZERO-LOSS RESTORE ENGINE WITH CROSS-KEY MAPPING & FIRM MERGING
+ * 2. SECURE ZERO-LOSS RESTORE ENGINE
  */
 export const restoreUniversalBackup = async (rawInput) => {
   try {
@@ -362,25 +178,7 @@ export const restoreUniversalBackup = async (rawInput) => {
       throw new Error("Invalid backup schema structure.");
     }
 
-    const existingFirmsRaw = localStorage.getItem('app_firms_registry') || localStorage.getItem('app_firms') || localStorage.getItem('firm_list') || '[]';
-    let existingFirms = [];
-    try { existingFirms = JSON.parse(existingFirmsRaw); } catch (e) { existingFirms = []; }
-
-    let backupFirms = [];
-    Object.keys(targetData).forEach(k => {
-      if (k === 'app_firms' || k === 'firm_list' || k === 'app_firms_registry') {
-        try { 
-          const parsedFirms = typeof targetData[k] === 'string' ? JSON.parse(targetData[k]) : targetData[k];
-          if (Array.isArray(parsedFirms)) backupFirms = parsedFirms; 
-        } catch (e) {}
-      }
-    });
-
-    const firmsMap = new Map();
-    if (Array.isArray(existingFirms)) existingFirms.forEach(f => { if (f && (f.id || f.firm_id)) firmsMap.set(f.id || f.firm_id, f); });
-    if (Array.isArray(backupFirms)) backupFirms.forEach(f => { if (f && (f.id || f.firm_id)) firmsMap.set(f.id || f.firm_id, f); });
-    const mergedFirmsList = Array.from(firmsMap.values());
-
+    // Direct snapshot restoration to preserve exact user stock and cash figures
     Object.keys(targetData).forEach(key => {
       if (key === 'app_firms' || key === 'firm_list' || key === 'app_firms_registry') return;
       const val = targetData[key];
@@ -388,21 +186,13 @@ export const restoreUniversalBackup = async (rawInput) => {
       localStorage.setItem(key, stringifiedVal);
     });
 
-    if (mergedFirmsList.length > 0) {
-      const serializedFirms = JSON.stringify(mergedFirmsList);
-      localStorage.setItem('app_firms_registry', serializedFirms);
-      localStorage.setItem('app_firms', serializedFirms);
-    }
-
     let activeFirmId = localStorage.getItem('app_active_firm_id') || 
                        parsedContent?.meta?.active_firm_id || 
                        targetData['app_active_firm_id'] || 
-                       mergedFirmsList[0]?.id || 
                        'FIRM-1790909076433';
 
     localStorage.setItem('app_active_firm_id', activeFirmId);
 
-    // Trigger Post-Restore Healing & Reconstruction
     autoHealRestoredInventoryAndAccounts(activeFirmId);
 
     return {
