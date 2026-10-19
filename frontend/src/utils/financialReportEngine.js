@@ -2,10 +2,10 @@
 
 import { getFirmMasterAccounts } from './accountMasterEngine.js';
 import { StorageService } from './storageSync';
+import { getAllFirmVouchers } from './ledgerEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-// Helper to get sanitized Date range for selected FY (handles 'FY 2026-27' & '2026-27')
 const getFYDateRange = (fyString = '2026-27') => {
   try {
     const clean = String(fyString || '2026-27').replace(/FY\s*/i, '').trim();
@@ -43,35 +43,31 @@ export const getSafeAccounts = (firmId = 'FIRM-001', selectedFY = '2026-27') => 
   return [];
 };
 
+/**
+ * Unified Ledger Lines Normalizer leveraging getAllFirmVouchers to prevent missing transactions
+ */
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026-27') => {
   const { startDate, endDate } = getFYDateRange(selectedFY);
   const activeFirmId = String(firmId || 'FIRM-001').trim();
 
+  // Fetch all vouchers securely using the robust ledger engine scanner
   let rawTx = [];
-  // Strictly firm-scoped keys
-  const keysToScan = [
-    `app_vouchers_${activeFirmId}`,
-    `account_book_vouchers_${activeFirmId}`
-  ];
-
-  keysToScan.forEach(k => {
-    try {
-      const val = StorageService.getItem ? StorageService.getItem(k) : JSON.parse(localStorage.getItem(k) || '[]');
-      if (Array.isArray(val)) rawTx.push(...val);
-    } catch (e) {}
-  });
+  try {
+    rawTx = getAllFirmVouchers(activeFirmId);
+  } catch (e) {
+    rawTx = [];
+  }
 
   const uniqueVoucherMap = new Map();
   rawTx.forEach(v => {
     if (!v) return;
     const vFirm = String(v.firm_id || v.firmId || '').trim();
-    if (vFirm && vFirm !== activeFirmId) return;
+    if (vFirm && vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
 
     const vDate = v.voucher_date || v.date || '';
     if (vDate && (vDate < startDate || vDate > endDate)) return;
 
-    // Robust deduplication ID
-    const uniqueId = v.id || v.reference_no || v.voucher_number || `${vDate}-${v.amount || v.total_amount || 0}`;
+    const uniqueId = v.id || v.reference_no || v.voucher_number || `${vDate}-${v.amount || v.total_amount || 0}-${v.dr_account || ''}-${v.cr_account || ''}`;
     if (!uniqueVoucherMap.has(uniqueId)) {
       uniqueVoucherMap.set(uniqueId, v);
     }
@@ -84,7 +80,7 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
     const vchDate = vch.voucher_date || vch.date || '';
     const vchNum = vch.reference_no || vch.voucher_number || 'VCH';
     const vchType = (vch.voucher_type || vch.type || 'JOURNAL').toUpperCase();
-    const narration = vch.narration || '';
+    const narration = vch.narration || vch.notes || vch.description || '';
 
     // Compound multi-line entries
     if (Array.isArray(vch.entries) && vch.entries.length > 0) {
@@ -104,11 +100,14 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
       });
     } 
     // Single Dr/Cr simple voucher
-    else if (vch.dr_account && vch.cr_account && (vch.amount || vch.total_amount)) {
-      const amt = parseFloat(vch.amount || vch.total_amount || 0);
-      if (amt > 0) {
-        flatLines.push({ voucher_id: vch.id, date: vchDate, voucher_number: vchNum, voucher_type: vchType, account_name: String(vch.dr_account).trim(), entry_type: 'Dr', amount: amt, narration });
-        flatLines.push({ voucher_id: vch.id, date: vchDate, voucher_number: vchNum, voucher_type: vchType, account_name: String(vch.cr_account).trim(), entry_type: 'Cr', amount: amt, narration });
+    else if ((vch.dr_account || vch.debit_account) && (vch.cr_account || vch.credit_account) && (vch.amount || vch.total_amount || vch.grand_total)) {
+      const amt = parseFloat(vch.amount || vch.total_amount || vch.grand_total || 0);
+      const drAcc = String(vch.dr_account || vch.debit_account || '').trim();
+      const crAcc = String(vch.cr_account || vch.credit_account || '').trim();
+
+      if (amt > 0 && drAcc && crAcc) {
+        flatLines.push({ voucher_id: vch.id, date: vchDate, voucher_number: vchNum, voucher_type: vchType, account_name: drAcc, entry_type: 'Dr', amount: amt, narration });
+        flatLines.push({ voucher_id: vch.id, date: vchDate, voucher_number: vchNum, voucher_type: vchType, account_name: crAcc, entry_type: 'Cr', amount: amt, narration });
       }
     }
   });
@@ -121,8 +120,9 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
   const flatLines = getNormalizedLedgerLines(firmId, selectedFY);
 
   const accountTotals = {};
+  const nameMapping = {}; // For case-insensitive matching
 
-  // Load opening balances strictly from master accounts of this firm
+  // Load opening balances strictly from master accounts
   masterAccounts.forEach((acc) => {
     const name = (acc.account_name || acc.name || '').trim();
     if (!name) return;
@@ -136,24 +136,39 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
       debit: isDebitOpening ? opening : 0,
       credit: !isDebitOpening ? opening : 0
     };
+    nameMapping[name.toLowerCase()] = name;
   });
 
   flatLines.forEach((line) => {
-    const name = line.account_name.trim();
-    if (!accountTotals[name]) {
-      let inferredType = 'EXPENSES';
-      const lower = name.toLowerCase();
-      if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor') || lower.includes('stock')) inferredType = 'ASSETS';
-      else if (lower.includes('sale') || lower.includes('income') || lower.includes('revenue')) inferredType = 'INCOME';
-      else if (lower.includes('capital') || lower.includes('creditor') || lower.includes('loan')) inferredType = 'LIABILITIES';
+    const rawName = line.account_name.trim();
+    const lowerName = rawName.toLowerCase();
+    
+    let targetName = nameMapping[lowerName];
+    if (!targetName) {
+      // Check partial/fuzzy match against master accounts
+      const matchedKey = Object.keys(nameMapping).find(k => k === lowerName || k.includes(lowerName) || lowerName.includes(k));
+      if (matchedKey) {
+        targetName = nameMapping[matchedKey];
+      } else {
+        targetName = rawName;
+        nameMapping[lowerName] = rawName;
+      }
+    }
 
-      accountTotals[name] = { account_name: name, primary_type: inferredType, sub_group: 'General', debit: 0, credit: 0 };
+    if (!accountTotals[targetName]) {
+      let inferredType = 'EXPENSES';
+      const lower = targetName.toLowerCase();
+      if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor') || lower.includes('stock') || lower.includes('asset')) inferredType = 'ASSETS';
+      else if (lower.includes('sale') || lower.includes('income') || lower.includes('revenue')) inferredType = 'INCOME';
+      else if (lower.includes('capital') || lower.includes('creditor') || lower.includes('loan') || lower.includes('liability')) inferredType = 'LIABILITIES';
+
+      accountTotals[targetName] = { account_name: targetName, primary_type: inferredType, sub_group: 'General', debit: 0, credit: 0 };
     }
 
     if (line.entry_type === 'Dr') {
-      accountTotals[name].debit += line.amount;
+      accountTotals[targetName].debit += line.amount;
     } else {
-      accountTotals[name].credit += line.amount;
+      accountTotals[targetName].credit += line.amount;
     }
   });
 
