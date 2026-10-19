@@ -41,7 +41,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
     const masterAccs = getFirmMasterAccounts(activeFirmId) || [];
     setAccountsList(masterAccs);
 
-    // Set smart default if Land Development exists
     const landDevAccount = masterAccs.find(a => 
       (a.account_name || a.name || '').toLowerCase().includes('land development')
     );
@@ -80,7 +79,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       return alert(`Available stock se zyada quantity darj nahi kar sakte! (Uplabdh: ${availableStock} ${itemObj.unit || 'Units'})`);
     }
 
-    // Complete multi-key rate fallback resolution
     const rateVal = parseFloat(
       itemObj.unit_purchase_price || 
       itemObj.purchase_price || 
@@ -170,7 +168,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       // STEP 3: ENSURE STATUTORY MASTER ACCOUNTS EXIST
       const masterAccounts = getFirmMasterAccounts(activeFirmId);
       
-      // Ensure Debit Account exists
       if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === targetExpenseLedger.toLowerCase())) {
         saveMasterAccount(activeFirmId, {
           account_name: targetExpenseLedger,
@@ -181,26 +178,36 @@ export default function MaterialConsumptionView({ firm, onClose }) {
         });
       }
 
-      // Determine stock asset head to credit
-      const itemNames = consumptionList.map(c => c.name).join(', ');
-      const isFuel = consumptionList.some(c => c.name.toLowerCase().includes('diesel') || c.name.toLowerCase().includes('fuel'));
-      const stockAssetLedger = isFuel 
-        ? 'Consumables & Fuel Stock' 
-        : `${consumptionList[0]?.name || 'Raw Material'} Stock Account`;
+      // Ensure each consumed item has its specific Stock Account
+      const voucherEntries = [
+        { account_name: targetExpenseLedger, party: targetExpenseLedger, type: 'DR', debit: totalConsumptionValue, credit: 0, amount: totalConsumptionValue }
+      ];
 
-      if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === stockAssetLedger.toLowerCase())) {
-        saveMasterAccount(activeFirmId, {
+      consumptionList.forEach(c => {
+        const stockAssetLedger = `${c.name} Stock Account`;
+        if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === stockAssetLedger.toLowerCase())) {
+          saveMasterAccount(activeFirmId, {
+            account_name: stockAssetLedger,
+            primary_type: 'ASSETS',
+            type: 'Assets',
+            sub_group: 'Raw Material Inventory (कच्चा माल)',
+            balance_type: 'Dr'
+          });
+        }
+
+        voucherEntries.push({
           account_name: stockAssetLedger,
-          primary_type: 'ASSETS',
-          type: 'Assets',
-          sub_group: 'Raw Material Inventory (कच्चा माल)',
-          balance_type: 'Dr'
+          party: stockAssetLedger,
+          type: 'CR',
+          debit: 0,
+          credit: c.totalCost,
+          amount: c.totalCost
         });
-      }
+      });
 
-      // STEP 4: POST DOUBLE-ENTRY JOURNAL VOUCHER (JV)
-      // DR: Land Development (Land development) Expense
-      // CR: Mitti Stock Account (Asset/Inventory)
+      const itemNames = consumptionList.map(c => c.name).join(', ');
+
+      // STEP 4: POST COMPOUND DOUBLE-ENTRY JOURNAL VOUCHER (JV)
       saveUniversalVoucher(activeFirmId, {
         id: `JV-${recordId}`,
         firm_id: activeFirmId,
@@ -210,15 +217,12 @@ export default function MaterialConsumptionView({ firm, onClose }) {
         date: usageDate,
         reference_no: recordId,
         dr_account: targetExpenseLedger,
-        cr_account: stockAssetLedger,
+        cr_account: consumptionList.map(c => `${c.name} Stock Account`).join(', '),
         amount: totalConsumptionValue,
         total_amount: totalConsumptionValue,
         narration: `Consumed ${itemNames} for ${usesFor}. Debited to ${targetExpenseLedger} & Stock Deducted. Total: ₹${totalConsumptionValue}`,
         is_compound: true,
-        entries: [
-          { account_name: targetExpenseLedger, party: targetExpenseLedger, type: 'DR', debit: totalConsumptionValue, credit: 0, amount: totalConsumptionValue },
-          { account_name: stockAssetLedger, party: stockAssetLedger, type: 'CR', debit: 0, credit: totalConsumptionValue, amount: totalConsumptionValue }
-        ]
+        entries: voucherEntries
       });
 
       // Broadcast reactivity across all open views
@@ -228,7 +232,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
 
       setFeedback({ 
         type: 'success', 
-        message: `✓ Mitti stock deducted & ₹${totalConsumptionValue.toLocaleString('en-IN')} successfully debited to "${targetExpenseLedger}"!` 
+        message: `✓ Stock deducted & ₹${totalConsumptionValue.toLocaleString('en-IN')} successfully debited to "${targetExpenseLedger}"!` 
       });
 
       setUsesFor('');
@@ -294,7 +298,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
             </div>
           </div>
 
-          {/* DYNAMIC EXPENSE/PURPOSE ACCOUNT (e.g. Land Development) */}
           <div style={{ marginBottom: '12px' }}>
             <SearchableAccountDropdown
               label="Debit Expense Account (खर्चे का खाता) *"
@@ -361,13 +364,12 @@ export default function MaterialConsumptionView({ firm, onClose }) {
             type="submit" 
             style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
           >
-            ⚡ Deduct Mitti Stock & Debit to {typeof expenseLedger === 'object' ? (expenseLedger.account_name || 'Land Development') : (expenseLedger || 'Land Development')}
+            ⚡ Deduct Stock & Debit to {typeof expenseLedger === 'object' ? (expenseLedger.account_name || 'Land Development') : (expenseLedger || 'Land Development')}
           </button>
 
         </form>
       </div>
 
-      {/* Consumption History Register */}
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
         <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
           Consumption History Register ({activeFY}) - ({savedRecords.length})
