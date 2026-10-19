@@ -275,7 +275,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. STOCK ITEM LEDGER & MOVEMENT STATEMENT PDF EXPORT (With Total In & Total Out Summary)
+ * 2. STOCK ITEM LEDGER & MOVEMENT STATEMENT PDF EXPORT (With Per-Page & Grand Total In/Out Summary)
  */
 export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
   const firmName = getCleanFirmName(firmInput);
@@ -326,6 +326,29 @@ export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
 
   let totalInSum = 0;
   let totalOutSum = 0;
+  let pageInSum = 0;
+  let pageOutSum = 0;
+
+  const renderPageFooter = (isFinal = false) => {
+    y += 2;
+    doc.setDrawColor(203, 213, 225);
+    doc.line(14, y, 196, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    
+    if (isFinal) {
+      doc.text('GRAND TOTAL MOVEMENT SUM:', 55, y);
+      doc.text(`+${totalInSum.toFixed(2)}`, 145, y, { align: 'right' });
+      doc.text(`-${totalOutSum.toFixed(2)}`, 170, y, { align: 'right' });
+    } else {
+      doc.text(`PAGE ${pageNum} SUBTOTAL:`, 65, y);
+      doc.text(`+${pageInSum.toFixed(2)}`, 145, y, { align: 'right' });
+      doc.text(`-${pageOutSum.toFixed(2)}`, 170, y, { align: 'right' });
+    }
+  };
 
   rows.forEach((row, index) => {
     const dateStr = row.date || row.voucher_date || '-';
@@ -336,16 +359,25 @@ export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
     const qtyOut = parseFloat(row.out || row.qty_out || row.consumption_qty || 0);
     const balanceStr = String(row.balance || '0');
 
-    if (qtyIn > 0) totalInSum += qtyIn;
-    if (qtyOut > 0) totalOutSum += qtyOut;
+    if (qtyIn > 0) {
+      totalInSum += qtyIn;
+      pageInSum += qtyIn;
+    }
+    if (qtyOut > 0) {
+      totalOutSum += qtyOut;
+      pageOutSum += qtyOut;
+    }
 
     const splitDesc = doc.splitTextToSize(descStr, 70);
     const rowHeight = Math.max(7, 4 + (splitDesc.length * 3.5));
 
-    if (y + rowHeight > 272) {
+    if (y + rowHeight > 265) {
+      renderPageFooter(false);
       doc.addPage();
       pageNum += 1;
       y = 18;
+      pageInSum = 0;
+      pageOutSum = 0;
       printHeader();
     }
 
@@ -369,24 +401,13 @@ export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
     y += rowHeight;
   });
 
-  if (y > 265) {
+  if (y > 260) {
     doc.addPage();
     pageNum += 1;
     y = 18;
     printHeader();
   }
-
-  y += 3;
-  doc.setDrawColor(203, 213, 225);
-  doc.line(14, y, 196, y);
-  y += 6;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text('TOTAL MOVEMENT SUM:', 70, y);
-  doc.text(`+${totalInSum.toFixed(2)}`, 145, y, { align: 'right' });
-  doc.text(`-${totalOutSum.toFixed(2)}`, 170, y, { align: 'right' });
+  renderPageFooter(true);
 
   return await exportTruePDF(doc, `Stock_Statement_${itemName}`);
 };
