@@ -15,7 +15,6 @@ import {
 export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
-  // 1. Click Handler for Cash & Bank Card
   const handleCashBankClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -25,7 +24,6 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
     }
   };
 
-  // 2. Click Handler for Stock Valuation Card
   const handleStockClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -35,7 +33,6 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
     }
   };
 
-  // 3. Click Handler for Receivables (Lena Baaki) Card
   const handleReceivablesClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -45,7 +42,6 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
     }
   };
 
-  // 4. Click Handler for Payables (Dena Baaki) Card
   const handlePayablesClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -55,7 +51,6 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
     }
   };
 
-  // 5. Click Handler for Consumption / Issue Records Card
   const handleConsumptionClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -68,13 +63,11 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', boxSizing: 'border-box' }}>
       
-      {/* 1. Cash & Bank Card (Clickable PDF Export) */}
+      {/* 1. Cash & Bank Card */}
       <div 
         onClick={handleCashBankClick}
-        title="Click to download complete Cash & Bank accounts breakdown PDF statement"
+        title="Click to download complete Cash & Bank breakdown PDF statement"
         style={interactiveCardStyle('#ffffff', '#0f172a', '#cbd5e1')}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={titleStyle}>💵 CASH & BANK (रोकड़/बैंक)</span>
@@ -84,13 +77,11 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
         <span style={subText}>* Click card to export liquidity accounts breakdown PDF</span>
       </div>
 
-      {/* 2. Stock Valuation Card (Clickable PDF Export) */}
+      {/* 2. Stock Valuation Card */}
       <div 
         onClick={handleStockClick}
         title="Click to download complete Stock Valuation breakdown PDF statement"
         style={interactiveCardStyle('#f0fdf4', '#166534', '#bbf7d0')}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={titleStyle}>📦 STOCK VALUATION (स्टॉक)</span>
@@ -100,13 +91,11 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
         <span style={subText}>* Click card to export item-wise stock breakdown PDF</span>
       </div>
 
-      {/* 3. Receivables Card (Clickable PDF Export) */}
+      {/* 3. Receivables Card */}
       <div 
         onClick={handleReceivablesClick}
         title="Click to download complete Receivables breakdown PDF statement"
         style={interactiveCardStyle('#eff6ff', '#1e40af', '#bfdbfe')}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={titleStyle}>📥 RECEIVABLES (लेना बाकी)</span>
@@ -116,13 +105,11 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
         <span style={subText}>* Click card to export customer-wise outstanding statement PDF</span>
       </div>
 
-      {/* 4. Payables Card (Clickable PDF Export) */}
+      {/* 4. Payables Card */}
       <div 
         onClick={handlePayablesClick}
         title="Click to download complete Payables breakdown PDF statement"
         style={interactiveCardStyle('#fef2f2', '#991b1b', '#fecaca')}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={titleStyle}>📤 PAYABLES (देना बाकी)</span>
@@ -139,15 +126,13 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
         <span style={subText}>Cumulative output for active financial year</span>
       </div>
 
-      {/* 6. Consumption Records Card (Clickable PDF Export) */}
+      {/* 6. Consumption Records Card */}
       <div 
         onClick={handleConsumptionClick}
         title="Click to download complete Material Consumption records PDF statement"
         style={interactiveCardStyle('#ecfdf5', '#065f46', '#a7f3d0')}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, { display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={titleStyle}>🚜 CONSUMPTION / ISSUE RECORDS</span>
           <span style={badgeStyle('#065f46', '#d1fae5')}>📥 Download PDF</span>
         </div>
