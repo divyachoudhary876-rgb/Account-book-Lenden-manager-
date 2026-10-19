@@ -1,6 +1,7 @@
 /**
  * Frontend Utility: Inventory Item Ledger & Statement Generator (PDF Export)
  * Includes Purchases (Inward), Sales (Outward), and Material Consumptions / Adjustments (Outward).
+ * With Per-Page Subtotals & Grand Totals.
  */
 
 import { StorageService } from './storageSync';
@@ -55,7 +56,6 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
   // 4. Combine and Format All Entries
   const ledgerEntries = [];
 
-  // Inward: Purchases
   relevantPurchases.forEach(p => {
     const qty = parseFloat(p?.quantity || p?.qty || p?.items?.[0]?.qty || 0);
     const rate = parseFloat(p?.rate || p?.unit_rate || p?.items?.[0]?.rate || 0);
@@ -73,7 +73,6 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     }
   });
 
-  // Outward: Sales
   relevantSales.forEach(s => {
     const qty = parseFloat(s?.specific_item?.quantity || s?.specific_item?.qty || 0);
     const rate = parseFloat(s?.specific_item?.rate || 0);
@@ -91,7 +90,6 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     }
   });
 
-  // Outward: Material Consumptions & Adjustments
   relevantAdjustments.forEach(a => {
     const qty = parseFloat(a?.quantity || a?.qty || 0);
     const rate = parseFloat(a?.rate || 0);
@@ -109,10 +107,8 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
     }
   });
 
-  // Sort ascending chronologically by date
   ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  // 5. Calculate Running Balance starting strictly from 0
   let runningStock = 0;
   const processedLedger = ledgerEntries.map(entry => {
     runningStock = round2(runningStock + entry.in_qty - entry.out_qty);
@@ -131,7 +127,7 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
 };
 
 /**
- * Generates true PDF Report for Stock Item Movement
+ * Generates true PDF Report for Stock Item Movement with Per-Page Subtotals & Grand Totals
  */
 export const exportStockLedgerPDF = async (firmProfile, itemData, statementResult) => {
   const firmName = firmProfile?.legal_name || firmProfile?.trade_name || firmProfile?.name || 'Neelkanth Int Udyog';
@@ -177,15 +173,56 @@ export const exportStockLedgerPDF = async (firmProfile, itemData, statementResul
 
   printHeader();
 
+  let totalInSum = 0;
+  let totalOutSum = 0;
+  let pageInSum = 0;
+  let pageOutSum = 0;
+
+  const renderPageFooter = (isFinal = false) => {
+    y += 2;
+    doc.setDrawColor(203, 213, 225);
+    doc.line(14, y, 196, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    
+    if (isFinal) {
+      doc.text('GRAND TOTAL MOVEMENT SUM:', 55, y);
+      doc.text(`+${totalInSum.toFixed(2)}`, 152, y, { align: 'right' });
+      doc.text(`-${totalOutSum.toFixed(2)}`, 172, y, { align: 'right' });
+    } else {
+      doc.text(`PAGE ${pageNum} SUBTOTAL:`, 65, y);
+      doc.text(`+${pageInSum.toFixed(2)}`, 152, y, { align: 'right' });
+      doc.text(`-${pageOutSum.toFixed(2)}`, 172, y, { align: 'right' });
+    }
+  };
+
   rows.forEach((row, index) => {
     const rawParticulars = cleanTypographySpacing(row.particulars);
     const splitPart = doc.splitTextToSize(rawParticulars, 64);
     const rowHeight = Math.max(7, 3 + (splitPart.length * 3.4));
 
-    if (y + rowHeight > 280) {
+    const inQty = Number(row.in_qty || 0);
+    const outQty = Number(row.out_qty || 0);
+
+    if (inQty > 0) {
+      totalInSum += inQty;
+      pageInSum += inQty;
+    }
+    if (outQty > 0) {
+      totalOutSum += outQty;
+      pageOutSum += outQty;
+    }
+
+    if (y + rowHeight > 255) {
+      renderPageFooter(false);
       doc.addPage();
       pageNum += 1;
       y = 18;
+      pageInSum = 0;
+      pageOutSum = 0;
       printHeader();
     }
 
@@ -203,11 +240,11 @@ export const exportStockLedgerPDF = async (firmProfile, itemData, statementResul
     doc.text(splitPart, 85, y);
 
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(row.in_qty > 0 ? 5 : 15, row.in_qty > 0 ? 150 : 23, row.in_qty > 0 ? 105 : 42);
-    doc.text(row.in_qty > 0 ? `+${row.in_qty}` : '-', 152, y, { align: 'right' });
+    doc.setTextColor(inQty > 0 ? 5 : 15, inQty > 0 ? 150 : 23, inQty > 0 ? 105 : 42);
+    doc.text(inQty > 0 ? `+${inQty}` : '-', 152, y, { align: 'right' });
 
-    doc.setTextColor(row.out_qty > 0 ? 220 : 15, row.out_qty > 0 ? 38 : 23, row.out_qty > 0 ? 38 : 42);
-    doc.text(row.out_qty > 0 ? `-${row.out_qty}` : '-', 172, y, { align: 'right' });
+    doc.setTextColor(outQty > 0 ? 220 : 15, outQty > 0 ? 38 : 23, outQty > 0 ? 38 : 42);
+    doc.text(outQty > 0 ? `-${outQty}` : '-', 172, y, { align: 'right' });
 
     doc.setTextColor(15, 23, 42);
     doc.text(`${row.balance_qty} ${unit}`, 193, y, { align: 'right' });
@@ -215,6 +252,14 @@ export const exportStockLedgerPDF = async (firmProfile, itemData, statementResul
 
     y += rowHeight;
   });
+
+  if (y > 250) {
+    doc.addPage();
+    pageNum += 1;
+    y = 18;
+    printHeader();
+  }
+  renderPageFooter(true);
 
   return await exportTruePDF(doc, `Stock_Statement_${itemName.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
 };
