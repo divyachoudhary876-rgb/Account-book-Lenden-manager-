@@ -134,7 +134,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
         const matched = consumptionList.find(c => String(c.itemId) === String(inv.id));
         if (matched) {
           const currentQty = parseFloat(inv.current_stock || inv.stock || 0);
-          const newQty = round2(Math.max(0, currentQty - matched.qty));
+          const newQty = round2(currentQty - matched.qty);
           return {
             ...inv,
             current_stock: newQty,
@@ -165,7 +165,7 @@ export default function MaterialConsumptionView({ firm, onClose }) {
       setSavedRecords(updatedRecords);
       saveFirmData('material_consumption_records', firm, updatedRecords);
 
-      // STEP 3: ENSURE STATUTORY MASTER ACCOUNTS EXIST
+      // STEP 3: ENSURE STATUTORY MASTER ACCOUNTS EXIST & BUILD COMPOUND ENTRIES
       const masterAccounts = getFirmMasterAccounts(activeFirmId);
       
       if (!masterAccounts.some(a => (a.account_name || a.name || '').trim().toLowerCase() === targetExpenseLedger.toLowerCase())) {
@@ -178,7 +178,6 @@ export default function MaterialConsumptionView({ firm, onClose }) {
         });
       }
 
-      // Ensure each consumed item has its specific Stock Account
       const voucherEntries = [
         { account_name: targetExpenseLedger, party: targetExpenseLedger, type: 'DR', debit: totalConsumptionValue, credit: 0, amount: totalConsumptionValue }
       ];
