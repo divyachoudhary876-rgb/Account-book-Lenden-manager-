@@ -1,4 +1,6 @@
-// frontend/src/utils/pdfDownloadEngine.js
+/**
+ * Frontend Utility: PDF Export Engine (Uncorrupted Binary Export, Account Statement & Financial Reports)
+ */
 
 import { jsPDF } from 'jspdf';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -70,7 +72,7 @@ const arrayBufferToBase64 = (buffer) => {
 };
 
 /**
- * 100% Corruption-Free True PDF Exporter
+ * 100% Corruption-Free True PDF Exporter (Mobile APK & Browser Compatible)
  */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -121,17 +123,38 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait - Date Range & Total Dr/Cr Compliant)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
   const cleanParty = cleanAccountTitle(partyName);
   
-  const txs = (statementData && Array.isArray(statementData.transactions)) 
-    ? statementData.transactions 
-    : (statementData && Array.isArray(statementData.entries) 
-        ? statementData.entries 
-        : (Array.isArray(statementData) ? statementData : []));
+  let txs = [];
+  let fromDate = null;
+  let toDate = null;
+
+  if (statementData && typeof statementData === 'object') {
+    if (Array.isArray(statementData.transactions)) txs = statementData.transactions;
+    else if (Array.isArray(statementData.entries)) txs = statementData.entries;
+    else if (Array.isArray(statementData)) txs = statementData;
+
+    if (statementData.fromDate) fromDate = statementData.fromDate;
+    if (statementData.toDate) toDate = statementData.toDate;
+  } else if (Array.isArray(statementData)) {
+    txs = statementData;
+  }
+
+  // Filter transactions by date range if provided
+  let filteredTxs = txs;
+  if (fromDate || toDate) {
+    filteredTxs = txs.filter(t => {
+      const tDate = t.date || t.voucher_date || '';
+      if (!tDate) return true;
+      if (fromDate && tDate < fromDate) return false;
+      if (toDate && tDate > toDate) return false;
+      return true;
+    });
+  }
 
   const doc = new jsPDF('p', 'mm', 'a4');
   let y = 18;
@@ -147,7 +170,11 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(71, 85, 105);
-    doc.text(`Account Statement: ${cleanParty}`, 14, y);
+    let dateRangeStr = '';
+    if (fromDate || toDate) {
+      dateRangeStr = ` | Period: ${fromDate || 'Start'} to ${toDate || 'Present'}`;
+    }
+    doc.text(`Account Statement: ${cleanParty}${dateRangeStr}`, 14, y);
     y += 5;
 
     doc.setFontSize(8);
@@ -170,7 +197,10 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 
   printHeader();
 
-  txs.forEach((t, index) => {
+  let totalDebitSum = 0;
+  let totalCreditSum = 0;
+
+  filteredTxs.forEach((t, index) => {
     const rawTitle = cleanTypographySpacing(`${t.voucher_type || t.type || 'TX'} #${t.voucher_number || t.voucher_no || t.reference_no || ''}`);
     const descText = cleanTypographySpacing(t.narration || t.particulars || '');
 
@@ -179,7 +209,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     const totalLines = splitTitle.length + splitDesc.length;
     const rowHeight = Math.max(7, 4 + (totalLines * 3.6));
 
-    if (y + rowHeight > 280) {
+    if (y + rowHeight > 272) {
       doc.addPage();
       pageNum += 1;
       y = 18;
@@ -203,6 +233,9 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     const runBal = Number(t.running_balance ?? t.runningBalance ?? t.amount ?? 0);
     const bType = String(t.balance_type || t.balanceType || 'Dr');
 
+    totalDebitSum += deb;
+    totalCreditSum += cr;
+
     doc.text(deb > 0 ? deb.toFixed(2) : '-', 132, y, { align: 'right' });
     doc.text(cr > 0 ? cr.toFixed(2) : '-', 162, y, { align: 'right' });
     doc.setFont('helvetica', 'bold');
@@ -219,6 +252,26 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 
     y += rowHeight;
   });
+
+  // Render Total Debit and Total Credit Summary Row at the end of the statement list
+  if (y > 265) {
+    doc.addPage();
+    pageNum += 1;
+    y = 18;
+    printHeader();
+  }
+
+  y += 3;
+  doc.setDrawColor(203, 213, 225);
+  doc.line(14, y, 196, y);
+  y += 6;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('TOTAL PERIOD SUM:', 38, y);
+  doc.text(totalDebitSum.toFixed(2), 132, y, { align: 'right' });
+  doc.text(totalCreditSum.toFixed(2), 162, y, { align: 'right' });
 
   return await exportTruePDF(doc, `Statement_${cleanParty}`);
 };
@@ -408,7 +461,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE — Fixed Overlapping & Spacing)
+ * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -473,7 +526,6 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     const cleanNote = cleanTypographySpacing(rawNote);
     const noteText = cleanNote ? (itemStr ? `${itemStr} - ${cleanNote}` : cleanNote) : itemStr;
 
-    // Strict column width wrapping to prevent horizontal overlap
     const splitDr = doc.splitTextToSize(drName, 52);
     const splitCr = doc.splitTextToSize(crName, 55);
     const splitNote = noteText ? doc.splitTextToSize(noteText, 110) : [];
@@ -481,8 +533,6 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     const maxAccountLines = Math.max(splitDr.length, splitCr.length);
     const accountsHeight = maxAccountLines * 3.4;
     const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.0) + 1 : 0;
-    
-    // Generous safe padding to prevent any vertical overlap
     const rowHeight = Math.max(8, 4 + accountsHeight + noteHeight);
 
     if (y + rowHeight > 190) {
@@ -517,7 +567,6 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     doc.text(amt.toFixed(2), 278, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
-    // Render narration / item details safely below the account names with proper offset
     if (splitNote.length > 0) {
       const noteY = y + accountsHeight + 0.8;
       doc.setFontSize(6.8);
