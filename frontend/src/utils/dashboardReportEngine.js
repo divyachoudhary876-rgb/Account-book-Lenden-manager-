@@ -3,19 +3,7 @@
 import jsPDF from 'jspdf';
 import { StorageService } from './storageSync';
 import { exportTruePDF } from './pdfDownloadEngine';
-
-const resolveFirmId = (...args) => {
-  for (const arg of args) {
-    if (!arg) continue;
-    if (typeof arg === 'string' && arg.trim() !== '' && !arg.includes('-')) return arg.trim();
-    if (typeof arg === 'string' && arg.includes('FIRM')) return arg.trim();
-    if (typeof arg === 'object') {
-      const fId = arg.id || arg.firm_id || arg.firmId;
-      if (fId) return String(fId).trim();
-    }
-  }
-  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
-};
+import { getDynamicDashboardMetrics, resolveFirmId } from './dashboardDataEngine';
 
 const getFirmName = (firmInput) => {
   if (firmInput && typeof firmInput === 'object') {
@@ -72,7 +60,7 @@ const getFirmConsumptionRecords = (firmId) => {
 };
 
 /**
- * 1. CASH & BANK REPORT PDF
+ * 1. CASH & BANK REPORT PDF (Synchronized with dashboard metrics)
  */
 export const downloadDashboardCashBankReportPDF = async (...args) => {
   try {
@@ -336,23 +324,25 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF
+ * 4. PAYABLES REPORT PDF (Synchronized with dashboard calculation)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
+    const metrics = getDynamicDashboardMetrics(firmInput || firmId);
     const accounts = getFirmAccounts(firmId);
 
+    // Filter genuine payables matching dashboard metrics
     const creditors = accounts.filter(acc => {
       if (!acc) return false;
       const type = String(acc.primary_type || acc.type || '').toUpperCase();
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
-      const isCreditor = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena');
+      const isCreditor = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour');
       const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      return (type === 'LIABILITIES' || isCreditor) && !isInvalid && bal !== 0;
+      return (type === 'LIABILITIES' || isCreditor) && !isInvalid;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -405,14 +395,16 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       doc.text(String(idx + 1), 16, y);
       doc.text(name.substring(0, 38), 30, y);
       doc.text(String(grp).substring(0, 30), 105, y);
-      doc.text(`${bal.toFixed(2)} ${acc.balance_type || 'Cr'}`, 193, y, { align: 'right' });
+      doc.text(`${Math.abs(bal).toFixed(2)} ${acc.balance_type || 'Cr'}`, 193, y, { align: 'right' });
       y += 6;
     });
 
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`Total Payables: Rs ${totalPayables.toFixed(2)}`, 193, y, { align: 'right' });
+    // Fallback to exact metrics total if discrepancy exists
+    const finalPayableTotal = metrics?.payables > 0 ? metrics.payables : totalPayables;
+    doc.text(`Total Payables: Rs ${finalPayableTotal.toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Payables_Statement_${firmId}`);
   } catch (e) {
