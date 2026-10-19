@@ -18,6 +18,24 @@ const getFirmName = (firmInput) => {
   return 'Neelkanth Int Udyog';
 };
 
+// Universal helper to trigger download in both Web Browsers & Android WebViews (APK)
+const triggerPDFDownload = (doc, filename) => {
+  try {
+    const pdfOutput = doc.output('blob');
+    const blobURL = URL.createObjectURL(pdfOutput);
+    const link = document.createElement('a');
+    link.href = blobURL;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(blobURL), 10000);
+  } catch (err) {
+    // Fallback for strict mobile webviews
+    doc.save(filename);
+  }
+};
+
 export const downloadDashboardCashBankReportPDF = (firmInput) => {
   try {
     const firmId = resolveFirmId(firmInput);
@@ -64,9 +82,10 @@ export const downloadDashboardCashBankReportPDF = (firmInput) => {
       y += 7;
     });
 
-    doc.save(`Cash_Bank_Statement_${firmId}.pdf`);
+    triggerPDFDownload(doc, `Cash_Bank_Statement_${firmId}.pdf`);
   } catch (e) {
     console.error("Error generating Cash & Bank PDF:", e);
+    alert("PDF download failed: " + e.message);
   }
 };
 
@@ -122,9 +141,10 @@ export const downloadDashboardStockReportPDF = (firmInput) => {
     doc.setFont(undefined, 'bold');
     doc.text(`Total Stock Valuation: Rs ${totalValuation.toFixed(2)}`, 14, y);
 
-    doc.save(`Stock_Valuation_Report_${firmId}.pdf`);
+    triggerPDFDownload(doc, `Stock_Valuation_Report_${firmId}.pdf`);
   } catch (e) {
     console.error("Error generating Stock PDF:", e);
+    alert("PDF download failed: " + e.message);
   }
 };
 
@@ -182,9 +202,10 @@ export const downloadDashboardReceivablesReportPDF = (firmInput) => {
     doc.setFont(undefined, 'bold');
     doc.text(`Total Receivables: Rs ${totalReceivables.toFixed(2)}`, 14, y);
 
-    doc.save(`Receivables_Statement_${firmId}.pdf`);
+    triggerPDFDownload(doc, `Receivables_Statement_${firmId}.pdf`);
   } catch (e) {
     console.error("Error generating Receivables PDF:", e);
+    alert("PDF download failed: " + e.message);
   }
 };
 
@@ -242,9 +263,10 @@ export const downloadDashboardPayablesReportPDF = (firmInput) => {
     doc.setFont(undefined, 'bold');
     doc.text(`Total Payables: Rs ${totalPayables.toFixed(2)}`, 14, y);
 
-    doc.save(`Payables_Statement_${firmId}.pdf`);
+    triggerPDFDownload(doc, `Payables_Statement_${firmId}.pdf`);
   } catch (e) {
     console.error("Error generating Payables PDF:", e);
+    alert("PDF download failed: " + e.message);
   }
 };
 
@@ -299,8 +321,9 @@ export const downloadDashboardConsumptionReportPDF = (firmInput) => {
     doc.setFont(undefined, 'bold');
     doc.text(`Total Material Consumption Value: Rs ${totalConsumption.toFixed(2)}`, 14, y);
 
-    doc.save(`Material_Consumption_Report_${firmId}.pdf`);
+    triggerPDFDownload(doc, `Material_Consumption_Report_${firmId}.pdf`);
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
+    alert("PDF download failed: " + e.message);
   }
 };
