@@ -247,3 +247,60 @@ export const downloadDashboardPayablesReportPDF = (firmInput) => {
     console.error("Error generating Payables PDF:", e);
   }
 };
+
+export const downloadDashboardConsumptionReportPDF = (firmInput) => {
+  try {
+    const firmId = resolveFirmId(firmInput);
+    const firmName = getFirmName(firmInput);
+    const records = StorageService.getItem(`material_consumption_records_${firmId}`, []) || StorageService.getItem('material_consumption_records', []) || [];
+
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(firmName, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Dashboard Breakdown: Material Consumption History`, 14, 22);
+    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+
+    let y = 38;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text('#', 16, y);
+    doc.text('Date & Location', 25, y);
+    doc.text('Expense Account', 80, y);
+    doc.text('Items Consumed', 125, y);
+    doc.text('Total (Rs)', 165, y);
+
+    y += 8;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(8);
+
+    let totalConsumption = 0;
+    records.forEach((rec, idx) => {
+      if (!rec) return;
+      if (y > 275) { doc.addPage(); y = 20; }
+      const date = rec.date || '';
+      const location = rec.uses_for || '';
+      const expenseAcc = rec.expense_account || '';
+      const itemsStr = (rec.items || []).map(i => `${i.name} (${i.qty} ${i.unit})`).join(', ');
+      const val = parseFloat(rec.total_value || 0);
+      totalConsumption += val;
+
+      doc.text(String(idx + 1), 16, y);
+      doc.text(`${date} | ${location}`.substring(0, 30), 25, y);
+      doc.text(String(expenseAcc).substring(0, 22), 80, y);
+      doc.text(String(itemsStr).substring(0, 25), 125, y);
+      doc.text(`Rs. ${val.toFixed(2)}`, 165, y);
+      y += 8;
+    });
+
+    y += 5;
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total Material Consumption Value: Rs ${totalConsumption.toFixed(2)}`, 14, y);
+
+    doc.save(`Material_Consumption_Report_${firmId}.pdf`);
+  } catch (e) {
+    console.error("Error generating Consumption PDF:", e);
+  }
+};
