@@ -58,7 +58,8 @@ export default function AccountStatementView({ firm, onClose }) {
     }
     setIsExporting(true);
     try {
-      await downloadAccountStatementPDF(statementData, selectedAccount, firm);
+      // Pass fromDate and setToDate explicitly so PDF engine filters strictly by user's selected date range
+      await downloadAccountStatementPDF(statementData, selectedAccount, firm, fromDate, toDate);
       alert('✓ PDF Statement Successfully Downloaded / Shared!');
     } catch (err) {
       alert('PDF export failed: ' + err.message);
