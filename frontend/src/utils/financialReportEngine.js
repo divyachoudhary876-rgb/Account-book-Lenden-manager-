@@ -44,19 +44,90 @@ export const getSafeAccounts = (firmId = 'FIRM-001', selectedFY = '2026-27') => 
 };
 
 /**
- * Unified Ledger Lines Normalizer leveraging getAllFirmVouchers to prevent missing transactions
+ * Comprehensive Ledger Lines Normalizer: Scans Vouchers + Payroll/Wages + Material Consumption + Production
  */
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026-27') => {
   const { startDate, endDate } = getFYDateRange(selectedFY);
   const activeFirmId = String(firmId || 'FIRM-001').trim();
 
-  // Fetch all vouchers securely using the robust ledger engine scanner
   let rawTx = [];
   try {
     rawTx = getAllFirmVouchers(activeFirmId);
   } catch (e) {
     rawTx = [];
   }
+
+  // 1. Also scan and ingest Payroll / Wages records so no labour entry is missed
+  const payrollKeys = [
+    `payroll_records_${activeFirmId}`,
+    `worker_wages_${activeFirmId}`,
+    `worker_ledgers_${activeFirmId}`,
+    `wage_entries_${activeFirmId}`,
+    `payroll_records`,
+    `worker_wages`
+  ];
+  payrollKeys.forEach(pk => {
+    try {
+      const pVal = JSON.parse(localStorage.getItem(pk) || '[]');
+      if (Array.isArray(pVal)) {
+        pVal.forEach(p => {
+          if (!p) return;
+          const pDate = p.date || p.work_date || p.voucher_date || new Date().toISOString().slice(0, 10);
+          const pAmt = parseFloat(p.amount || p.total_amount || p.kul_amount || p.earned || 0);
+          const workerName = String(p.worker_name || p.worker || p.party || 'Labour Wages').trim();
+          const expenseAcc = String(p.expense_account || p.category || 'Pathai & Labour Expenses').trim();
+          
+          if (pAmt > 0) {
+            // Debit the Expense Account, Credit the Worker or Payable Account
+            rawTx.push({
+              id: p.id || `PAYROLL-${Math.random()}`,
+              voucher_date: pDate,
+              voucher_type: 'PAYROLL',
+              reference_no: p.reference_no || 'WAGE',
+              dr_account: expenseAcc,
+              cr_account: workerName,
+              amount: pAmt,
+              narration: p.remarks || p.description || 'Labour Wages Entry'
+            });
+          }
+        });
+      }
+    } catch (e) {}
+  });
+
+  // 2. Also scan Material Consumption / Adjustments
+  const consumptionKeys = [
+    `material_consumption_records_${activeFirmId}`,
+    `universal_material_adjustments_${activeFirmId}`,
+    `material_consumption_records`
+  ];
+  consumptionKeys.forEach(ck => {
+    try {
+      const cVal = JSON.parse(localStorage.getItem(ck) || '[]');
+      if (Array.isArray(cVal)) {
+        cVal.forEach(c => {
+          if (!c) return;
+          const cDate = c.date || new Date().toISOString().slice(0, 10);
+          const cAmt = parseFloat(c.total_value || c.amount || 0);
+          const expAcc = String(c.expense_account || 'Factory Manufacturing Expenses').trim();
+          const stockAcc = String(c.item_name || c.name || 'Raw Material Stock').trim() + ' Stock Account';
+
+          if (cAmt > 0) {
+            rawTx.push({
+              id: c.id || `CONS-${Math.random()}`,
+              voucher_date: cDate,
+              voucher_type: 'CONSUMPTION',
+              reference_no: 'CONS',
+              dr_account: expAcc,
+              cr_account: stockAcc,
+              amount: cAmt,
+              narration: c.uses_for || c.remarks || 'Material Issue'
+            });
+          }
+        });
+      }
+    } catch (e) {}
+  });
 
   const uniqueVoucherMap = new Map();
   rawTx.forEach(v => {
@@ -82,7 +153,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
     const vchType = (vch.voucher_type || vch.type || 'JOURNAL').toUpperCase();
     const narration = vch.narration || vch.notes || vch.description || '';
 
-    // Compound multi-line entries
     if (Array.isArray(vch.entries) && vch.entries.length > 0) {
       vch.entries.forEach((entry) => {
         const accName = (entry.account_name || entry.party || '').trim();
@@ -99,7 +169,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
         }
       });
     } 
-    // Single Dr/Cr simple voucher
     else if ((vch.dr_account || vch.debit_account) && (vch.cr_account || vch.credit_account) && (vch.amount || vch.total_amount || vch.grand_total)) {
       const amt = parseFloat(vch.amount || vch.total_amount || vch.grand_total || 0);
       const drAcc = String(vch.dr_account || vch.debit_account || '').trim();
@@ -120,9 +189,8 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
   const flatLines = getNormalizedLedgerLines(firmId, selectedFY);
 
   const accountTotals = {};
-  const nameMapping = {}; // For case-insensitive matching
+  const nameMapping = {};
 
-  // Load opening balances strictly from master accounts
   masterAccounts.forEach((acc) => {
     const name = (acc.account_name || acc.name || '').trim();
     if (!name) return;
@@ -145,7 +213,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
     
     let targetName = nameMapping[lowerName];
     if (!targetName) {
-      // Check partial/fuzzy match against master accounts
       const matchedKey = Object.keys(nameMapping).find(k => k === lowerName || k.includes(lowerName) || lowerName.includes(k));
       if (matchedKey) {
         targetName = nameMapping[matchedKey];
@@ -160,7 +227,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
       const lower = targetName.toLowerCase();
       if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor') || lower.includes('stock') || lower.includes('asset')) inferredType = 'ASSETS';
       else if (lower.includes('sale') || lower.includes('income') || lower.includes('revenue')) inferredType = 'INCOME';
-      else if (lower.includes('capital') || lower.includes('creditor') || lower.includes('loan') || lower.includes('liability')) inferredType = 'LIABILITIES';
+      else if (lower.includes('capital') || lower.includes('creditor') || lower.includes('loan') || lower.includes('liability') || lower.includes('worker') || lower.includes('thekedar')) inferredType = 'LIABILITIES';
 
       accountTotals[targetName] = { account_name: targetName, primary_type: inferredType, sub_group: 'General', debit: 0, credit: 0 };
     }
@@ -224,7 +291,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
       if (group.includes('direct') || name.includes('sale') || name.includes('revenue')) salesTotal += row.credit;
       else indirectIncomes += row.credit;
     } else if (type === 'EXPENSES') {
-      if (group.includes('direct') || name.includes('purchase') || name.includes('raw') || name.includes('pathai') || name.includes('diesel')) {
+      if (group.includes('direct') || name.includes('purchase') || name.includes('raw') || name.includes('pathai') || name.includes('diesel') || name.includes('labour') || name.includes('wages')) {
         purchasesTotal += row.debit;
       } else {
         indirectExpenses += row.debit;
