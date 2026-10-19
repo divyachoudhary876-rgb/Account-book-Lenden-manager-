@@ -2,6 +2,7 @@
 
 import jsPDF from 'jspdf';
 import { StorageService } from './storageSync';
+import { exportTruePDF, cleanAccountTitle } from './pdfDownloadEngine';
 
 const resolveFirmId = (...args) => {
   for (const arg of args) {
@@ -18,32 +19,12 @@ const resolveFirmId = (...args) => {
 
 const getFirmName = (firmInput) => {
   if (firmInput && typeof firmInput === 'object') {
-    return firmInput.firm_name || firmInput.name || 'Neelkanth Int Udyog';
+    return firmInput.firm_name || firmInput.name || firmInput.legal_name || 'Neelkanth Int Udyog';
   }
   return 'Neelkanth Int Udyog';
 };
 
-// 100% Bulletproof Native Downloader for Mobile APK & Web Browsers
-const triggerPDFDownload = (doc, filename) => {
-  try {
-    // Native jsPDF save handles mobile APK WebViews and browsers perfectly without blocking
-    doc.save(filename);
-  } catch (err) {
-    try {
-      const pdfDataUri = doc.output('datauristring');
-      const link = document.createElement('a');
-      link.href = pdfDataUri;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (e) {
-      alert("PDF download failed: " + e.message);
-    }
-  }
-};
-
-export const downloadDashboardCashBankReportPDF = (...args) => {
+export const downloadDashboardCashBankReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
@@ -57,79 +38,112 @@ export const downloadDashboardCashBankReportPDF = (...args) => {
       return name.includes('cash') || name.includes('bank') || grp.includes('cash') || grp.includes('bank');
     });
 
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4');
+    let y = 18;
+
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(firmName, 14, 15);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Dashboard Breakdown: Cash & Bank Accounts Statement`, 14, 22);
-    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Dashboard Breakdown: Cash & Bank Accounts Statement`, 14, y);
+    y += 5;
 
-    let y = 38;
+    doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
+    y += 6;
+
     doc.setFillColor(15, 23, 42);
-    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.rect(14, y, 182, 7, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.text('#', 16, y);
-    doc.text('Account / Bank Name', 30, y);
-    doc.text('Sub Group', 100, y);
-    doc.text('Net Balance (Rs)', 155, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('#', 16, y + 4.8);
+    doc.text('Account / Bank Name', 30, y + 4.8);
+    doc.text('Sub Group', 100, y + 4.8);
+    doc.text('Net Balance (Rs)', 193, y + 4.8, { align: 'right' });
+    y += 9;
 
-    y += 8;
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
 
     cashBankAccounts.forEach((acc, idx) => {
-      if (y > 280) { doc.addPage(); y = 20; }
-      const name = acc.account_name || acc.name || 'Account';
+      if (y > 275) { doc.addPage(); y = 18; }
+      const name = cleanAccountTitle(acc.account_name || acc.name || 'Account');
       const grp = acc.sub_group || acc.group || 'Cash-in-Hand / Bank Accounts';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
 
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 3, 182, 6, 'F');
+      }
+
       doc.text(String(idx + 1), 16, y);
-      doc.text(String(name).substring(0, 35), 30, y);
-      doc.text(String(grp).substring(0, 25), 100, y);
-      doc.text(`Rs. ${bal.toFixed(2)}`, 155, y);
-      y += 7;
+      doc.text(name.substring(0, 35), 30, y);
+      doc.text(String(grp).substring(0, 30), 100, y);
+      doc.text(bal.toFixed(2), 193, y, { align: 'right' });
+      y += 6;
     });
 
-    triggerPDFDownload(doc, `Cash_Bank_Statement_${firmId}.pdf`);
+    await exportTruePDF(doc, `Cash_Bank_Statement_${firmId}`);
   } catch (e) {
     console.error("Error generating Cash & Bank PDF:", e);
     alert("PDF download failed: " + e.message);
   }
 };
 
-export const downloadDashboardStockReportPDF = (...args) => {
+export const downloadDashboardStockReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const inventory = StorageService.getItem(`inventory_items_${firmId}`, []) || StorageService.getItem('inventory_items', []) || [];
 
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4');
+    let y = 18;
+
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(firmName, 14, 15);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Dashboard Breakdown: Stock Valuation Report`, 14, 22);
-    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Dashboard Breakdown: Stock Valuation Report`, 14, y);
+    y += 5;
 
-    let y = 38;
+    doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
+    y += 6;
+
     doc.setFillColor(15, 23, 42);
-    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.rect(14, y, 182, 7, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.text('#', 16, y);
-    doc.text('Item Name', 30, y);
-    doc.text('Unit', 90, y);
-    doc.text('Quantity', 115, y);
-    doc.text('Rate (Rs)', 140, y);
-    doc.text('Total (Rs)', 165, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('#', 16, y + 4.8);
+    doc.text('Item Name', 30, y + 4.8);
+    doc.text('Unit', 95, y + 4.8);
+    doc.text('Qty', 125, y + 4.8, { align: 'right' });
+    doc.text('Rate (Rs)', 155, y + 4.8, { align: 'right' });
+    doc.text('Total (Rs)', 193, y + 4.8, { align: 'right' });
+    y += 9;
 
-    y += 8;
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
 
     let totalValuation = 0;
     inventory.forEach((item, idx) => {
       if (!item) return;
-      if (y > 280) { doc.addPage(); y = 20; }
+      if (y > 275) { doc.addPage(); y = 18; }
       const name = item.item_name || item.name || 'Item';
       const unit = item.unit || 'Units';
       const qty = parseFloat(item.current_stock || item.stock || item.current_qty || item.qty || 0);
@@ -137,27 +151,33 @@ export const downloadDashboardStockReportPDF = (...args) => {
       const totalVal = qty * rate;
       totalValuation += totalVal;
 
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 3, 182, 6, 'F');
+      }
+
       doc.text(String(idx + 1), 16, y);
-      doc.text(String(name).substring(0, 25), 30, y);
-      doc.text(String(unit), 90, y);
-      doc.text(qty.toFixed(2), 115, y);
-      doc.text(rate.toFixed(2), 140, y);
-      doc.text(totalVal.toFixed(2), 165, y);
-      y += 7;
+      doc.text(String(name).substring(0, 30), 30, y);
+      doc.text(String(unit), 95, y);
+      doc.text(qty.toFixed(2), 125, y, { align: 'right' });
+      doc.text(rate.toFixed(2), 155, y, { align: 'right' });
+      doc.text(totalVal.toFixed(2), 193, y, { align: 'right' });
+      y += 6;
     });
 
-    y += 5;
-    doc.setFont(undefined, 'bold');
-    doc.text(`Total Stock Valuation: Rs ${totalValuation.toFixed(2)}`, 14, y);
+    y += 3;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(`Total Stock Valuation: Rs ${totalValuation.toFixed(2)}`, 193, y, { align: 'right' });
 
-    triggerPDFDownload(doc, `Stock_Valuation_Report_${firmId}.pdf`);
+    await exportTruePDF(doc, `Stock_Valuation_Report_${firmId}`);
   } catch (e) {
     console.error("Error generating Stock PDF:", e);
     alert("PDF download failed: " + e.message);
   }
 };
 
-export const downloadDashboardReceivablesReportPDF = (...args) => {
+export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
@@ -173,53 +193,73 @@ export const downloadDashboardReceivablesReportPDF = (...args) => {
       return type === 'ASSETS' && isDebtor && !isInvalid;
     });
 
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4');
+    let y = 18;
+
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(firmName, 14, 15);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Dashboard Breakdown: Receivables (Lena Baaki - Customers)`, 14, 22);
-    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Dashboard Breakdown: Receivables (Lena Baaki - Customers)`, 14, y);
+    y += 5;
 
-    let y = 38;
+    doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
+    y += 6;
+
     doc.setFillColor(15, 23, 42);
-    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.rect(14, y, 182, 7, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.text('#', 16, y);
-    doc.text('Customer / Party Name', 30, y);
-    doc.text('Category', 100, y);
-    doc.text('Receivable (Rs)', 150, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('#', 16, y + 4.8);
+    doc.text('Customer / Party Name', 30, y + 4.8);
+    doc.text('Category', 105, y + 4.8);
+    doc.text('Receivable (Rs)', 193, y + 4.8, { align: 'right' });
+    y += 9;
 
-    y += 8;
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
 
     let totalReceivables = 0;
     debtors.forEach((acc, idx) => {
-      if (y > 280) { doc.addPage(); y = 20; }
-      const name = acc.account_name || acc.name || 'Customer';
+      if (y > 275) { doc.addPage(); y = 18; }
+      const name = cleanAccountTitle(acc.account_name || acc.name || 'Customer');
       const grp = acc.sub_group || acc.group || 'Sundry Debtors';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       if (bal > 0) totalReceivables += bal;
 
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 3, 182, 6, 'F');
+      }
+
       doc.text(String(idx + 1), 16, y);
-      doc.text(String(name).substring(0, 35), 30, y);
-      doc.text(String(grp).substring(0, 25), 100, y);
-      doc.text(`Rs. ${bal.toFixed(2)}`, 150, y);
-      y += 7;
+      doc.text(name.substring(0, 38), 30, y);
+      doc.text(String(grp).substring(0, 30), 105, y);
+      doc.text(bal.toFixed(2), 193, y, { align: 'right' });
+      y += 6;
     });
 
-    y += 5;
-    doc.setFont(undefined, 'bold');
-    doc.text(`Total Receivables: Rs ${totalReceivables.toFixed(2)}`, 14, y);
+    y += 3;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(`Total Receivables: Rs ${totalReceivables.toFixed(2)}`, 193, y, { align: 'right' });
 
-    triggerPDFDownload(doc, `Receivables_Statement_${firmId}.pdf`);
+    await exportTruePDF(doc, `Receivables_Statement_${firmId}`);
   } catch (e) {
     console.error("Error generating Receivables PDF:", e);
     alert("PDF download failed: " + e.message);
   }
 };
 
-export const downloadDashboardPayablesReportPDF = (...args) => {
+export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
@@ -235,105 +275,144 @@ export const downloadDashboardPayablesReportPDF = (...args) => {
       return type === 'LIABILITIES' && isCreditor && !isInvalid;
     });
 
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4');
+    let y = 18;
+
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(firmName, 14, 15);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Dashboard Breakdown: Payables (Dena Baaki - Creditors & Suppliers)`, 14, 22);
-    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Dashboard Breakdown: Payables (Dena Baaki - Creditors & Suppliers)`, 14, y);
+    y += 5;
 
-    let y = 38;
+    doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
+    y += 6;
+
     doc.setFillColor(15, 23, 42);
-    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.rect(14, y, 182, 7, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.text('#', 16, y);
-    doc.text('Supplier / Vendor Name', 30, y);
-    doc.text('Category', 100, y);
-    doc.text('Payable (Rs)', 150, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('#', 16, y + 4.8);
+    doc.text('Supplier / Vendor Name', 30, y + 4.8);
+    doc.text('Category', 105, y + 4.8);
+    doc.text('Payable (Rs)', 193, y + 4.8, { align: 'right' });
+    y += 9;
 
-    y += 8;
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
 
     let totalPayables = 0;
     creditors.forEach((acc, idx) => {
-      if (y > 280) { doc.addPage(); y = 20; }
-      const name = acc.account_name || acc.name || 'Supplier';
+      if (y > 275) { doc.addPage(); y = 18; }
+      const name = cleanAccountTitle(acc.account_name || acc.name || 'Supplier');
       const grp = acc.sub_group || acc.group || 'Sundry Creditors';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       if (bal > 0) totalPayables += bal;
 
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 3, 182, 6, 'F');
+      }
+
       doc.text(String(idx + 1), 16, y);
-      doc.text(String(name).substring(0, 35), 30, y);
-      doc.text(String(grp).substring(0, 25), 100, y);
-      doc.text(`Rs. ${bal.toFixed(2)}`, 150, y);
-      y += 7;
+      doc.text(name.substring(0, 38), 30, y);
+      doc.text(String(grp).substring(0, 30), 105, y);
+      doc.text(bal.toFixed(2), 193, y, { align: 'right' });
+      y += 6;
     });
 
-    y += 5;
-    doc.setFont(undefined, 'bold');
-    doc.text(`Total Payables: Rs ${totalPayables.toFixed(2)}`, 14, y);
+    y += 3;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(`Total Payables: Rs ${totalPayables.toFixed(2)}`, 193, y, { align: 'right' });
 
-    triggerPDFDownload(doc, `Payables_Statement_${firmId}.pdf`);
+    await exportTruePDF(doc, `Payables_Statement_${firmId}`);
   } catch (e) {
     console.error("Error generating Payables PDF:", e);
     alert("PDF download failed: " + e.message);
   }
 };
 
-export const downloadDashboardConsumptionReportPDF = (...args) => {
+export const downloadDashboardConsumptionReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const records = StorageService.getItem(`material_consumption_records_${firmId}`, []) || StorageService.getItem('material_consumption_records', []) || [];
 
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4');
+    let y = 18;
+
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(firmName, 14, 15);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Dashboard Breakdown: Material Consumption History`, 14, 22);
-    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Dashboard Breakdown: Material Consumption History`, 14, y);
+    y += 5;
 
-    let y = 38;
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y - 5, 180, 8, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.text('#', 16, y);
-    doc.text('Date & Location', 25, y);
-    doc.text('Expense Account', 80, y);
-    doc.text('Items Consumed', 125, y);
-    doc.text('Total (Rs)', 165, y);
-
-    y += 8;
-    doc.setTextColor(0, 0, 0);
     doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')}`, 14, y);
+    y += 6;
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('#', 16, y + 4.8);
+    doc.text('Date & Location', 26, y + 4.8);
+    doc.text('Expense Account', 85, y + 4.8);
+    doc.text('Items Consumed', 130, y + 4.8);
+    doc.text('Total (Rs)', 193, y + 4.8, { align: 'right' });
+    y += 9;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
 
     let totalConsumption = 0;
     records.forEach((rec, idx) => {
       if (!rec) return;
-      if (y > 275) { doc.addPage(); y = 20; }
+      if (y > 275) { doc.addPage(); y = 18; }
       const date = rec.date || '';
       const location = rec.uses_for || '';
-      const expenseAcc = rec.expense_account || '';
+      const expenseAcc = cleanAccountTitle(rec.expense_account || '');
       const itemsStr = (rec.items || []).map(i => `${i.name} (${i.qty} ${i.unit})`).join(', ');
       const val = parseFloat(rec.total_value || 0);
       totalConsumption += val;
 
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 3, 182, 6, 'F');
+      }
+
       doc.text(String(idx + 1), 16, y);
-      doc.text(`${date} | ${location}`.substring(0, 30), 25, y);
-      doc.text(String(expenseAcc).substring(0, 22), 80, y);
-      doc.text(String(itemsStr).substring(0, 25), 125, y);
-      doc.text(`Rs. ${val.toFixed(2)}`, 165, y);
-      y += 8;
+      doc.text(`${date} | ${location}`.substring(0, 28), 26, y);
+      doc.text(expenseAcc.substring(0, 22), 85, y);
+      doc.text(String(itemsStr).substring(0, 25), 130, y);
+      doc.text(val.toFixed(2), 193, y, { align: 'right' });
+      y += 6;
     });
 
-    y += 5;
+    y += 3;
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.setFont(undefined, 'bold');
-    doc.text(`Total Material Consumption Value: Rs ${totalConsumption.toFixed(2)}`, 14, y);
+    doc.text(`Total Material Consumption Value: Rs ${totalConsumption.toFixed(2)}`, 193, y, { align: 'right' });
 
-    triggerPDFDownload(doc, `Material_Consumption_Report_${firmId}.pdf`);
+    await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
     alert("PDF download failed: " + e.message);
