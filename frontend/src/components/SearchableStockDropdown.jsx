@@ -26,7 +26,6 @@ export default function SearchableStockDropdown({
 
   const loadItems = () => {
     try {
-      // Get stock items with real-time live stock reconciliation via stockInventoryEngine
       const items = getStockItemsByFirm(activeFirmId) || [];
       const validItems = (Array.isArray(items) ? items : []).filter(i => i && (i.name || i.item_name));
       
@@ -75,10 +74,16 @@ export default function SearchableStockDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedItemObj = stockList.find(i => 
-    String(i.id) === String(value) || 
-    String(i.name || i.item_name).trim().toLowerCase() === String(value || '').trim().toLowerCase()
-  );
+  // Flexible matching by ID, Name, or Item Name
+  const selectedItemObj = stockList.find(i => {
+    if (!value) return false;
+    const valStr = String(value).trim().toLowerCase();
+    return (
+      String(i.id).toLowerCase() === valStr || 
+      String(i.name || '').trim().toLowerCase() === valStr ||
+      String(i.item_name || '').trim().toLowerCase() === valStr
+    );
+  });
 
   const displayText = selectedItemObj 
     ? `${selectedItemObj.name || selectedItemObj.item_name} (Stock: ${selectedItemObj.current_stock ?? selectedItemObj.stock ?? 0} ${selectedItemObj.unit || ''})` 
@@ -191,8 +196,7 @@ export default function SearchableStockDropdown({
                   <div 
                     key={itemId || itemName}
                     onClick={() => {
-                      // Pass both or item name depending on what parent expects, here passing itemName or itemId securely
-                      onChange(itemName);
+                      onChange(itemName, item);
                       setIsOpen(false);
                       setSearchQuery('');
                     }}
