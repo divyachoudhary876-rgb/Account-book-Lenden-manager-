@@ -53,14 +53,15 @@ const getFirmInventory = (firmId) => {
 };
 
 const getFirmConsumptionRecords = (firmId) => {
-  return StorageService.getItem(`material_consumption_records_${firmId}`, []) || 
-         StorageService.getItem(`material_consumptions_${firmId}`, []) || 
+  const firmKeyId = resolveFirmId(firmId);
+  return StorageService.getItem(`material_consumption_records_${firmKeyId}`, []) || 
+         StorageService.getItem(`universal_material_adjustments_${firmKeyId}`, []) ||
          StorageService.getItem('material_consumption_records', []) || 
          StorageService.getItem('material_consumptions', []) || [];
 };
 
 /**
- * 1. CASH & BANK REPORT PDF (Synchronized with dashboard metrics)
+ * 1. CASH & BANK REPORT PDF
  */
 export const downloadDashboardCashBankReportPDF = async (...args) => {
   try {
@@ -246,6 +247,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const accounts = getFirmAccounts(firmId);
+    const metrics = getDynamicDashboardMetrics(firmInput || firmId);
 
     const debtors = accounts.filter(acc => {
       if (!acc) return false;
@@ -254,7 +256,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       const isDebtor = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena');
       const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory') || grp.includes('asset') || grp.includes('income');
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      return (type === 'ASSETS' || isDebtor) && !isInvalid && bal > 0;
+      return (type === 'ASSETS' || isDebtor) && !isInvalid;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -314,7 +316,8 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`Total Receivables: Rs ${totalReceivables.toFixed(2)}`, 193, y, { align: 'right' });
+    const finalRecvTotal = metrics?.receivables > 0 ? metrics.receivables : totalReceivables;
+    doc.text(`Total Receivables: Rs ${finalRecvTotal.toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Receivables_Statement_${firmId}`);
   } catch (e) {
@@ -334,7 +337,6 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
     const accounts = getFirmAccounts(firmId);
 
-    // Filter genuine payables matching dashboard metrics
     const creditors = accounts.filter(acc => {
       if (!acc) return false;
       const type = String(acc.primary_type || acc.type || '').toUpperCase();
@@ -402,7 +404,6 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    // Fallback to exact metrics total if discrepancy exists
     const finalPayableTotal = metrics?.payables > 0 ? metrics.payables : totalPayables;
     doc.text(`Total Payables: Rs ${finalPayableTotal.toFixed(2)}`, 193, y, { align: 'right' });
 
@@ -490,6 +491,6 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
-    alert("PDF download failed: " + e.message);
+    alert("PDF download reports generation mein asafalta hui: " + e.message);
   }
 };
