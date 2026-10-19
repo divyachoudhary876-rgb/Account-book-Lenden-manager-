@@ -32,11 +32,9 @@ export default function JournalRegisterView({ firm, onClose }) {
       });
 
       let rawTx = [];
-      // STRICT FIRM ISOLATION: Scoped keys only
       const keysToScan = [
         `account_book_vouchers_${activeFirmId}`,
-        `app_vouchers_${activeFirmId}`,
-        `app_payroll_entries_${activeFirmId}`
+        `app_vouchers_${activeFirmId}`
       ];
 
       keysToScan.forEach(k => {
@@ -52,7 +50,9 @@ export default function JournalRegisterView({ firm, onClose }) {
         const vFirm = String(tx.firm_id || tx.firmId || '').trim();
         if (vFirm && vFirm !== String(activeFirmId).trim()) return;
 
-        const uId = tx.id || tx.reference_no || `${tx.voucher_date || tx.date}-${Math.random()}`;
+        // Use strict voucher ID as primary key to prevent accidental collision of genuine same-amount entries
+        const uId = String(tx.id || tx.reference_no || tx.voucher_number || `${tx.voucher_date || tx.date}-${Math.random()}`).trim();
+        
         if (!uniqueMap.has(uId)) {
           let drAcc = 'Account';
           let crAcc = 'Account';
@@ -90,24 +90,6 @@ export default function JournalRegisterView({ firm, onClose }) {
                 total: Number(it.total || (Number(it.qty || it.quantity || 0) * Number(it.rate || it.unit_rate || 0)))
               };
             });
-          } else if (tx.itemName || tx.item_name || tx.qty || tx.quantity) {
-            const itName = tx.itemName || tx.item_name || 'Item';
-            const itId = String(tx.itemId || tx.item_id || '').trim();
-            
-            let resolvedUnit = tx.unit || 'Pcs';
-            if (itId && inventoryMap.has(itId)) {
-              resolvedUnit = inventoryMap.get(itId);
-            } else if (itName && inventoryMap.has(itName.trim().toLowerCase())) {
-              resolvedUnit = inventoryMap.get(itName.trim().toLowerCase());
-            }
-
-            itemDetailsList = [{
-              itemName: itName,
-              qty: Number(tx.qty || tx.quantity || 0),
-              rate: Number(tx.rate || tx.unit_rate || 0),
-              unit: resolvedUnit,
-              total: totalAmt
-            }];
           }
 
           const rawRef = String(tx.reference_no || tx.voucher_number || (tx.id ? tx.id.slice(-6) : '1001')).replace(/^#/, '');
@@ -205,7 +187,6 @@ export default function JournalRegisterView({ firm, onClose }) {
     }
   };
 
-  // Color helper for badges
   const getTypeBadgeStyle = (vType) => {
     switch (vType) {
       case 'PURCHASE':
@@ -228,7 +209,6 @@ export default function JournalRegisterView({ firm, onClose }) {
   return (
     <div style={{ padding: '12px 10px 40px 10px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box' }}>
       
-      {/* Top Filter Card */}
       <div style={{ backgroundColor: '#fff', padding: '14px', borderRadius: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginBottom: '12px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.5px', marginBottom: '4px' }}>
           CHRONOLOGICAL AUDIT BOOK
@@ -238,7 +218,6 @@ export default function JournalRegisterView({ firm, onClose }) {
           <span>📖</span> General Journal / Daybook
         </h2>
 
-        {/* Action Buttons Row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr auto', gap: '8px', marginBottom: '12px' }}>
           <button
             onClick={() => setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC')}
@@ -271,7 +250,6 @@ export default function JournalRegisterView({ firm, onClose }) {
           </div>
         )}
 
-        {/* Date Filter Inputs */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '3px', textTransform: 'uppercase' }}>From Date (से)</label>
@@ -295,7 +273,6 @@ export default function JournalRegisterView({ firm, onClose }) {
           </div>
         </div>
 
-        {/* Voucher Type Dropdown */}
         <div style={{ marginBottom: '8px' }}>
           <label style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: '#475569', marginBottom: '3px', textTransform: 'uppercase' }}>Voucher Type</label>
           <select 
@@ -313,7 +290,6 @@ export default function JournalRegisterView({ firm, onClose }) {
           </select>
         </div>
 
-        {/* Search Bar */}
         <div style={{ marginBottom: '10px' }}>
           <input 
             type="text" 
@@ -324,7 +300,6 @@ export default function JournalRegisterView({ firm, onClose }) {
           />
         </div>
 
-        {/* Total Debit / Credit Summary Box */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 12px', borderRadius: '8px' }}>
           <div>
             <div style={{ fontSize: '9px', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>TOTAL DEBIT (नामे)</div>
@@ -341,7 +316,6 @@ export default function JournalRegisterView({ firm, onClose }) {
         </div>
       </div>
 
-      {/* Clean Journal Entries List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
         {filteredEntries.length === 0 ? (
           <div style={{ backgroundColor: '#fff', textAlign: 'center', padding: '36px 16px', borderRadius: '12px', color: '#94a3b8', fontSize: '12px', border: '1px solid #e2e8f0' }}>
@@ -370,7 +344,6 @@ export default function JournalRegisterView({ firm, onClose }) {
                   boxSizing: 'border-box' 
                 }}
               >
-                {/* Top Row: Meta Tags on Left | Standalone Bold Amount on Right */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '8px' }}>
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'nowrap', overflow: 'hidden' }}>
                     <span style={{ fontSize: '10px', backgroundColor: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', whiteSpace: 'nowrap' }}>
@@ -391,7 +364,6 @@ export default function JournalRegisterView({ firm, onClose }) {
                   </div>
                 </div>
 
-                {/* Account Details Row */}
                 <div style={{ marginTop: '2px' }}>
                   <div style={{ fontSize: '12px', fontWeight: '700', color: '#0f172a', lineHeight: '1.4' }}>
                     Dr: <span style={{ color: '#059669' }}>{entry.dr_account}</span>
@@ -401,7 +373,6 @@ export default function JournalRegisterView({ firm, onClose }) {
                   </div>
                 </div>
 
-                {/* Items Row (If Any) */}
                 {itemsList.length > 0 && (
                   <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '6px 10px', marginTop: '2px', fontSize: '11px' }}>
                     {itemsList.map((it, iIdx) => (
@@ -412,7 +383,6 @@ export default function JournalRegisterView({ firm, onClose }) {
                   </div>
                 )}
 
-                {/* Clean Narration Row */}
                 {cleanNarrationText && (
                   <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', lineHeight: '1.3', marginTop: '2px' }}>
                     {cleanNarrationText}
