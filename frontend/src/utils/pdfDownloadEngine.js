@@ -40,7 +40,7 @@ export const cleanTypographySpacing = (rawText) => {
 /**
  * Ultra-Robust Account Name Sanitizer
  */
-const cleanAccountTitle = (rawName) => {
+export const cleanAccountTitle = (rawName) => {
   if (!rawName) return '';
   let str = String(rawName).trim();
 
@@ -144,7 +144,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     txs = statementData;
   }
 
-  // Filter transactions by date range if provided
   let filteredTxs = txs;
   if (fromDate || toDate) {
     filteredTxs = txs.filter(t => {
@@ -253,7 +252,6 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     y += rowHeight;
   });
 
-  // Render Total Debit and Total Credit Summary Row at the end of the statement list
   if (y > 265) {
     doc.addPage();
     pageNum += 1;
@@ -277,7 +275,124 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT
+ * 2. STOCK ITEM LEDGER & MOVEMENT STATEMENT PDF EXPORT (With Total In & Total Out Summary)
+ */
+export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
+  const firmName = getCleanFirmName(firmInput);
+  const itemName = cleanTypographySpacing(itemData?.item_name || itemData?.name || 'Stock Item');
+  const unitName = itemData?.unit || 'Units';
+
+  const rows = Array.isArray(itemData?.entries || itemData?.transactions) 
+    ? (itemData.entries || itemData.transactions) 
+    : (Array.isArray(itemData) ? itemData : []);
+
+  const doc = new jsPDF('p', 'mm', 'a4');
+  let y = 18;
+  let pageNum = 1;
+
+  const printHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Stock Item Ledger & Movement Statement: ${itemName}`, 14, y);
+    y += 5;
+
+    doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Unit: ${unitName} | Page ${pageNum}`, 14, y);
+    y += 6;
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+
+    doc.text('Date', 16, y + 4.8);
+    doc.text('Type / Ref', 38, y + 4.8);
+    doc.text('Particulars & Description', 70, y + 4.8);
+    doc.text('In (+)', 145, y + 4.8, { align: 'right' });
+    doc.text('Out (-)', 170, y + 4.8, { align: 'right' });
+    doc.text('Balance', 193, y + 4.8, { align: 'right' });
+    y += 9;
+  };
+
+  printHeader();
+
+  let totalInSum = 0;
+  let totalOutSum = 0;
+
+  rows.forEach((row, index) => {
+    const dateStr = row.date || row.voucher_date || '-';
+    const typeStr = cleanTypographySpacing(row.type || row.voucher_type || 'TX');
+    const descStr = cleanTypographySpacing(row.narration || row.particulars || row.description || '');
+    
+    const qtyIn = parseFloat(row.in || row.qty_in || row.purchase_qty || 0);
+    const qtyOut = parseFloat(row.out || row.qty_out || row.consumption_qty || 0);
+    const balanceStr = String(row.balance || '0');
+
+    if (qtyIn > 0) totalInSum += qtyIn;
+    if (qtyOut > 0) totalOutSum += qtyOut;
+
+    const splitDesc = doc.splitTextToSize(descStr, 70);
+    const rowHeight = Math.max(7, 4 + (splitDesc.length * 3.5));
+
+    if (y + rowHeight > 272) {
+      doc.addPage();
+      pageNum += 1;
+      y = 18;
+      printHeader();
+    }
+
+    if (index % 2 === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y - 3, 182, rowHeight, 'F');
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
+
+    doc.text(dateStr, 16, y);
+    doc.text(typeStr.substring(0, 15), 38, y);
+    doc.text(splitDesc, 70, y);
+
+    doc.text(qtyIn > 0 ? `+${qtyIn.toFixed(2)}` : '-', 145, y, { align: 'right' });
+    doc.text(qtyOut > 0 ? `-${qtyOut.toFixed(2)}` : '-', 170, y, { align: 'right' });
+    doc.text(`${balanceStr} ${unitName}`, 193, y, { align: 'right' });
+
+    y += rowHeight;
+  });
+
+  if (y > 265) {
+    doc.addPage();
+    pageNum += 1;
+    y = 18;
+    printHeader();
+  }
+
+  y += 3;
+  doc.setDrawColor(203, 213, 225);
+  doc.line(14, y, 196, y);
+  y += 6;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('TOTAL MOVEMENT SUM:', 70, y);
+  doc.text(`+${totalInSum.toFixed(2)}`, 145, y, { align: 'right' });
+  doc.text(`-${totalOutSum.toFixed(2)}`, 170, y, { align: 'right' });
+
+  return await exportTruePDF(doc, `Stock_Statement_${itemName}`);
+};
+
+/**
+ * 3. FINANCIAL STATEMENTS REPORT
  */
 export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth Groups', reportData = {}, tabType = 'TRIAL_BALANCE') => {
   let firm = firmInput;
@@ -461,7 +576,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE)
+ * 4. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -582,7 +697,7 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
 };
 
 /**
- * 4. PROFESSIONAL TAX INVOICE GENERATOR
+ * 5. PROFESSIONAL TAX INVOICE GENERATOR
  */
 export const generateProfessionalInvoicePDF = async (firmInput, invoice = {}) => {
   const firmName = getCleanFirmName(firmInput);
