@@ -420,5 +420,5 @@ const menuButtonStyle = {
   gap: '8px',
   boxSizing: 'border-box',
   textAlign: 'left',
-  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)'
+  boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
 };
