@@ -103,7 +103,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (With Date Range Filtering & Opening Balance Calculation)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (Strict Date Range & Opening Balance Calculation)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
@@ -124,7 +124,11 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     txs = statementData;
   }
 
-  // Calculate opening balance prior to fromDate if fromDate is provided
+  // Fallback to localStorage date filter inputs if not passed in statementData object
+  if (!fromDate) fromDate = localStorage.getItem('app_statement_from_date') || null;
+  if (!toDate) toDate = localStorage.getItem('app_statement_to_date') || null;
+
+  // Calculate opening balance prior to fromDate
   let openingBalance = 0;
   let openingBalanceType = 'Dr';
 
@@ -148,7 +152,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     }
   }
 
-  // Filter transactions strictly within date range
+  // Filter transactions strictly within fromDate and toDate
   let filteredTxs = txs;
   if (fromDate || toDate) {
     filteredTxs = txs.filter(t => {
@@ -201,7 +205,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 
   printHeader();
 
-  // Render Opening Balance Row if fromDate is set
+  // Render Opening Balance Row
   if (fromDate) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
@@ -399,7 +403,7 @@ export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
     const splitDesc = doc.splitTextToSize(descStr, 70);
     const rowHeight = Math.max(7, 4 + (splitDesc.length * 3.5));
 
-    if (y + rowHeight > 265) {
+    if (y + rowHeight > 258) {
       renderPageFooter(false);
       doc.addPage();
       pageNum += 1;
@@ -429,7 +433,7 @@ export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
     y += rowHeight;
   });
 
-  if (y > 260) {
+  if (y > 250) {
     doc.addPage();
     pageNum += 1;
     y = 18;
