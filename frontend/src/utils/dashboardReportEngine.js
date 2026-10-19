@@ -1,7 +1,6 @@
 // frontend/src/utils/dashboardReportEngine.js
 
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { StorageService } from './storageSync';
 
 const resolveFirmId = (firmInput) => {
@@ -39,19 +38,30 @@ export const downloadDashboardCashBankReportPDF = (firmInput) => {
     doc.text(`Dashboard Breakdown: Cash & Bank Accounts Statement`, 14, 22);
     doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
 
-    const tableRows = cashBankAccounts.map((acc, idx) => {
+    let y = 38;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text('#', 16, y);
+    doc.text('Account / Bank Name', 30, y);
+    doc.text('Sub Group', 100, y);
+    doc.text('Net Balance (Rs)', 155, y);
+
+    y += 8;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+
+    cashBankAccounts.forEach((acc, idx) => {
+      if (y > 280) { doc.addPage(); y = 20; }
       const name = acc.account_name || acc.name || 'Account';
       const grp = acc.sub_group || acc.group || 'Cash-in-Hand / Bank Accounts';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      return [idx + 1, name, grp, `Rs. ${bal.toFixed(2)}`];
-    });
 
-    autoTable(doc, {
-      startY: 35,
-      head: [['#', 'Account / Bank Name', 'Sub Group', 'Net Balance (Rs)']],
-      body: tableRows,
-      theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42] }
+      doc.text(String(idx + 1), 16, y);
+      doc.text(String(name).substring(0, 35), 30, y);
+      doc.text(String(grp).substring(0, 25), 100, y);
+      doc.text(`Rs. ${bal.toFixed(2)}`, 155, y);
+      y += 7;
     });
 
     doc.save(`Cash_Bank_Statement_${firmId}.pdf`);
@@ -73,9 +83,25 @@ export const downloadDashboardStockReportPDF = (firmInput) => {
     doc.text(`Dashboard Breakdown: Stock Valuation Report`, 14, 22);
     doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
 
+    let y = 38;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text('#', 16, y);
+    doc.text('Item Name', 30, y);
+    doc.text('Unit', 90, y);
+    doc.text('Quantity', 115, y);
+    doc.text('Rate (Rs)', 140, y);
+    doc.text('Total (Rs)', 165, y);
+
+    y += 8;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+
     let totalValuation = 0;
-    const tableRows = inventory.map((item, idx) => {
-      if (!item) return null;
+    inventory.forEach((item, idx) => {
+      if (!item) return;
+      if (y > 280) { doc.addPage(); y = 20; }
       const name = item.item_name || item.name || 'Item';
       const unit = item.unit || 'Units';
       const qty = parseFloat(item.current_stock || item.stock || item.current_qty || item.qty || 0);
@@ -83,16 +109,18 @@ export const downloadDashboardStockReportPDF = (firmInput) => {
       const totalVal = qty * rate;
       totalValuation += totalVal;
 
-      return [idx + 1, name, unit, qty.toFixed(2), rate.toFixed(2), totalVal.toFixed(2)];
-    }).filter(Boolean);
-
-    autoTable(doc, {
-      startY: 35,
-      head: [['#', 'Item Name', 'Unit', 'Quantity', 'Rate (Rs)', 'Total Value (Rs)']],
-      body: tableRows,
-      theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42] }
+      doc.text(String(idx + 1), 16, y);
+      doc.text(String(name).substring(0, 25), 30, y);
+      doc.text(String(unit), 90, y);
+      doc.text(qty.toFixed(2), 115, y);
+      doc.text(rate.toFixed(2), 140, y);
+      doc.text(totalVal.toFixed(2), 165, y);
+      y += 7;
     });
+
+    y += 5;
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total Stock Valuation: Rs ${totalValuation.toFixed(2)}`, 14, y);
 
     doc.save(`Stock_Valuation_Report_${firmId}.pdf`);
   } catch (e) {
@@ -122,23 +150,37 @@ export const downloadDashboardReceivablesReportPDF = (firmInput) => {
     doc.text(`Dashboard Breakdown: Receivables (Lena Baaki - Customers)`, 14, 22);
     doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
 
+    let y = 38;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text('#', 16, y);
+    doc.text('Customer / Party Name', 30, y);
+    doc.text('Category', 100, y);
+    doc.text('Receivable (Rs)', 150, y);
+
+    y += 8;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+
     let totalReceivables = 0;
-    const tableRows = debtors.map((acc, idx) => {
+    debtors.forEach((acc, idx) => {
+      if (y > 280) { doc.addPage(); y = 20; }
       const name = acc.account_name || acc.name || 'Customer';
       const grp = acc.sub_group || acc.group || 'Sundry Debtors';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       if (bal > 0) totalReceivables += bal;
 
-      return [idx + 1, name, grp, `Rs. ${bal.toFixed(2)}`];
+      doc.text(String(idx + 1), 16, y);
+      doc.text(String(name).substring(0, 35), 30, y);
+      doc.text(String(grp).substring(0, 25), 100, y);
+      doc.text(`Rs. ${bal.toFixed(2)}`, 150, y);
+      y += 7;
     });
 
-    autoTable(doc, {
-      startY: 35,
-      head: [['#', 'Customer / Party Name', 'Category', 'Receivable Amount (Rs)']],
-      body: tableRows,
-      theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42] }
-    });
+    y += 5;
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total Receivables: Rs ${totalReceivables.toFixed(2)}`, 14, y);
 
     doc.save(`Receivables_Statement_${firmId}.pdf`);
   } catch (e) {
@@ -168,23 +210,37 @@ export const downloadDashboardPayablesReportPDF = (firmInput) => {
     doc.text(`Dashboard Breakdown: Payables (Dena Baaki - Creditors & Suppliers)`, 14, 22);
     doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
 
+    let y = 38;
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y - 5, 180, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text('#', 16, y);
+    doc.text('Supplier / Vendor Name', 30, y);
+    doc.text('Category', 100, y);
+    doc.text('Payable (Rs)', 150, y);
+
+    y += 8;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+
     let totalPayables = 0;
-    const tableRows = creditors.map((acc, idx) => {
+    creditors.forEach((acc, idx) => {
+      if (y > 280) { doc.addPage(); y = 20; }
       const name = acc.account_name || acc.name || 'Supplier';
       const grp = acc.sub_group || acc.group || 'Sundry Creditors';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       if (bal > 0) totalPayables += bal;
 
-      return [idx + 1, name, grp, `Rs. ${bal.toFixed(2)}`];
+      doc.text(String(idx + 1), 16, y);
+      doc.text(String(name).substring(0, 35), 30, y);
+      doc.text(String(grp).substring(0, 25), 100, y);
+      doc.text(`Rs. ${bal.toFixed(2)}`, 150, y);
+      y += 7;
     });
 
-    autoTable(doc, {
-      startY: 35,
-      head: [['#', 'Supplier / Vendor Name', 'Category', 'Payable Amount (Rs)']],
-      body: tableRows,
-      theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42] }
-    });
+    y += 5;
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total Payables: Rs ${totalPayables.toFixed(2)}`, 14, y);
 
     doc.save(`Payables_Statement_${firmId}.pdf`);
   } catch (e) {
