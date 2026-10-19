@@ -44,6 +44,25 @@ export const cleanAccountTitle = (rawName) => {
   return cleanTypographySpacing(str) || 'Account';
 };
 
+/**
+ * Universal Date Normalizer to YYYY-MM-DD for strict comparison
+ */
+const normalizeDateStr = (dateInput) => {
+  if (!dateInput) return '';
+  const str = String(dateInput).trim();
+  // If DD/MM/YYYY format
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
+    const [d, m, y] = str.split('/');
+    return `${y}-${m}-${d}`;
+  }
+  // If DD-MM-YYYY format
+  if (/^\d{2}-\d{2}-\d{4}$/.test(str)) {
+    const [d, m, y] = str.split('-');
+    return `${y}-${m}-${d}`;
+  }
+  return str.substring(0, 10);
+};
+
 const arrayBufferToBase64 = (buffer) => {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -110,23 +129,25 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
   const cleanParty = cleanAccountTitle(partyName);
   
   let txs = [];
-  let fromDate = null;
-  let toDate = null;
+  let rawFrom = null;
+  let rawTo = null;
 
   if (statementData && typeof statementData === 'object') {
     if (Array.isArray(statementData.transactions)) txs = statementData.transactions;
     else if (Array.isArray(statementData.entries)) txs = statementData.entries;
     else if (Array.isArray(statementData)) txs = statementData;
 
-    if (statementData.fromDate) fromDate = statementData.fromDate;
-    if (statementData.toDate) toDate = statementData.toDate;
+    if (statementData.fromDate) rawFrom = statementData.fromDate;
+    if (statementData.toDate) rawTo = statementData.toDate;
   } else if (Array.isArray(statementData)) {
     txs = statementData;
   }
 
-  // Fallback to localStorage date filter inputs if not passed in statementData object
-  if (!fromDate) fromDate = localStorage.getItem('app_statement_from_date') || null;
-  if (!toDate) toDate = localStorage.getItem('app_statement_to_date') || null;
+  if (!rawFrom) rawFrom = localStorage.getItem('app_statement_from_date') || null;
+  if (!rawTo) rawTo = localStorage.getItem('app_statement_to_date') || null;
+
+  const fromDate = normalizeDateStr(rawFrom);
+  const toDate = normalizeDateStr(rawTo);
 
   // Calculate opening balance prior to fromDate
   let openingBalance = 0;
@@ -136,8 +157,8 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     let preDr = 0;
     let preCr = 0;
     txs.forEach(t => {
-      const tDate = t.date || t.voucher_date || '';
-      if (tDate && tDate < fromDate) {
+      const tDateNorm = normalizeDateStr(t.date || t.voucher_date || '');
+      if (tDateNorm && tDateNorm < fromDate) {
         preDr += Number(t.debit || 0);
         preCr += Number(t.credit || 0);
       }
@@ -152,14 +173,14 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     }
   }
 
-  // Filter transactions strictly within fromDate and toDate
+  // Filter transactions strictly within normalized fromDate and toDate
   let filteredTxs = txs;
   if (fromDate || toDate) {
     filteredTxs = txs.filter(t => {
-      const tDate = t.date || t.voucher_date || '';
-      if (!tDate) return true;
-      if (fromDate && tDate < fromDate) return false;
-      if (toDate && tDate > toDate) return false;
+      const tDateNorm = normalizeDateStr(t.date || t.voucher_date || '');
+      if (!tDateNorm) return true;
+      if (fromDate && tDateNorm < fromDate) return false;
+      if (toDate && tDateNorm > toDate) return false;
       return true;
     });
   }
@@ -179,8 +200,8 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.setFontSize(10);
     doc.setTextColor(71, 85, 105);
     let dateRangeStr = '';
-    if (fromDate || toDate) {
-      dateRangeStr = ` | Period: ${fromDate || 'Start'} to ${toDate || 'Present'}`;
+    if (rawFrom || rawTo) {
+      dateRangeStr = ` | Period: ${rawFrom || 'Start'} to ${rawTo || 'Present'}`;
     }
     doc.text(`Account Statement: ${cleanParty}${dateRangeStr}`, 14, y);
     y += 5;
@@ -210,7 +231,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(15, 23, 42);
-    doc.text(fromDate, 16, y);
+    doc.text(rawFrom || fromDate, 16, y);
     doc.text('Opening Balance Brought Forward', 38, y);
     doc.text('-', 132, y, { align: 'right' });
     doc.text('-', 162, y, { align: 'right' });
@@ -307,7 +328,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. STOCK ITEM LEDGER & MOVEMENT STATEMENT PDF EXPORT (With Per-Page & Grand Total In/Out Summary)
+ * 2. STOCK ITEM LEDGER & MOVEMENT STATEMENT PDF EXPORT (With Guaranteed Per-Page Subtotals & Grand Totals)
  */
 export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
   const firmName = getCleanFirmName(firmInput);
@@ -403,7 +424,7 @@ export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
     const splitDesc = doc.splitTextToSize(descStr, 70);
     const rowHeight = Math.max(7, 4 + (splitDesc.length * 3.5));
 
-    if (y + rowHeight > 258) {
+    if (y + rowHeight > 255) {
       renderPageFooter(false);
       doc.addPage();
       pageNum += 1;
