@@ -2,7 +2,7 @@
 
 import jsPDF from 'jspdf';
 import { StorageService } from './storageSync';
-import { exportTruePDF, cleanAccountTitle } from './pdfDownloadEngine';
+import { exportTruePDF } from './pdfDownloadEngine';
 
 const resolveFirmId = (...args) => {
   for (const arg of args) {
@@ -22,6 +22,33 @@ const getFirmName = (firmInput) => {
     return firmInput.firm_name || firmInput.name || firmInput.legal_name || 'Neelkanth Int Udyog';
   }
   return 'Neelkanth Int Udyog';
+};
+
+export const cleanTypographySpacing = (rawText) => {
+  if (!rawText) return '';
+  let str = String(rawText);
+  str = str.replace(/\s*:\s*/g, ': ');
+  str = str.replace(/\s*@\s*(?:rs\.?|₹)?\s*/gi, ' @ Rs ');
+  str = str.replace(/\s*,\s*/g, ', ');
+  str = str.replace(/\s*-\s*/g, ' - ');
+  str = str.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+  str = str.replace(/\s{2,}/g, ' ');
+  return str.trim();
+};
+
+export const cleanAccountTitle = (rawName) => {
+  if (!rawName) return '';
+  let str = String(rawName).trim();
+  if (/cash\s*in\s*hand/i.test(str) || /^cash$/i.test(str)) {
+    return 'Cash in Hand';
+  }
+  str = str.replace(/\s*\([^)]*OK[^)]*\)/gi, '');
+  str = str.replace(/\s*\[[^\]]*OK[^\]]*\]/gi, '');
+  str = str.replace(/\s*\([^)]*![^)]*\)/gi, '');
+  str = str.replace(/\s*\([^)]*<[^)]*\)/gi, '');
+  str = str.replace(/\s*\(OK\s*!?.*$/gi, '');
+  str = str.replace(/\s*\[OK\s*!?.*$/gi, '');
+  return cleanTypographySpacing(str) || 'Account';
 };
 
 export const downloadDashboardCashBankReportPDF = async (...args) => {
