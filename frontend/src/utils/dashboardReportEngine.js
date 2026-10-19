@@ -51,18 +51,41 @@ export const cleanAccountTitle = (rawName) => {
   return cleanTypographySpacing(str) || 'Account';
 };
 
+// Helper to fetch firm-scoped accounts safely
+const getFirmAccounts = (firmId) => {
+  return StorageService.getItem(`app_accounts_${firmId}`, []) || 
+         StorageService.getItem(`account_heads_${firmId}`, []) || 
+         StorageService.getItem('app_accounts', []) || 
+         StorageService.getItem('app_account_heads', []) || [];
+};
+
+// Helper to fetch firm-scoped inventory safely
+const getFirmInventory = (firmId) => {
+  return StorageService.getItem(`inventory_items_${firmId}`, []) || 
+         StorageService.getItem('inventory_items', []) || 
+         StorageService.getItem('app_inventory', []) || [];
+};
+
+// Helper to fetch firm-scoped material consumption safely
+const getFirmConsumptionRecords = (firmId) => {
+  return StorageService.getItem(`material_consumption_records_${firmId}`, []) || 
+         StorageService.getItem(`material_consumptions_${firmId}`, []) || 
+         StorageService.getItem('material_consumption_records', []) || 
+         StorageService.getItem('material_consumptions', []) || [];
+};
+
 export const downloadDashboardCashBankReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
+    const accounts = getFirmAccounts(firmId);
 
     const cashBankAccounts = accounts.filter(acc => {
       if (!acc) return false;
       const name = String(acc.account_name || acc.name || '').toLowerCase();
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
-      return name.includes('cash') || name.includes('bank') || grp.includes('cash') || grp.includes('bank');
+      return name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash');
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -99,11 +122,14 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
     doc.setFontSize(8);
     doc.setTextColor(15, 23, 42);
 
+    let totalCashBank = 0;
     cashBankAccounts.forEach((acc, idx) => {
       if (y > 275) { doc.addPage(); y = 18; }
       const name = cleanAccountTitle(acc.account_name || acc.name || 'Account');
       const grp = acc.sub_group || acc.group || 'Cash-in-Hand / Bank Accounts';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
+      const netBal = acc.balance_type === 'Cr' ? -bal : bal;
+      totalCashBank += netBal;
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -113,9 +139,14 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
       doc.text(String(idx + 1), 16, y);
       doc.text(name.substring(0, 35), 30, y);
       doc.text(String(grp).substring(0, 30), 100, y);
-      doc.text(bal.toFixed(2), 193, y, { align: 'right' });
+      doc.text(`${netBal.toFixed(2)} ${netBal < 0 ? 'Cr' : 'Dr'}`, 193, y, { align: 'right' });
       y += 6;
     });
+
+    y += 3;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(`Total Cash & Bank Liquidity: Rs ${totalCashBank.toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Cash_Bank_Statement_${firmId}`);
   } catch (e) {
@@ -129,7 +160,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const inventory = StorageService.getItem(`inventory_items_${firmId}`, []) || StorageService.getItem('inventory_items', []) || [];
+    const inventory = getFirmInventory(firmId);
 
     const doc = new jsPDF('p', 'mm', 'a4');
     let y = 18;
@@ -209,7 +240,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
+    const accounts = getFirmAccounts(firmId);
 
     const debtors = accounts.filter(acc => {
       if (!acc) return false;
@@ -217,7 +248,8 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const isDebtor = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena');
       const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory') || grp.includes('asset') || grp.includes('income');
-      return type === 'ASSETS' && isDebtor && !isInvalid;
+      const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
+      return type === 'ASSETS' && isDebtor && !isInvalid && bal !== 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -270,7 +302,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       doc.text(String(idx + 1), 16, y);
       doc.text(name.substring(0, 38), 30, y);
       doc.text(String(grp).substring(0, 30), 105, y);
-      doc.text(bal.toFixed(2), 193, y, { align: 'right' });
+      doc.text(`${bal.toFixed(2)} ${acc.balance_type || 'Dr'}`, 193, y, { align: 'right' });
       y += 6;
     });
 
@@ -291,7 +323,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
+    const accounts = getFirmAccounts(firmId);
 
     const creditors = accounts.filter(acc => {
       if (!acc) return false;
@@ -299,7 +331,8 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const isCreditor = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena');
       const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
-      return type === 'LIABILITIES' && isCreditor && !isInvalid;
+      const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
+      return type === 'LIABILITIES' && isCreditor && !isInvalid && bal !== 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -352,7 +385,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       doc.text(String(idx + 1), 16, y);
       doc.text(name.substring(0, 38), 30, y);
       doc.text(String(grp).substring(0, 30), 105, y);
-      doc.text(bal.toFixed(2), 193, y, { align: 'right' });
+      doc.text(`${bal.toFixed(2)} ${acc.balance_type || 'Cr'}`, 193, y, { align: 'right' });
       y += 6;
     });
 
@@ -373,7 +406,7 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const records = StorageService.getItem(`material_consumption_records_${firmId}`, []) || StorageService.getItem('material_consumption_records', []) || [];
+    const records = getFirmConsumptionRecords(firmId);
 
     const doc = new jsPDF('p', 'mm', 'a4');
     let y = 18;
