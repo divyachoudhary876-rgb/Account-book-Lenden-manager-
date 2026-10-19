@@ -121,13 +121,12 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait - Fully Synced with entries/transactions)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
   const cleanParty = cleanAccountTitle(partyName);
   
-  // Universal extractor supporting both .transactions, .entries, or direct array
   const txs = (statementData && Array.isArray(statementData.transactions)) 
     ? statementData.transactions 
     : (statementData && Array.isArray(statementData.entries) 
@@ -178,7 +177,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     const splitTitle = doc.splitTextToSize(rawTitle, 68);
     const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
     const totalLines = splitTitle.length + splitDesc.length;
-    const rowHeight = Math.max(7, 3 + (totalLines * 3.4));
+    const rowHeight = Math.max(7, 4 + (totalLines * 3.6));
 
     if (y + rowHeight > 280) {
       doc.addPage();
@@ -211,7 +210,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     doc.setFont('helvetica', 'normal');
 
     if (splitDesc.length > 0) {
-      const descY = y + (splitTitle.length * 3.4);
+      const descY = y + (splitTitle.length * 3.6);
       doc.setFontSize(6.8);
       doc.setTextColor(100, 116, 139);
       doc.text(splitDesc, 38, descY);
@@ -225,7 +224,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. FINANCIAL STATEMENTS REPORT (Explicit & Safe Parameter Resolution)
+ * 2. FINANCIAL STATEMENTS REPORT
  */
 export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth Groups', reportData = {}, tabType = 'TRIAL_BALANCE') => {
   let firm = firmInput;
@@ -409,7 +408,7 @@ export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
 };
 
 /**
- * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE)
+ * 3. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE — Fixed Overlapping & Spacing)
  */
 export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
   const firmName = getCleanFirmName(firmInput);
@@ -474,13 +473,17 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     const cleanNote = cleanTypographySpacing(rawNote);
     const noteText = cleanNote ? (itemStr ? `${itemStr} - ${cleanNote}` : cleanNote) : itemStr;
 
-    const splitDr = doc.splitTextToSize(drName, 54);
-    const splitCr = doc.splitTextToSize(crName, 75);
-    const splitNote = noteText ? doc.splitTextToSize(noteText, 125) : [];
+    // Strict column width wrapping to prevent horizontal overlap
+    const splitDr = doc.splitTextToSize(drName, 52);
+    const splitCr = doc.splitTextToSize(crName, 55);
+    const splitNote = noteText ? doc.splitTextToSize(noteText, 110) : [];
 
-    const namesHeight = Math.max(splitDr.length, splitCr.length) * 3.4;
-    const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.2) : 0;
-    const rowHeight = Math.max(6.5, 3.5 + namesHeight + noteHeight);
+    const maxAccountLines = Math.max(splitDr.length, splitCr.length);
+    const accountsHeight = maxAccountLines * 3.4;
+    const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.0) + 1 : 0;
+    
+    // Generous safe padding to prevent any vertical overlap
+    const rowHeight = Math.max(8, 4 + accountsHeight + noteHeight);
 
     if (y + rowHeight > 190) {
       doc.addPage();
@@ -514,8 +517,9 @@ export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
     doc.text(amt.toFixed(2), 278, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
+    // Render narration / item details safely below the account names with proper offset
     if (splitNote.length > 0) {
-      const noteY = y + namesHeight;
+      const noteY = y + accountsHeight + 0.8;
       doc.setFontSize(6.8);
       doc.setTextColor(100, 116, 139);
       doc.text(splitNote, 118, noteY);
