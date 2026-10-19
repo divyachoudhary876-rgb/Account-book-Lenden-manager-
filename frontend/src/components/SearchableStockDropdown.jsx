@@ -1,6 +1,14 @@
 // frontend/src/components/SearchableStockDropdown.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { loadFirmData } from '../utils/firmIsolationEngine';
+import { getStockItemsByFirm, getFirmItemStock } from '../utils/stockInventoryEngine';
+
+const resolveActiveFirmId = (firmInput) => {
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
+  if (firmInput && typeof firmInput === 'object') {
+    return firmInput.id || firmInput.firm_id || firmInput.firmId || 'FIRM-001';
+  }
+  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+};
 
 export default function SearchableStockDropdown({
   firm,
@@ -10,6 +18,7 @@ export default function SearchableStockDropdown({
   placeholder = "-- Search & Choose Stock / Fuel --",
   required = false
 }) {
+  const activeFirmId = resolveActiveFirmId(firm);
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stockList, setStockList] = useState([]);
@@ -17,15 +26,25 @@ export default function SearchableStockDropdown({
 
   const loadItems = () => {
     try {
-      let items = [];
-      
-      // Strict Firm Isolation: Sirf aur sirf active firm ka scoped data load hoga, global fallback bilkul nahi
-      if (firm) {
-        items = loadFirmData('inventory_items', firm, []);
-      }
-
+      // Get stock items with real-time live stock reconciliation via stockInventoryEngine
+      const items = getStockItemsByFirm(activeFirmId) || [];
       const validItems = (Array.isArray(items) ? items : []).filter(i => i && (i.name || i.item_name));
-      setStockList(validItems);
+      
+      const formatted = validItems.map(item => {
+        const itemName = item.name || item.item_name || '';
+        const liveStock = getFirmItemStock(activeFirmId, itemName);
+        return {
+          ...item,
+          name: itemName,
+          item_name: itemName,
+          current_stock: liveStock,
+          stock: liveStock,
+          qty: liveStock,
+          unit: item.unit || 'Units'
+        };
+      });
+
+      setStockList(formatted);
     } catch (e) {
       console.error("Error loading stock items in dropdown:", e);
       setStockList([]);
@@ -34,13 +53,17 @@ export default function SearchableStockDropdown({
 
   useEffect(() => {
     loadItems();
+    window.addEventListener('app_inventory_updated', loadItems);
     window.addEventListener('app_storage_updated', loadItems);
     window.addEventListener('app_state_updated', loadItems);
+    window.addEventListener('storage', loadItems);
     return () => {
+      window.removeEventListener('app_inventory_updated', loadItems);
       window.removeEventListener('app_storage_updated', loadItems);
       window.removeEventListener('app_state_updated', loadItems);
+      window.removeEventListener('storage', loadItems);
     };
-  }, [firm]);
+  }, [activeFirmId, firm]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -52,8 +75,14 @@ export default function SearchableStockDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedItemObj = stockList.find(i => String(i.id) === String(value) || String(i.name || i.item_name) === String(value));
-  const displayText = selectedItemObj ? `${selectedItemObj.name || selectedItemObj.item_name} (Stock: ${selectedItemObj.current_stock || selectedItemObj.stock || 0} ${selectedItemObj.unit || ''})` : '';
+  const selectedItemObj = stockList.find(i => 
+    String(i.id) === String(value) || 
+    String(i.name || i.item_name).trim().toLowerCase() === String(value || '').trim().toLowerCase()
+  );
+
+  const displayText = selectedItemObj 
+    ? `${selectedItemObj.name || selectedItemObj.item_name} (Stock: ${selectedItemObj.current_stock ?? selectedItemObj.stock ?? 0} ${selectedItemObj.unit || ''})` 
+    : '';
 
   const filteredItems = stockList.filter(item => {
     const name = (item.name || item.item_name || '').toLowerCase();
@@ -155,14 +184,15 @@ export default function SearchableStockDropdown({
               filteredItems.map(item => {
                 const itemId = item.id;
                 const itemName = item.name || item.item_name;
-                const stockQty = item.current_stock || item.stock || 0;
+                const stockQty = item.current_stock ?? item.stock ?? 0;
                 const unitName = item.unit || 'Units';
 
                 return (
                   <div 
-                    key={itemId}
+                    key={itemId || itemName}
                     onClick={() => {
-                      onChange(itemId);
+                      // Pass both or item name depending on what parent expects, here passing itemName or itemId securely
+                      onChange(itemName);
                       setIsOpen(false);
                       setSearchQuery('');
                     }}
@@ -181,7 +211,9 @@ export default function SearchableStockDropdown({
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                   >
                     <span style={{ fontWeight: 'bold' }}>{itemName}</span>
-                    <span style={{ color: '#166534', fontSize: '10px' }}>Stock: {stockQty} {unitName}</span>
+                    <span style={{ color: stockQty > 0 ? '#166534' : '#dc2626', fontSize: '10px', fontWeight: 'bold' }}>
+                      Stock: {stockQty} {unitName}
+                    </span>
                   </div>
                 );
               })
