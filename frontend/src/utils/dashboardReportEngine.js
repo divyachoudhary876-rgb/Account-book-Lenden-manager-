@@ -1,9 +1,11 @@
 // frontend/src/utils/dashboardReportEngine.js
 
 import jsPDF from 'jspdf';
-import { StorageService } from './storageSync';
+import { IDBStorage } from './indexedDbStorage';
 import { exportTruePDF } from './pdfDownloadEngine';
 import { getDynamicDashboardMetrics, resolveFirmId } from './dashboardDataEngine';
+import { getStockItemsByFirm, getFirmItemStock } from './stockInventoryEngine';
+import { getAllFirmVouchers } from './ledgerEngine';
 
 const getFirmName = (firmInput) => {
   if (firmInput && typeof firmInput === 'object') {
@@ -39,37 +41,20 @@ export const cleanAccountTitle = (rawName) => {
   return cleanTypographySpacing(str) || 'Account';
 };
 
-const getFirmAccounts = (firmId) => {
-  return StorageService.getItem(`app_accounts_${firmId}`, []) || 
-         StorageService.getItem(`account_heads_${firmId}`, []) || 
-         StorageService.getItem('app_accounts', []) || 
-         StorageService.getItem('app_account_heads', []) || [];
-};
-
-const getFirmInventory = (firmId) => {
-  return StorageService.getItem(`inventory_items_${firmId}`, []) || 
-         StorageService.getItem('inventory_items', []) || 
-         StorageService.getItem('app_inventory', []) || [];
-};
-
-const getFirmConsumptionRecords = (firmId) => {
-  const firmKeyId = resolveFirmId(firmId);
-  return StorageService.getItem(`material_consumption_records_${firmKeyId}`, []) || 
-         StorageService.getItem(`universal_material_adjustments_${firmKeyId}`, []) ||
-         StorageService.getItem('material_consumption_records', []) || 
-         StorageService.getItem('material_consumptions', []) || [];
-};
-
 /**
- * 1. CASH & BANK REPORT PDF
+ * 1. CASH & BANK REPORT PDF (Live IDB & Dashboard Metrics Synchronized)
  */
 export const downloadDashboardCashBankReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const accounts = getFirmAccounts(firmId);
-    const vouchers = StorageService.getItem(`app_vouchers_${firmId}`, []) || StorageService.getItem('app_vouchers', []) || [];
+    const metrics = getDynamicDashboardMetrics(firmInput || firmId);
+    
+    const accounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
+                     IDBStorage.getItem(`account_heads_${firmId}`, []) || 
+                     IDBStorage.getItem('app_accounts', []) || [];
+    const vouchers = getAllFirmVouchers(firmId);
 
     const cashBankAccounts = accounts.filter(acc => {
       if (!acc) return false;
@@ -112,7 +97,7 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
     doc.setFontSize(8);
     doc.setTextColor(15, 23, 42);
 
-    let totalCashBank = 0;
+    let calculatedTotal = 0;
     cashBankAccounts.forEach((acc, idx) => {
       if (y > 275) { doc.addPage(); y = 18; }
       const name = cleanAccountTitle(acc.account_name || acc.name || 'Account');
@@ -129,7 +114,7 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
         if (cr.includes(name.toLowerCase())) bal -= amt;
       });
 
-      totalCashBank += bal;
+      calculatedTotal += bal;
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -146,7 +131,8 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`Total Cash & Bank Liquidity: Rs ${totalCashBank.toFixed(2)}`, 193, y, { align: 'right' });
+    const finalTotal = metrics?.cashAndBank !== undefined ? metrics.cashAndBank : calculatedTotal;
+    doc.text(`Total Cash & Bank Liquidity: Rs ${finalTotal.toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Cash_Bank_Statement_${firmId}`);
   } catch (e) {
@@ -156,14 +142,15 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
 };
 
 /**
- * 2. STOCK VALUATION REPORT PDF
+ * 2. STOCK VALUATION REPORT PDF (Live Reconciled Inventory)
  */
 export const downloadDashboardStockReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const inventory = getFirmInventory(firmId);
+    const metrics = getDynamicDashboardMetrics(firmInput || firmId);
+    const inventory = getStockItemsByFirm(firmId);
 
     const doc = new jsPDF('p', 'mm', 'a4');
     let y = 18;
@@ -207,7 +194,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
       if (y > 275) { doc.addPage(); y = 18; }
       const name = item.item_name || item.name || 'Item';
       const unit = item.unit || 'Units';
-      const qty = parseFloat(item.current_stock || item.stock || item.current_qty || item.qty || 0);
+      const qty = getFirmItemStock(firmId, name);
       const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
       const totalVal = qty * rate;
       totalValuation += totalVal;
@@ -229,7 +216,8 @@ export const downloadDashboardStockReportPDF = async (...args) => {
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`Total Stock Valuation: Rs ${totalValuation.toFixed(2)}`, 193, y, { align: 'right' });
+    const finalStockTotal = metrics?.totalStockValuation > 0 ? metrics.totalStockValuation : totalValuation;
+    doc.text(`Total Stock Valuation: Rs ${finalStockTotal.toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Stock_Valuation_Report_${firmId}`);
   } catch (e) {
@@ -246,8 +234,8 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const accounts = getFirmAccounts(firmId);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
+    const accounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
 
     const debtors = accounts.filter(acc => {
       if (!acc) return false;
@@ -327,7 +315,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF (Synchronized with dashboard calculation)
+ * 4. PAYABLES REPORT PDF (Synchronized with live metrics)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
@@ -335,7 +323,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = getFirmAccounts(firmId);
+    const accounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
 
     const creditors = accounts.filter(acc => {
       if (!acc) return false;
@@ -422,7 +410,10 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
-    const records = getFirmConsumptionRecords(firmId);
+    
+    const records = IDBStorage.getItem(`material_consumption_records_${firmId}`, []) || 
+                    IDBStorage.getItem(`universal_material_adjustments_${firmId}`, []) ||
+                    IDBStorage.getItem('material_consumption_records', []) || [];
 
     const doc = new jsPDF('p', 'mm', 'a4');
     let y = 18;
@@ -466,8 +457,8 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
       const date = rec.date || '';
       const location = rec.uses_for || '';
       const expenseAcc = cleanAccountTitle(rec.expense_account || '');
-      const itemsStr = (rec.items || []).map(i => `${i.name} (${i.qty} ${i.unit})`).join(', ');
-      const val = parseFloat(rec.total_value || 0);
+      const itemsStr = (rec.items || []).map(i => `${i.name || i.item_name} (${i.qty || i.quantity} ${i.unit})`).join(', ');
+      const val = parseFloat(rec.total_value || rec.amount || 0);
       totalConsumption += val;
 
       if (idx % 2 === 0) {
@@ -491,6 +482,6 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
-    alert("PDF download reports generation mein asafalta hui: " + e.message);
+    alert("PDF download failed: " + e.message);
   }
 };
