@@ -51,7 +51,6 @@ export const cleanAccountTitle = (rawName) => {
   return cleanTypographySpacing(str) || 'Account';
 };
 
-// Helper to fetch firm-scoped accounts safely
 const getFirmAccounts = (firmId) => {
   return StorageService.getItem(`app_accounts_${firmId}`, []) || 
          StorageService.getItem(`account_heads_${firmId}`, []) || 
@@ -59,14 +58,12 @@ const getFirmAccounts = (firmId) => {
          StorageService.getItem('app_account_heads', []) || [];
 };
 
-// Helper to fetch firm-scoped inventory safely
 const getFirmInventory = (firmId) => {
   return StorageService.getItem(`inventory_items_${firmId}`, []) || 
          StorageService.getItem('inventory_items', []) || 
          StorageService.getItem('app_inventory', []) || [];
 };
 
-// Helper to fetch firm-scoped material consumption safely
 const getFirmConsumptionRecords = (firmId) => {
   return StorageService.getItem(`material_consumption_records_${firmId}`, []) || 
          StorageService.getItem(`material_consumptions_${firmId}`, []) || 
@@ -74,12 +71,16 @@ const getFirmConsumptionRecords = (firmId) => {
          StorageService.getItem('material_consumptions', []) || [];
 };
 
+/**
+ * 1. CASH & BANK REPORT PDF
+ */
 export const downloadDashboardCashBankReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const accounts = getFirmAccounts(firmId);
+    const vouchers = StorageService.getItem(`app_vouchers_${firmId}`, []) || StorageService.getItem('app_vouchers', []) || [];
 
     const cashBankAccounts = accounts.filter(acc => {
       if (!acc) return false;
@@ -127,9 +128,19 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
       if (y > 275) { doc.addPage(); y = 18; }
       const name = cleanAccountTitle(acc.account_name || acc.name || 'Account');
       const grp = acc.sub_group || acc.group || 'Cash-in-Hand / Bank Accounts';
-      const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      const netBal = acc.balance_type === 'Cr' ? -bal : bal;
-      totalCashBank += netBal;
+      const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
+      let bal = acc.balance_type === 'Cr' ? -op : op;
+
+      vouchers.forEach(v => {
+        if (!v) return;
+        const amt = parseFloat(v.amount || v.total_amount || 0);
+        const dr = String(v.dr_account || '').toLowerCase();
+        const cr = String(v.cr_account || '').toLowerCase();
+        if (dr.includes(name.toLowerCase())) bal += amt;
+        if (cr.includes(name.toLowerCase())) bal -= amt;
+      });
+
+      totalCashBank += bal;
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -139,7 +150,7 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
       doc.text(String(idx + 1), 16, y);
       doc.text(name.substring(0, 35), 30, y);
       doc.text(String(grp).substring(0, 30), 100, y);
-      doc.text(`${netBal.toFixed(2)} ${netBal < 0 ? 'Cr' : 'Dr'}`, 193, y, { align: 'right' });
+      doc.text(`${bal.toFixed(2)} ${bal < 0 ? 'Cr' : 'Dr'}`, 193, y, { align: 'right' });
       y += 6;
     });
 
@@ -155,6 +166,9 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
   }
 };
 
+/**
+ * 2. STOCK VALUATION REPORT PDF
+ */
 export const downloadDashboardStockReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
@@ -235,6 +249,9 @@ export const downloadDashboardStockReportPDF = async (...args) => {
   }
 };
 
+/**
+ * 3. RECEIVABLES REPORT PDF
+ */
 export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
@@ -249,7 +266,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       const isDebtor = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena');
       const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory') || grp.includes('asset') || grp.includes('income');
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      return type === 'ASSETS' && isDebtor && !isInvalid && bal !== 0;
+      return (type === 'ASSETS' || isDebtor) && !isInvalid && bal > 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -292,7 +309,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       const name = cleanAccountTitle(acc.account_name || acc.name || 'Customer');
       const grp = acc.sub_group || acc.group || 'Sundry Debtors';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      if (bal > 0) totalReceivables += bal;
+      totalReceivables += bal;
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -318,6 +335,9 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
   }
 };
 
+/**
+ * 4. PAYABLES REPORT PDF
+ */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
@@ -332,7 +352,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       const isCreditor = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena');
       const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      return type === 'LIABILITIES' && isCreditor && !isInvalid && bal !== 0;
+      return (type === 'LIABILITIES' || isCreditor) && !isInvalid && bal !== 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -375,7 +395,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       const name = cleanAccountTitle(acc.account_name || acc.name || 'Supplier');
       const grp = acc.sub_group || acc.group || 'Sundry Creditors';
       const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      if (bal > 0) totalPayables += bal;
+      totalPayables += Math.abs(bal);
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -401,6 +421,9 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
   }
 };
 
+/**
+ * 5. MATERIAL CONSUMPTION REPORT PDF
+ */
 export const downloadDashboardConsumptionReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
