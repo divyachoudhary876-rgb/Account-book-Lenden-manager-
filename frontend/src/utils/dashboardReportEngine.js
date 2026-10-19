@@ -3,10 +3,15 @@
 import jsPDF from 'jspdf';
 import { StorageService } from './storageSync';
 
-const resolveFirmId = (firmInput) => {
-  if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
-  if (firmInput && typeof firmInput === 'object') {
-    return String(firmInput.id || firmInput.firm_id || firmInput.firmId || '').trim();
+const resolveFirmId = (...args) => {
+  for (const arg of args) {
+    if (!arg) continue;
+    if (typeof arg === 'string' && arg.trim() !== '' && !arg.includes('-')) return arg.trim();
+    if (typeof arg === 'string' && arg.includes('FIRM')) return arg.trim();
+    if (typeof arg === 'object') {
+      const fId = arg.id || arg.firm_id || arg.firmId;
+      if (fId) return String(fId).trim();
+    }
   }
   return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 };
@@ -18,27 +23,40 @@ const getFirmName = (firmInput) => {
   return 'Neelkanth Int Udyog';
 };
 
-// Universal helper to trigger download in both Web Browsers & Android WebViews (APK)
+// Universal helper for Web Browsers & Android WebViews (APK)
 const triggerPDFDownload = (doc, filename) => {
   try {
-    const pdfOutput = doc.output('blob');
-    const blobURL = URL.createObjectURL(pdfOutput);
+    // Generate Data URI which works across mobile webviews and browsers
+    const pdfDataUri = doc.output('datauristring');
+    
+    // Check if running inside mobile webview / capacitor
+    if (window.Capacitor || window.cordova || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      const win = window.open();
+      if (win) {
+        win.document.write(`<iframe src="${pdfDataUri}" frameborder="0" style="border:0; top:0; left:0; bottom:0; right:0; width:100%; height:100%;" allowfullscreen></iframe>`);
+        return;
+      }
+    }
+
     const link = document.createElement('a');
-    link.href = blobURL;
+    link.href = pdfDataUri;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(blobURL), 10000);
   } catch (err) {
-    // Fallback for strict mobile webviews
-    doc.save(filename);
+    try {
+      doc.save(filename);
+    } catch (e) {
+      alert("PDF download failed: " + e.message);
+    }
   }
 };
 
-export const downloadDashboardCashBankReportPDF = (firmInput) => {
+export const downloadDashboardCashBankReportPDF = (...args) => {
   try {
-    const firmId = resolveFirmId(firmInput);
+    const firmId = resolveFirmId(...args);
+    const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
 
@@ -89,9 +107,10 @@ export const downloadDashboardCashBankReportPDF = (firmInput) => {
   }
 };
 
-export const downloadDashboardStockReportPDF = (firmInput) => {
+export const downloadDashboardStockReportPDF = (...args) => {
   try {
-    const firmId = resolveFirmId(firmInput);
+    const firmId = resolveFirmId(...args);
+    const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const inventory = StorageService.getItem(`inventory_items_${firmId}`, []) || StorageService.getItem('inventory_items', []) || [];
 
@@ -148,9 +167,10 @@ export const downloadDashboardStockReportPDF = (firmInput) => {
   }
 };
 
-export const downloadDashboardReceivablesReportPDF = (firmInput) => {
+export const downloadDashboardReceivablesReportPDF = (...args) => {
   try {
-    const firmId = resolveFirmId(firmInput);
+    const firmId = resolveFirmId(...args);
+    const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
 
@@ -209,9 +229,10 @@ export const downloadDashboardReceivablesReportPDF = (firmInput) => {
   }
 };
 
-export const downloadDashboardPayablesReportPDF = (firmInput) => {
+export const downloadDashboardPayablesReportPDF = (...args) => {
   try {
-    const firmId = resolveFirmId(firmInput);
+    const firmId = resolveFirmId(...args);
+    const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
 
@@ -270,9 +291,10 @@ export const downloadDashboardPayablesReportPDF = (firmInput) => {
   }
 };
 
-export const downloadDashboardConsumptionReportPDF = (firmInput) => {
+export const downloadDashboardConsumptionReportPDF = (...args) => {
   try {
-    const firmId = resolveFirmId(firmInput);
+    const firmId = resolveFirmId(...args);
+    const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const records = StorageService.getItem(`material_consumption_records_${firmId}`, []) || StorageService.getItem('material_consumption_records', []) || [];
 
