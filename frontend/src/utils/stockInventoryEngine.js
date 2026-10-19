@@ -1,6 +1,6 @@
 /**
  * Stock & Inventory Reconciliation Engine for Account Book Smart Manager
- * Single Source of Truth for Real-Time Item Stock Calculation (Zero Discrepancy).
+ * Single Source of Truth for Real-Time Item Stock Calculation (Zero Discrepancy & Negative Allowed).
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -76,9 +76,9 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // Net Stock starting strictly from zero opening balance
+    // Net Stock starting strictly from zero opening balance (Allowing negative to flag missing entries)
     const netStock = round2(totalInward - totalOutward);
-    return Math.max(0, netStock);
+    return netStock; 
   } catch (err) {
     console.error('[stockInventoryEngine] Error computing item stock:', err);
     return 0;
@@ -95,7 +95,7 @@ export const getStockItemsByFirm = (firmId) => {
       items = [
         { id: 'DEF-DIESEL', name: 'Diesel', item_name: 'Diesel', unit: 'Liters', unit_purchase_price: 96.06 },
         { id: 'DEF-MITTI-A', name: 'Mitti Grade A', item_name: 'Mitti Grade A', unit: 'Quintal', unit_purchase_price: 14.20 },
-        { id: 'DEF-MITTI-B', name: 'Mitti Grade B', item_name: 'Mitti Grade B', unit: 'Quintal', unit_purchase_price: 10.50 }
+        { id: 'DEF-DEF-MITTI-B', name: 'Mitti Grade B', item_name: 'Mitti Grade B', unit: 'Quintal', unit_purchase_price: 10.50 }
       ];
     }
 
