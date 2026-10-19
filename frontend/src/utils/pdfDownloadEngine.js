@@ -7,9 +7,6 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 
-/**
- * Universal safe firm name resolver
- */
 const getCleanFirmName = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') {
     return firmInput.trim();
@@ -20,47 +17,33 @@ const getCleanFirmName = (firmInput) => {
   return 'Neelkanth Groups';
 };
 
-/**
- * Ultra-Robust Typography & Spacing Normalizer
- */
 export const cleanTypographySpacing = (rawText) => {
   if (!rawText) return '';
   let str = String(rawText);
-
   str = str.replace(/\s*:\s*/g, ': ');
   str = str.replace(/\s*@\s*(?:rs\.?|₹)?\s*/gi, ' @ Rs ');
   str = str.replace(/\s*,\s*/g, ', ');
   str = str.replace(/\s*-\s*/g, ' - ');
   str = str.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
   str = str.replace(/\s{2,}/g, ' ');
-
   return str.trim();
 };
 
-/**
- * Ultra-Robust Account Name Sanitizer
- */
 export const cleanAccountTitle = (rawName) => {
   if (!rawName) return '';
   let str = String(rawName).trim();
-
   if (/cash\s*in\s*hand/i.test(str) || /^cash$/i.test(str)) {
     return 'Cash in Hand';
   }
-
   str = str.replace(/\s*\([^)]*OK[^)]*\)/gi, '');
   str = str.replace(/\s*\[[^\]]*OK[^\]]*\]/gi, '');
   str = str.replace(/\s*\([^)]*![^)]*\)/gi, '');
   str = str.replace(/\s*\([^)]*<[^)]*\)/gi, '');
   str = str.replace(/\s*\(OK\s*!?.*$/gi, '');
   str = str.replace(/\s*\[OK\s*!?.*$/gi, '');
-
   return cleanTypographySpacing(str) || 'Account';
 };
 
-/**
- * Safely convert ArrayBuffer to Base64
- */
 const arrayBufferToBase64 = (buffer) => {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -71,9 +54,6 @@ const arrayBufferToBase64 = (buffer) => {
   return window.btoa(binary);
 };
 
-/**
- * 100% Corruption-Free True PDF Exporter (Mobile APK & Browser Compatible)
- */
 export const exportTruePDF = async (doc, rawFileName = 'Report') => {
   const cleanName = String(rawFileName).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fullFileName = `${cleanName}_${Date.now()}.pdf`;
@@ -123,7 +103,7 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (A4 Portrait - Date Range & Total Dr/Cr Compliant)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (With Date Range Filtering & Opening Balance Calculation)
  */
 export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
   const firmName = getCleanFirmName(firmInput);
@@ -144,6 +124,31 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
     txs = statementData;
   }
 
+  // Calculate opening balance prior to fromDate if fromDate is provided
+  let openingBalance = 0;
+  let openingBalanceType = 'Dr';
+
+  if (fromDate) {
+    let preDr = 0;
+    let preCr = 0;
+    txs.forEach(t => {
+      const tDate = t.date || t.voucher_date || '';
+      if (tDate && tDate < fromDate) {
+        preDr += Number(t.debit || 0);
+        preCr += Number(t.credit || 0);
+      }
+    });
+    const netPre = preDr - preCr;
+    if (netPre < 0) {
+      openingBalance = Math.abs(netPre);
+      openingBalanceType = 'Cr';
+    } else {
+      openingBalance = netPre;
+      openingBalanceType = 'Dr';
+    }
+  }
+
+  // Filter transactions strictly within date range
   let filteredTxs = txs;
   if (fromDate || toDate) {
     filteredTxs = txs.filter(t => {
@@ -196,8 +201,23 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 
   printHeader();
 
+  // Render Opening Balance Row if fromDate is set
+  if (fromDate) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(fromDate, 16, y);
+    doc.text('Opening Balance Brought Forward', 38, y);
+    doc.text('-', 132, y, { align: 'right' });
+    doc.text('-', 162, y, { align: 'right' });
+    doc.text(`${openingBalance.toFixed(2)} ${openingBalanceType}`, 193, y, { align: 'right' });
+    y += 7;
+  }
+
   let totalDebitSum = 0;
   let totalCreditSum = 0;
+  let runningBalCalc = openingBalance;
+  let currentBalanceType = openingBalanceType;
 
   filteredTxs.forEach((t, index) => {
     const rawTitle = cleanTypographySpacing(`${t.voucher_type || t.type || 'TX'} #${t.voucher_number || t.voucher_no || t.reference_no || ''}`);
@@ -229,16 +249,24 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 
     const deb = Number(t.debit || 0);
     const cr = Number(t.credit || 0);
-    const runBal = Number(t.running_balance ?? t.runningBalance ?? t.amount ?? 0);
-    const bType = String(t.balance_type || t.balanceType || 'Dr');
 
     totalDebitSum += deb;
     totalCreditSum += cr;
 
+    if (currentBalanceType === 'Dr') {
+      runningBalCalc = runningBalCalc + deb - cr;
+    } else {
+      runningBalCalc = runningBalCalc + cr - deb;
+    }
+    if (runningBalCalc < 0) {
+      runningBalCalc = Math.abs(runningBalCalc);
+      currentBalanceType = currentBalanceType === 'Dr' ? 'Cr' : 'Dr';
+    }
+
     doc.text(deb > 0 ? deb.toFixed(2) : '-', 132, y, { align: 'right' });
     doc.text(cr > 0 ? cr.toFixed(2) : '-', 162, y, { align: 'right' });
     doc.setFont('helvetica', 'bold');
-    doc.text(`${runBal.toFixed(2)} ${bType}`, 193, y, { align: 'right' });
+    doc.text(`${runningBalCalc.toFixed(2)} ${currentBalanceType}`, 193, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
     if (splitDesc.length > 0) {
