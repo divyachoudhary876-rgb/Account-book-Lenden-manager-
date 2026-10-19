@@ -1,368 +1,341 @@
 /**
- * Frontend Utility: Dashboard Summary Cards Click-to-PDF Report Generator
- * Extracts underlying transactions for Stock Valuation, Receivables, Payables, and Consumption Records.
+ * Frontend Utility: Dashboard Data Engine
+ * Primary Dynamic Dashboard KPI Aggregation Engine with Strict Firm Isolation.
  */
 
+import { getUniversalVouchersByFirm } from './voucherPostingEngine.js';
+import { getFirmMasterAccounts } from './accountMasterEngine.js';
+import { getStockItemsByFirm } from './stockInventoryEngine.js';
 import { StorageService } from './storageSync';
-import { exportTruePDF, cleanTypographySpacing } from './pdfDownloadEngine';
-import { jsPDF } from 'jspdf';
-import { getNormalizedLedgerLines, getSafeAccounts } from './financialReportEngine';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
-/**
- * 1. DOWNLOAD STOCK VALUATION BREAKDOWN PDF
- */
-export const downloadDashboardStockReportPDF = async (firmProfile, firmId) => {
-  const firmName = firmProfile?.legal_name || firmProfile?.trade_name || firmProfile?.name || 'Neelkanth Int Udyog';
-  const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
-  
-  const inventoryKey = `inventory_items_${cleanFirmId}`;
-  const stockItems = StorageService.getItem(inventoryKey, []) || StorageService.getItem('inventory_items', []) || [];
+export const resolveFirmId = (firmInput) => {
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') {
+    return firmInput.trim();
+  }
+  if (firmInput && typeof firmInput === 'object') {
+    return String(firmInput.id || firmInput.firm_id || firmInput.firmId || '').trim();
+  }
+  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+};
 
-  const doc = new jsPDF('p', 'mm', 'a4');
-  let y = 18;
-  let pageNum = 1;
-
-  const printHeader = () => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(15, 23, 42);
-    doc.text(firmName.toUpperCase(), 14, y);
-    y += 6;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
-    doc.text('Dashboard Breakdown: Stock Valuation Report', 14, y);
-    y += 5;
-
-    doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
-    y += 6;
-
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y, 182, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-
-    doc.text('Item Name', 16, y + 4.8);
-    doc.text('Category / Unit', 80, y + 4.8);
-    doc.text('Quantity', 130, y + 4.8, { align: 'right' });
-    doc.text('Rate (Rs)', 162, y + 4.8, { align: 'right' });
-    doc.text('Total Value (Rs)', 193, y + 4.8, { align: 'right' });
-    y += 9;
-  };
-
-  printHeader();
-  let grandTotalStock = 0;
-
-  stockItems.forEach((item, index) => {
-    if (!item) return;
-    const name = cleanTypographySpacing(item.item_name || item.name || 'Item');
-    const unit = item.unit || 'Pcs';
-    const qty = parseFloat(item.current_stock || item.stock || item.qty || 0);
-    const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
-    const totalVal = round2(qty * rate);
-    grandTotalStock += totalVal;
-
-    if (y > 275) {
-      doc.addPage();
-      pageNum += 1;
-      y = 18;
-      printHeader();
+export const getFYDateRange = (fyString = '2026-27') => {
+  try {
+    const clean = String(fyString || '2026-27').replace(/FY\s*/i, '').trim();
+    const parts = clean.split('-');
+    if (parts.length === 2) {
+      let startYear = parseInt(parts[0], 10);
+      let endYear = startYear + 1;
+      if (startYear < 100) startYear += 2000;
+      if (endYear < 100) endYear += 2000;
+      return {
+        startDate: `${startYear}-04-01`,
+        endDate: `${endYear}-03-31`,
+        label: `FY ${startYear}-${(endYear % 100).toString().padStart(2, '0')}`
+      };
     }
-
-    if (index % 2 === 0) {
-      doc.setFillColor(248, 250, 252);
-      doc.rect(14, y - 3, 182, 6, 'F');
-    }
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(15, 23, 42);
-
-    doc.text(name, 16, y);
-    doc.text(unit, 80, y);
-    doc.text(qty.toString(), 130, y, { align: 'right' });
-    doc.text(rate.toFixed(2), 162, y, { align: 'right' });
-    doc.setFont('helvetica', 'bold');
-    doc.text(totalVal.toFixed(2), 193, y, { align: 'right' });
-    y += 6;
-  });
-
-  y += 3;
-  doc.setDrawColor(203, 213, 225);
-  doc.line(14, y, 196, y);
-  y += 5;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Total Stock Valuation:', 130, y);
-  doc.text(`Rs ${grandTotalStock.toFixed(2)}`, 193, y, { align: 'right' });
-
-  return await exportTruePDF(doc, 'Stock_Valuation_Report');
+  } catch (e) {}
+  return { startDate: '2026-04-01', endDate: '2027-03-31', label: 'FY 2026-27' };
 };
 
 /**
- * 2. DOWNLOAD RECEIVABLES (LENA BAAKI) BREAKDOWN PDF
+ * Primary Exported Function required by EnterpriseDashboard.jsx
  */
-export const downloadDashboardReceivablesReportPDF = async (firmProfile, firmId, selectedFY = '2026-27') => {
-  const firmName = firmProfile?.legal_name || firmProfile?.trade_name || firmProfile?.name || 'Neelkanth Int Udyog';
-  const accounts = getSafeAccounts(firmId, selectedFY);
-  const lines = getNormalizedLedgerLines(firmId, selectedFY);
+export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') => {
+  const firmId = resolveFirmId(firmInput);
 
-  const balances = {};
+  let category = 'BRICK_KILN';
+  if (firmInput && typeof firmInput === 'object') {
+    category = String(firmInput.category || firmInput.business_category || firmInput.businessCategory || 'BRICK_KILN').toUpperCase();
+  } else {
+    try {
+      const activeProf = JSON.parse(localStorage.getItem('active_firm_profile') || '{}');
+      if (activeProf.category || activeProf.business_category) {
+        category = String(activeProf.category || activeProf.business_category).toUpperCase();
+      }
+    } catch (e) {}
+  }
+
+  const { startDate, endDate } = getFYDateRange(selectedFY);
+
+  let rawVouchers = [];
+  try {
+    if (typeof getUniversalVouchersByFirm === 'function') {
+      rawVouchers = getUniversalVouchersByFirm(firmId) || [];
+    }
+  } catch (e) {}
+
+  if (!rawVouchers || rawVouchers.length === 0) {
+    const vKeys = [
+      `app_vouchers_${firmId}`,
+      `account_book_vouchers_${firmId}`,
+      `app_invoices_${firmId}`,
+      `sales_invoices_${firmId}`,
+      `purchase_bills_${firmId}`
+    ];
+    const uniqueMap = new Map();
+    vKeys.forEach(k => {
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(v => {
+              if (v) {
+                const txFirm = String(v.firm_id || v.firmId || '').trim();
+                if (txFirm && txFirm !== firmId) return;
+                const uid = v.id || v.voucher_number || v.reference_no || `${v.voucher_date || v.date}-${v.amount || v.total_amount || 0}`;
+                if (!uniqueMap.has(uid)) {
+                  uniqueMap.set(uid, v);
+                }
+              }
+            });
+          }
+        }
+      } catch (err) {}
+    });
+    rawVouchers = Array.from(uniqueMap.values());
+  }
+
+  let stockItems = [];
+  try {
+    if (typeof getStockItemsByFirm === 'function') {
+      stockItems = getStockItemsByFirm(firmId) || [];
+    }
+  } catch (e) {}
+
+  if (!stockItems || stockItems.length === 0) {
+    const invKeys = [`inventory_items_${firmId}`, `app_stock_${firmId}`, 'inventory_items'];
+    for (const k of invKeys) {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(k) || '[]');
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          stockItems = parsed.map(item => ({
+            ...item,
+            current_stock: parseFloat(item.current_stock || item.stock || item.qty || 0),
+            unit_purchase_price: parseFloat(item.unit_purchase_price || item.purchase_price || item.cost_price || item.unit_valuation || item.rate || 0)
+          }));
+          break;
+        }
+      } catch (err) {}
+    }
+  }
+
+  let accounts = [];
+  try {
+    if (typeof getFirmMasterAccounts === 'function') {
+      accounts = getFirmMasterAccounts(firmId) || [];
+    }
+  } catch (e) {}
+
+  if (!accounts || accounts.length === 0) {
+    const accKeys = [`app_accounts_${firmId}`, `account_heads_${firmId}`, 'app_accounts'];
+    for (const k of accKeys) {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(k) || '[]');
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          accounts = parsed;
+          break;
+        }
+      } catch (err) {}
+    }
+  }
+
+  const vouchers = rawVouchers.filter(v => {
+    if (!v) return false;
+    const vDate = v.voucher_date || v.date || '';
+    if (vDate && (vDate < startDate || vDate > endDate)) return false;
+    return true;
+  });
+
+  const balanceMap = {};
   accounts.forEach(acc => {
     const name = (acc.account_name || acc.name || '').trim();
-    if (name) balances[name] = parseFloat(acc.opening_balance || acc.openingBalance || 0) * ((acc.balance_type || acc.balanceType || 'Dr') === 'Dr' ? 1 : -1);
+    if (!name) return;
+    balanceMap[name.toLowerCase()] = {
+      name: name,
+      primary_type: (acc.primary_type || acc.type || 'EXPENSES').toUpperCase(),
+      sub_group: acc.sub_group || acc.group || 'General',
+      opening: parseFloat(acc.opening_balance || acc.openingBalance || 0),
+      balance_type: acc.balance_type || acc.balanceType || 'Dr',
+      dr: 0,
+      cr: 0
+    };
   });
 
-  lines.forEach(l => {
-    const name = l.account_name.trim();
-    if (!balances[name]) balances[name] = 0;
-    if (l.entry_type === 'Dr') balances[name] += l.amount;
-    else balances[name] -= l.amount;
+  let totalSales = 0;
+  let totalPurchases = 0;
+
+  vouchers.forEach(v => {
+    if (!v) return;
+    const vType = String(v.voucher_type || v.type || '').toUpperCase();
+    const vAmount = parseFloat(v.amount || v.total_amount || 0);
+
+    if (vType === 'SALES') totalSales += vAmount;
+    if (vType === 'PURCHASE') totalPurchases += vAmount;
+
+    if (Array.isArray(v.entries) && v.entries.length > 0) {
+      v.entries.forEach(entry => {
+        const accName = (entry.account_name || entry.party || '').trim();
+        const lowName = accName.toLowerCase();
+        const amt = parseFloat(entry.amount || entry.debit || entry.credit || 0);
+        const isDr = (entry.type || '').toUpperCase() === 'DR' || parseFloat(entry.debit || 0) > 0;
+        const isCr = (entry.type || '').toUpperCase() === 'CR' || parseFloat(entry.credit || 0) > 0;
+
+        if (accName && amt > 0) {
+          if (!balanceMap[lowName]) {
+            balanceMap[lowName] = {
+              name: accName,
+              primary_type: isDr ? 'EXPENSES' : 'INCOME',
+              sub_group: 'General Ledger',
+              opening: 0,
+              balance_type: isDr ? 'Dr' : 'Cr',
+              dr: 0,
+              cr: 0
+            };
+          }
+          if (isDr) balanceMap[lowName].dr += amt;
+          if (isCr) balanceMap[lowName].cr += amt;
+        }
+      });
+    } else {
+      const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim();
+      const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim();
+
+      if (dr && vAmount > 0) {
+        const lowDr = dr.toLowerCase();
+        if (!balanceMap[lowDr]) {
+          balanceMap[lowDr] = { name: dr, primary_type: 'EXPENSES', sub_group: 'General Ledger', opening: 0, balance_type: 'Dr', dr: 0, cr: 0 };
+        }
+        balanceMap[lowDr].dr += vAmount;
+      }
+
+      if (cr && vAmount > 0) {
+        const lowCr = cr.toLowerCase();
+        if (!balanceMap[lowCr]) {
+          balanceMap[lowCr] = { name: cr, primary_type: 'INCOME', sub_group: 'General Ledger', opening: 0, balance_type: 'Cr', dr: 0, cr: 0 };
+        }
+        balanceMap[lowCr].cr += vAmount;
+      }
+    }
   });
 
-  const doc = new jsPDF('p', 'mm', 'a4');
-  let y = 18;
-  let pageNum = 1;
-
-  const printHeader = () => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(15, 23, 42);
-    doc.text(firmName.toUpperCase(), 14, y);
-    y += 6;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
-    doc.text('Dashboard Breakdown: Receivables (Lena Baaki - Customers)', 14, y);
-    y += 5;
-
-    doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
-    y += 6;
-
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y, 182, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-
-    doc.text('Customer / Party Name', 16, y + 4.8);
-    doc.text('Category', 110, y + 4.8);
-    doc.text('Receivable Amount (Rs)', 193, y + 4.8, { align: 'right' });
-    y += 9;
-  };
-
-  printHeader();
   let totalReceivables = 0;
-  let count = 0;
-
-  Object.entries(balances).forEach(([name, bal]) => {
-    if (bal > 0.01) {
-      totalReceivables += bal;
-      count++;
-
-      if (y > 275) { doc.addPage(); pageNum += 1; y = 18; printHeader(); }
-      if (count % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 3, 182, 6, 'F'); }
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(cleanTypographySpacing(name), 16, y);
-      doc.text('Sundry Debtors', 110, y);
-      doc.setFont('helvetica', 'bold');
-      doc.text(bal.toFixed(2), 193, y, { align: 'right' });
-      y += 6;
-    }
-  });
-
-  y += 3;
-  doc.setDrawColor(203, 213, 225);
-  doc.line(14, y, 196, y);
-  y += 5;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Total Receivables:', 110, y);
-  doc.text(`Rs ${totalReceivables.toFixed(2)}`, 193, y, { align: 'right' });
-
-  return await exportTruePDF(doc, 'Receivables_Breakdown_Report');
-};
-
-/**
- * 3. DOWNLOAD PAYABLES (DENA BAAKI) BREAKDOWN PDF
- */
-export const downloadDashboardPayablesReportPDF = async (firmProfile, firmId, selectedFY = '2026-27') => {
-  const firmName = firmProfile?.legal_name || firmProfile?.trade_name || firmProfile?.name || 'Neelkanth Int Udyog';
-  const accounts = getSafeAccounts(firmId, selectedFY);
-  const lines = getNormalizedLedgerLines(firmId, selectedFY);
-
-  const balances = {};
-  accounts.forEach(acc => {
-    const name = (acc.account_name || acc.name || '').trim();
-    if (name) balances[name] = parseFloat(acc.opening_balance || acc.openingBalance || 0) * ((acc.balance_type || acc.balanceType || 'Dr') === 'Dr' ? 1 : -1);
-  });
-
-  lines.forEach(l => {
-    const name = l.account_name.trim();
-    if (!balances[name]) balances[name] = 0;
-    if (l.entry_type === 'Dr') balances[name] += l.amount;
-    else balances[name] -= l.amount;
-  });
-
-  const doc = new jsPDF('p', 'mm', 'a4');
-  let y = 18;
-  let pageNum = 1;
-
-  const printHeader = () => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(15, 23, 42);
-    doc.text(firmName.toUpperCase(), 14, y);
-    y += 6;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
-    doc.text('Dashboard Breakdown: Payables (Dena Baaki - Creditors & Suppliers)', 14, y);
-    y += 5;
-
-    doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
-    y += 6;
-
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y, 182, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-
-    doc.text('Supplier / Vendor Name', 16, y + 4.8);
-    doc.text('Category', 110, y + 4.8);
-    doc.text('Payable Amount (Rs)', 193, y + 4.8, { align: 'right' });
-    y += 9;
-  };
-
-  printHeader();
   let totalPayables = 0;
-  let count = 0;
+  let cashAndBank = 0;
 
-  Object.entries(balances).forEach(([name, bal]) => {
-    if (bal < -0.01) {
-      const payableAmt = Math.abs(bal);
-      totalPayables += payableAmt;
-      count++;
+  Object.values(balanceMap).forEach(acc => {
+    const rawNet = (acc.balance_type === 'Dr' ? acc.opening : -acc.opening) + (acc.dr - acc.cr);
+    const lowerName = acc.name.toLowerCase();
+    const type = acc.primary_type;
+    const group = (acc.sub_group || '').toLowerCase();
 
-      if (y > 275) { doc.addPage(); pageNum += 1; y = 18; printHeader(); }
-      if (count % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 3, 182, 6, 'F'); }
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(cleanTypographySpacing(name), 16, y);
-      doc.text('Sundry Creditors', 110, y);
-      doc.setFont('helvetica', 'bold');
-      doc.text(payableAmt.toFixed(2), 193, y, { align: 'right' });
-      y += 6;
+    if (
+      lowerName.includes('cash') || 
+      lowerName.includes('bank') || 
+      lowerName.includes('sbi') || 
+      lowerName.includes('pnb') || 
+      group.includes('bank') || 
+      group.includes('cash')
+    ) {
+      cashAndBank += rawNet;
+    } else if (
+      type === 'ASSETS' || 
+      group.includes('debtor') || 
+      group.includes('customer') || 
+      lowerName.includes('customer')
+    ) {
+      if (rawNet > 0) totalReceivables += rawNet;
+    } else if (
+      type === 'LIABILITIES' || 
+      group.includes('creditor') || 
+      group.includes('supplier') || 
+      group.includes('thekedar') || 
+      group.includes('labor') || 
+      group.includes('labour') || 
+      lowerName.includes('supplier')
+    ) {
+      if (rawNet < 0) totalPayables += Math.abs(rawNet);
     }
   });
 
-  y += 3;
-  doc.setDrawColor(203, 213, 225);
-  doc.line(14, y, 196, y);
-  y += 5;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Total Payables:', 110, y);
-  doc.text(`Rs ${totalPayables.toFixed(2)}`, 193, y, { align: 'right' });
+  const totalStockValuation = stockItems.reduce((acc, item) => {
+    if (!item || item.is_service || item.item_type === 'SERVICE') return acc;
+    const qty = parseFloat(item.current_stock || item.stock || item.qty || 0);
+    const rate = parseFloat(
+      item.unit_purchase_price || 
+      item.purchase_price || 
+      item.cost_price || 
+      item.unit_valuation || 
+      item.purchasePrice || 
+      item.rate || 
+      0
+    );
+    return acc + (qty > 0 && rate > 0 ? (qty * rate) : 0);
+  }, 0);
 
-  return await exportTruePDF(doc, 'Payables_Breakdown_Report');
-};
+  let cards = [];
+  let actions = [];
+  let displayCategory = 'ईंट भट्ठा (Brick Kiln)';
 
-/**
- * 4. DOWNLOAD CONSUMPTION / ISSUE RECORDS BREAKDOWN PDF
- */
-export const downloadDashboardConsumptionReportPDF = async (firmProfile, firmId) => {
-  const firmName = firmProfile?.legal_name || firmProfile?.trade_name || firmProfile?.name || 'Neelkanth Int Udyog';
-  const cleanFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  if (category.includes('BRICK') || category.includes('BHATTA')) {
+    displayCategory = 'ईंट भट्ठा (Brick Kiln)';
+    const rawBricks = stockItems.find(i => {
+      const n = (i.item_name || i.name || '').toLowerCase();
+      return n.includes('kacchi') || n.includes('raw') || n.includes('कच्ची');
+    })?.current_stock || 0;
 
-  const adjustmentsKey = `universal_material_adjustments_${cleanFirmId}`;
-  const adjustments = StorageService.getItem(adjustmentsKey, []) || StorageService.getItem('universal_material_adjustments', []) || [];
+    const pakkiBricks = stockItems.find(i => {
+      const n = (i.item_name || i.name || '').toLowerCase();
+      return n.includes('pakki') || n.includes('red') || n.includes('पक्की');
+    })?.current_stock || 0;
 
-  const doc = new jsPDF('p', 'mm', 'a4');
-  let y = 18;
-  let pageNum = 1;
+    const coalStock = stockItems.find(i => {
+      const n = (i.item_name || i.name || '').toLowerCase();
+      return n.includes('coal') || n.includes('fuel') || n.includes('कोयला') || n.includes('diesel');
+    })?.current_stock || 0;
 
-  const printHeader = () => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(15, 23, 42);
-    doc.text(firmName.toUpperCase(), 14, y);
-    y += 6;
+    cards = [
+      { label: 'Raw Bricks (कच्ची ईंटें)', value: `${parseFloat(rawBricks || 0).toLocaleString('en-IN')} Pcs`, color: '#0284c7', icon: '🧱' },
+      { label: 'Finished Bricks (पक्की ईंटें)', value: `${parseFloat(pakkiBricks || 0).toLocaleString('en-IN')} Pcs`, color: '#d97706', icon: '🏗' },
+      { label: 'Fuel / Coal Stock', value: `${parseFloat(coalStock || 0).toFixed(2)} Units`, color: '#475569', icon: '⚡' },
+      { label: 'Live Stock Value', value: `₹${round2(totalStockValuation).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: '#059669', icon: '📊' }
+    ];
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
-    doc.text('Dashboard Breakdown: Material Consumption & Issue Records', 14, y);
-    y += 5;
+    actions = [
+      { key: 'sales', label: 'Brick Dispatch / Sales', icon: '🧾', bg: '#0284c7' },
+      { key: 'production', label: 'Bhatta Production Entry', icon: '🧱', bg: '#d97706' },
+      { key: 'purchase', label: 'Fuel & Raw Purchases', icon: '🛍️', bg: '#059669' },
+      { key: 'milan', label: 'Customer/Labour Milan', icon: '📑', bg: '#7c3aed' }
+    ];
+  } else {
+    displayCategory = 'General Trading & Distribution';
+    cards = [
+      { label: 'Total Stock Valuation', value: `₹${round2(totalStockValuation).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: '#059669', icon: '📦' },
+      { label: 'Active Product SKUs', value: `${stockItems.length} Items`, color: '#0284c7', icon: '🏷️' },
+      { label: 'Sales Turnover', value: `₹${round2(totalSales).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: '#0891b2', icon: '📈' }
+    ];
+    actions = [
+      { key: 'sales', label: 'Create Sales Invoice', icon: '🧾', bg: '#0284c7' },
+      { key: 'purchase', label: 'Stock Purchase Inward', icon: '🛍️', bg: '#059669' }
+    ];
+  }
 
-    doc.setFontSize(8);
-    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
-    y += 6;
-
-    doc.setFillColor(15, 23, 42);
-    doc.rect(14, y, 182, 7, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-
-    doc.text('Date', 16, y + 4.8);
-    doc.text('Item Name', 45, y + 4.8);
-    doc.text('Issued Party / Location', 95, y + 4.8);
-    doc.text('Quantity', 145, y + 4.8, { align: 'right' });
-    doc.text('Total Value (Rs)', 193, y + 4.8, { align: 'right' });
-    y += 9;
+  return {
+    receivables: Math.max(0, round2(totalReceivables)),
+    payables: Math.max(0, round2(totalPayables)),
+    cashAndBank: round2(cashAndBank),
+    totalSales: round2(totalSales),
+    totalPurchases: round2(totalPurchases),
+    totalStockValuation: round2(totalStockValuation),
+    categorySpecifics: {
+      category: displayCategory,
+      cards,
+      actions
+    }
   };
-
-  printHeader();
-  let totalConsumptionVal = 0;
-
-  adjustments.forEach((adj, index) => {
-    if (!adj) return;
-    const date = adj.date || '-';
-    const itemName = cleanTypographySpacing(adj.item_name || adj.itemName || 'Material');
-    const party = cleanTypographySpacing(adj.party || 'Factory');
-    const qty = parseFloat(adj.quantity || adj.qty || 0);
-    const totalAmt = parseFloat(adj.total_amount || adj.amount || 0);
-    totalConsumptionVal += totalAmt;
-
-    if (y > 275) { doc.addPage(); pageNum += 1; y = 18; printHeader(); }
-    if (index % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 3, 182, 6, 'F'); }
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(15, 23, 42);
-    doc.text(date, 16, y);
-    doc.text(itemName, 45, y);
-    doc.text(party, 95, y);
-    doc.text(qty.toString(), 145, y, { align: 'right' });
-    doc.setFont('helvetica', 'bold');
-    doc.text(totalAmt.toFixed(2), 193, y, { align: 'right' });
-    y += 6;
-  });
-
-  y += 3;
-  doc.setDrawColor(203, 213, 225);
-  doc.line(14, y, 196, y);
-  y += 5;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Total Consumption Records Value:', 95, y);
-  doc.text(`Rs ${totalConsumptionVal.toFixed(2)}`, 193, y, { align: 'right' });
-
-  return await exportTruePDF(doc, 'Consumption_Records_Report');
 };
+
+// Aliases for backwards compatibility across components
+export const getCalculatedDashboardMetrics = getDynamicDashboardMetrics;
