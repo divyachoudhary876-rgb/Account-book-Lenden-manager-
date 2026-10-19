@@ -50,12 +50,10 @@ export const cleanAccountTitle = (rawName) => {
 const normalizeDateStr = (dateInput) => {
   if (!dateInput) return '';
   const str = String(dateInput).trim();
-  // If DD/MM/YYYY format
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
     const [d, m, y] = str.split('/');
     return `${y}-${m}-${d}`;
   }
-  // If DD-MM-YYYY format
   if (/^\d{2}-\d{2}-\d{4}$/.test(str)) {
     const [d, m, y] = str.split('-');
     return `${y}-${m}-${d}`;
@@ -124,27 +122,27 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 /**
  * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT (Strict Date Range & Opening Balance Calculation)
  */
-export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput) => {
+export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput, argFromDate = null, argToDate = null) => {
   const firmName = getCleanFirmName(firmInput);
   const cleanParty = cleanAccountTitle(partyName);
   
   let txs = [];
-  let rawFrom = null;
-  let rawTo = null;
+  let rawFrom = argFromDate;
+  let rawTo = argToDate;
 
-  if (statementData && typeof statementData === 'object') {
+  if (statementData && typeof statementData === 'object' && !Array.isArray(statementData)) {
     if (Array.isArray(statementData.transactions)) txs = statementData.transactions;
     else if (Array.isArray(statementData.entries)) txs = statementData.entries;
-    else if (Array.isArray(statementData)) txs = statementData;
+    else if (Array.isArray(statementData.data)) txs = statementData.data;
 
-    if (statementData.fromDate) rawFrom = statementData.fromDate;
-    if (statementData.toDate) rawTo = statementData.toDate;
+    if (!rawFrom && statementData.fromDate) rawFrom = statementData.fromDate;
+    if (!rawTo && statementData.toDate) rawTo = statementData.toDate;
   } else if (Array.isArray(statementData)) {
     txs = statementData;
   }
 
-  if (!rawFrom) rawFrom = localStorage.getItem('app_statement_from_date') || null;
-  if (!rawTo) rawTo = localStorage.getItem('app_statement_to_date') || null;
+  if (!rawFrom) rawFrom = localStorage.getItem('app_statement_from_date') || localStorage.getItem('from_date') || null;
+  if (!rawTo) rawTo = localStorage.getItem('app_statement_to_date') || localStorage.getItem('to_date') || null;
 
   const fromDate = normalizeDateStr(rawFrom);
   const toDate = normalizeDateStr(rawTo);
@@ -328,7 +326,7 @@ export const downloadAccountStatementPDF = async (statementData, partyName = 'Ac
 };
 
 /**
- * 2. STOCK ITEM LEDGER & MOVEMENT STATEMENT PDF EXPORT (With Guaranteed Per-Page Subtotals & Grand Totals)
+ * 2. STOCK ITEM LEDGER & MOMENT STATEMENT PDF EXPORT (With Guaranteed Per-Page Subtotals & Grand Totals)
  */
 export const downloadStockItemLedgerPDF = async (itemData, firmInput) => {
   const firmName = getCleanFirmName(firmInput);
