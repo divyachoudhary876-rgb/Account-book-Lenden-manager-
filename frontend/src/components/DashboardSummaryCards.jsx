@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { 
+  downloadDashboardCashBankReportPDF,
   downloadDashboardStockReportPDF, 
   downloadDashboardReceivablesReportPDF, 
   downloadDashboardPayablesReportPDF, 
@@ -14,7 +15,17 @@ import {
 export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
   const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
-  // 1. Click Handler for Stock Valuation Card
+  // 1. Click Handler for Cash & Bank Card
+  const handleCashBankClick = async (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    try {
+      await downloadDashboardCashBankReportPDF(firm, activeFirmId, activeFY);
+    } catch (err) {
+      alert("Cash & Bank Report PDF download error: " + err.message);
+    }
+  };
+
+  // 2. Click Handler for Stock Valuation Card
   const handleStockClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -24,7 +35,7 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
     }
   };
 
-  // 2. Click Handler for Receivables (Lena Baaki) Card
+  // 3. Click Handler for Receivables (Lena Baaki) Card
   const handleReceivablesClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -34,7 +45,7 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
     }
   };
 
-  // 3. Click Handler for Payables (Dena Baaki) Card
+  // 4. Click Handler for Payables (Dena Baaki) Card
   const handlePayablesClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -44,7 +55,7 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
     }
   };
 
-  // 4. Click Handler for Consumption / Issue Records Card
+  // 5. Click Handler for Consumption / Issue Records Card
   const handleConsumptionClick = async (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
@@ -57,11 +68,20 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', boxSizing: 'border-box' }}>
       
-      {/* 1. Cash & Bank Card */}
-      <div style={cardStyle('#ffffff', '#0f172a', '#cbd5e1')}>
-        <span style={titleStyle}>💵 CASH & BANK (रोकड़/बैंक)</span>
+      {/* 1. Cash & Bank Card (Clickable PDF Export) */}
+      <div 
+        onClick={handleCashBankClick}
+        title="Click to download complete Cash & Bank accounts breakdown PDF statement"
+        style={interactiveCardStyle('#ffffff', '#0f172a', '#cbd5e1')}
+        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={titleStyle}>💵 CASH & BANK (रोकड़/बैंक)</span>
+          <span style={badgeStyle('#0f172a', '#f1f5f9')}>📥 Download PDF</span>
+        </div>
         <strong style={valueStyle('#0f172a')}>₹{Number(summaryData?.cashAndBank || 0).toFixed(2)}</strong>
-        <span style={subText}>Current liquidity balance across accounts</span>
+        <span style={subText}>* Click card to export liquidity accounts breakdown PDF</span>
       </div>
 
       {/* 2. Stock Valuation Card (Clickable PDF Export) */}
@@ -77,7 +97,7 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
           <span style={badgeStyle('#166534', '#dcfce7')}>📥 Download PDF</span>
         </div>
         <strong style={valueStyle('#166534')}>₹{Number(summaryData?.totalStockValuation || summaryData?.stockValuation || 0).toFixed(2)}</strong>
-        <span style={subText}>* Click card to export uncorrupted item-wise stock breakdown PDF</span>
+        <span style={subText}>* Click card to export item-wise stock breakdown PDF</span>
       </div>
 
       {/* 3. Receivables Card (Clickable PDF Export) */}
