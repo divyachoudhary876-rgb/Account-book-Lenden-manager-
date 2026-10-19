@@ -65,7 +65,6 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
   // 3. Process Inventory Stock Deduction & Stock Ledger Valuation
   const rawItemsList = items || line_items || cart || (item ? [item] : []) || (product ? [product] : []) || ((itemId || item_id || product_id) ? [{ itemId: itemId || item_id || product_id, quantity: quantity || qty || 1 }] : []);
   const processedItems = [];
-  let totalStockCostValue = 0;
 
   rawItemsList.forEach(soldItem => {
     if (!soldItem) return;
@@ -87,7 +86,7 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
       itemCostRate = parseFloat(stockItem.unit_purchase_price || stockItem.purchase_price || stockItem.rate || 0);
       
       const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || 0);
-      const newQty = round2(currentQty - soldQty); // Allows negative if stock is short
+      const newQty = round2(currentQty - soldQty);
 
       stockItem.current_stock = newQty;
       stockItem.stock = newQty;
@@ -96,9 +95,6 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
       stockItem.updated_at = new Date().toISOString();
       inventory[itemIndex] = stockItem;
     }
-
-    const itemCostTotal = round2(soldQty * itemCostRate);
-    totalStockCostValue += itemCostTotal;
 
     processedItems.push({ 
       itemId: targetItemId, 
@@ -110,7 +106,7 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     });
   });
 
-  // 4. Generate Compound Double-Entry Voucher (Posting Sales + Stock Ledger Credit)
+  // 4. Generate Compound Double-Entry Voucher
   const invoiceId = invoicePayload.id || `INV-${Date.now()}`;
   const refNo = invoicePayload.reference_no || invoicePayload.invoice_number || `INV-${Date.now().toString().slice(-6)}`;
 
@@ -120,10 +116,9 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
     ...(gstAmount > 0 ? [{ account_name: 'GST Output', party: 'GST Output', type: 'CR', debit: 0, credit: gstAmount, amount: gstAmount }] : [])
   ];
 
-  // Automatically credit respective stock accounts for sold items so statements match
   processedItems.forEach(si => {
     const stockLedgerName = `${si.itemName} Stock Account`;
-    const itemCostVal = round2(si.quantity * (si.rate > 0 ? si.rate * 0.8 : 0)); // Or cost valuation
+    const itemCostVal = round2(si.quantity * (si.rate > 0 ? si.rate * 0.8 : 0));
     if (itemCostVal > 0) {
       voucherEntries.push({
         account_name: stockLedgerName,
@@ -183,4 +178,65 @@ export const processSalesInvoicePosting = (invoicePayload, firmId = 'FIRM-001') 
   window.dispatchEvent(new Event('storage'));
 
   return newVoucher;
+};
+
+/**
+ * Reverts stock inventory when a sales invoice is deleted.
+ * EXPORTED to fix CreateInvoice.jsx build error.
+ */
+export const revertSalesStockOnDeletion = (voucherOrInvoiceId, firmId = 'FIRM-001') => {
+  try {
+    let targetId = voucherOrInvoiceId;
+    if (typeof voucherOrInvoiceId === 'object') {
+      targetId = voucherOrInvoiceId.id || voucherOrInvoiceId.invoice_number || voucherOrInvoiceId.reference_no;
+    }
+    if (!targetId) return;
+
+    const activeFirmId = firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+    const vouchersKey = `account_book_vouchers_${activeFirmId}`;
+    const inventoryKey = `inventory_items_${activeFirmId}`;
+
+    const vouchers = StorageService.getItem(vouchersKey, []) || StorageService.getItem('account_book_vouchers', []) || [];
+    const inventory = StorageService.getItem(inventoryKey, []) || StorageService.getItem('inventory_items', []) || [];
+
+    const targetVoucher = vouchers.find(v => v && (String(v.id) === String(targetId) || String(v.reference_no) === String(targetId)) && (v.voucher_type === 'SALES' || v.type === 'SALES'));
+    
+    if (!targetVoucher) return;
+
+    const itemsToRestore = targetVoucher.items || [];
+
+    if (Array.isArray(itemsToRestore) && itemsToRestore.length > 0) {
+      itemsToRestore.forEach(soldItem => {
+        const targetItemId = soldItem.itemId || soldItem.item_id || soldItem.product_id || soldItem.id;
+        const soldQty = parseFloat(soldItem.quantity || soldItem.qty || 0);
+        if (!targetItemId || soldQty <= 0) return;
+
+        const itemIndex = inventory.findIndex(i => 
+          String(i.id) === String(targetItemId) || 
+          String(i.item_name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase() ||
+          String(i.name || '').trim().toLowerCase() === String(targetItemId).trim().toLowerCase()
+        );
+
+        if (itemIndex !== -1) {
+          const stockItem = { ...inventory[itemIndex] };
+          const currentQty = parseFloat(stockItem.current_stock || stockItem.stock || 0);
+          const restoredQty = round2(currentQty + soldQty);
+
+          stockItem.current_stock = restoredQty;
+          stockItem.stock = restoredQty;
+          stockItem.current_qty = restoredQty;
+          stockItem.qty = restoredQty;
+          inventory[itemIndex] = stockItem;
+        }
+      });
+
+      StorageService.setItem(inventoryKey, inventory);
+      localStorage.setItem(inventoryKey, JSON.stringify(inventory));
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
+    }
+  } catch (e) {
+    console.error("Error reverting sales stock on deletion:", e);
+  }
 };
