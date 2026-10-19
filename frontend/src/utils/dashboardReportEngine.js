@@ -1,59 +1,193 @@
-// frontend/src/utils/dashboardDataEngine.js
+// frontend/src/utils/dashboardReportEngine.js
 
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { StorageService } from './storageSync';
 
-const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+const resolveFirmId = (firmInput) => {
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
+  if (firmInput && typeof firmInput === 'object') {
+    return String(firmInput.id || firmInput.firm_id || firmInput.firmId || '').trim();
+  }
+  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+};
 
-export const getDynamicDashboardMetrics = (firm, selectedFY) => {
-  const firmId = firm?.id || firm?.firm_id || firm || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
-  
-  const accountsKey = `app_accounts_${firmId}`;
-  const accounts = StorageService.getItem(accountsKey, []) || StorageService.getItem('app_account_heads', []) || [];
+const getFirmName = (firmInput) => {
+  if (firmInput && typeof firmInput === 'object') {
+    return firmInput.firm_name || firmInput.name || 'Neelkanth Int Udyog';
+  }
+  return 'Neelkanth Int Udyog';
+};
 
-  let totalReceivables = 0;
-  let totalPayables = 0;
-  let totalCashBank = 0;
+export const downloadDashboardCashBankReportPDF = (firmInput) => {
+  try {
+    const firmId = resolveFirmId(firmInput);
+    const firmName = getFirmName(firmInput);
+    const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
 
-  accounts.forEach(acc => {
-    if (!acc) return;
-    const name = String(acc.account_name || acc.name || '').trim();
-    const type = String(acc.primary_type || acc.type || '').toUpperCase();
-    const grp = String(acc.sub_group || acc.group || '').toLowerCase();
-    const balance = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
+    const cashBankAccounts = accounts.filter(acc => {
+      if (!acc) return false;
+      const name = String(acc.account_name || acc.name || '').toLowerCase();
+      const grp = String(acc.sub_group || acc.group || '').toLowerCase();
+      return name.includes('cash') || name.includes('bank') || grp.includes('cash') || grp.includes('bank');
+    });
 
-    // 1. Cash & Bank Liquidity Filter
-    if (name.toLowerCase().includes('cash') || name.toLowerCase().includes('bank') || grp.includes('bank') || grp.includes('cash')) {
-      totalCashBank += (acc.balance_type === 'Cr' ? -balance : balance);
-      return;
-    }
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(firmName, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Dashboard Breakdown: Cash & Bank Accounts Statement`, 14, 22);
+    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
 
-    // 2. Strict Receivables Filter (Sundry Debtors Only - Excluding Expenses, Assets, Stock, Incomes)
-    const isDebtorGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena');
-    const isInvalidGroup = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory') || grp.includes('asset') || grp.includes('fixed asset') || grp.includes('income');
+    const tableRows = cashBankAccounts.map((acc, idx) => {
+      const name = acc.account_name || acc.name || 'Account';
+      const grp = acc.sub_group || acc.group || 'Cash-in-Hand / Bank Accounts';
+      const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
+      return [idx + 1, name, grp, `Rs. ${bal.toFixed(2)}`];
+    });
 
-    if (type === 'ASSETS' && isDebtorGroup && !isInvalidGroup) {
-      if (balance > 0) {
-        totalReceivables += balance;
-      }
-      return;
-    }
+    autoTable(doc, {
+      startY: 35,
+      head: [['#', 'Account / Bank Name', 'Sub Group', 'Net Balance (Rs)']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] }
+    });
 
-    // 3. Strict Payables Filter (Sundry Creditors & Labour/Thekedar Only)
-    const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena');
+    doc.save(`Cash_Bank_Statement_${firmId}.pdf`);
+  } catch (e) {
+    console.error("Error generating Cash & Bank PDF:", e);
+  }
+};
 
-    if (type === 'LIABILITIES' && isCreditorGroup && !isInvalidGroup) {
-      if (balance > 0) {
-        totalPayables += balance;
-      }
-      return;
-    }
-  });
+export const downloadDashboardStockReportPDF = (firmInput) => {
+  try {
+    const firmId = resolveFirmId(firmInput);
+    const firmName = getFirmName(firmInput);
+    const inventory = StorageService.getItem(`inventory_items_${firmId}`, []) || StorageService.getItem('inventory_items', []) || [];
 
-  return {
-    cashAndBank: round2(totalCashBank),
-    receivables: round2(totalReceivables),
-    payables: round2(totalPayables),
-    totalSales: 0,
-    totalPurchases: 0
-  };
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(firmName, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Dashboard Breakdown: Stock Valuation Report`, 14, 22);
+    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+
+    let totalValuation = 0;
+    const tableRows = inventory.map((item, idx) => {
+      if (!item) return null;
+      const name = item.item_name || item.name || 'Item';
+      const unit = item.unit || 'Units';
+      const qty = parseFloat(item.current_stock || item.stock || item.current_qty || item.qty || 0);
+      const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
+      const totalVal = qty * rate;
+      totalValuation += totalVal;
+
+      return [idx + 1, name, unit, qty.toFixed(2), rate.toFixed(2), totalVal.toFixed(2)];
+    }).filter(Boolean);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['#', 'Item Name', 'Unit', 'Quantity', 'Rate (Rs)', 'Total Value (Rs)']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] }
+    });
+
+    doc.save(`Stock_Valuation_Report_${firmId}.pdf`);
+  } catch (e) {
+    console.error("Error generating Stock PDF:", e);
+  }
+};
+
+export const downloadDashboardReceivablesReportPDF = (firmInput) => {
+  try {
+    const firmId = resolveFirmId(firmInput);
+    const firmName = getFirmName(firmInput);
+    const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
+
+    const debtors = accounts.filter(acc => {
+      if (!acc) return false;
+      const type = String(acc.primary_type || acc.type || '').toUpperCase();
+      const grp = String(acc.sub_group || acc.group || '').toLowerCase();
+      const isDebtor = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena');
+      const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory') || grp.includes('asset') || grp.includes('income');
+      return type === 'ASSETS' && isDebtor && !isInvalid;
+    });
+
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(firmName, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Dashboard Breakdown: Receivables (Lena Baaki - Customers)`, 14, 22);
+    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+
+    let totalReceivables = 0;
+    const tableRows = debtors.map((acc, idx) => {
+      const name = acc.account_name || acc.name || 'Customer';
+      const grp = acc.sub_group || acc.group || 'Sundry Debtors';
+      const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
+      if (bal > 0) totalReceivables += bal;
+
+      return [idx + 1, name, grp, `Rs. ${bal.toFixed(2)}`];
+    });
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['#', 'Customer / Party Name', 'Category', 'Receivable Amount (Rs)']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] }
+    });
+
+    doc.save(`Receivables_Statement_${firmId}.pdf`);
+  } catch (e) {
+    console.error("Error generating Receivables PDF:", e);
+  }
+};
+
+export const downloadDashboardPayablesReportPDF = (firmInput) => {
+  try {
+    const firmId = resolveFirmId(firmInput);
+    const firmName = getFirmName(firmInput);
+    const accounts = StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem('app_account_heads', []) || [];
+
+    const creditors = accounts.filter(acc => {
+      if (!acc) return false;
+      const type = String(acc.primary_type || acc.type || '').toUpperCase();
+      const grp = String(acc.sub_group || acc.group || '').toLowerCase();
+      const isCreditor = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena');
+      const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
+      return type === 'LIABILITIES' && isCreditor && !isInvalid;
+    });
+
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(firmName, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Dashboard Breakdown: Payables (Dena Baaki - Creditors & Suppliers)`, 14, 22);
+    doc.text(`Generated On: ${new Date().toISOString().split('T')[0]}`, 14, 28);
+
+    let totalPayables = 0;
+    const tableRows = creditors.map((acc, idx) => {
+      const name = acc.account_name || acc.name || 'Supplier';
+      const grp = acc.sub_group || acc.group || 'Sundry Creditors';
+      const bal = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
+      if (bal > 0) totalPayables += bal;
+
+      return [idx + 1, name, grp, `Rs. ${bal.toFixed(2)}`];
+    });
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['#', 'Supplier / Vendor Name', 'Category', 'Payable Amount (Rs)']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] }
+    });
+
+    doc.save(`Payables_Statement_${firmId}.pdf`);
+  } catch (e) {
+    console.error("Error generating Payables PDF:", e);
+  }
 };
