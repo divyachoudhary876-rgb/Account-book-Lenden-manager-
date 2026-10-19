@@ -9,6 +9,9 @@ import { getStockItemsByFirm } from './stockInventoryEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
+/**
+ * Resolve clean Firm ID string irrespective of whether an object or string was passed
+ */
 export const resolveFirmId = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') {
     return firmInput.trim();
@@ -19,6 +22,10 @@ export const resolveFirmId = (firmInput) => {
   return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 };
 
+/**
+ * Clean financial year string and calculate exact date boundaries
+ * e.g., 'FY 2026-27' or '2026-27' -> { startDate: '2026-04-01', endDate: '2027-03-31' }
+ */
 export const getFYDateRange = (fyString = '2026-27') => {
   try {
     const clean = String(fyString || '2026-27').replace(/FY\s*/i, '').trim();
@@ -34,16 +41,19 @@ export const getFYDateRange = (fyString = '2026-27') => {
         label: `FY ${startYear}-${(endYear % 100).toString().padStart(2, '0')}`
       };
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("FY Date Range parsing error:", e);
+  }
   return { startDate: '2026-04-01', endDate: '2027-03-31', label: 'FY 2026-27' };
 };
 
 /**
- * Primary Exported Function required by EnterpriseDashboard.jsx
+ * Primary Dynamic Dashboard KPI Aggregation Engine
  */
 export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') => {
   const firmId = resolveFirmId(firmInput);
 
+  // 1. Resolve Industry Category
   let category = 'BRICK_KILN';
   if (firmInput && typeof firmInput === 'object') {
     category = String(firmInput.category || firmInput.business_category || firmInput.businessCategory || 'BRICK_KILN').toUpperCase();
@@ -58,6 +68,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
 
   const { startDate, endDate } = getFYDateRange(selectedFY);
 
+  // 2. Multi-Bucket Universal Voucher Extraction (Zero Cross-Firm Leakage)
   let rawVouchers = [];
   try {
     if (typeof getUniversalVouchersByFirm === 'function') {
@@ -83,7 +94,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
             parsed.forEach(v => {
               if (v) {
                 const txFirm = String(v.firm_id || v.firmId || '').trim();
-                if (txFirm && txFirm !== firmId) return;
+                if (txFirm && txFirm !== firmId) return; // Strict boundary check
                 const uid = v.id || v.voucher_number || v.reference_no || `${v.voucher_date || v.date}-${v.amount || v.total_amount || 0}`;
                 if (!uniqueMap.has(uid)) {
                   uniqueMap.set(uid, v);
@@ -97,6 +108,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     rawVouchers = Array.from(uniqueMap.values());
   }
 
+  // 3. Multi-Bucket Inventory Items Fetching with Rate Fallback
   let stockItems = [];
   try {
     if (typeof getStockItemsByFirm === 'function') {
@@ -121,6 +133,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     }
   }
 
+  // 4. Firm Master Accounts Loading
   let accounts = [];
   try {
     if (typeof getFirmMasterAccounts === 'function') {
@@ -141,6 +154,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     }
   }
 
+  // Filter vouchers within the selected FY (if voucher has date)
   const vouchers = rawVouchers.filter(v => {
     if (!v) return false;
     const vDate = v.voucher_date || v.date || '';
@@ -148,6 +162,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     return true;
   });
 
+  // 5. Account Head Double-Entry Milan Aggregation
   const balanceMap = {};
   accounts.forEach(acc => {
     const name = (acc.account_name || acc.name || '').trim();
@@ -174,6 +189,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     if (vType === 'SALES') totalSales += vAmount;
     if (vType === 'PURCHASE') totalPurchases += vAmount;
 
+    // A. Parse Compound Multi-Line Entries (Ind AS compliant)
     if (Array.isArray(v.entries) && v.entries.length > 0) {
       v.entries.forEach(entry => {
         const accName = (entry.account_name || entry.party || '').trim();
@@ -198,7 +214,9 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
           if (isCr) balanceMap[lowName].cr += amt;
         }
       });
-    } else {
+    } 
+    // B. Parse Single Dr/Cr Simple Voucher
+    else {
       const dr = (v.dr_account || v.debit_account || v.dr_party || '').trim();
       const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim();
 
@@ -220,8 +238,8 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     }
   });
 
-  let totalReceivables = 0;
-  let totalPayables = 0;
+  let totalReceivables = 0; // Sundry Debtors
+  let totalPayables = 0;    // Sundry Creditors & Labour/Suppliers
   let cashAndBank = 0;
 
   Object.values(balanceMap).forEach(acc => {
@@ -230,6 +248,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     const type = acc.primary_type;
     const group = (acc.sub_group || '').toLowerCase();
 
+    // Cash & Bank Head Classification
     if (
       lowerName.includes('cash') || 
       lowerName.includes('bank') || 
@@ -239,14 +258,18 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       group.includes('cash')
     ) {
       cashAndBank += rawNet;
-    } else if (
+    } 
+    // Debtors / Receivables
+    else if (
       type === 'ASSETS' || 
       group.includes('debtor') || 
       group.includes('customer') || 
       lowerName.includes('customer')
     ) {
       if (rawNet > 0) totalReceivables += rawNet;
-    } else if (
+    } 
+    // Creditors / Payables (Suppliers, Labour, Thekedars)
+    else if (
       type === 'LIABILITIES' || 
       group.includes('creditor') || 
       group.includes('supplier') || 
@@ -259,6 +282,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     }
   });
 
+  // 6. Live Stock Valuation with Exhaustive Multi-Key Rate Fallback
   const totalStockValuation = stockItems.reduce((acc, item) => {
     if (!item || item.is_service || item.item_type === 'SERVICE') return acc;
     const qty = parseFloat(item.current_stock || item.stock || item.qty || 0);
@@ -274,6 +298,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     return acc + (qty > 0 && rate > 0 ? (qty * rate) : 0);
   }, 0);
 
+  // 7. Domain Specific Metrics (Bhatta vs Biomass vs Trading)
   let cards = [];
   let actions = [];
   let displayCategory = 'ईंट भट्ठा (Brick Kiln)';
@@ -308,16 +333,52 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       { key: 'purchase', label: 'Fuel & Raw Purchases', icon: '🛍️', bg: '#059669' },
       { key: 'milan', label: 'Customer/Labour Milan', icon: '📑', bg: '#7c3aed' }
     ];
+  } else if (category.includes('BIOMASS') || category.includes('BRIQUETTE')) {
+    displayCategory = 'बायोमास ब्रिकेट (Biomass Briquettes)';
+    const huskStock = stockItems.find(i => {
+      const n = (i.item_name || i.name || '').toLowerCase();
+      return n.includes('husk') || n.includes('तूड़ी') || n.includes('raw') || n.includes('sawdust');
+    })?.current_stock || 0;
+
+    const briquettesStock = stockItems.find(i => {
+      const n = (i.item_name || i.name || '').toLowerCase();
+      return n.includes('briquette') || n.includes('finished') || n.includes('बायोमास');
+    })?.current_stock || 0;
+
+    const dieselStock = stockItems.find(i => {
+      const n = (i.item_name || i.name || '').toLowerCase();
+      return n.includes('diesel') || n.includes('डीजल');
+    })?.current_stock || 0;
+
+    cards = [
+      { label: 'Agro-Husk (तूड़ी स्टॉक)', value: `${parseFloat(huskStock || 0).toFixed(2)} MT`, color: '#d97706', icon: '🌾' },
+      { label: 'Finished Briquettes', value: `${parseFloat(briquettesStock || 0).toFixed(2)} MT`, color: '#059669', icon: '🪵' },
+      { label: 'Diesel / Generator Fuel', value: `${parseFloat(dieselStock || 0).toFixed(2)} Ltr`, color: '#0284c7', icon: '⛽' },
+      { label: 'Stock Valuation', value: `₹${round2(totalStockValuation).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: '#4f46e5', icon: '💰' }
+    ];
+
+    actions = [
+      { key: 'sales', label: 'Briquette Sales Invoice', icon: '🧾', bg: '#0284c7' },
+      { key: 'purchase', label: 'Agro Raw Inward (+IN)', icon: '🌾', bg: '#d97706' },
+      { key: 'inventory', label: 'Live Plant Inventory', icon: '📦', bg: '#059669' },
+      { key: 'milan', label: 'Factory Account Milan', icon: '📑', bg: '#7c3aed' }
+    ];
   } else {
     displayCategory = 'General Trading & Distribution';
+    const lowStockCount = stockItems.filter(i => parseFloat(i.current_stock || 0) <= 5).length;
+
     cards = [
       { label: 'Total Stock Valuation', value: `₹${round2(totalStockValuation).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: '#059669', icon: '📦' },
       { label: 'Active Product SKUs', value: `${stockItems.length} Items`, color: '#0284c7', icon: '🏷️' },
-      { label: 'Sales Turnover', value: `₹${round2(totalSales).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: '#0891b2', icon: '📈' }
+      { label: 'Sales Turnover', value: `₹${round2(totalSales).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: '#0891b2', icon: '📈' },
+      { label: 'Low Stock Warnings', value: `${lowStockCount} Items`, color: lowStockCount > 0 ? '#dc2626' : '#64748b', icon: '⚠️' }
     ];
+
     actions = [
       { key: 'sales', label: 'Create Sales Invoice', icon: '🧾', bg: '#0284c7' },
-      { key: 'purchase', label: 'Stock Purchase Inward', icon: '🛍️', bg: '#059669' }
+      { key: 'purchase', label: 'Stock Purchase Inward', icon: '🛍️', bg: '#059669' },
+      { key: 'inventory', label: 'Stock & Price Master', icon: '📦', bg: '#0891b2' },
+      { key: 'milan', label: 'Party Account Milan', icon: '📑', bg: '#7c3aed' }
     ];
   }
 
