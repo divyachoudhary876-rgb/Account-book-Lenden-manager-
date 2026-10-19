@@ -23,27 +23,23 @@ const getFirmName = (firmInput) => {
   return 'Neelkanth Int Udyog';
 };
 
-// Universal helper for Web Browsers & Android WebViews (APK)
+// 100% Bulletproof Mobile APK & Browser Downloader
 const triggerPDFDownload = (doc, filename) => {
   try {
-    // Generate Data URI which works across mobile webviews and browsers
+    // Generate Data URI directly for mobile WebViews & Browsers
     const pdfDataUri = doc.output('datauristring');
     
-    // Check if running inside mobile webview / capacitor
-    if (window.Capacitor || window.cordova || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-      const win = window.open();
-      if (win) {
-        win.document.write(`<iframe src="${pdfDataUri}" frameborder="0" style="border:0; top:0; left:0; bottom:0; right:0; width:100%; height:100%;" allowfullscreen></iframe>`);
-        return;
-      }
-    }
-
     const link = document.createElement('a');
     link.href = pdfDataUri;
     link.download = filename;
+    link.style.display = 'none';
+    
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    
+    setTimeout(() => {
+      document.body.removeChild(link);
+    }, 1000);
   } catch (err) {
     try {
       doc.save(filename);
