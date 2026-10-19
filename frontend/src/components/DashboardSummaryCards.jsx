@@ -13,51 +13,42 @@ import {
 } from '../utils/dashboardReportEngine';
 
 export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
-  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const activeFirmId = firm?.id || firm?.firm_id || firm?.firmId || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
 
-  const handleCashBankClick = async (e) => {
-    if (e) { e.preventDefault(); e.stopPropagation(); }
+  // Helper to safely execute and catch PDF generation errors
+  const safeExecutePDF = async (pdfGeneratorFn, title, ...args) => {
     try {
-      await downloadDashboardCashBankReportPDF(firm, activeFirmId, activeFY);
+      console.log(`[Dashboard Summary Cards] Generating ${title} PDF...`);
+      await pdfGeneratorFn(...args);
     } catch (err) {
-      alert("Cash & Bank Report PDF download error: " + err.message);
+      console.error(`Error generating ${title} PDF:`, err);
+      alert(`⚠️ ${title} PDF download karne mein asafalta hui:\n${err.message || err}`);
     }
   };
 
-  const handleStockClick = async (e) => {
+  const handleCashBankClick = (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
-    try {
-      await downloadDashboardStockReportPDF(firm, activeFirmId);
-    } catch (err) {
-      alert("Stock Report PDF download error: " + err.message);
-    }
+    safeExecutePDF(downloadDashboardCashBankReportPDF, 'Cash & Bank Statement', firm, activeFirmId, activeFY);
   };
 
-  const handleReceivablesClick = async (e) => {
+  const handleStockClick = (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
-    try {
-      await downloadDashboardReceivablesReportPDF(firm, activeFirmId, activeFY);
-    } catch (err) {
-      alert("Receivables Report PDF download error: " + err.message);
-    }
+    safeExecutePDF(downloadDashboardStockReportPDF, 'Stock Valuation', firm, activeFirmId);
   };
 
-  const handlePayablesClick = async (e) => {
+  const handleReceivablesClick = (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
-    try {
-      await downloadDashboardPayablesReportPDF(firm, activeFirmId, activeFY);
-    } catch (err) {
-      alert("Payables Report PDF download error: " + err.message);
-    }
+    safeExecutePDF(downloadDashboardReceivablesReportPDF, 'Receivables Breakdown', firm, activeFirmId, activeFY);
   };
 
-  const handleConsumptionClick = async (e) => {
+  const handlePayablesClick = (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
-    try {
-      await downloadDashboardConsumptionReportPDF(firm, activeFirmId);
-    } catch (err) {
-      alert("Consumption Report PDF download error: " + err.message);
-    }
+    safeExecutePDF(downloadDashboardPayablesReportPDF, 'Payables Breakdown', firm, activeFirmId, activeFY);
+  };
+
+  const handleConsumptionClick = (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    safeExecutePDF(downloadDashboardConsumptionReportPDF, 'Consumption Records', firm, activeFirmId);
   };
 
   return (
@@ -132,7 +123,7 @@ export default function DashboardSummaryCards({ firm, summaryData, activeFY }) {
         title="Click to download complete Material Consumption records PDF statement"
         style={interactiveCardStyle('#ecfdf5', '#065f46', '#a7f3d0')}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, { display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={titleStyle}>🚜 CONSUMPTION / ISSUE RECORDS</span>
           <span style={badgeStyle('#065f46', '#d1fae5')}>📥 Download PDF</span>
         </div>
