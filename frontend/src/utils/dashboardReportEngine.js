@@ -214,7 +214,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
 };
 
 /**
- * 3. RECEIVABLES REPORT PDF (STRICTLY SUNDRY DEBTORS / CUSTOMERS ONLY - NO ASSETS/BANK/CASH/EXPENSES)
+ * 3. RECEIVABLES REPORT PDF (STRICTLY SUNDRY DEBTORS / CUSTOMERS ONLY)
  */
 export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
@@ -229,16 +229,13 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const name = String(acc.account_name || acc.name || '').toLowerCase();
       
-      // STRICT EXCLUSION: Never include Cash, Bank, Fixed Assets, Expenses, or Creditors
       const isCashOrBank = name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash');
       const isAssetOrExpense = grp.includes('fixed asset') || grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
       const isCreditor = grp.includes('creditor') || grp.includes('supplier') || grp.includes('thekedar') || grp.includes('dena');
       
       if (isCashOrBank || isAssetOrExpense || isCreditor) return false;
 
-      // Must explicitly be a Customer / Debtor / Grahak / Lena account with positive Dr balance
       const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena');
-      
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
 
@@ -314,7 +311,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF (STRICTLY SUNDRY CREDITORS, SUPPLIERS, THEKEDAR & LABOUR ONLY - NO ASSETS/EXPENSES)
+ * 4. PAYABLES REPORT PDF (STRICTLY SUNDRY CREDITORS, SUPPLIERS, THEKEDAR & LABOUR ONLY)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
@@ -329,15 +326,12 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const name = String(acc.account_name || acc.name || '').toLowerCase();
 
-      // STRICT EXCLUSION: Never include Cash, Bank, Fixed Assets, or General Expenses
       const isCashOrBank = name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash');
       const isAssetOrExpense = grp.includes('fixed asset') || grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
       
       if (isCashOrBank || isAssetOrExpense) return false;
 
-      // Must explicitly be a Creditor / Supplier / Thekedar / Labour account with payable balance
       const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || name.includes('thekedar') || name.includes('supplier');
-      
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
 
@@ -466,7 +460,7 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
       if (y > 275) { doc.addPage(); y = 18; }
       const date = rec.date || '';
       const location = rec.uses_for || '';
-      const expenseAcc = cleanAccountTitle(rec.expense_account || '');
+      const expenseAcc = cleanAccountTitle(rec.expense_category || rec.expense_account || '');
       const itemsStr = (rec.items || []).map(i => `${i.name || i.item_name} (${i.qty || i.quantity} ${i.unit})`).join(', ');
       const val = parseFloat(rec.total_value || rec.amount || 0);
       totalConsumption += val;
@@ -490,7 +484,6 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     doc.text(`Total Material Consumption Value: Rs ${totalConsumption.toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
-  }code: `...`
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
     alert("PDF download failed: " + e.message);
