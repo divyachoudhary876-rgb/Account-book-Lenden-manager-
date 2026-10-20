@@ -5,7 +5,6 @@ import { IDBStorage } from './indexedDbStorage';
 import { exportTruePDF } from './pdfDownloadEngine';
 import { getDynamicDashboardMetrics, resolveFirmId } from './dashboardDataEngine';
 import { getStockItemsByFirm, getFirmItemStock } from './stockInventoryEngine';
-import { getAllFirmVouchers } from './ledgerEngine';
 
 const getFirmName = (firmInput) => {
   if (firmInput && typeof firmInput === 'object') {
@@ -42,7 +41,7 @@ export const cleanAccountTitle = (rawName) => {
 };
 
 /**
- * 1. CASH & BANK REPORT PDF (Strictly synchronized with live Dashboard calculations)
+ * 1. CASH & BANK REPORT PDF
  */
 export const downloadDashboardCashBankReportPDF = async (...args) => {
   try {
@@ -112,7 +111,7 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
       doc.text(String(idx + 1), 16, y);
       doc.text(name.substring(0, 35), 30, y);
       doc.text(String(grp).substring(0, 30), 100, y);
-      doc.text(`${bal.toFixed(2)} ${bal < 0 ? 'Cr' : 'Dr'}`, 193, y, { align: 'right' });
+      doc.text(`${Math.abs(bal).toFixed(2)} ${bal < 0 ? 'Cr' : 'Dr'}`, 193, y, { align: 'right' });
       y += 6;
     });
 
@@ -215,7 +214,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
 };
 
 /**
- * 3. RECEIVABLES REPORT PDF (Strictly matching Dashboard Receivables logic)
+ * 3. RECEIVABLES REPORT PDF (STRICTLY SUNDRY DEBTORS / CUSTOMERS ONLY - NO ASSETS/BANK/CASH/EXPENSES)
  */
 export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
@@ -227,17 +226,23 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 
     const debtors = accounts.filter(acc => {
       if (!acc) return false;
-      const type = String(acc.primary_type || acc.type || '').toUpperCase();
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const name = String(acc.account_name || acc.name || '').toLowerCase();
       
-      const isDebtor = type === 'ASSETS' || grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena') || name.includes('customer');
-      const isInvalid = name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash') || grp.includes('stock') || grp.includes('expense');
+      // STRICT EXCLUSION: Never include Cash, Bank, Fixed Assets, Expenses, or Creditors
+      const isCashOrBank = name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash');
+      const isAssetOrExpense = grp.includes('fixed asset') || grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
+      const isCreditor = grp.includes('creditor') || grp.includes('supplier') || grp.includes('thekedar') || grp.includes('dena');
+      
+      if (isCashOrBank || isAssetOrExpense || isCreditor) return false;
+
+      // Must explicitly be a Customer / Debtor / Grahak / Lena account with positive Dr balance
+      const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena');
       
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
 
-      return isDebtor && !isInvalid && bal > 0;
+      return isCustomerGroup && bal > 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -309,7 +314,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF (Strictly matching Dashboard Payables logic)
+ * 4. PAYABLES REPORT PDF (STRICTLY SUNDRY CREDITORS, SUPPLIERS, THEKEDAR & LABOUR ONLY - NO ASSETS/EXPENSES)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
@@ -321,17 +326,22 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
 
     const creditors = accounts.filter(acc => {
       if (!acc) return false;
-      const type = String(acc.primary_type || acc.type || '').toUpperCase();
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const name = String(acc.account_name || acc.name || '').toLowerCase();
 
-      const isCreditor = type === 'LIABILITIES' || grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || name.includes('thekedar');
-      const isInvalid = grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
+      // STRICT EXCLUSION: Never include Cash, Bank, Fixed Assets, or General Expenses
+      const isCashOrBank = name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash');
+      const isAssetOrExpense = grp.includes('fixed asset') || grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
+      
+      if (isCashOrBank || isAssetOrExpense) return false;
+
+      // Must explicitly be a Creditor / Supplier / Thekedar / Labour account with payable balance
+      const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || name.includes('thekedar') || name.includes('supplier');
       
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
 
-      return isCreditor && !isInvalid && bal < 0;
+      return isCreditorGroup && bal < 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -480,6 +490,7 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     doc.text(`Total Material Consumption Value: Rs ${totalConsumption.toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
+  }code: `...`
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
     alert("PDF download failed: " + e.message);
