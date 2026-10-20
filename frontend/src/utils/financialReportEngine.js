@@ -2,7 +2,6 @@
 
 import { getFirmMasterAccounts } from './accountMasterEngine.js';
 import { StorageService } from './storageSync';
-import { getAllFirmVouchers } from './ledgerEngine';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
@@ -48,21 +47,68 @@ export const getSafeAccounts = (firmId = 'FIRM-001', selectedFY = '2026-27') => 
 };
 
 /**
- * Comprehensive Ledger Lines Normalizer with Strict Canonical Account Matching
+ * Strict Non-Duplicate Voucher Fetcher for Financial Reports
+ */
+const getUniqueFirmVouchersForReports = (activeFirmId = 'FIRM-001') => {
+  let rawTx = [];
+  
+  // Target strictly the primary firm-scoped keys to avoid cross-key duplication
+  const primaryKeys = [
+    `app_vouchers_${activeFirmId}`,
+    `account_book_vouchers_${activeFirmId}`,
+    `sales_invoices_${activeFirmId}`,
+    `purchase_bills_${activeFirmId}`,
+    `app_invoices_${activeFirmId}`
+  ];
+
+  primaryKeys.forEach(key => {
+    try {
+      const val = JSON.parse(localStorage.getItem(key) || '[]');
+      if (Array.isArray(val)) rawTx.push(...val);
+    } catch (e) {}
+  });
+
+  // Fallback to base keys if firm-scoped keys are empty
+  if (rawTx.length === 0) {
+    const baseKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'app_vouchers'];
+    baseKeys.forEach(key => {
+      try {
+        const val = JSON.parse(localStorage.getItem(key) || '[]');
+        if (Array.isArray(val)) rawTx.push(...val);
+      } catch (e) {}
+    });
+  }
+
+  // Strict deduplication by unique voucher ID or signature
+  const uniqueMap = new Map();
+  rawTx.forEach(tx => {
+    if (!tx) return;
+    const txFirm = String(tx.firm_id || tx.firmId || '').trim();
+    if (txFirm && txFirm !== activeFirmId && txFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
+
+    const uId = String(tx.id || tx.voucher_number || tx.reference_no || '').trim() || 
+                `${tx.voucher_date || tx.date || ''}-${tx.amount || tx.total_amount || 0}-${tx.dr_account || ''}-${tx.cr_account || ''}`;
+    
+    if (!uniqueMap.has(uId)) {
+      uniqueMap.set(uId, tx);
+    }
+  });
+
+  return Array.from(uniqueMap.values());
+};
+
+/**
+ * Comprehensive Ledger Lines Normalizer with Strict Deduplication
  */
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026-27') => {
   const { startDate, endDate } = getFYDateRange(selectedFY);
   const activeFirmId = String(firmId || 'FIRM-001').trim();
 
-  let rawTx = [];
-  try {
-    rawTx = getAllFirmVouchers(activeFirmId);
-  } catch (e) {
-    rawTx = [];
-  }
+  const uniqueVouchers = getUniqueFirmVouchersForReports(activeFirmId);
+  const flatLines = [];
 
-  // 1. Ingest Payroll / Wages records
-  const payrollKeys = [`payroll_records_${activeFirmId}`, `worker_wages_${activeFirmId}`, `worker_ledgers_${activeFirmId}`, `wage_entries_${activeFirmId}`];
+  // 1. Ingest Payroll / Wages records safely
+  const payrollKeys = [`payroll_records_${activeFirmId}`, `worker_wages_${activeFirmId}`, `worker_ledgers_${activeFirmId}`];
   payrollKeys.forEach(pk => {
     try {
       const pVal = JSON.parse(localStorage.getItem(pk) || '[]');
@@ -70,28 +116,21 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
         pVal.forEach(p => {
           if (!p) return;
           const pDate = p.date || p.work_date || p.voucher_date || new Date().toISOString().slice(0, 10);
+          if (pDate < startDate || pDate > endDate) return;
           const pAmt = parseFloat(p.amount || p.total_amount || p.kul_amount || p.earned || 0);
           const workerName = String(p.worker_name || p.worker || p.party || 'Labour Wages').trim();
           const expenseAcc = String(p.expense_account || p.category || 'Pathai & Labour Expenses').trim();
           
-          if (pAmt > 0) {
-            rawTx.push({
-              id: p.id || `PAYROLL-${Math.random()}`,
-              voucher_date: pDate,
-              voucher_type: 'PAYROLL',
-              reference_no: p.reference_no || 'WAGE',
-              dr_account: expenseAcc,
-              cr_account: workerName,
-              amount: pAmt,
-              narration: p.remarks || p.description || 'Labour Wages Entry'
-            });
+          if (pAmt > 0 && workerName && expenseAcc) {
+            flatLines.push({ voucher_id: p.id, date: pDate, voucher_number: 'WAGE', voucher_type: 'PAYROLL', account_name: expenseAcc, entry_type: 'Dr', amount: pAmt, narration: 'Wages' });
+            flatLines.push({ voucher_id: p.id, date: pDate, voucher_number: 'WAGE', voucher_type: 'PAYROLL', account_name: workerName, entry_type: 'Cr', amount: pAmt, narration: 'Wages' });
           }
         });
       }
     } catch (e) {}
   });
 
-  // 2. Ingest Material Consumption Records
+  // 2. Ingest Material Consumption Records safely
   const consumptionKeys = [`material_consumption_records_${activeFirmId}`, `universal_material_adjustments_${activeFirmId}`];
   consumptionKeys.forEach(ck => {
     try {
@@ -100,47 +139,24 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
         cVal.forEach(c => {
           if (!c) return;
           const cDate = c.date || new Date().toISOString().slice(0, 10);
+          if (cDate < startDate || cDate > endDate) return;
           const cAmt = parseFloat(c.total_value || c.amount || 0);
           const expAcc = String(c.expense_account || 'Factory Manufacturing Expenses').trim();
           const stockAcc = String(c.item_name || c.name || 'Raw Material Stock').trim() + ' Stock Account';
 
           if (cAmt > 0) {
-            rawTx.push({
-              id: c.id || `CONS-${Math.random()}`,
-              voucher_date: cDate,
-              voucher_type: 'CONSUMPTION',
-              reference_no: 'CONS',
-              dr_account: expAcc,
-              cr_account: stockAcc,
-              amount: cAmt,
-              narration: c.uses_for || c.remarks || 'Material Issue'
-            });
+            flatLines.push({ voucher_id: c.id, date: cDate, voucher_number: 'CONS', voucher_type: 'CONSUMPTION', account_name: expAcc, entry_type: 'Dr', amount: cAmt, narration: 'Material Issue' });
+            flatLines.push({ voucher_id: c.id, date: cDate, voucher_number: 'CONS', voucher_type: 'CONSUMPTION', account_name: stockAcc, entry_type: 'Cr', amount: cAmt, narration: 'Material Issue' });
           }
         });
       }
     } catch (e) {}
   });
 
-  const uniqueVoucherMap = new Map();
-  rawTx.forEach(v => {
-    if (!v) return;
-    const vFirm = String(v.firm_id || v.firmId || '').trim();
-    if (vFirm && vFirm !== activeFirmId && vFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
-
-    const vDate = v.voucher_date || v.date || '';
-    if (vDate && (vDate < startDate || vDate > endDate)) return;
-
-    const uniqueId = v.id || v.reference_no || v.voucher_number || `${vDate}-${v.amount || v.total_amount || 0}-${v.dr_account || ''}-${v.cr_account || ''}`;
-    if (!uniqueVoucherMap.has(uniqueId)) {
-      uniqueVoucherMap.set(uniqueId, v);
-    }
-  });
-
-  const uniqueVouchers = Array.from(uniqueVoucherMap.values());
-  const flatLines = [];
-
   uniqueVouchers.forEach((vch) => {
     const vchDate = vch.voucher_date || vch.date || '';
+    if (vchDate && (vchDate < startDate || vchDate > endDate)) return;
+
     const vchNum = vch.reference_no || vch.voucher_number || 'VCH';
     const vchType = (vch.voucher_type || vch.type || 'JOURNAL').toUpperCase();
     const narration = vch.narration || vch.notes || vch.description || '';
