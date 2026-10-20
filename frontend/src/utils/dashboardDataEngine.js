@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Dashboard Data Engine
- * Primary Dynamic Dashboard KPI Aggregation Engine with Strict Firm Isolation & Exhaustive Multi-Bucket Scan.
+ * Primary Dynamic Dashboard KPI Aggregation Engine with Strict Firm Isolation & Indian Accounting Standards (Ind AS) Compliance.
  */
 
 import { getUniversalVouchersByFirm } from './voucherPostingEngine.js';
@@ -39,7 +39,7 @@ export const getFYDateRange = (fyString = '2026-27') => {
 };
 
 /**
- * Universal Exhaustive Dashboard KPI Aggregation Engine
+ * Universal Exhaustive Dashboard KPI Aggregation Engine with Strict Accounting Classification
  */
 export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') => {
   const firmId = resolveFirmId(firmInput);
@@ -101,7 +101,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     } catch (err) {}
   });
 
-  // Also deep scan localStorage for any backup or transaction payloads
+  // Deep scan localStorage for any backup or transaction payloads
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('bill') || key.includes('invoice') || key.includes('payroll') || key.includes('wage'))) {
@@ -252,12 +252,13 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
   accounts.forEach(acc => {
     const name = (acc.account_name || acc.name || '').trim();
     if (!name) return;
+    const balanceType = String(acc.balance_type || acc.balanceType || 'Dr').trim().toUpperCase();
     balanceMap[name.toLowerCase()] = {
       name: name,
       primary_type: (acc.primary_type || acc.type || 'EXPENSES').toUpperCase(),
       sub_group: acc.sub_group || acc.group || 'General',
       opening: parseFloat(acc.opening_balance || acc.openingBalance || 0),
-      balance_type: acc.balance_type || acc.balanceType || 'Dr',
+      balance_type: balanceType,
       dr: 0,
       cr: 0
     };
@@ -289,7 +290,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
               primary_type: isDr ? 'EXPENSES' : 'INCOME',
               sub_group: 'General Ledger',
               opening: 0,
-              balance_type: isDr ? 'Dr' : 'Cr',
+              balance_type: isDr ? 'DR' : 'CR',
               dr: 0,
               cr: 0
             };
@@ -305,7 +306,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       if (dr && vAmount > 0) {
         const lowDr = dr.toLowerCase();
         if (!balanceMap[lowDr]) {
-          balanceMap[lowDr] = { name: dr, primary_type: 'EXPENSES', sub_group: 'General Ledger', opening: 0, balance_type: 'Dr', dr: 0, cr: 0 };
+          balanceMap[lowDr] = { name: dr, primary_type: 'EXPENSES', sub_group: 'General Ledger', opening: 0, balance_type: 'DR', dr: 0, cr: 0 };
         }
         balanceMap[lowDr].dr += vAmount;
       }
@@ -313,7 +314,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       if (cr && vAmount > 0) {
         const lowCr = cr.toLowerCase();
         if (!balanceMap[lowCr]) {
-          balanceMap[lowCr] = { name: cr, primary_type: 'INCOME', sub_group: 'General Ledger', opening: 0, balance_type: 'Cr', dr: 0, cr: 0 };
+          balanceMap[lowCr] = { name: cr, primary_type: 'INCOME', sub_group: 'General Ledger', opening: 0, balance_type: 'CR', dr: 0, cr: 0 };
         }
         balanceMap[lowCr].cr += vAmount;
       }
@@ -325,39 +326,45 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
   let cashAndBank = 0;
 
   Object.values(balanceMap).forEach(acc => {
-    const rawNet = (acc.balance_type === 'Dr' ? acc.opening : -acc.opening) + (acc.dr - acc.cr);
+    const rawNet = (acc.balance_type === 'DR' ? acc.opening : -acc.opening) + (acc.dr - acc.cr);
     const lowerName = acc.name.toLowerCase();
-    const type = acc.primary_type;
-    const group = (acc.sub_group || '').toLowerCase();
+    const grp = (acc.sub_group || '').toLowerCase();
 
+    // 1. Cash & Bank Classification
     if (
       lowerName.includes('cash') || 
       lowerName.includes('bank') || 
       lowerName.includes('sbi') || 
       lowerName.includes('pnb') || 
-      group.includes('bank') || 
-      group.includes('cash')
+      grp.includes('bank') || 
+      grp.includes('cash')
     ) {
       cashAndBank += rawNet;
-    } else if (
-      type === 'ASSETS' || 
-      group.includes('debtor') || 
-      group.includes('customer') || 
+    } 
+    // 2. Receivables Classification (STRICT: Sundry Debtors / Customers Only - Exclude Assets, Bank, Cash, Expenses)
+    else if (
+      grp.includes('debtor') || 
+      grp.includes('customer') || 
+      grp.includes('grahak') || 
+      grp.includes('lena') || 
       lowerName.includes('customer')
     ) {
       if (rawNet > 0) totalReceivables += rawNet;
-    } else if (
-      type === 'LIABILITIES' || 
-      group.includes('creditor') || 
-      group.includes('supplier') || 
-      group.includes('thekedar') || 
-      group.includes('labor') || 
-      group.includes('labour') || 
+    } 
+    // 3. Payables Classification (STRICT: Sundry Creditors, Suppliers, Vendors, Thekedar, Labour Only)
+    else if (
+      grp.includes('creditor') || 
+      grp.includes('supplier') || 
+      grp.includes('vendor') || 
+      grp.includes('thekedar') || 
+      grp.includes('dena') || 
+      grp.includes('labor') || 
+      grp.includes('labour') || 
       lowerName.includes('supplier') ||
       lowerName.includes('thekedar')
     ) {
       if (rawNet < 0) totalPayables += Math.abs(rawNet);
-      else if (rawNet > 0 && (group.includes('creditor') || group.includes('supplier'))) totalPayables += rawNet;
+      else if (rawNet > 0 && (grp.includes('creditor') || grp.includes('supplier'))) totalPayables += rawNet;
     }
   });
 
