@@ -2,9 +2,13 @@
 
 import { getFirmMasterAccounts } from './accountMasterEngine.js';
 import { StorageService } from './storageSync';
-import { getAllFirmVouchers } from './ledgerEngine.js';
+import { getAllFirmVouchers } from './ledgerEngine';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+const normalizeKey = (name = '') => {
+  return String(name).toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+};
 
 const getFYDateRange = (fyString = '2026-27') => {
   try {
@@ -44,7 +48,7 @@ export const getSafeAccounts = (firmId = 'FIRM-001', selectedFY = '2026-27') => 
 };
 
 /**
- * Comprehensive Ledger Lines Normalizer: Scans Vouchers + Payroll/Wages + Material Consumption + Production
+ * Comprehensive Ledger Lines Normalizer with Strict Canonical Account Matching
  */
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026-27') => {
   const { startDate, endDate } = getFYDateRange(selectedFY);
@@ -57,15 +61,8 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
     rawTx = [];
   }
 
-  // 1. Also scan and ingest Payroll / Wages records so no labour entry is missed
-  const payrollKeys = [
-    `payroll_records_${activeFirmId}`,
-    `worker_wages_${activeFirmId}`,
-    `worker_ledgers_${activeFirmId}`,
-    `wage_entries_${activeFirmId}`,
-    `payroll_records`,
-    `worker_wages`
-  ];
+  // 1. Ingest Payroll / Wages records
+  const payrollKeys = [`payroll_records_${activeFirmId}`, `worker_wages_${activeFirmId}`, `worker_ledgers_${activeFirmId}`, `wage_entries_${activeFirmId}`];
   payrollKeys.forEach(pk => {
     try {
       const pVal = JSON.parse(localStorage.getItem(pk) || '[]');
@@ -78,7 +75,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
           const expenseAcc = String(p.expense_account || p.category || 'Pathai & Labour Expenses').trim();
           
           if (pAmt > 0) {
-            // Debit the Expense Account, Credit the Worker or Payable Account
             rawTx.push({
               id: p.id || `PAYROLL-${Math.random()}`,
               voucher_date: pDate,
@@ -95,12 +91,8 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
     } catch (e) {}
   });
 
-  // 2. Also scan Material Consumption / Adjustments
-  const consumptionKeys = [
-    `material_consumption_records_${activeFirmId}`,
-    `universal_material_adjustments_${activeFirmId}`,
-    `material_consumption_records`
-  ];
+  // 2. Ingest Material Consumption Records
+  const consumptionKeys = [`material_consumption_records_${activeFirmId}`, `universal_material_adjustments_${activeFirmId}`];
   consumptionKeys.forEach(ck => {
     try {
       const cVal = JSON.parse(localStorage.getItem(ck) || '[]');
@@ -189,13 +181,16 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
   const flatLines = getNormalizedLedgerLines(firmId, selectedFY);
 
   const accountTotals = {};
-  const nameMapping = {};
+  const canonicalMap = {}; // Maps normalized key -> display account name
 
   masterAccounts.forEach((acc) => {
     const name = (acc.account_name || acc.name || '').trim();
     if (!name) return;
+    const normKey = normalizeKey(name);
     const opening = parseFloat(acc.opening_balance || acc.openingBalance || 0);
-    const isDebitOpening = (acc.balance_type || acc.balanceType || 'Dr') === 'Dr';
+    const isDebitOpening = String(acc.balance_type || acc.balanceType || 'Dr').trim().toUpperCase() === 'DR';
+
+    canonicalMap[normKey] = name;
 
     accountTotals[name] = {
       account_name: name,
@@ -204,22 +199,16 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
       debit: isDebitOpening ? opening : 0,
       credit: !isDebitOpening ? opening : 0
     };
-    nameMapping[name.toLowerCase()] = name;
   });
 
   flatLines.forEach((line) => {
     const rawName = line.account_name.trim();
-    const lowerName = rawName.toLowerCase();
+    const normKey = normalizeKey(rawName);
     
-    let targetName = nameMapping[lowerName];
+    let targetName = canonicalMap[normKey];
     if (!targetName) {
-      const matchedKey = Object.keys(nameMapping).find(k => k === lowerName || k.includes(lowerName) || lowerName.includes(k));
-      if (matchedKey) {
-        targetName = nameMapping[matchedKey];
-      } else {
-        targetName = rawName;
-        nameMapping[lowerName] = rawName;
-      }
+      targetName = rawName;
+      canonicalMap[normKey] = rawName;
     }
 
     if (!accountTotals[targetName]) {
@@ -227,7 +216,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
       const lower = targetName.toLowerCase();
       if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor') || lower.includes('stock') || lower.includes('asset')) inferredType = 'ASSETS';
       else if (lower.includes('sale') || lower.includes('income') || lower.includes('revenue')) inferredType = 'INCOME';
-      else if (lower.includes('capital') || lower.includes('creditor') || lower.includes('loan') || lower.includes('liability') || lower.includes('worker') || lower.includes('thekedar')) inferredType = 'LIABILITIES';
+      else if (lower.includes('capital') || lower.includes('creditor') || lower.includes('loan') || lower.includes('liability') || lower.includes('worker') || lower.includes('thekedar') || lower.includes('munsari')) inferredType = 'LIABILITIES';
 
       accountTotals[targetName] = { account_name: targetName, primary_type: inferredType, sub_group: 'General', debit: 0, credit: 0 };
     }
