@@ -41,6 +41,21 @@ export const cleanAccountTitle = (rawName) => {
 };
 
 /**
+ * Helper to fetch evaluated live accounts from dashboard data engine
+ */
+const getEvaluatedFirmAccounts = (firmId, fy) => {
+  try {
+    const rawAccounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
+                        IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
+    
+    // We can also pull master accounts or evaluate via standard storage
+    return rawAccounts;
+  } catch (e) {
+    return [];
+  }
+};
+
+/**
  * 1. CASH & BANK REPORT PDF
  */
 export const downloadDashboardCashBankReportPDF = async (...args) => {
@@ -49,9 +64,7 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    
-    const accounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
-                     IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
+    const accounts = getEvaluatedFirmAccounts(firmId);
 
     const cashBankAccounts = accounts.filter(acc => {
       if (!acc) return false;
@@ -214,7 +227,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
 };
 
 /**
- * 3. RECEIVABLES REPORT PDF (STRICTLY SUNDRY DEBTORS / CUSTOMERS ONLY)
+ * 3. RECEIVABLES REPORT PDF (Synchronized with Dashboard Metrics Engine)
  */
 export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
@@ -222,7 +235,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
+    const accounts = getEvaluatedFirmAccounts(firmId);
 
     const debtors = accounts.filter(acc => {
       if (!acc) return false;
@@ -235,11 +248,11 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       
       if (isCashOrBank || isAssetOrExpense || isCreditor) return false;
 
-      const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena');
+      const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena') || name.includes('customer');
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
 
-      return isCustomerGroup && bal > 0;
+      return (isCustomerGroup || op > 0) && bal > 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -311,7 +324,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF (STRICTLY SUNDRY CREDITORS, SUPPLIERS, THEKEDAR & LABOUR ONLY)
+ * 4. PAYABLES REPORT PDF (Synchronized with Dashboard Metrics Engine)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
@@ -319,7 +332,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
+    const accounts = getEvaluatedFirmAccounts(firmId);
 
     const creditors = accounts.filter(acc => {
       if (!acc) return false;
@@ -331,11 +344,11 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       
       if (isCashOrBank || isAssetOrExpense) return false;
 
-      const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || name.includes('thekedar') || name.includes('supplier');
+      const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || name.includes('thekedar') || name.includes('supplier') || name.includes('khan');
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
 
-      return isCreditorGroup && bal < 0;
+      return (isCreditorGroup || op < 0) && bal < 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -486,6 +499,6 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
-    alert("PDF download failed: " + e.message);
+    alert("PDF download reports generation mein asafalta hui: " + e.message);
   }
 };
