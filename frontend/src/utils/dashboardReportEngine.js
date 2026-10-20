@@ -41,15 +41,12 @@ export const cleanAccountTitle = (rawName) => {
 };
 
 /**
- * Helper to fetch evaluated live accounts from dashboard data engine
+ * Helper to fetch live accounts from storage
  */
-const getEvaluatedFirmAccounts = (firmId, fy) => {
+const getEvaluatedFirmAccounts = (firmId) => {
   try {
-    const rawAccounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
-                        IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
-    
-    // We can also pull master accounts or evaluate via standard storage
-    return rawAccounts;
+    return IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
+           IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
   } catch (e) {
     return [];
   }
@@ -227,7 +224,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
 };
 
 /**
- * 3. RECEIVABLES REPORT PDF (Synchronized with Dashboard Metrics Engine)
+ * 3. RECEIVABLES REPORT PDF (STRICT: Sundry Debtors / Customers Only - NO Capital, Expenses, Cash, Bank)
  */
 export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
@@ -242,17 +239,25 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const name = String(acc.account_name || acc.name || '').toLowerCase();
       
-      const isCashOrBank = name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash');
-      const isAssetOrExpense = grp.includes('fixed asset') || grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
-      const isCreditor = grp.includes('creditor') || grp.includes('supplier') || grp.includes('thekedar') || grp.includes('dena');
+      // STRICT EXCLUSION: Exclude Cash, Bank, Capital, Expenses, Assets, Creditors
+      const isInvalid = name.includes('cash') || name.includes('bank') || 
+                        grp.includes('bank') || grp.includes('cash') || 
+                        grp.includes('capital') || name.includes('capital') ||
+                        grp.includes('expense') || grp.includes('stock') || 
+                        grp.includes('inventory') || grp.includes('fixed asset') ||
+                        grp.includes('creditor') || grp.includes('supplier') || 
+                        grp.includes('thekedar') || grp.includes('dena');
       
-      if (isCashOrBank || isAssetOrExpense || isCreditor) return false;
+      if (isInvalid) return false;
 
-      const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena') || name.includes('customer');
+      const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || 
+                              grp.includes('grahak') || grp.includes('lena') || 
+                              name.includes('customer');
+      
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
 
-      return (isCustomerGroup || op > 0) && bal > 0;
+      return isCustomerGroup && bal > 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -324,7 +329,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF (Synchronized with Dashboard Metrics Engine)
+ * 4. PAYABLES REPORT PDF (STRICT: Sundry Creditors, Suppliers, Thekedar & Labour Only - NO Capital, Expenses, Cash, Bank)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
@@ -339,16 +344,26 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const name = String(acc.account_name || acc.name || '').toLowerCase();
 
-      const isCashOrBank = name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash');
-      const isAssetOrExpense = grp.includes('fixed asset') || grp.includes('expense') || grp.includes('stock') || grp.includes('inventory');
+      // STRICT EXCLUSION: Exclude Cash, Bank, Capital, Expenses, Assets, Debtors
+      const isInvalid = name.includes('cash') || name.includes('bank') || 
+                        grp.includes('bank') || grp.includes('cash') || 
+                        grp.includes('capital') || name.includes('capital') ||
+                        grp.includes('expense') || grp.includes('stock') || 
+                        grp.includes('inventory') || grp.includes('fixed asset') ||
+                        grp.includes('debtor') || grp.includes('customer');
       
-      if (isCashOrBank || isAssetOrExpense) return false;
+      if (isInvalid) return false;
 
-      const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || name.includes('thekedar') || name.includes('supplier') || name.includes('khan');
+      const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || 
+                              grp.includes('vendor') || grp.includes('thekedar') || 
+                              grp.includes('dena') || grp.includes('labor') || 
+                              grp.includes('labour') || name.includes('thekedar') || 
+                              name.includes('supplier') || name.includes('khan');
+      
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
 
-      return (isCreditorGroup || op < 0) && bal < 0;
+      return isCreditorGroup && bal < 0;
     });
 
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -499,6 +514,6 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
-    alert("PDF download reports generation mein asafalta hui: " + e.message);
+    alert("PDF download failed: " + e.message);
   }
 };
