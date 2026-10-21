@@ -318,3 +318,124 @@ export const downloadFinancialReportPDF = downloadFinancialStatementsReport;
 export const downloadProfitAndLossPDF = async (firmInput, reportData) => {
   return downloadFinancialStatementsReport(firmInput, reportData, 'PNL');
 };
+
+/**
+ * 4. JOURNAL DAYBOOK REGISTER PDF (A4 LANDSCAPE)
+ */
+export const downloadJournalRegisterPDF = async (firmInput, vouchers = []) => {
+  const firmName = getCleanFirmName(firmInput);
+  const rows = Array.isArray(vouchers) ? vouchers : [];
+
+  const doc = new jsPDF('l', 'mm', 'a4');
+  let y = 16;
+  let pageNum = 1;
+
+  const printJournalHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Journal Daybook Register', 14, y);
+    y += 5;
+
+    doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
+    y += 6;
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 269, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+
+    doc.text('#', 16, y + 4.8);
+    doc.text('Date', 27, y + 4.8);
+    doc.text('Voucher Type', 48, y + 4.8);
+    doc.text('Reference No', 78, y + 4.8);
+    doc.text('Debit Account (Dr)', 118, y + 4.8);
+    doc.text('Credit Account (Cr)', 175, y + 4.8);
+    doc.text('Amount (Rs)', 278, y + 4.8, { align: 'right' });
+    y += 9;
+  };
+
+  printJournalHeader();
+
+  rows.forEach((vch, idx) => {
+    const rawRef = cleanTypographySpacing(String(vch.reference_no || vch.voucher_number || vch.id || '-'));
+    const vType = String(vch.voucher_type || vch.type || 'JOURNAL');
+
+    const drName = cleanAccountTitle(vch.dr_account || vch.dr_party || 'Dr Account');
+    const crName = cleanAccountTitle(vch.cr_account || vch.cr_party || 'Cr Account');
+
+    const itemsList = Array.isArray(vch.items) ? vch.items : [];
+    let itemStr = itemsList.map(it => {
+      const iName = cleanTypographySpacing(it.itemName || it.name || 'Item');
+      const iQty = it.qty || it.quantity || 0;
+      const iUnit = (it.unit || 'Pcs').trim();
+      const iRate = parseFloat(it.rate || it.price || 0);
+      return cleanTypographySpacing(`${iName} (Qty: ${iQty} ${iUnit} @ Rs ${iRate.toFixed(2)})`);
+    }).join(', ');
+
+    const rawNote = vch.narration || vch.remarks || vch.description || '';
+    const cleanNote = cleanTypographySpacing(rawNote);
+    const noteText = cleanNote ? (itemStr ? `${itemStr} - ${cleanNote}` : cleanNote) : itemStr;
+
+    const splitDr = doc.splitTextToSize(drName, 52);
+    const splitCr = doc.splitTextToSize(crName, 55);
+    const splitNote = noteText ? doc.splitTextToSize(noteText, 110) : [];
+
+    const maxAccountLines = Math.max(splitDr.length, splitCr.length);
+    const accountsHeight = maxAccountLines * 3.4;
+    const noteHeight = splitNote.length > 0 ? (splitNote.length * 3.0) + 1 : 0;
+    const rowHeight = Math.max(8, 4 + accountsHeight + noteHeight);
+
+    if (y + rowHeight > 190) {
+      doc.addPage();
+      pageNum += 1;
+      y = 16;
+      printJournalHeader();
+    }
+
+    if (idx % 2 === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y - 3, 269, rowHeight, 'F');
+    }
+
+    const amt = parseFloat(vch.amount || vch.total_amount || 0);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
+
+    doc.text(String(idx + 1), 16, y);
+    doc.text(String(vch.voucher_date || vch.date || '-'), 27, y);
+    doc.text(vType, 48, y);
+
+    const splitRef = doc.splitTextToSize(rawRef, 36);
+    doc.text(splitRef[0] || rawRef, 78, y);
+
+    doc.text(splitDr, 118, y);
+    doc.text(splitCr, 175, y);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(amt.toFixed(2), 278, y, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+
+    if (splitNote.length > 0) {
+      const noteY = y + accountsHeight + 0.8;
+      doc.setFontSize(6.8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(splitNote, 118, noteY);
+      doc.setTextColor(15, 23, 42);
+    }
+
+    y += rowHeight;
+  });
+
+  return await exportTruePDF(doc, 'Journal_Register');
+};
