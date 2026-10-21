@@ -41,12 +41,19 @@ export const cleanAccountTitle = (rawName) => {
 };
 
 /**
- * Helper to fetch live accounts from storage
+ * Helper to fetch and evaluate accounts uniformly
  */
-const getEvaluatedFirmAccounts = (firmId) => {
+const getEvaluatedAccountsWithBalances = (firmId) => {
   try {
-    return IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
-           IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
+    const accounts = IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
+                     IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
+    
+    // Fallback to master accounts if app_accounts is empty
+    if (accounts.length === 0) {
+      const master = IDBStorage.getItem(`firm_master_accounts_${firmId}`, []) || [];
+      return master;
+    }
+    return accounts;
   } catch (e) {
     return [];
   }
@@ -61,7 +68,7 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = getEvaluatedFirmAccounts(firmId);
+    const accounts = getEvaluatedAccountsWithBalances(firmId);
 
     const cashBankAccounts = accounts.filter(acc => {
       if (!acc) return false;
@@ -224,7 +231,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
 };
 
 /**
- * 3. RECEIVABLES REPORT PDF (STRICT: Sundry Debtors / Customers Only - NO Capital, Expenses, Cash, Bank)
+ * 3. RECEIVABLES REPORT PDF (Robust Inclusion of all Customers/Debtors with Positive Balances)
  */
 export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
@@ -232,14 +239,15 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = getEvaluatedFirmAccounts(firmId);
+    const accounts = getEvaluatedAccountsWithBalances(firmId);
 
     const debtors = accounts.filter(acc => {
       if (!acc) return false;
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const name = String(acc.account_name || acc.name || '').toLowerCase();
+      const type = String(acc.primary_type || acc.type || '').toUpperCase();
       
-      // STRICT EXCLUSION: Exclude Cash, Bank, Capital, Expenses, Assets, Creditors
+      // Exclude Cash, Bank, Capital, Expenses, Creditors
       const isInvalid = name.includes('cash') || name.includes('bank') || 
                         grp.includes('bank') || grp.includes('cash') || 
                         grp.includes('capital') || name.includes('capital') ||
@@ -252,7 +260,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 
       const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || 
                               grp.includes('grahak') || grp.includes('lena') || 
-                              name.includes('customer');
+                              name.includes('customer') || type === 'ASSETS';
       
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
@@ -329,7 +337,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF (STRICT: Sundry Creditors, Suppliers, Thekedar & Labour Only - NO Capital, Expenses, Cash, Bank)
+ * 4. PAYABLES REPORT PDF (Robust Inclusion of all Creditors/Suppliers/Thekedar with Payable Balances)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
@@ -337,14 +345,15 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = getEvaluatedFirmAccounts(firmId);
+    const accounts = getEvaluatedAccountsWithBalances(firmId);
 
     const creditors = accounts.filter(acc => {
       if (!acc) return false;
       const grp = String(acc.sub_group || acc.group || '').toLowerCase();
       const name = String(acc.account_name || acc.name || '').toLowerCase();
+      const type = String(acc.primary_type || acc.type || '').toUpperCase();
 
-      // STRICT EXCLUSION: Exclude Cash, Bank, Capital, Expenses, Assets, Debtors
+      // Exclude Cash, Bank, Capital, Expenses, Assets, Debtors
       const isInvalid = name.includes('cash') || name.includes('bank') || 
                         grp.includes('bank') || grp.includes('cash') || 
                         grp.includes('capital') || name.includes('capital') ||
@@ -358,7 +367,8 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
                               grp.includes('vendor') || grp.includes('thekedar') || 
                               grp.includes('dena') || grp.includes('labor') || 
                               grp.includes('labour') || name.includes('thekedar') || 
-                              name.includes('supplier') || name.includes('khan');
+                              name.includes('supplier') || name.includes('khan') ||
+                              name.includes('munsari') || type === 'LIABILITIES';
       
       const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
       const bal = acc.balance_type === 'Cr' ? -op : op;
