@@ -1,5 +1,5 @@
 /**
- * Frontend Utility: PDF Export Engine (Uncorrupted Binary Export & Financial Reports)
+ * Frontend Utility: PDF & CSV Export Engine (Uncorrupted Binary Export, Account Statement & Financial Reports)
  */
 
 import { jsPDF } from 'jspdf';
@@ -117,7 +117,248 @@ export const exportTruePDF = async (doc, rawFileName = 'Report') => {
 };
 
 /**
- * FINANCIAL STATEMENTS REPORT PDF EXPORT (Trial Balance, Trading, PnL, Balance Sheet)
+ * 1. ACCOUNT STATEMENT / LEDGER PDF EXPORT
+ */
+export const downloadAccountStatementPDF = async (statementData, partyName = 'Account', firmInput, argFromDate = null, argToDate = null) => {
+  const firmName = getCleanFirmName(firmInput);
+  const cleanParty = cleanAccountTitle(partyName);
+  
+  let txs = [];
+  let rawFrom = argFromDate;
+  let rawTo = argToDate;
+
+  if (statementData && typeof statementData === 'object' && !Array.isArray(statementData)) {
+    if (Array.isArray(statementData.transactions)) txs = statementData.transactions;
+    else if (Array.isArray(statementData.entries)) txs = statementData.entries;
+    else if (Array.isArray(statementData.data)) txs = statementData.data;
+
+    if (!rawFrom && statementData.fromDate) rawFrom = statementData.fromDate;
+    if (!rawTo && statementData.toDate) rawTo = statementData.toDate;
+  } else if (Array.isArray(statementData)) {
+    txs = statementData;
+  }
+
+  if (!rawFrom) rawFrom = localStorage.getItem('app_statement_from_date') || localStorage.getItem('from_date') || null;
+  if (!rawTo) rawTo = localStorage.getItem('app_statement_to_date') || localStorage.getItem('to_date') || null;
+
+  const fromDate = normalizeDateStr(rawFrom);
+  const toDate = normalizeDateStr(rawTo);
+
+  let openingBalance = 0;
+  let openingBalanceType = 'Dr';
+
+  if (fromDate) {
+    let preDr = 0;
+    let preCr = 0;
+    txs.forEach(t => {
+      const tDateNorm = normalizeDateStr(t.date || t.voucher_date || '');
+      if (tDateNorm && tDateNorm < fromDate) {
+        preDr += Number(t.debit || 0);
+        preCr += Number(t.credit || 0);
+      }
+    });
+    const netPre = preDr - preCr;
+    if (netPre < 0) {
+      openingBalance = Math.abs(netPre);
+      openingBalanceType = 'Cr';
+    } else {
+      openingBalance = netPre;
+      openingBalanceType = 'Dr';
+    }
+  }
+
+  let filteredTxs = txs;
+  if (fromDate || toDate) {
+    filteredTxs = txs.filter(t => {
+      const tDateNorm = normalizeDateStr(t.date || t.voucher_date || '');
+      if (!tDateNorm) return true;
+      if (fromDate && tDateNorm < fromDate) return false;
+      if (toDate && tDateNorm > toDate) return false;
+      return true;
+    });
+  }
+
+  const doc = new jsPDF('p', 'mm', 'a4');
+  let y = 18;
+  let pageNum = 1;
+
+  const printHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(15, 23, 42);
+    doc.text(firmName.toUpperCase(), 14, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    let dateRangeStr = '';
+    if (rawFrom || rawTo) {
+      dateRangeStr = ` | Period: ${rawFrom || 'Start'} to ${rawTo || 'Present'}`;
+    }
+    doc.text(`Account Statement: ${cleanParty}${dateRangeStr}`, 14, y);
+    y += 5;
+
+    doc.setFontSize(8);
+    doc.text(`Generated On: ${new Date().toLocaleDateString('en-IN')} | Page ${pageNum}`, 14, y);
+    y += 6;
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+
+    doc.text('Date', 16, y + 4.8);
+    doc.text('Particulars & Description', 38, y + 4.8);
+    doc.text('Debit (Rs)', 132, y + 4.8, { align: 'right' });
+    doc.text('Credit (Rs)', 162, y + 4.8, { align: 'right' });
+    doc.text('Balance (Rs)', 193, y + 4.8, { align: 'right' });
+    y += 9;
+  };
+
+  printHeader();
+
+  if (fromDate) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(rawFrom || fromDate, 16, y);
+    doc.text('Opening Balance Brought Forward', 38, y);
+    doc.text('-', 132, y, { align: 'right' });
+    doc.text('-', 162, y, { align: 'right' });
+    doc.text(`${openingBalance.toFixed(2)} ${openingBalanceType}`, 193, y, { align: 'right' });
+    y += 7;
+  }
+
+  let totalDebitSum = 0;
+  let totalCreditSum = 0;
+  let runningBalCalc = openingBalance;
+  let currentBalanceType = openingBalanceType;
+
+  filteredTxs.forEach((t, index) => {
+    const rawTitle = cleanTypographySpacing(`${t.voucher_type || t.type || 'TX'} #${t.voucher_number || t.voucher_no || t.reference_no || ''}`);
+    const descText = cleanTypographySpacing(t.narration || t.particulars || '');
+
+    const splitTitle = doc.splitTextToSize(rawTitle, 68);
+    const splitDesc = descText ? doc.splitTextToSize(descText, 68) : [];
+    const totalLines = splitTitle.length + splitDesc.length;
+    const rowHeight = Math.max(7, 4 + (totalLines * 3.6));
+
+    if (y + rowHeight > 272) {
+      doc.addPage();
+      pageNum += 1;
+      y = 18;
+      printHeader();
+    }
+
+    if (index % 2 === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y - 3, 182, rowHeight, 'F');
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(15, 23, 42);
+
+    doc.text(String(t.date || t.voucher_date || '-'), 16, y);
+    doc.text(splitTitle, 38, y);
+
+    const deb = Number(t.debit || 0);
+    const cr = Number(t.credit || 0);
+
+    totalDebitSum += deb;
+    totalCreditSum += cr;
+
+    if (currentBalanceType === 'Dr') {
+      runningBalCalc = runningBalCalc + deb - cr;
+    } else {
+      runningBalCalc = runningBalCalc + cr - deb;
+    }
+    if (runningBalCalc < 0) {
+      runningBalCalc = Math.abs(runningBalCalc);
+      currentBalanceType = currentBalanceType === 'Dr' ? 'Cr' : 'Dr';
+    }
+
+    doc.text(deb > 0 ? deb.toFixed(2) : '-', 132, y, { align: 'right' });
+    doc.text(cr > 0 ? cr.toFixed(2) : '-', 162, y, { align: 'right' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${runningBalCalc.toFixed(2)} ${currentBalanceType}`, 193, y, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+
+    if (splitDesc.length > 0) {
+      const descY = y + (splitTitle.length * 3.6);
+      doc.setFontSize(6.8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(splitDesc, 38, descY);
+      doc.setTextColor(15, 23, 42);
+    }
+
+    y += rowHeight;
+  });
+
+  if (y > 265) {
+    doc.addPage();
+    pageNum += 1;
+    y = 18;
+    printHeader();
+  }
+
+  y += 3;
+  doc.setDrawColor(203, 213, 225);
+  doc.line(14, y, 196, y);
+  y += 6;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('TOTAL PERIOD SUM:', 38, y);
+  doc.text(totalDebitSum.toFixed(2), 132, y, { align: 'right' });
+  doc.text(totalCreditSum.toFixed(2), 162, y, { align: 'right' });
+
+  return await exportTruePDF(doc, `Statement_${cleanParty}`);
+};
+
+/**
+ * 2. DOWNLOAD CSV STATEMENT EXPORT
+ */
+export const downloadCSVStatement = (statementData, partyName = 'Account') => {
+  try {
+    let txs = [];
+    if (statementData && typeof statementData === 'object' && Array.isArray(statementData.transactions)) {
+      txs = statementData.transactions;
+    } else if (Array.isArray(statementData)) {
+      txs = statementData;
+    }
+
+    let csvContent = 'Date,Type / Ref,Particulars,Debit (Rs),Credit (Rs),Balance (Rs)\r\n';
+    txs.forEach(t => {
+      const date = t.date || t.voucher_date || '';
+      const ref = `${t.voucher_type || t.type || ''} #${t.voucher_number || t.reference_no || ''}`;
+      const desc = (t.narration || t.particulars || '').replace(/,/g, ' ');
+      const deb = Number(t.debit || 0).toFixed(2);
+      const cr = Number(t.credit || 0).toFixed(2);
+      const bal = `${Number(t.runningBalance || 0).toFixed(2)} ${t.balanceType || 'Dr'}`;
+      csvContent += `${date},"${ref}","${desc}",${deb},${cr},"${bal}"\r\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${partyName}_Statement.csv`);
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (err) {
+    console.error('CSV Export Error:', err);
+    alert('CSV export failed: ' + err.message);
+  }
+};
+
+/**
+ * 3. FINANCIAL STATEMENTS REPORT PDF EXPORT
  */
 export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth Groups', reportData = {}, tabType = 'TRIAL_BALANCE') => {
   let firm = firmInput;
@@ -175,7 +416,6 @@ export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth G
 
   printReportTop();
 
-  // 1. TRIAL BALANCE
   if (tab === 'TRIAL_BALANCE' || tab === 'TB' || tab === '1') {
     const printTBHeader = () => {
       doc.setFillColor(15, 23, 42);
@@ -233,9 +473,7 @@ export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth G
     doc.text(`Rs ${(data.trialBalance?.totalDebit || data.totalDebit || 0).toFixed(2)}`, 150, y, { align: 'right' });
     doc.text(`Rs ${(data.trialBalance?.totalCredit || data.totalCredit || 0).toFixed(2)}`, 193, y, { align: 'right' });
 
-  } 
-  // 2. TRADING ACCOUNT
-  else if (tab === 'TRADING' || tab === '2') {
+  } else if (tab === 'TRADING' || tab === '2') {
     const trading = data.tradingAccount || data.trading || {};
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
@@ -259,9 +497,7 @@ export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth G
       doc.text(`Rs ${it.val}`, 193, y, { align: 'right' });
       y += 9;
     });
-  } 
-  // 3. PROFIT & LOSS
-  else if (tab === 'PNL' || tab === '3') {
+  } else if (tab === 'PNL' || tab === '3') {
     const pnl = data.profitAndLoss || data.pnl || {};
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
@@ -285,9 +521,7 @@ export const downloadFinancialStatementsReport = async (firmInput = 'Neelkanth G
       doc.text(`Rs ${it.val}`, 193, y, { align: 'right' });
       y += 9;
     });
-  } 
-  // 4. BALANCE SHEET
-  else if (tab === 'BALANCE_SHEET' || tab === '4') {
+  } else if (tab === 'BALANCE_SHEET' || tab === '4') {
     const bs = data.balanceSheet || {};
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
