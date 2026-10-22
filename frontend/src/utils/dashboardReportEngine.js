@@ -43,7 +43,8 @@ export const cleanAccountTitle = (rawName) => {
 const getEvaluatedAccountsWithBalances = (firmId) => {
   try {
     return IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
-           IDBStorage.getItem(`account_heads_${firmId}`, []) || [];
+           IDBStorage.getItem(`account_heads_${firmId}`, []) || 
+           IDBStorage.getItem(`firm_master_accounts_${firmId}`, []) || [];
   } catch (e) {
     return [];
   }
@@ -219,7 +220,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
 };
 
 /**
- * 3. RECEIVABLES REPORT PDF (STRICTLY SUNDRY DEBTORS / CUSTOMERS ONLY - NO ASSETS OR EXPENSES)
+ * 3. RECEIVABLES REPORT PDF (STRICTLY CUSTOMERS / DEBTORS - NO ASSETS/EXPENSES/CAPITAL)
  */
 export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
@@ -235,13 +236,11 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
       const name = String(acc.account_name || acc.name || '').toLowerCase();
       const type = String(acc.primary_type || acc.type || '').toUpperCase();
       
-      // STRICT EXCLUSION: Never include Cash, Bank, Capital, Fixed Assets, Expenses, or Creditors
       const isInvalid = name.includes('cash') || name.includes('bank') || 
                         grp.includes('bank') || grp.includes('cash') || 
                         grp.includes('capital') || name.includes('capital') ||
                         grp.includes('expense') || grp.includes('stock') || 
                         grp.includes('inventory') || grp.includes('fixed asset') ||
-                        grp.includes('machinery') || grp.includes('building') ||
                         grp.includes('creditor') || grp.includes('supplier') || 
                         grp.includes('thekedar') || grp.includes('dena') ||
                         type === 'EXPENSES' || type === 'INCOME';
@@ -326,12 +325,12 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF (STRICTLY CREDITORS/SUPPLIERS/THEKEDAR/LABOUR ONLY - NO ASSETS OR EXPENSES)
+ * 4. PAYABLES REPORT PDF (STRICTLY CREDITORS/SUPPLIERS/THEKEDAR/LABOUR ONLY - NO ASSETS/EXPENSES/CAPITAL)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
     const firmId = resolveFirmId(...args);
-    const firmInput = assetArgCheck => assetArgCheck;
+    const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
     const accounts = getEvaluatedAccountsWithBalances(firmId);
@@ -342,13 +341,11 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
       const name = String(acc.account_name || acc.name || '').toLowerCase();
       const type = String(acc.primary_type || acc.type || '').toUpperCase();
 
-      // STRICT EXCLUSION: Never include Cash, Bank, Capital, Fixed Assets, Expenses, or Debtors
       const isInvalid = name.includes('cash') || name.includes('bank') || 
                         grp.includes('bank') || grp.includes('cash') || 
                         grp.includes('capital') || name.includes('capital') ||
                         grp.includes('expense') || grp.includes('stock') || 
                         grp.includes('inventory') || grp.includes('fixed asset') ||
-                        grp.includes('machinery') || grp.includes('building') ||
                         grp.includes('debtor') || grp.includes('customer') ||
                         type === 'EXPENSES' || type === 'INCOME';
       
@@ -514,6 +511,6 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
-    alert("PDF download failed: " + e.message);
+    alert("PDF download reports generation mein asafalta hui: " + e.message);
   }
 };
