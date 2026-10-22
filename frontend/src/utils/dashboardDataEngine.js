@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Dashboard Data Engine
- * Primary Dynamic Dashboard KPI Aggregation Engine with Strict Firm Isolation & Indian Accounting Standards (Ind AS) Compliance.
+ * Primary Dynamic Dashboard KPI Aggregation Engine with Strict Ind AS / Indian GAAP Compliance.
  */
 
 import { getUniversalVouchersByFirm } from './voucherPostingEngine.js';
@@ -42,9 +42,6 @@ export const getFYDateRange = (fyString = '2026-27') => {
   return { startDate: '2026-04-01', endDate: '2027-03-31', label: 'FY 2026-27' };
 };
 
-/**
- * Universal Exhaustive Dashboard KPI Aggregation Engine with Strict Ind AS Classification
- */
 export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') => {
   const firmId = resolveFirmId(firmInput);
 
@@ -106,7 +103,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
 
   rawVouchers = Array.from(uniqueMap.values());
 
-  // Ingest Payroll & Wages Records
+  // Ingest Payroll / Wages
   const payrollKeys = [`payroll_records_${firmId}`, `worker_wages_${firmId}`, `worker_ledgers_${firmId}`, `wage_entries_${firmId}`];
   payrollKeys.forEach(pk => {
     try {
@@ -136,7 +133,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     } catch (e) {}
   });
 
-  // Ingest Material Consumption Records
+  // Ingest Material Consumption
   const consumptionKeys = [`material_consumption_records_${firmId}`, `universal_material_adjustments_${firmId}`];
   consumptionKeys.forEach(ck => {
     try {
@@ -299,7 +296,8 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
   const cashBankRows = [];
 
   Object.values(balanceMap).forEach(acc => {
-    const rawNet = (acc.balance_type === 'DR' ? acc.opening : -acc.opening) + (acc.dr - acc.cr);
+    const openingSigned = acc.balance_type === 'DR' ? acc.opening : -acc.opening;
+    const rawNet = openingSigned + acc.dr - acc.cr;
     const lowerName = acc.name.toLowerCase();
     const grp = (acc.sub_group || '').toLowerCase();
     const type = acc.primary_type;
@@ -316,12 +314,11 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       cashAndBank += rawNet;
       cashBankRows.push({ name: acc.name, sub_group: acc.sub_group, balance: rawNet, balance_type: rawNet < 0 ? 'Cr' : 'Dr' });
     } 
-    // 2. Receivables: Net Debit balance (> 0) strictly for Customers, Sundry Debtors, and Party Advances (Liabilities with Dr balance e.g. Aslam Khan, Hanuman, etc.)
+    // 2. Receivables: Net Debit balance (> 0) for Debtors/Customers/Advances
     else if (
       rawNet > 0 &&
       type !== 'FIXED ASSETS' &&
       !grp.includes('fixed asset') &&
-      !grp.includes('property') &&
       !lowerName.includes('machine') &&
       !lowerName.includes('tractor') &&
       !lowerName.includes('chimni') &&
@@ -331,22 +328,16 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       !lowerName.includes('stock') &&
       !grp.includes('stock') &&
       !grp.includes('inventory') &&
-      !lowerName.includes('diesel') &&
-      !lowerName.includes('mitti') &&
       !grp.includes('capital') &&
       !lowerName.includes('capital') &&
       !grp.includes('equity') &&
       type !== 'EXPENSES' &&
       type !== 'INCOME'
     ) {
-      // Must be either an Asset (like Debtor / Security Deposit / Customer) OR a Liability account running a Debit balance (Advance given to worker/thekedar)
-      const isAllowedReceivable = type === 'ASSETS' || type === 'LIABILITIES' || grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena') || grp.includes('advance');
-      if (isAllowedReceivable) {
-        totalReceivables += rawNet;
-        receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
-      }
+      totalReceivables += rawNet;
+      receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
     } 
-    // 3. Payables: Net Credit balance (< 0) for Creditors, Suppliers, Thekedar, Labour, Drivers, Staff (Liabilities having Cr balance)
+    // 3. Payables: Net Credit balance (< 0) for Creditors, Suppliers, Thekedar, Labour, Drivers, Staff
     else if (
       rawNet < 0 &&
       type !== 'FIXED ASSETS' &&
@@ -375,7 +366,6 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       item.purchase_price || 
       item.cost_price || 
       item.unit_valuation || 
-      item.purchasePrice || 
       item.rate || 
       0
     );
