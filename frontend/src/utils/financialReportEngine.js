@@ -250,7 +250,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
     const totalCr = round2(acc.credit);
     const net = round2(totalDr - totalCr);
 
-    // STRICT RULE: Only include accounts with non-zero net balance or active debit/credit movement
+    // STRICT RULE: Exclude zero-balance accounts to keep Trial Balance clean and standard
     if (Math.abs(net) > 0.01 || Math.abs(totalDr) > 0.01 || Math.abs(totalCr) > 0.01) {
       let finalDr = 0;
       let finalCr = 0;
@@ -261,7 +261,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
         finalCr = Math.abs(net);
       }
 
-      // Skip if both final Dr and Cr are effectively zero
       if (finalDr === 0 && finalCr === 0) return;
 
       grandTotalDebit += finalDr;
