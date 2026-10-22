@@ -348,7 +348,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
 };
 
 /**
- * 5. MATERIAL CONSUMPTION REPORT PDF
+ * 5. MATERIAL CONSUMPTION REPORT PDF (Fixed Amount & Total Valuation Scanner)
  */
 export const downloadDashboardConsumptionReportPDF = async (...args) => {
   try {
@@ -437,7 +437,8 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
       const expenseAcc = cleanAccountTitle(rec.expense_category || rec.expense_account || 'Factory Expense');
       const itemsList = Array.isArray(rec.items) ? rec.items : [];
       const itemsStr = itemsList.map(i => `${i.name || i.item_name || 'Item'} (${i.qty || i.quantity || 0} ${i.unit || 'Units'})`).join(', ');
-      const val = parseFloat(rec.total_value || rec.amount || 0);
+      
+      const val = parseFloat(rec.total_value || rec.amount || rec.value || rec.total || (Number(rec.qty || 0) * Number(rec.rate || 0)) || 0);
       totalConsumption += val;
 
       if (idx % 2 === 0) {
