@@ -250,7 +250,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
     const totalCr = round2(acc.credit);
     const net = round2(totalDr - totalCr);
 
-    // STRICT RULE: Exclude zero-balance accounts to keep Trial Balance clean and standard
+    // STRICT RULE: Exclude zero-balance accounts
     if (Math.abs(net) > 0.01 || Math.abs(totalDr) > 0.01 || Math.abs(totalCr) > 0.01) {
       let finalDr = 0;
       let finalCr = 0;
