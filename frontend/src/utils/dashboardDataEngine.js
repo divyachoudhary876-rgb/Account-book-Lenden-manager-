@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Dashboard Data Engine
- * Primary Dynamic Dashboard KPI Aggregation Engine with Strict Ind AS / Indian GAAP Compliance.
+ * Primary Dynamic Dashboard KPI Aggregation Engine with Strict Firm Isolation & Indian Accounting Standards (Ind AS) Compliance.
  */
 
 import { getUniversalVouchersByFirm } from './voucherPostingEngine.js';
@@ -103,7 +103,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
 
   rawVouchers = Array.from(uniqueMap.values());
 
-  // Ingest Payroll / Wages
+  // Ingest Payroll & Wages
   const payrollKeys = [`payroll_records_${firmId}`, `worker_wages_${firmId}`, `worker_ledgers_${firmId}`, `wage_entries_${firmId}`];
   payrollKeys.forEach(pk => {
     try {
@@ -314,7 +314,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       cashAndBank += rawNet;
       cashBankRows.push({ name: acc.name, sub_group: acc.sub_group, balance: rawNet, balance_type: rawNet < 0 ? 'Cr' : 'Dr' });
     } 
-    // 2. Receivables: Net Debit balance (> 0) for Debtors/Customers/Advances
+    // 2. Receivables: Net Debit balance (> 0) strictly excluding Fixed Assets, Stock, Capital, Expenses, Income
     else if (
       rawNet > 0 &&
       type !== 'FIXED ASSETS' &&
@@ -337,7 +337,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       totalReceivables += rawNet;
       receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
     } 
-    // 3. Payables: Net Credit balance (< 0) for Creditors, Suppliers, Thekedar, Labour, Drivers, Staff
+    // 3. Payables: Net Credit balance (< 0) strictly excluding Capital, Fixed Assets, Expenses, Income, Assets
     else if (
       rawNet < 0 &&
       type !== 'FIXED ASSETS' &&
