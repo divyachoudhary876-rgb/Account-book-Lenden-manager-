@@ -9,6 +9,10 @@ import { getStockItemsByFirm } from './stockInventoryEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
+const normalizeKey = (name = '') => {
+  return String(name).toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+};
+
 export const resolveFirmId = (firmInput) => {
   if (typeof firmInput === 'string' && firmInput.trim() !== '') {
     return firmInput.trim();
@@ -101,27 +105,6 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     } catch (err) {}
   });
 
-  // Deep scan localStorage for any backup or transaction payloads
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && (key.includes('voucher') || key.includes('transaction') || key.includes('bill') || key.includes('invoice') || key.includes('payroll') || key.includes('wage'))) {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            parsed.forEach(v => {
-              if (v) {
-                const uid = v.id || v.voucher_number || v.reference_no || `${v.voucher_date || v.date || ''}-${v.amount || v.total_amount || 0}`;
-                if (!uniqueMap.has(uid)) uniqueMap.set(uid, v);
-              }
-            });
-          }
-        } catch (e) {}
-      }
-    }
-  }
-
   rawVouchers = Array.from(uniqueMap.values());
 
   // 2. Ingest Payroll & Wages Records into Ledger Stream
@@ -129,9 +112,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     `payroll_records_${firmId}`,
     `worker_wages_${firmId}`,
     `worker_ledgers_${firmId}`,
-    `wage_entries_${firmId}`,
-    `payroll_records`,
-    `worker_wages`
+    `wage_entries_${firmId}`
   ];
   payrollKeys.forEach(pk => {
     try {
@@ -164,8 +145,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
   // 3. Ingest Material Consumption Records
   const consumptionKeys = [
     `material_consumption_records_${firmId}`,
-    `universal_material_adjustments_${firmId}`,
-    `material_consumption_records`
+    `universal_material_adjustments_${firmId}`
   ];
   consumptionKeys.forEach(ck => {
     try {
@@ -253,9 +233,9 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     const name = (acc.account_name || acc.name || '').trim();
     if (!name) return;
     const balanceType = String(acc.balance_type || acc.balanceType || 'Dr').trim().toUpperCase();
-    balanceMap[name.toLowerCase()] = {
+    balanceMap[normalizeKey(name)] = {
       name: name,
-      primary_type: (acc.primary_type || acc.type || 'EXPENSES').toUpperCase(),
+      primary_type: (acc.primary_type || acc.type || 'ASSETS').toUpperCase(),
       sub_group: acc.sub_group || acc.group || 'General',
       opening: parseFloat(acc.opening_balance || acc.openingBalance || 0),
       balance_type: balanceType,
@@ -278,16 +258,16 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     if (Array.isArray(v.entries) && v.entries.length > 0) {
       v.entries.forEach(entry => {
         const accName = (entry.account_name || entry.party || '').trim();
-        const lowName = accName.toLowerCase();
+        const normKey = normalizeKey(accName);
         const amt = parseFloat(entry.amount || entry.debit || entry.credit || 0);
         const isDr = (entry.type || '').toUpperCase() === 'DR' || parseFloat(entry.debit || 0) > 0;
         const isCr = (entry.type || '').toUpperCase() === 'CR' || parseFloat(entry.credit || 0) > 0;
 
         if (accName && amt > 0) {
-          if (!balanceMap[lowName]) {
-            balanceMap[lowName] = {
+          if (!balanceMap[normKey]) {
+            balanceMap[normKey] = {
               name: accName,
-              primary_type: isDr ? 'EXPENSES' : 'INCOME',
+              primary_type: isDr ? 'ASSETS' : 'LIABILITIES',
               sub_group: 'General Ledger',
               opening: 0,
               balance_type: isDr ? 'DR' : 'CR',
@@ -295,8 +275,8 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
               cr: 0
             };
           }
-          if (isDr) balanceMap[lowName].dr += amt;
-          if (isCr) balanceMap[lowName].cr += amt;
+          if (isDr) balanceMap[normKey].dr += amt;
+          if (isCr) balanceMap[normKey].cr += amt;
         }
       });
     } else {
@@ -304,19 +284,19 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       const cr = (v.cr_account || v.credit_account || v.cr_party || '').trim();
 
       if (dr && vAmount > 0) {
-        const lowDr = dr.toLowerCase();
-        if (!balanceMap[lowDr]) {
-          balanceMap[lowDr] = { name: dr, primary_type: 'EXPENSES', sub_group: 'General Ledger', opening: 0, balance_type: 'DR', dr: 0, cr: 0 };
+        const normDr = normalizeKey(dr);
+        if (!balanceMap[normDr]) {
+          balanceMap[normDr] = { name: dr, primary_type: 'ASSETS', sub_group: 'General Ledger', opening: 0, balance_type: 'DR', dr: 0, cr: 0 };
         }
-        balanceMap[lowDr].dr += vAmount;
+        balanceMap[normDr].dr += vAmount;
       }
 
       if (cr && vAmount > 0) {
-        const lowCr = cr.toLowerCase();
-        if (!balanceMap[lowCr]) {
-          balanceMap[lowCr] = { name: cr, primary_type: 'INCOME', sub_group: 'General Ledger', opening: 0, balance_type: 'CR', dr: 0, cr: 0 };
+        const normCr = normalizeKey(cr);
+        if (!balanceMap[normCr]) {
+          balanceMap[normCr] = { name: cr, primary_type: 'LIABILITIES', sub_group: 'General Ledger', opening: 0, balance_type: 'CR', dr: 0, cr: 0 };
         }
-        balanceMap[lowCr].cr += vAmount;
+        balanceMap[normCr].cr += vAmount;
       }
     }
   });
@@ -329,8 +309,9 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     const rawNet = (acc.balance_type === 'DR' ? acc.opening : -acc.opening) + (acc.dr - acc.cr);
     const lowerName = acc.name.toLowerCase();
     const grp = (acc.sub_group || '').toLowerCase();
+    const type = acc.primary_type;
 
-    // 1. Cash & Bank Classification
+    // 1. Cash & Bank
     if (
       lowerName.includes('cash') || 
       lowerName.includes('bank') || 
@@ -341,30 +322,51 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     ) {
       cashAndBank += rawNet;
     } 
-    // 2. Receivables Classification (STRICT: Sundry Debtors / Customers Only - Exclude Assets, Bank, Cash, Expenses)
+    // 2. Receivables (Strictly Customers / Sundry Debtors - Exclude Assets, Bank, Cash, Expenses, Capital)
     else if (
-      grp.includes('debtor') || 
-      grp.includes('customer') || 
-      grp.includes('grahak') || 
-      grp.includes('lena') || 
-      lowerName.includes('customer')
+      !lowerName.includes('cash') &&
+      !lowerName.includes('bank') &&
+      !grp.includes('bank') &&
+      !grp.includes('cash') &&
+      !grp.includes('capital') &&
+      !lowerName.includes('capital') &&
+      !grp.includes('expense') &&
+      !grp.includes('stock') &&
+      !grp.includes('inventory') &&
+      !grp.includes('fixed asset') &&
+      !grp.includes('creditor') &&
+      !grp.includes('supplier') &&
+      !grp.includes('thekedar') &&
+      !grp.includes('dena') &&
+      type !== 'EXPENSES' &&
+      type !== 'INCOME'
     ) {
-      if (rawNet > 0) totalReceivables += rawNet;
+      const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena') || type === 'ASSETS';
+      if (isCustomerGroup && rawNet > 0) {
+        totalReceivables += rawNet;
+      }
     } 
-    // 3. Payables Classification (STRICT: Sundry Creditors, Suppliers, Vendors, Thekedar, Labour Only)
+    // 3. Payables (Strictly Creditors, Suppliers, Thekedar, Labour - Exclude Assets, Expenses, Capital)
     else if (
-      grp.includes('creditor') || 
-      grp.includes('supplier') || 
-      grp.includes('vendor') || 
-      grp.includes('thekedar') || 
-      grp.includes('dena') || 
-      grp.includes('labor') || 
-      grp.includes('labour') || 
-      lowerName.includes('supplier') ||
-      lowerName.includes('thekedar')
+      !lowerName.includes('cash') &&
+      !lowerName.includes('bank') &&
+      !grp.includes('bank') &&
+      !grp.includes('cash') &&
+      !grp.includes('capital') &&
+      !lowerName.includes('capital') &&
+      !grp.includes('expense') &&
+      !grp.includes('stock') &&
+      !grp.includes('inventory') &&
+      !grp.includes('fixed asset') &&
+      !grp.includes('debtor') &&
+      !grp.includes('customer') &&
+      type !== 'EXPENSES' &&
+      type !== 'INCOME'
     ) {
-      if (rawNet < 0) totalPayables += Math.abs(rawNet);
-      else if (rawNet > 0 && (grp.includes('creditor') || grp.includes('supplier'))) totalPayables += rawNet;
+      const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || lowerName.includes('thekedar') || lowerName.includes('supplier') || lowerName.includes('munsari') || type === 'LIABILITIES';
+      if (isCreditorGroup && rawNet < 0) {
+        totalPayables += Math.abs(rawNet);
+      }
     }
   });
 
@@ -376,7 +378,6 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       item.purchase_price || 
       item.cost_price || 
       item.unit_valuation || 
-      item.purchasePrice || 
       item.rate || 
       0
     );
