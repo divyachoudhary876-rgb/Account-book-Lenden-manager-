@@ -43,7 +43,7 @@ export const getFYDateRange = (fyString = '2026-27') => {
 };
 
 /**
- * Universal Exhaustive Dashboard KPI Aggregation Engine with Strict Accounting Classification
+ * Universal Exhaustive Dashboard KPI Aggregation Engine with Detailed Evaluated Rows
  */
 export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') => {
   const firmId = resolveFirmId(firmInput);
@@ -107,13 +107,8 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
 
   rawVouchers = Array.from(uniqueMap.values());
 
-  // 2. Ingest Payroll & Wages Records into Ledger Stream
-  const payrollKeys = [
-    `payroll_records_${firmId}`,
-    `worker_wages_${firmId}`,
-    `worker_ledgers_${firmId}`,
-    `wage_entries_${firmId}`
-  ];
+  // 2. Ingest Payroll & Wages Records
+  const payrollKeys = [`payroll_records_${firmId}`, `worker_wages_${firmId}`, `worker_ledgers_${firmId}`, `wage_entries_${firmId}`];
   payrollKeys.forEach(pk => {
     try {
       const pVal = JSON.parse(localStorage.getItem(pk) || '[]');
@@ -143,10 +138,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
   });
 
   // 3. Ingest Material Consumption Records
-  const consumptionKeys = [
-    `material_consumption_records_${firmId}`,
-    `universal_material_adjustments_${firmId}`
-  ];
+  const consumptionKeys = [`material_consumption_records_${firmId}`, `universal_material_adjustments_${firmId}`];
   consumptionKeys.forEach(ck => {
     try {
       const cVal = JSON.parse(localStorage.getItem(ck) || '[]');
@@ -305,6 +297,10 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
   let totalPayables = 0;
   let cashAndBank = 0;
 
+  const receivableRows = [];
+  const payableRows = [];
+  const cashBankRows = [];
+
   Object.values(balanceMap).forEach(acc => {
     const rawNet = (acc.balance_type === 'DR' ? acc.opening : -acc.opening) + (acc.dr - acc.cr);
     const lowerName = acc.name.toLowerCase();
@@ -321,8 +317,9 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       grp.includes('cash')
     ) {
       cashAndBank += rawNet;
+      cashBankRows.push({ name: acc.name, sub_group: acc.sub_group, balance: rawNet, balance_type: rawNet < 0 ? 'Cr' : 'Dr' });
     } 
-    // 2. Receivables (Strictly Customers / Sundry Debtors - Exclude Assets, Bank, Cash, Expenses, Capital)
+    // 2. Receivables (Strictly Customers / Sundry Debtors)
     else if (
       !lowerName.includes('cash') &&
       !lowerName.includes('bank') &&
@@ -344,9 +341,10 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena') || type === 'ASSETS';
       if (isCustomerGroup && rawNet > 0) {
         totalReceivables += rawNet;
+        receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
       }
     } 
-    // 3. Payables (Strictly Creditors, Suppliers, Thekedar, Labour - Exclude Assets, Expenses, Capital)
+    // 3. Payables (Strictly Creditors, Suppliers, Thekedar, Labour)
     else if (
       !lowerName.includes('cash') &&
       !lowerName.includes('bank') &&
@@ -365,7 +363,9 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     ) {
       const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || lowerName.includes('thekedar') || lowerName.includes('supplier') || lowerName.includes('munsari') || type === 'LIABILITIES';
       if (isCreditorGroup && rawNet < 0) {
-        totalPayables += Math.abs(rawNet);
+        const absVal = Math.abs(rawNet);
+        totalPayables += absVal;
+        payableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: absVal });
       }
     }
   });
@@ -378,6 +378,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       item.purchase_price || 
       item.cost_price || 
       item.unit_valuation || 
+      item.purchasePrice || 
       item.rate || 
       0
     );
@@ -442,6 +443,9 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     totalSales: round2(totalSales),
     totalPurchases: round2(totalPurchases),
     totalStockValuation: round2(totalStockValuation),
+    receivableRows,
+    payableRows,
+    cashBankRows,
     categorySpecifics: {
       category: displayCategory,
       cards,
