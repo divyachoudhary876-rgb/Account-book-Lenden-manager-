@@ -43,7 +43,7 @@ export const getFYDateRange = (fyString = '2026-27') => {
 };
 
 /**
- * Universal Exhaustive Dashboard KPI Aggregation Engine (100% Parity with Trial Balance)
+ * Universal Exhaustive Dashboard KPI Aggregation Engine with Strict Ind AS Classification
  */
 export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') => {
   const firmId = resolveFirmId(firmInput);
@@ -316,46 +316,54 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       cashAndBank += rawNet;
       cashBankRows.push({ name: acc.name, sub_group: acc.sub_group, balance: rawNet, balance_type: rawNet < 0 ? 'Cr' : 'Dr' });
     } 
-    // 2. Receivables: Net Debit balance (> 0) excluding Cash, Bank, Capital/Equity, Expenses, Stock
+    // 2. Receivables: Net Debit balance (> 0) strictly for Customers, Sundry Debtors, and Party Advances (Liabilities with Dr balance e.g. Aslam Khan, Hanuman, etc.)
     else if (
       rawNet > 0 &&
-      !lowerName.includes('cash') &&
-      !lowerName.includes('bank') &&
-      !grp.includes('bank') &&
-      !grp.includes('cash') &&
+      type !== 'FIXED ASSETS' &&
+      !grp.includes('fixed asset') &&
+      !grp.includes('property') &&
+      !lowerName.includes('machine') &&
+      !lowerName.includes('tractor') &&
+      !lowerName.includes('chimni') &&
+      !lowerName.includes('tubewell') &&
+      !lowerName.includes('jamin') &&
+      !lowerName.includes('land') &&
+      !lowerName.includes('stock') &&
+      !grp.includes('stock') &&
+      !grp.includes('inventory') &&
+      !lowerName.includes('diesel') &&
+      !lowerName.includes('mitti') &&
       !grp.includes('capital') &&
       !lowerName.includes('capital') &&
       !grp.includes('equity') &&
-      !grp.includes('expense') &&
-      !grp.includes('stock') &&
-      !grp.includes('inventory') &&
-      !grp.includes('fixed asset') &&
       type !== 'EXPENSES' &&
       type !== 'INCOME'
     ) {
-      totalReceivables += rawNet;
-      receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
+      // Must be either an Asset (like Debtor / Security Deposit / Customer) OR a Liability account running a Debit balance (Advance given to worker/thekedar)
+      const isAllowedReceivable = type === 'ASSETS' || type === 'LIABILITIES' || grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena') || grp.includes('advance');
+      if (isAllowedReceivable) {
+        totalReceivables += rawNet;
+        receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
+      }
     } 
-    // 3. Payables: Net Credit balance (< 0) excluding Capital/Equity, Bank, Cash, Expenses, Income
+    // 3. Payables: Net Credit balance (< 0) for Creditors, Suppliers, Thekedar, Labour, Drivers, Staff (Liabilities having Cr balance)
     else if (
       rawNet < 0 &&
-      !lowerName.includes('cash') &&
-      !lowerName.includes('bank') &&
-      !grp.includes('bank') &&
-      !grp.includes('cash') &&
+      type !== 'FIXED ASSETS' &&
+      !grp.includes('fixed asset') &&
       !grp.includes('capital') &&
       !lowerName.includes('capital') &&
       !grp.includes('equity') &&
-      !grp.includes('expense') &&
-      !grp.includes('stock') &&
-      !grp.includes('inventory') &&
-      !grp.includes('fixed asset') &&
       type !== 'EXPENSES' &&
-      type !== 'INCOME'
+      type !== 'INCOME' &&
+      type !== 'ASSETS'
     ) {
-      const absVal = Math.abs(rawNet);
-      totalPayables += absVal;
-      payableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: absVal });
+      const isPayableCreditor = type === 'LIABILITIES' || grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || grp.includes('driver') || grp.includes('staff') || grp.includes('munsari');
+      if (isPayableCreditor) {
+        const absVal = Math.abs(rawNet);
+        totalPayables += absVal;
+        payableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: absVal });
+      }
     }
   });
 
