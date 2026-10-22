@@ -43,7 +43,7 @@ export const getFYDateRange = (fyString = '2026-27') => {
 };
 
 /**
- * Universal Exhaustive Dashboard KPI Aggregation Engine with Comprehensive Party Classification
+ * Universal Exhaustive Dashboard KPI Aggregation Engine with Strict Accounting Standard Compliance
  */
 export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') => {
   const firmId = resolveFirmId(firmInput);
@@ -62,7 +62,6 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
 
   const { startDate, endDate } = getFYDateRange(selectedFY);
 
-  // 1. Exhaustive Multi-Bucket Voucher & Transaction Collection
   let rawVouchers = [];
   try {
     if (typeof getUniversalVouchersByFirm === 'function') {
@@ -107,7 +106,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
 
   rawVouchers = Array.from(uniqueMap.values());
 
-  // 2. Ingest Payroll & Wages Records
+  // Ingest Payroll & Wages Records
   const payrollKeys = [`payroll_records_${firmId}`, `worker_wages_${firmId}`, `worker_ledgers_${firmId}`, `wage_entries_${firmId}`];
   payrollKeys.forEach(pk => {
     try {
@@ -137,7 +136,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     } catch (e) {}
   });
 
-  // 3. Ingest Material Consumption Records
+  // Ingest Material Consumption Records
   const consumptionKeys = [`material_consumption_records_${firmId}`, `universal_material_adjustments_${firmId}`];
   consumptionKeys.forEach(ck => {
     try {
@@ -167,7 +166,6 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     } catch (e) {}
   });
 
-  // 4. Inventory Items & Stock Valuation
   let stockItems = [];
   try {
     if (typeof getStockItemsByFirm === 'function') {
@@ -192,7 +190,6 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     }
   }
 
-  // 5. Master Accounts
   let accounts = [];
   try {
     if (typeof getFirmMasterAccounts === 'function') {
@@ -319,34 +316,9 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       cashAndBank += rawNet;
       cashBankRows.push({ name: acc.name, sub_group: acc.sub_group, balance: rawNet, balance_type: rawNet < 0 ? 'Cr' : 'Dr' });
     } 
-    // 2. Receivables (Sundry Debtors, Customers, Grahak, or positive balances under Assets excluding stock/cash/bank)
+    // 2. Receivables: Any account with net Debit balance (rawNet > 0) excluding Cash, Bank, Capital/Equity, Expenses, Stock/Inventory, Fixed Assets
     else if (
-      !lowerName.includes('cash') &&
-      !lowerName.includes('bank') &&
-      !grp.includes('bank') &&
-      !grp.includes('cash') &&
-      !grp.includes('capital') &&
-      !lowerName.includes('capital') &&
-      !grp.includes('expense') &&
-      !grp.includes('stock') &&
-      !grp.includes('inventory') &&
-      !grp.includes('fixed asset') &&
-      !grp.includes('creditor') &&
-      !grp.includes('supplier') &&
-      !grp.includes('thekedar') &&
-      !grp.includes('dena') &&
-      type !== 'EXPENSES' &&
-      type !== 'INCOME' &&
-      type !== 'LIABILITIES'
-    ) {
-      const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || grp.includes('grahak') || grp.includes('lena') || type === 'ASSETS';
-      if (isCustomerGroup && rawNet > 0) {
-        totalReceivables += rawNet;
-        receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
-      }
-    } 
-    // 3. Payables (All Sundry Creditors, Suppliers, Thekedar, Labour, Drivers, and Liabilities having net Credit balance, excluding Capital/Equity)
-    else if (
+      rawNet > 0 &&
       !lowerName.includes('cash') &&
       !lowerName.includes('bank') &&
       !grp.includes('bank') &&
@@ -358,17 +330,32 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       !grp.includes('stock') &&
       !grp.includes('inventory') &&
       !grp.includes('fixed asset') &&
-      !grp.includes('debtor') &&
-      !grp.includes('customer') &&
       type !== 'EXPENSES' &&
       type !== 'INCOME'
     ) {
-      const isPayableLiability = type === 'LIABILITIES' || grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || grp.includes('driver') || grp.includes('staff');
-      if (isPayableLiability && rawNet < 0) {
-        const absVal = Math.abs(rawNet);
-        totalPayables += absVal;
-        payableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: absVal });
-      }
+      totalReceivables += rawNet;
+      receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
+    } 
+    // 3. Payables: Any account with net Credit balance (rawNet < 0) excluding Capital/Equity, Bank, Cash, Expenses, Income
+    else if (
+      rawNet < 0 &&
+      !lowerName.includes('cash') &&
+      !lowerName.includes('bank') &&
+      !grp.includes('bank') &&
+      !grp.includes('cash') &&
+      !grp.includes('capital') &&
+      !lowerName.includes('capital') &&
+      !grp.includes('equity') &&
+      !grp.includes('expense') &&
+      !grp.includes('stock') &&
+      !grp.includes('inventory') &&
+      !grp.includes('fixed asset') &&
+      type !== 'EXPENSES' &&
+      type !== 'INCOME'
+    ) {
+      const absVal = Math.abs(rawNet);
+      totalPayables += absVal;
+      payableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: absVal });
     }
   });
 
@@ -380,6 +367,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       item.purchase_price || 
       item.cost_price || 
       item.unit_valuation || 
+      item.purchasePrice || 
       item.rate || 
       0
     );
