@@ -103,7 +103,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
 
   rawVouchers = Array.from(uniqueMap.values());
 
-  // Ingest Payroll & Wages
+  // Ingest Payroll / Wages
   const payrollKeys = [`payroll_records_${firmId}`, `worker_wages_${firmId}`, `worker_ledgers_${firmId}`, `wage_entries_${firmId}`];
   payrollKeys.forEach(pk => {
     try {
