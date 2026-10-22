@@ -1,5 +1,3 @@
-// frontend/src/components/InventoryStockView.jsx
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
@@ -93,17 +91,23 @@ const saveFirmInventory = (firmInput, itemData) => {
   if (!cleanName) throw new Error('Item name is mandatory.');
 
   const existingItems = loadFirmInventory(firmInput);
-  const itemId = itemData.id || `ITEM-${Date.now()}`;
   
-  const existingItemIndex = existingItems.findIndex(i => String(i.id) === String(itemId));
+  // FIX: Robust ID matching for both creation and editing
+  const itemId = itemData.id ? String(itemData.id).trim() : null;
+  const existingItemIndex = itemId 
+    ? existingItems.findIndex(i => i && String(i.id).trim() === itemId)
+    : -1;
+
   const oldItemName = existingItemIndex !== -1 ? (existingItems[existingItemIndex].name || existingItems[existingItemIndex].item_name) : null;
 
   const currentStock = round2(parseFloat(itemData.current_stock ?? itemData.stock ?? itemData.qty ?? 0));
   const purchasePrice = round2(parseFloat(itemData.unit_purchase_price ?? itemData.purchase_price ?? itemData.rate ?? 0));
   const sellingPrice = round2(parseFloat(itemData.unit_selling_price ?? itemData.selling_price ?? 0));
 
+  const resolvedId = itemId || `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
   const normalizedItem = {
-    id: itemId,
+    id: resolvedId,
     firm_id: firmId,
     name: cleanName,
     item_name: cleanName,
@@ -134,6 +138,7 @@ const saveFirmInventory = (firmInput, itemData) => {
 
   saveFirmData('inventory_items', firmInput, updatedList);
   localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify(updatedList));
+  localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(updatedList));
   localStorage.setItem('inventory_items', JSON.stringify(updatedList));
 
   if (!normalizedItem.is_service && normalizedItem.item_type !== 'SERVICE') {
@@ -157,6 +162,7 @@ const deleteFirmInventory = (firmInput, itemId) => {
 
   saveFirmData('inventory_items', firmInput, updatedList);
   localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify(updatedList));
+  localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(updatedList));
   localStorage.setItem('inventory_items', JSON.stringify(updatedList));
 
   window.dispatchEvent(new Event('app_inventory_updated'));
@@ -185,35 +191,14 @@ export default function InventoryStockView({ firm, onClose }) {
   const [hsnSac, setHsnSac] = useState('');
   const [statusMessage, setStatusMessage] = useState(null);
 
-  const syncAllStockLedgers = useCallback(() => {
-    try {
-      const currentList = loadFirmInventory(firm);
-      let createdOrUpdatedCount = 0;
-      currentList.forEach(it => {
-        const itName = it.name || it.item_name;
-        if (itName && it.item_type !== 'SERVICE' && !it.is_service) {
-          const res = autoEnsureStockLedger(activeFirmId, itName);
-          if (res) createdOrUpdatedCount++;
-        }
-      });
-      window.dispatchEvent(new Event('app_accounts_updated'));
-      window.dispatchEvent(new Event('app_storage_updated'));
-      return createdOrUpdatedCount;
-    } catch (err) {
-      console.error('Error during auto batch sync of stock ledgers:', err);
-      return 0;
-    }
-  }, [firm, activeFirmId]);
-
   const loadStockItems = useCallback(() => {
     try {
       const stock = loadFirmInventory(firm);
       setItems(Array.isArray(stock) ? stock : []);
-      syncAllStockLedgers();
     } catch (err) {
       console.error('Error loading inventory items:', err);
     }
-  }, [firm, syncAllStockLedgers]);
+  }, [firm]);
 
   useEffect(() => {
     loadStockItems();
@@ -227,14 +212,6 @@ export default function InventoryStockView({ firm, onClose }) {
     };
   }, [loadStockItems]);
 
-  const handleManualSync = () => {
-    const count = syncAllStockLedgers();
-    setStatusMessage({
-      type: 'success',
-      text: `✓ Sabhi ${count} Stock Items ke Asset Accounts "Account Master" me successfully synchronize ho gaye hain!`
-    });
-  };
-
   const handleSubmit = (e) => {
     e.preventDefault();
     setStatusMessage(null);
@@ -247,7 +224,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
     try {
       const numStock = editingItem 
-        ? parseFloat(editingItem.current_stock || editingItem.stock || 0)
+        ? parseFloat(editingItem.current_stock || editingItem.stock || editingItem.qty || 0)
         : (parseFloat(openingStock) || 0);
 
       saveFirmInventory(firm, {
@@ -270,12 +247,14 @@ export default function InventoryStockView({ firm, onClose }) {
       setStatusMessage({
         type: 'success',
         text: editingItem 
-          ? `✓ "${cleanName}" aur uska Linked Stock Ledger update ho gaya!` 
-          : `✓ "${cleanName}" inventory me save ho gaya aur "${cleanName} Stock Account" ledger auto-create ho gaya!`
+          ? `✓ "${cleanName}" successfully update ho gaya!` 
+          : `✓ "${cleanName}" inventory mein save ho gaya!`
       });
 
       setEditingItem(null);
       setItemName('');
+      setUnit('Pcs');
+      setItemType('GOODS');
       setOpeningStock('');
       setPurchasePrice('');
       setSellingPrice('');
@@ -352,13 +331,6 @@ export default function InventoryStockView({ firm, onClose }) {
             <span style={{ fontSize: '11px', color: '#64748b' }}>Item par click karke direct PDF statement download karein</span>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
-            <button 
-              type="button" 
-              onClick={handleManualSync}
-              style={{ padding: '6px 10px', backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #7dd3fc', borderRadius: '8px', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}
-            >
-              🔄 Sync All Ledgers
-            </button>
             {onClose && (
               <button type="button" onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
                 Close
@@ -425,7 +397,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
-            <label style={labelStyle}>{editingItem ? 'CURRENT STOCK' : 'OPENING STOCK'}</label>
+            <label style={labelStyle}>{editingItem ? 'CURRENT STOCK (Read-only)' : 'OPENING STOCK'}</label>
             <input 
               type="number" 
               step="0.01" 
@@ -464,7 +436,7 @@ export default function InventoryStockView({ firm, onClose }) {
               cursor: 'pointer' 
             }}
           >
-            {editingItem ? `✓ Update Item & Ledger` : `💾 Save Item & Auto-Create Stock Ledger`}
+            {editingItem ? `✓ Update Stock Item` : `💾 Save Stock Item`}
           </button>
 
           {editingItem && (
@@ -473,8 +445,11 @@ export default function InventoryStockView({ firm, onClose }) {
               onClick={() => {
                 setEditingItem(null);
                 setItemName('');
+                setUnit('Pcs');
+                setItemType('GOODS');
                 setOpeningStock('');
                 setPurchasePrice('');
+                setSellingPrice('');
                 setStatusMessage(null);
               }} 
               style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -509,7 +484,6 @@ export default function InventoryStockView({ firm, onClose }) {
             </div>
           ) : (
             filteredItems.map((item) => {
-              // Fetch live calculated stock dynamically using getFirmItemStock
               const stockName = item.name || item.item_name;
               const stockQty = getFirmItemStock(activeFirmId, stockName);
               const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
