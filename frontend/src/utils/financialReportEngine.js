@@ -52,7 +52,6 @@ export const getSafeAccounts = (firmId = 'FIRM-001', selectedFY = '2026-27') => 
 const getUniqueFirmVouchersForReports = (activeFirmId = 'FIRM-001') => {
   let rawTx = [];
   
-  // Target strictly the primary firm-scoped keys to avoid cross-key duplication
   const primaryKeys = [
     `app_vouchers_${activeFirmId}`,
     `account_book_vouchers_${activeFirmId}`,
@@ -68,7 +67,6 @@ const getUniqueFirmVouchersForReports = (activeFirmId = 'FIRM-001') => {
     } catch (e) {}
   });
 
-  // Fallback to base keys if firm-scoped keys are empty
   if (rawTx.length === 0) {
     const baseKeys = ['account_book_vouchers', 'vouchers', 'transactions', 'app_vouchers'];
     baseKeys.forEach(key => {
@@ -79,7 +77,6 @@ const getUniqueFirmVouchersForReports = (activeFirmId = 'FIRM-001') => {
     });
   }
 
-  // Strict deduplication by unique voucher ID or signature
   const uniqueMap = new Map();
   rawTx.forEach(tx => {
     if (!tx) return;
@@ -197,7 +194,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
   const flatLines = getNormalizedLedgerLines(firmId, selectedFY);
 
   const accountTotals = {};
-  const canonicalMap = {}; // Maps normalized key -> display account name
+  const canonicalMap = {};
 
   masterAccounts.forEach((acc) => {
     const name = (acc.account_name || acc.name || '').trim();
@@ -249,16 +246,18 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
   let grandTotalCredit = 0;
 
   Object.values(accountTotals).forEach((acc) => {
-    const net = acc.debit - acc.credit;
+    const totalDr = round2(acc.debit);
+    const totalCr = round2(acc.credit);
+    const net = round2(totalDr - totalCr);
 
-    if (Math.abs(net) > 0.01) {
+    if (Math.abs(net) > 0.01 || Math.abs(totalDr) > 0 || Math.abs(totalCr) > 0) {
       let finalDr = 0;
       let finalCr = 0;
 
       if (net > 0) {
-        finalDr = round2(net);
-      } else {
-        finalCr = round2(Math.abs(net));
+        finalDr = net;
+      } else if (net < 0) {
+        finalCr = Math.abs(net);
       }
 
       grandTotalDebit += finalDr;
