@@ -40,18 +40,8 @@ export const cleanAccountTitle = (rawName) => {
   return cleanTypographySpacing(str) || 'Account';
 };
 
-const getEvaluatedAccountsWithBalances = (firmId) => {
-  try {
-    return IDBStorage.getItem(`app_accounts_${firmId}`, []) || 
-           IDBStorage.getItem(`account_heads_${firmId}`, []) || 
-           IDBStorage.getItem(`firm_master_accounts_${firmId}`, []) || [];
-  } catch (e) {
-    return [];
-  }
-};
-
 /**
- * 1. CASH & BANK REPORT PDF
+ * 1. CASH & BANK REPORT PDF (Directly from Evaluated Engine Rows)
  */
 export const downloadDashboardCashBankReportPDF = async (...args) => {
   try {
@@ -59,14 +49,7 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = getEvaluatedAccountsWithBalances(firmId);
-
-    const cashBankAccounts = accounts.filter(acc => {
-      if (!acc) return false;
-      const name = String(acc.account_name || acc.name || '').toLowerCase();
-      const grp = String(acc.sub_group || acc.group || '').toLowerCase();
-      return name.includes('cash') || name.includes('bank') || grp.includes('bank') || grp.includes('cash');
-    });
+    const rows = metrics?.cashBankRows || [];
 
     const doc = new jsPDF('p', 'mm', 'a4');
     let y = 18;
@@ -102,14 +85,11 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
     doc.setFontSize(8);
     doc.setTextColor(15, 23, 42);
 
-    let evaluatedTotal = 0;
-    cashBankAccounts.forEach((acc, idx) => {
+    rows.forEach((acc, idx) => {
       if (y > 275) { doc.addPage(); y = 18; }
-      const name = cleanAccountTitle(acc.account_name || acc.name || 'Account');
-      const grp = acc.sub_group || acc.group || 'Cash-in-Hand / Bank Accounts';
-      const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      const bal = acc.balance_type === 'Cr' ? -op : op;
-      evaluatedTotal += bal;
+      const name = cleanAccountTitle(acc.name);
+      const grp = acc.sub_group || 'Cash / Bank';
+      const bal = acc.balance;
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -126,7 +106,7 @@ export const downloadDashboardCashBankReportPDF = async (...args) => {
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`Total Cash & Bank Liquidity: Rs ${evaluatedTotal.toFixed(2)}`, 193, y, { align: 'right' });
+    doc.text(`Total Cash & Bank Liquidity: Rs ${(metrics?.cashAndBank || 0).toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Cash_Bank_Statement_${firmId}`);
   } catch (e) {
@@ -182,7 +162,6 @@ export const downloadDashboardStockReportPDF = async (...args) => {
     doc.setFontSize(8);
     doc.setTextColor(15, 23, 42);
 
-    let totalValuation = 0;
     inventory.forEach((item, idx) => {
       if (!item) return;
       if (y > 275) { doc.addPage(); y = 18; }
@@ -191,7 +170,6 @@ export const downloadDashboardStockReportPDF = async (...args) => {
       const qty = getFirmItemStock(firmId, name);
       const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
       const totalVal = qty * rate;
-      totalValuation += totalVal;
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -210,7 +188,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`Total Stock Valuation: Rs ${totalValuation.toFixed(2)}`, 193, y, { align: 'right' });
+    doc.text(`Total Stock Valuation: Rs ${(metrics?.totalStockValuation || 0).toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Stock_Valuation_Report_${firmId}`);
   } catch (e) {
@@ -220,7 +198,7 @@ export const downloadDashboardStockReportPDF = async (...args) => {
 };
 
 /**
- * 3. RECEIVABLES REPORT PDF (STRICTLY CUSTOMERS / DEBTORS - NO ASSETS/EXPENSES/CAPITAL)
+ * 3. RECEIVABLES REPORT PDF (Directly from Evaluated Engine Rows)
  */
 export const downloadDashboardReceivablesReportPDF = async (...args) => {
   try {
@@ -228,34 +206,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = getEvaluatedAccountsWithBalances(firmId);
-
-    const debtors = accounts.filter(acc => {
-      if (!acc) return false;
-      const grp = String(acc.sub_group || acc.group || '').toLowerCase();
-      const name = String(acc.account_name || acc.name || '').toLowerCase();
-      const type = String(acc.primary_type || acc.type || '').toUpperCase();
-      
-      const isInvalid = name.includes('cash') || name.includes('bank') || 
-                        grp.includes('bank') || grp.includes('cash') || 
-                        grp.includes('capital') || name.includes('capital') ||
-                        grp.includes('expense') || grp.includes('stock') || 
-                        grp.includes('inventory') || grp.includes('fixed asset') ||
-                        grp.includes('creditor') || grp.includes('supplier') || 
-                        grp.includes('thekedar') || grp.includes('dena') ||
-                        type === 'EXPENSES' || type === 'INCOME';
-      
-      if (isInvalid) return false;
-
-      const isCustomerGroup = grp.includes('debtor') || grp.includes('customer') || 
-                              grp.includes('grahak') || grp.includes('lena') || 
-                              name.includes('customer');
-      
-      const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      const bal = acc.balance_type === 'Cr' ? -op : op;
-
-      return isCustomerGroup && bal > 0;
-    });
+    const rows = metrics?.receivableRows || [];
 
     const doc = new jsPDF('p', 'mm', 'a4');
     let y = 18;
@@ -291,14 +242,11 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     doc.setFontSize(8);
     doc.setTextColor(15, 23, 42);
 
-    let evaluatedRecv = 0;
-    debtors.forEach((acc, idx) => {
+    rows.forEach((acc, idx) => {
       if (y > 275) { doc.addPage(); y = 18; }
-      const name = cleanAccountTitle(acc.account_name || acc.name || 'Customer');
-      const grp = acc.sub_group || acc.group || 'Sundry Debtors';
-      const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      const bal = acc.balance_type === 'Cr' ? -op : op;
-      evaluatedRecv += bal;
+      const name = cleanAccountTitle(acc.name);
+      const grp = acc.sub_group || 'Sundry Debtors';
+      const bal = acc.amount;
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -315,7 +263,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`Total Receivables: Rs ${evaluatedRecv.toFixed(2)}`, 193, y, { align: 'right' });
+    doc.text(`Total Receivables: Rs ${(metrics?.receivables || 0).toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Receivables_Statement_${firmId}`);
   } catch (e) {
@@ -325,7 +273,7 @@ export const downloadDashboardReceivablesReportPDF = async (...args) => {
 };
 
 /**
- * 4. PAYABLES REPORT PDF (STRICTLY CREDITORS/SUPPLIERS/THEKEDAR/LABOUR ONLY - NO ASSETS/EXPENSES/CAPITAL)
+ * 4. PAYABLES REPORT PDF (Directly from Evaluated Engine Rows)
  */
 export const downloadDashboardPayablesReportPDF = async (...args) => {
   try {
@@ -333,36 +281,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     const firmInput = args.find(a => typeof a === 'object') || {};
     const firmName = getFirmName(firmInput);
     const metrics = getDynamicDashboardMetrics(firmInput || firmId);
-    const accounts = getEvaluatedAccountsWithBalances(firmId);
-
-    const creditors = accounts.filter(acc => {
-      if (!acc) return false;
-      const grp = String(acc.sub_group || acc.group || '').toLowerCase();
-      const name = String(acc.account_name || acc.name || '').toLowerCase();
-      const type = String(acc.primary_type || acc.type || '').toUpperCase();
-
-      const isInvalid = name.includes('cash') || name.includes('bank') || 
-                        grp.includes('bank') || grp.includes('cash') || 
-                        grp.includes('capital') || name.includes('capital') ||
-                        grp.includes('expense') || grp.includes('stock') || 
-                        grp.includes('inventory') || grp.includes('fixed asset') ||
-                        grp.includes('debtor') || grp.includes('customer') ||
-                        type === 'EXPENSES' || type === 'INCOME';
-      
-      if (isInvalid) return false;
-
-      const isCreditorGroup = grp.includes('creditor') || grp.includes('supplier') || 
-                              grp.includes('vendor') || grp.includes('thekedar') || 
-                              grp.includes('dena') || grp.includes('labor') || 
-                              grp.includes('labour') || name.includes('thekedar') || 
-                              name.includes('supplier') || name.includes('khan') ||
-                              name.includes('munsari');
-      
-      const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      const bal = acc.balance_type === 'Cr' ? -op : op;
-
-      return isCreditorGroup && bal < 0;
-    });
+    const rows = metrics?.payableRows || [];
 
     const doc = new jsPDF('p', 'mm', 'a4');
     let y = 18;
@@ -398,14 +317,11 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     doc.setFontSize(8);
     doc.setTextColor(15, 23, 42);
 
-    let evaluatedPayable = 0;
-    creditors.forEach((acc, idx) => {
+    rows.forEach((acc, idx) => {
       if (y > 275) { doc.addPage(); y = 18; }
-      const name = cleanAccountTitle(acc.account_name || acc.name || 'Supplier');
-      const grp = acc.sub_group || acc.group || 'Sundry Creditors';
-      const op = parseFloat(acc.current_balance !== undefined ? acc.current_balance : (acc.opening_balance || 0));
-      const bal = Math.abs(acc.balance_type === 'Cr' ? -op : op);
-      evaluatedPayable += bal;
+      const name = cleanAccountTitle(acc.name);
+      const grp = acc.sub_group || 'Sundry Creditors';
+      const bal = acc.amount;
 
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
@@ -422,7 +338,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
     y += 3;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`Total Payables: Rs ${evaluatedPayable.toFixed(2)}`, 193, y, { align: 'right' });
+    doc.text(`Total Payables: Rs ${(metrics?.payables || 0).toFixed(2)}`, 193, y, { align: 'right' });
 
     await exportTruePDF(doc, `Payables_Statement_${firmId}`);
   } catch (e) {
@@ -511,6 +427,6 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
     await exportTruePDF(doc, `Material_Consumption_Report_${firmId}`);
   } catch (e) {
     console.error("Error generating Consumption PDF:", e);
-    alert("PDF download reports generation mein asafalta hui: " + e.message);
+    alert("PDF download failed: " + e.message);
   }
 };
