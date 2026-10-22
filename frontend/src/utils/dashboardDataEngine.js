@@ -43,7 +43,7 @@ export const getFYDateRange = (fyString = '2026-27') => {
 };
 
 /**
- * Universal Exhaustive Dashboard KPI Aggregation Engine with Strict Accounting Standard Compliance
+ * Universal Exhaustive Dashboard KPI Aggregation Engine (100% Parity with Trial Balance)
  */
 export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') => {
   const firmId = resolveFirmId(firmInput);
@@ -316,7 +316,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       cashAndBank += rawNet;
       cashBankRows.push({ name: acc.name, sub_group: acc.sub_group, balance: rawNet, balance_type: rawNet < 0 ? 'Cr' : 'Dr' });
     } 
-    // 2. Receivables: Any account with net Debit balance (rawNet > 0) excluding Cash, Bank, Capital/Equity, Expenses, Stock/Inventory, Fixed Assets
+    // 2. Receivables: Net Debit balance (> 0) excluding Cash, Bank, Capital/Equity, Expenses, Stock
     else if (
       rawNet > 0 &&
       !lowerName.includes('cash') &&
@@ -336,7 +336,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       totalReceivables += rawNet;
       receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
     } 
-    // 3. Payables: Any account with net Credit balance (rawNet < 0) excluding Capital/Equity, Bank, Cash, Expenses, Income
+    // 3. Payables: Net Credit balance (< 0) excluding Capital/Equity, Bank, Cash, Expenses, Income
     else if (
       rawNet < 0 &&
       !lowerName.includes('cash') &&
