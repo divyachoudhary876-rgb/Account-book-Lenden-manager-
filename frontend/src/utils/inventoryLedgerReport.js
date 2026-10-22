@@ -109,9 +109,10 @@ export const generateStockItemLedgerStatement = (firmId, item) => {
 
   ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
+  // FIX: Accurate Running Stock Calculation (Inward Adds +, Outward Subracts -)
   let runningStock = 0;
   const processedLedger = ledgerEntries.map(entry => {
-    runningStock = round2(runningStock + entry.in_qty - entry.out_qty);
+    runningStock = round2(runningStock + Number(entry.in_qty || 0) - Number(entry.out_qty || 0));
     return {
       ...entry,
       balance_qty: runningStock
