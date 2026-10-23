@@ -124,67 +124,66 @@ export default function InventoryStockView({ firm, onClose }) {
 
     try {
       const inventoryKey = `inventory_items_${activeFirmId}`;
-      let itemsList = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
+      const stockKey = `app_stock_${activeFirmId}`;
+      let itemsList = StorageService.getItem(inventoryKey, []) || StorageService.getItem(stockKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
       if (!Array.isArray(itemsList)) itemsList = [];
 
-      const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim() : null;
+      const editingId = editingItem ? String(editingItem.id || editingItem.item_id || '').trim() : null;
+      const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim().toLowerCase() : null;
+
+      const existingIndex = itemsList.findIndex(i => {
+        if (!i) return false;
+        const iId = String(i.id || i.item_id || '').trim();
+        const iName = String(i.name || i.item_name || '').trim().toLowerCase();
+        return (editingId && iId === editingId) || (oldName && iName === oldName);
+      });
+
       const parsedRate = round2(parseFloat(purchasePrice) || 0);
 
-      if (oldName) {
-        const index = itemsList.findIndex(i => i && String(i.name || i.item_name || '').trim().toLowerCase() === oldName.toLowerCase());
-        if (index !== -1) {
-          itemsList[index] = {
-            ...itemsList[index],
-            name: cleanName,
-            item_name: cleanName,
-            unit: unit.trim() || 'Pcs',
-            item_type: itemType,
-            is_service: itemType === 'SERVICE',
-            unit_purchase_price: parsedRate,
-            purchase_price: parsedRate,
-            rate: parsedRate,
-            hsn_sac: hsnSac.trim(),
-            updated_at: new Date().toISOString()
-          };
-        } else {
-          itemsList.unshift({
-            id: `ITEM-${Date.now()}`,
-            firm_id: activeFirmId,
-            name: cleanName,
-            item_name: cleanName,
-            unit: unit.trim() || 'Pcs',
-            item_type: itemType,
-            unit_purchase_price: parsedRate,
-            purchase_price: parsedRate,
-            rate: parsedRate,
-            hsn_sac: hsnSac.trim(),
-            created_at: new Date().toISOString()
-          });
-        }
+      if (existingIndex !== -1) {
+        itemsList[existingIndex] = {
+          ...itemsList[existingIndex],
+          name: cleanName,
+          item_name: cleanName,
+          unit: unit.trim() || 'Pcs',
+          item_type: itemType,
+          is_service: itemType === 'SERVICE',
+          unit_purchase_price: parsedRate,
+          purchase_price: parsedRate,
+          rate: parsedRate,
+          hsn_sac: hsnSac.trim(),
+          updated_at: new Date().toISOString()
+        };
       } else {
-        itemsList.unshift({
-          id: `ITEM-${Date.now()}`,
+        const newItem = {
+          id: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           firm_id: activeFirmId,
           name: cleanName,
           item_name: cleanName,
           unit: unit.trim() || 'Pcs',
           item_type: itemType,
+          is_service: itemType === 'SERVICE',
           unit_purchase_price: parsedRate,
           purchase_price: parsedRate,
           rate: parsedRate,
           hsn_sac: hsnSac.trim(),
+          current_stock: 0,
+          stock: 0,
+          qty: 0,
           created_at: new Date().toISOString()
-        });
+        };
+        itemsList.unshift(newItem);
       }
 
       StorageService.setItem(inventoryKey, itemsList);
-      StorageService.setItem(`app_stock_${activeFirmId}`, itemsList);
+      StorageService.setItem(stockKey, itemsList);
       localStorage.setItem(inventoryKey, JSON.stringify(itemsList));
-      localStorage.setItem(`app_stock_${activeFirmId}`, JSON.stringify(itemsList));
+      localStorage.setItem(stockKey, JSON.stringify(itemsList));
       localStorage.setItem('inventory_items', JSON.stringify(itemsList));
 
       if (itemType !== 'SERVICE') {
-        autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
+        const oldItemTitle = editingItem ? (editingItem.name || editingItem.item_name) : null;
+        autoEnsureStockLedger(activeFirmId, cleanName, oldItemTitle ? `${oldItemTitle} Stock Account` : null);
       }
 
       window.dispatchEvent(new Event('app_accounts_updated'));
@@ -194,7 +193,9 @@ export default function InventoryStockView({ firm, onClose }) {
 
       setStatusMessage({
         type: 'success',
-        text: `✓ "${cleanName}" successfully update ho gaya!`
+        text: editingItem 
+          ? `✓ "${cleanName}" successfully update ho gaya!` 
+          : `✓ "${cleanName}" inventory mein save ho gaya!`
       });
 
       setEditingItem(null);
@@ -233,21 +234,26 @@ export default function InventoryStockView({ firm, onClose }) {
     if (!window.confirm(`Kya aap "${name}" ko inventory se delete karna chahte hain?`)) return;
 
     const inventoryKey = `inventory_items_${activeFirmId}`;
-    let itemsList = StorageService.getItem(inventoryKey, []) || [];
+    const stockKey = `app_stock_${activeFirmId}`;
+    let itemsList = StorageService.getItem(inventoryKey, []) || StorageService.getItem(stockKey, []) || [];
     const targetName = String(name || '').trim().toLowerCase();
     
     const updatedList = itemsList.filter(i => {
       if (!i) return false;
       const iName = String(i.name || i.item_name || '').trim().toLowerCase();
-      return iName !== targetName;
+      const iId = String(i.id || i.item_id || '');
+      const targetId = String(item.id || item.item_id || '');
+      return (targetId && iId !== targetId) || (!targetId && iName !== targetName);
     });
 
     StorageService.setItem(inventoryKey, updatedList);
-    StorageService.setItem(`app_stock_${activeFirmId}`, updatedList);
+    StorageService.setItem(stockKey, updatedList);
     localStorage.setItem(inventoryKey, JSON.stringify(updatedList));
+    localStorage.setItem(stockKey, JSON.stringify(updatedList));
 
     window.dispatchEvent(new Event('app_inventory_updated'));
     window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('storage'));
     loadStockItems();
   };
 
@@ -278,7 +284,6 @@ export default function InventoryStockView({ firm, onClose }) {
   return (
     <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* Header Banner */}
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -313,7 +318,6 @@ export default function InventoryStockView({ firm, onClose }) {
         </div>
       )}
 
-      {/* Creation / Edit Form */}
       <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div>
           <label style={labelStyle}>ITEM NAME *</label>
@@ -414,7 +418,6 @@ export default function InventoryStockView({ firm, onClose }) {
         </div>
       </form>
 
-      {/* Stock Items List */}
       <div style={cardStyle}>
         <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong style={{ fontSize: '13px', color: '#0f172a' }}>
@@ -444,7 +447,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
               return (
                 <div 
-                  key={item.id || stockName} 
+                  key={item.id || item.item_id || stockName} 
                   onClick={(e) => handleDownloadStockPDF(e, item)}
                   title="Click to download complete Stock Movement PDF Statement"
                   style={{ 
