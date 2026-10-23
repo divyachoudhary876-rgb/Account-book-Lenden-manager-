@@ -127,52 +127,54 @@ export default function InventoryStockView({ firm, onClose }) {
       let itemsList = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
       if (!Array.isArray(itemsList)) itemsList = [];
 
-      const editingId = editingItem ? String(editingItem.id || editingItem.item_id || '').trim() : null;
-      const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim().toLowerCase() : null;
-
-      // FIX: Robust matching by ID OR by exact old item name
-      const existingIndex = itemsList.findIndex(i => {
-        if (!i) return false;
-        const iId = String(i.id || i.item_id || '').trim();
-        const iName = String(i.name || i.item_name || '').trim().toLowerCase();
-        return (editingId && iId === editingId) || (oldName && iName === oldName);
-      });
-
+      const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim() : null;
       const parsedRate = round2(parseFloat(purchasePrice) || 0);
 
-      if (existingIndex !== -1) {
-        itemsList[existingIndex] = {
-          ...itemsList[existingIndex],
-          name: cleanName,
-          item_name: cleanName,
-          unit: unit.trim() || 'Pcs',
-          item_type: itemType,
-          is_service: itemType === 'SERVICE',
-          unit_purchase_price: parsedRate,
-          purchase_price: parsedRate,
-          rate: parsedRate,
-          hsn_sac: hsnSac.trim(),
-          updated_at: new Date().toISOString()
-        };
+      if (oldName) {
+        const index = itemsList.findIndex(i => i && String(i.name || i.item_name || '').trim().toLowerCase() === oldName.toLowerCase());
+        if (index !== -1) {
+          itemsList[index] = {
+            ...itemsList[index],
+            name: cleanName,
+            item_name: cleanName,
+            unit: unit.trim() || 'Pcs',
+            item_type: itemType,
+            is_service: itemType === 'SERVICE',
+            unit_purchase_price: parsedRate,
+            purchase_price: parsedRate,
+            rate: parsedRate,
+            hsn_sac: hsnSac.trim(),
+            updated_at: new Date().toISOString()
+          };
+        } else {
+          itemsList.unshift({
+            id: `ITEM-${Date.now()}`,
+            firm_id: activeFirmId,
+            name: cleanName,
+            item_name: cleanName,
+            unit: unit.trim() || 'Pcs',
+            item_type: itemType,
+            unit_purchase_price: parsedRate,
+            purchase_price: parsedRate,
+            rate: parsedRate,
+            hsn_sac: hsnSac.trim(),
+            created_at: new Date().toISOString()
+          });
+        }
       } else {
-        const newItem = {
-          id: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        itemsList.unshift({
+          id: `ITEM-${Date.now()}`,
           firm_id: activeFirmId,
           name: cleanName,
           item_name: cleanName,
           unit: unit.trim() || 'Pcs',
           item_type: itemType,
-          is_service: itemType === 'SERVICE',
           unit_purchase_price: parsedRate,
           purchase_price: parsedRate,
           rate: parsedRate,
           hsn_sac: hsnSac.trim(),
-          current_stock: 0,
-          stock: 0,
-          qty: 0,
           created_at: new Date().toISOString()
-        };
-        itemsList.unshift(newItem);
+        });
       }
 
       StorageService.setItem(inventoryKey, itemsList);
@@ -182,8 +184,7 @@ export default function InventoryStockView({ firm, onClose }) {
       localStorage.setItem('inventory_items', JSON.stringify(itemsList));
 
       if (itemType !== 'SERVICE') {
-        const oldItemTitle = editingItem ? (editingItem.name || editingItem.item_name) : null;
-        autoEnsureStockLedger(activeFirmId, cleanName, oldItemTitle ? `${oldItemTitle} Stock Account` : null);
+        autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
       }
 
       window.dispatchEvent(new Event('app_accounts_updated'));
@@ -193,9 +194,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
       setStatusMessage({
         type: 'success',
-        text: editingItem 
-          ? `✓ "${cleanName}" successfully update ho gaya!` 
-          : `✓ "${cleanName}" inventory mein save ho gaya!`
+        text: `✓ "${cleanName}" successfully update ho gaya!`
       });
 
       setEditingItem(null);
@@ -240,9 +239,7 @@ export default function InventoryStockView({ firm, onClose }) {
     const updatedList = itemsList.filter(i => {
       if (!i) return false;
       const iName = String(i.name || i.item_name || '').trim().toLowerCase();
-      const iId = String(i.id || i.item_id || '');
-      const targetId = String(item.id || item.item_id || '');
-      return (targetId && iId !== targetId) || (!targetId && iName !== targetName);
+      return iName !== targetName;
     });
 
     StorageService.setItem(inventoryKey, updatedList);
@@ -447,7 +444,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
               return (
                 <div 
-                  key={item.id || item.item_id || stockName} 
+                  key={item.id || stockName} 
                   onClick={(e) => handleDownloadStockPDF(e, item)}
                   title="Click to download complete Stock Movement PDF Statement"
                   style={{ 
