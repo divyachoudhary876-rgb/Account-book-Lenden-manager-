@@ -49,7 +49,7 @@ export const getFirmItemStock = (firmId, itemName) => {
     let totalInward = 0;
     let totalOutward = 0;
 
-    // Calculate Inward Qty (+)
+    // Calculate Inward Qty (+) with normalized comparison
     purchases.forEach(p => {
       if (!p) return;
       if (Array.isArray(p.items) && p.items.length > 0) {
@@ -68,7 +68,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // Calculate Outward Qty from Sales (-)
+    // Calculate Outward Qty from Sales (-) with normalized comparison
     salesInvoices.forEach(s => {
       if (!s) return;
       if (Array.isArray(s.items) && s.items.length > 0) {
@@ -82,7 +82,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // Calculate Outward Qty from Material Adjustments (-)
+    // Calculate Outward Qty from Material Adjustments (-) with normalized comparison
     adjustments.forEach(a => {
       if (!a) return;
       const aName = normalizeItemName(a.item_name || a.itemName || '');
@@ -92,6 +92,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
+    // Net Stock calculation
     const netStock = round2(totalInward - totalOutward);
     return netStock; 
   } catch (err) {
@@ -103,6 +104,7 @@ export const getFirmItemStock = (firmId, itemName) => {
 export const getStockItemsByFirm = (firmId) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
   try {
+    // FIX: Multi-key fallback scanning so edited or newly saved items are never missed
     const possibleKeys = [
       `inventory_items_${cleanFirmId}`,
       `app_stock_${cleanFirmId}`,
@@ -136,7 +138,7 @@ export const getStockItemsByFirm = (firmId) => {
       const itemName = String(i.name || i.item_name || '').trim();
       if (!itemName) return;
       const realStock = getFirmItemStock(cleanFirmId, itemName);
-      const uid = itemName.toLowerCase();
+      const uid = String(i.id || itemName).toLowerCase();
 
       if (!uniqueMap.has(uid)) {
         uniqueMap.set(uid, {
