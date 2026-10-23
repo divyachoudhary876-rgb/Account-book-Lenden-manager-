@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
 import { generateStockItemLedgerStatement, exportStockLedgerPDF } from '../utils/inventoryLedgerReport';
 import { getStockItemsByFirm, getFirmItemStock } from '../utils/stockInventoryEngine';
@@ -23,7 +22,6 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
 
   try {
     const masterAccounts = getFirmMasterAccounts(firmId) || [];
-    
     const existingIndex = masterAccounts.findIndex(acc => {
       const name = (acc.account_name || acc.name || '').trim().toLowerCase();
       return name === targetAccountName.toLowerCase() ||
@@ -32,19 +30,9 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
 
     if (existingIndex !== -1) {
       const matchedAcc = masterAccounts[existingIndex];
-      let needsUpdate = false;
-
       if ((matchedAcc.account_name || matchedAcc.name) !== targetAccountName) {
         matchedAcc.account_name = targetAccountName;
         matchedAcc.name = targetAccountName;
-        needsUpdate = true;
-      }
-      if (matchedAcc.sub_group !== 'Raw Material Inventory (कच्चा माल)') {
-        matchedAcc.sub_group = 'Raw Material Inventory (कच्चा माल)';
-        needsUpdate = true;
-      }
-
-      if (needsUpdate) {
         matchedAcc.updated_at = new Date().toISOString();
         saveMasterAccount(firmId, matchedAcc);
       }
@@ -75,15 +63,12 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
 };
 
 export default function InventoryStockView({ firm, onClose }) {
-  const activeFirmId = useMemo(() => {
-    return resolveActiveFirmId(firm);
-  }, [firm]);
+  const activeFirmId = useMemo(() => resolveActiveFirmId(firm), [firm]);
 
   const [items, setItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingItem, setEditingItem] = useState(null);
 
-  // Form State
   const [itemName, setItemName] = useState('');
   const [unit, setUnit] = useState('Pcs');
   const [itemType, setItemType] = useState('GOODS');
@@ -94,7 +79,7 @@ export default function InventoryStockView({ firm, onClose }) {
   const loadStockItems = useCallback(() => {
     try {
       const stock = getStockItemsByFirm(activeFirmId);
-      setItems(Array.isArray(stock) && stock.length > 0 ? stock : loadFirmData('inventory_items', activeFirmId, []));
+      setItems(Array.isArray(stock) ? stock : []);
     } catch (err) {
       console.error('Error loading inventory items:', err);
     }
@@ -103,11 +88,9 @@ export default function InventoryStockView({ firm, onClose }) {
   useEffect(() => {
     loadStockItems();
     window.addEventListener('app_inventory_updated', loadStockItems);
-    window.addEventListener('app_storage_updated', loadStockItems);
     window.addEventListener('storage', loadStockItems);
     return () => {
       window.removeEventListener('app_inventory_updated', loadStockItems);
-      window.removeEventListener('app_storage_updated', loadStockItems);
       window.removeEventListener('storage', loadStockItems);
     };
   }, [loadStockItems]);
@@ -124,18 +107,18 @@ export default function InventoryStockView({ firm, onClose }) {
 
     try {
       const inventoryKey = `inventory_items_${activeFirmId}`;
-      const stockKey = `app_stock_${activeFirmId}`;
-      let itemsList = StorageService.getItem(inventoryKey, []) || StorageService.getItem(stockKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
+      let itemsList = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
       if (!Array.isArray(itemsList)) itemsList = [];
 
       const editingId = editingItem ? String(editingItem.id || editingItem.item_id || '').trim() : null;
-      const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim().toLowerCase() : null;
+      const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim() : null;
 
+      // Find index by ID or old exact name
       const existingIndex = itemsList.findIndex(i => {
         if (!i) return false;
         const iId = String(i.id || i.item_id || '').trim();
-        const iName = String(i.name || i.item_name || '').trim().toLowerCase();
-        return (editingId && iId === editingId) || (oldName && iName === oldName);
+        const iName = String(i.name || i.item_name || '').trim();
+        return (editingId && iId === editingId) || (oldName && iName.toLowerCase() === oldName.toLowerCase());
       });
 
       const parsedRate = round2(parseFloat(purchasePrice) || 0);
@@ -155,7 +138,7 @@ export default function InventoryStockView({ firm, onClose }) {
           updated_at: new Date().toISOString()
         };
       } else {
-        const newItem = {
+        itemsList.unshift({
           id: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           firm_id: activeFirmId,
           name: cleanName,
@@ -171,31 +154,24 @@ export default function InventoryStockView({ firm, onClose }) {
           stock: 0,
           qty: 0,
           created_at: new Date().toISOString()
-        };
-        itemsList.unshift(newItem);
+        });
       }
 
+      // Save to storage
       StorageService.setItem(inventoryKey, itemsList);
-      StorageService.setItem(stockKey, itemsList);
       localStorage.setItem(inventoryKey, JSON.stringify(itemsList));
-      localStorage.setItem(stockKey, JSON.stringify(itemsList));
-      localStorage.setItem('inventory_items', JSON.stringify(itemsList));
 
       if (itemType !== 'SERVICE') {
-        const oldItemTitle = editingItem ? (editingItem.name || editingItem.item_name) : null;
-        autoEnsureStockLedger(activeFirmId, cleanName, oldItemTitle ? `${oldItemTitle} Stock Account` : null);
+        autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
       }
 
-      window.dispatchEvent(new Event('app_accounts_updated'));
       window.dispatchEvent(new Event('app_inventory_updated'));
-      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_accounts_updated'));
       window.dispatchEvent(new Event('storage'));
 
       setStatusMessage({
         type: 'success',
-        text: editingItem 
-          ? `✓ "${cleanName}" successfully update ho gaya!` 
-          : `✓ "${cleanName}" inventory mein save ho gaya!`
+        text: `✓ "${cleanName}" successfully update ho gaya!`
       });
 
       setEditingItem(null);
@@ -234,25 +210,19 @@ export default function InventoryStockView({ firm, onClose }) {
     if (!window.confirm(`Kya aap "${name}" ko inventory se delete karna chahte hain?`)) return;
 
     const inventoryKey = `inventory_items_${activeFirmId}`;
-    const stockKey = `app_stock_${activeFirmId}`;
-    let itemsList = StorageService.getItem(inventoryKey, []) || StorageService.getItem(stockKey, []) || [];
+    let itemsList = StorageService.getItem(inventoryKey, []) || [];
     const targetName = String(name || '').trim().toLowerCase();
     
     const updatedList = itemsList.filter(i => {
       if (!i) return false;
       const iName = String(i.name || i.item_name || '').trim().toLowerCase();
-      const iId = String(i.id || i.item_id || '');
-      const targetId = String(item.id || item.item_id || '');
-      return (targetId && iId !== targetId) || (!targetId && iName !== targetName);
+      return iName !== targetName;
     });
 
     StorageService.setItem(inventoryKey, updatedList);
-    StorageService.setItem(stockKey, updatedList);
     localStorage.setItem(inventoryKey, JSON.stringify(updatedList));
-    localStorage.setItem(stockKey, JSON.stringify(updatedList));
 
     window.dispatchEvent(new Event('app_inventory_updated'));
-    window.dispatchEvent(new Event('app_storage_updated'));
     window.dispatchEvent(new Event('storage'));
     loadStockItems();
   };
@@ -265,7 +235,6 @@ export default function InventoryStockView({ firm, onClose }) {
     try {
       const firms = StorageService.getItem('app_firms_registry', []) || [];
       const currentFirm = firms.find(f => String(f.id || f.firm_id) === String(activeFirmId)) || {};
-
       const statementData = generateStockItemLedgerStatement(activeFirmId, item);
       await exportStockLedgerPDF(currentFirm, item, statementData);
     } catch (err) {
@@ -292,13 +261,11 @@ export default function InventoryStockView({ firm, onClose }) {
             </h3>
             <span style={{ fontSize: '11px', color: '#64748b' }}>Item par click karke direct PDF statement download karein</span>
           </div>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {onClose && (
-              <button type="button" onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
-                Close
-              </button>
-            )}
-          </div>
+          {onClose && (
+            <button type="button" onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+              Close
+            </button>
+          )}
         </div>
       </div>
 
@@ -345,11 +312,7 @@ export default function InventoryStockView({ firm, onClose }) {
           </div>
           <div>
             <label style={labelStyle}>ITEM TYPE</label>
-            <select 
-              value={itemType} 
-              onChange={e => setItemType(e.target.value)} 
-              style={inputStyle}
-            >
+            <select value={itemType} onChange={e => setItemType(e.target.value)} style={inputStyle}>
               <option value="GOODS">Goods / Stock Item</option>
               <option value="SERVICE">Service (Non-Stock)</option>
             </select>
@@ -381,37 +344,11 @@ export default function InventoryStockView({ firm, onClose }) {
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-          <button 
-            type="submit" 
-            style={{ 
-              flex: 1, 
-              backgroundColor: '#059669', 
-              color: '#ffffff', 
-              border: 'none', 
-              padding: '12px', 
-              borderRadius: '8px', 
-              fontSize: '12px', 
-              fontWeight: 'bold', 
-              cursor: 'pointer' 
-            }}
-          >
+          <button type="submit" style={{ flex: 1, backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
             {editingItem ? `✓ Update Stock Item` : `💾 Save Stock Item`}
           </button>
-
           {editingItem && (
-            <button 
-              type="button" 
-              onClick={() => {
-                setEditingItem(null);
-                setItemName('');
-                setUnit('Pcs');
-                setItemType('GOODS');
-                setPurchasePrice('');
-                setHsnSac('');
-                setStatusMessage(null);
-              }} 
-              style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
+            <button type="button" onClick={() => { setEditingItem(null); setItemName(''); setUnit('Pcs'); setItemType('GOODS'); setPurchasePrice(''); setHsnSac(''); setStatusMessage(null); }} style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
               Cancel
             </button>
           )}
@@ -420,9 +357,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
       <div style={cardStyle}>
         <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <strong style={{ fontSize: '13px', color: '#0f172a' }}>
-            📋 All Stock Items ({filteredItems.length})
-          </strong>
+          <strong style={{ fontSize: '13px', color: '#0f172a' }}>📋 All Stock Items ({filteredItems.length})</strong>
           <span style={{ fontSize: '10px', color: '#0369a1', fontStyle: 'italic' }}>* Click card to download PDF statement</span>
         </div>
 
@@ -436,9 +371,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
         <div style={{ maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {filteredItems.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '12px' }}>
-              No inventory stock items found.
-            </div>
+            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '12px' }}>No inventory stock items found.</div>
           ) : (
             filteredItems.map((item) => {
               const stockName = item.name || item.item_name;
@@ -447,55 +380,21 @@ export default function InventoryStockView({ firm, onClose }) {
 
               return (
                 <div 
-                  key={item.id || item.item_id || stockName} 
+                  key={item.id || stockName} 
                   onClick={(e) => handleDownloadStockPDF(e, item)}
-                  title="Click to download complete Stock Movement PDF Statement"
-                  style={{ 
-                    backgroundColor: '#f8fafc', 
-                    border: '1px solid #cbd5e1', 
-                    borderRadius: '8px', 
-                    padding: '10px 12px', 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center',
-                    boxSizing: 'border-box',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                  style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box', cursor: 'pointer' }}
                 >
                   <div>
-                    <strong style={{ fontSize: '13px', color: '#0f172a' }}>
-                      📄 {stockName}
-                    </strong>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                      Unit: {item.unit || 'Pcs'} | Default Rate: ₹{rate.toFixed(2)}
-                    </div>
-                    <div style={{ fontSize: '10px', color: '#059669', fontWeight: 'bold', marginTop: '1px' }}>
-                      🔗 Linked Ledger: {stockName} Stock Account
-                    </div>
+                    <strong style={{ fontSize: '13px', color: '#0f172a' }}>📄 {stockName}</strong>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Unit: {item.unit || 'Pcs'} | Default Rate: ₹{rate.toFixed(2)}</div>
+                    <div style={{ fontSize: '10px', color: '#059669', fontWeight: 'bold', marginTop: '1px' }}>🔗 Linked Ledger: {stockName} Stock Account</div>
                   </div>
 
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: '900', color: stockQty > 0 ? '#0284c7' : '#94a3b8' }}>
-                      {stockQty} {item.unit || 'Pcs'}
-                    </span>
+                    <span style={{ fontSize: '14px', fontWeight: '900', color: stockQty > 0 ? '#0284c7' : '#94a3b8' }}>{stockQty} {item.unit || 'Pcs'}</span>
                     <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
-                      <button 
-                        type="button" 
-                        onClick={(e) => handleEdit(e, item)} 
-                        style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
-                      >
-                        Edit
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={(e) => handleDelete(e, item)} 
-                        style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
-                      >
-                        Delete
-                      </button>
+                      <button type="button" onClick={(e) => handleEdit(e, item)} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Edit</button>
+                      <button type="button" onClick={(e) => handleDelete(e, item)} style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Delete</button>
                     </div>
                   </div>
                 </div>
@@ -509,32 +408,6 @@ export default function InventoryStockView({ firm, onClose }) {
   );
 }
 
-const cardStyle = {
-  backgroundColor: '#ffffff',
-  borderRadius: '12px',
-  padding: '14px',
-  border: '1px solid #cbd5e1',
-  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
-  boxSizing: 'border-box',
-  width: '100%'
-};
-
-const labelStyle = {
-  display: 'block',
-  fontSize: '11px',
-  fontWeight: 'bold',
-  color: '#334155',
-  marginBottom: '4px'
-};
-
-const inputStyle = {
-  width: '100%',
-  padding: '9px 10px',
-  borderRadius: '8px',
-  border: '1px solid #cbd5e1',
-  fontSize: '12px',
-  boxSizing: 'border-box',
-  backgroundColor: '#ffffff',
-  color: '#0f172a',
-  outline: 'none'
-};
+const cardStyle = { backgroundColor: '#ffffff', borderRadius: '12px', padding: '14px', border: '1px solid #cbd5e1', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)', boxSizing: 'border-box', width: '100%' };
+const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' };
+const inputStyle = { width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', backgroundColor: '#ffffff', color: '#0f172a', outline: 'none' };
