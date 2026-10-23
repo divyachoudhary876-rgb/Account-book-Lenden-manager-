@@ -79,7 +79,7 @@ export default function InventoryStockView({ firm, onClose }) {
   const loadStockItems = useCallback(() => {
     try {
       const stock = getStockItemsByFirm(activeFirmId);
-      setItems(Array.isArray(stock) ? stock : []);
+      setItems(Array.isArray(stock) ? [...stock] : []);
     } catch (err) {
       console.error('Error loading inventory items:', err);
     }
@@ -113,7 +113,7 @@ export default function InventoryStockView({ firm, onClose }) {
       const editingId = editingItem ? String(editingItem.id || editingItem.item_id || '').trim() : null;
       const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim() : null;
 
-      // Find index by ID or old exact name
+      // Update or Insert
       const existingIndex = itemsList.findIndex(i => {
         if (!i) return false;
         const iId = String(i.id || i.item_id || '').trim();
@@ -157,7 +157,7 @@ export default function InventoryStockView({ firm, onClose }) {
         });
       }
 
-      // Save to storage
+      // Save directly
       StorageService.setItem(inventoryKey, itemsList);
       localStorage.setItem(inventoryKey, JSON.stringify(itemsList));
 
@@ -165,9 +165,11 @@ export default function InventoryStockView({ firm, onClose }) {
         autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
       }
 
+      // Force immediate state update
+      loadStockItems();
+
       window.dispatchEvent(new Event('app_inventory_updated'));
       window.dispatchEvent(new Event('app_accounts_updated'));
-      window.dispatchEvent(new Event('storage'));
 
       setStatusMessage({
         type: 'success',
@@ -180,7 +182,6 @@ export default function InventoryStockView({ firm, onClose }) {
       setItemType('GOODS');
       setPurchasePrice('');
       setHsnSac('');
-      loadStockItems();
     } catch (err) {
       setStatusMessage({ type: 'error', text: `Failed: ${err.message}` });
     }
@@ -222,9 +223,8 @@ export default function InventoryStockView({ firm, onClose }) {
     StorageService.setItem(inventoryKey, updatedList);
     localStorage.setItem(inventoryKey, JSON.stringify(updatedList));
 
-    window.dispatchEvent(new Event('app_inventory_updated'));
-    window.dispatchEvent(new Event('storage'));
     loadStockItems();
+    window.dispatchEvent(new Event('app_inventory_updated'));
   };
 
   const handleDownloadStockPDF = async (e, item) => {
