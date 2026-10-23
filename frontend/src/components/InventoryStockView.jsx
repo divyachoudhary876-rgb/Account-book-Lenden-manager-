@@ -127,8 +127,16 @@ export default function InventoryStockView({ firm, onClose }) {
       let itemsList = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
       if (!Array.isArray(itemsList)) itemsList = [];
 
-      const itemId = editingItem ? String(editingItem.id || editingItem.item_id || '').trim() : null;
-      const existingIndex = itemId ? itemsList.findIndex(i => i && String(i.id || i.item_id || '').trim() === itemId) : -1;
+      const editingId = editingItem ? String(editingItem.id || editingItem.item_id || '').trim() : null;
+      const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim().toLowerCase() : null;
+
+      // FIX: Robust matching by ID OR by exact old item name
+      const existingIndex = itemsList.findIndex(i => {
+        if (!i) return false;
+        const iId = String(i.id || i.item_id || '').trim();
+        const iName = String(i.name || i.item_name || '').trim().toLowerCase();
+        return (editingId && iId === editingId) || (oldName && iName === oldName);
+      });
 
       const parsedRate = round2(parseFloat(purchasePrice) || 0);
 
@@ -174,8 +182,8 @@ export default function InventoryStockView({ firm, onClose }) {
       localStorage.setItem('inventory_items', JSON.stringify(itemsList));
 
       if (itemType !== 'SERVICE') {
-        const oldName = editingItem ? (editingItem.name || editingItem.item_name) : null;
-        autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
+        const oldItemTitle = editingItem ? (editingItem.name || editingItem.item_name) : null;
+        autoEnsureStockLedger(activeFirmId, cleanName, oldItemTitle ? `${oldItemTitle} Stock Account` : null);
       }
 
       window.dispatchEvent(new Event('app_accounts_updated'));
@@ -227,7 +235,15 @@ export default function InventoryStockView({ firm, onClose }) {
 
     const inventoryKey = `inventory_items_${activeFirmId}`;
     let itemsList = StorageService.getItem(inventoryKey, []) || [];
-    const updatedList = itemsList.filter(i => String(i.id || i.item_id) !== String(item.id || item.item_id));
+    const targetName = String(name || '').trim().toLowerCase();
+    
+    const updatedList = itemsList.filter(i => {
+      if (!i) return false;
+      const iName = String(i.name || i.item_name || '').trim().toLowerCase();
+      const iId = String(i.id || i.item_id || '');
+      const targetId = String(item.id || item.item_id || '');
+      return (targetId && iId !== targetId) || (!targetId && iName !== targetName);
+    });
 
     StorageService.setItem(inventoryKey, updatedList);
     StorageService.setItem(`app_stock_${activeFirmId}`, updatedList);
