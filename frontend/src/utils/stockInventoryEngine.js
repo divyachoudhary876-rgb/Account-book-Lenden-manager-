@@ -1,6 +1,6 @@
 /**
  * Stock & Inventory Reconciliation Engine for Account Book Smart Manager
- * Single Source of Truth for Real-Time Item Stock Calculation & Direct Storage Sync.
+ * Single Source of Truth for Real-Time Item Stock Calculation.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
