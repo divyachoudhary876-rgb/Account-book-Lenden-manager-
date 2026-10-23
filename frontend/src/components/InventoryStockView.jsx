@@ -74,104 +74,6 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
   }
 };
 
-const loadFirmInventory = (firmInput) => {
-  const firmId = resolveActiveFirmId(firmInput);
-  let items = getStockItemsByFirm(firmId);
-
-  if (!Array.isArray(items) || items.length === 0) {
-    items = loadFirmData('inventory_items', firmInput, []);
-  }
-
-  return Array.isArray(items) ? items.filter(item => item && (item.name || item.item_name)) : [];
-};
-
-const saveFirmInventory = (firmInput, itemData) => {
-  const firmId = resolveActiveFirmId(firmInput);
-  const cleanName = String(itemData.name || itemData.item_name || '').trim();
-  if (!cleanName) throw new Error('Item name is mandatory.');
-
-  const existingItems = loadFirmInventory(firmInput);
-  const itemId = itemData.id ? String(itemData.id).trim() : null;
-  
-  const existingItemIndex = itemId 
-    ? existingItems.findIndex(i => i && String(i.id).trim() === itemId)
-    : -1;
-
-  const oldItemName = existingItemIndex !== -1 ? (existingItems[existingItemIndex].name || existingItems[existingItemIndex].item_name) : null;
-
-  const purchasePrice = round2(parseFloat(itemData.unit_purchase_price ?? itemData.purchase_price ?? itemData.rate ?? 0));
-  const sellingPrice = round2(parseFloat(itemData.unit_selling_price ?? itemData.selling_price ?? 0));
-
-  const resolvedId = itemId || `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-  const normalizedItem = {
-    id: resolvedId,
-    firm_id: firmId,
-    name: cleanName,
-    item_name: cleanName,
-    unit: itemData.unit || 'Pcs',
-    item_type: itemData.item_type || (itemData.is_service ? 'SERVICE' : 'GOODS'),
-    is_service: Boolean(itemData.is_service || itemData.item_type === 'SERVICE'),
-    unit_purchase_price: purchasePrice,
-    purchase_price: purchasePrice,
-    rate: purchasePrice,
-    unit_selling_price: sellingPrice,
-    selling_price: sellingPrice,
-    hsn_sac: itemData.hsn_sac || '',
-    tax_rate: parseFloat(itemData.tax_rate || 0),
-    description: itemData.description || '',
-    updated_at: new Date().toISOString()
-  };
-
-  let updatedList;
-  if (existingItemIndex !== -1) {
-    updatedList = [...existingItems];
-    updatedList[existingItemIndex] = { ...existingItems[existingItemIndex], ...normalizedItem };
-  } else {
-    normalizedItem.created_at = new Date().toISOString();
-    updatedList = [normalizedItem, ...existingItems];
-  }
-
-  saveFirmData('inventory_items', firmInput, updatedList);
-  StorageService.setItem(`inventory_items_${firmId}`, updatedList);
-  StorageService.setItem(`app_stock_${firmId}`, updatedList);
-  localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify(updatedList));
-  localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(updatedList));
-  localStorage.setItem('inventory_items', JSON.stringify(updatedList));
-
-  if (!normalizedItem.is_service && normalizedItem.item_type !== 'SERVICE') {
-    autoEnsureStockLedger(firmId, cleanName, oldItemName ? `${oldItemName} Stock Account` : null);
-  }
-
-  window.dispatchEvent(new Event('app_accounts_updated'));
-  window.dispatchEvent(new Event('app_inventory_updated'));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  window.dispatchEvent(new Event('storage'));
-
-  return normalizedItem;
-};
-
-const deleteFirmInventory = (firmInput, itemId) => {
-  const firmId = resolveActiveFirmId(firmInput);
-  if (!firmId || !itemId) return false;
-
-  const existingItems = loadFirmInventory(firmInput);
-  const updatedList = existingItems.filter(i => String(i.id) !== String(itemId));
-
-  saveFirmData('inventory_items', firmInput, updatedList);
-  StorageService.setItem(`inventory_items_${firmId}`, updatedList);
-  StorageService.setItem(`app_stock_${firmId}`, updatedList);
-  localStorage.setItem(`inventory_items_${firmId}`, JSON.stringify(updatedList));
-  localStorage.setItem(`app_stock_${firmId}`, JSON.stringify(updatedList));
-  localStorage.setItem('inventory_items', JSON.stringify(updatedList));
-
-  window.dispatchEvent(new Event('app_inventory_updated'));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  window.dispatchEvent(new Event('storage'));
-
-  return true;
-};
-
 export default function InventoryStockView({ firm, onClose }) {
   const activeFirmId = useMemo(() => {
     return resolveActiveFirmId(firm);
@@ -185,20 +87,18 @@ export default function InventoryStockView({ firm, onClose }) {
   const [itemName, setItemName] = useState('');
   const [unit, setUnit] = useState('Pcs');
   const [itemType, setItemType] = useState('GOODS');
-  const [openingStock, setOpeningStock] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
-  const [sellingPrice, setSellingPrice] = useState('');
   const [hsnSac, setHsnSac] = useState('');
   const [statusMessage, setStatusMessage] = useState(null);
 
   const loadStockItems = useCallback(() => {
     try {
-      const stock = loadFirmInventory(firm);
-      setItems(Array.isArray(stock) ? stock : []);
+      const stock = getStockItemsByFirm(activeFirmId);
+      setItems(Array.isArray(stock) && stock.length > 0 ? stock : loadFirmData('inventory_items', activeFirmId, []));
     } catch (err) {
       console.error('Error loading inventory items:', err);
     }
-  }, [firm]);
+  }, [activeFirmId]);
 
   useEffect(() => {
     loadStockItems();
@@ -223,20 +123,65 @@ export default function InventoryStockView({ firm, onClose }) {
     }
 
     try {
-      saveFirmInventory(firm, {
-        id: editingItem ? editingItem.id : undefined,
-        name: cleanName,
-        item_name: cleanName,
-        unit: unit.trim() || 'Pcs',
-        item_type: itemType,
-        is_service: itemType === 'SERVICE',
-        unit_purchase_price: round2(parseFloat(purchasePrice) || 0),
-        purchase_price: round2(parseFloat(purchasePrice) || 0),
-        rate: round2(parseFloat(purchasePrice) || 0),
-        unit_selling_price: round2(parseFloat(sellingPrice) || 0),
-        selling_price: round2(parseFloat(sellingPrice) || 0),
-        hsn_sac: hsnSac.trim()
-      });
+      const inventoryKey = `inventory_items_${activeFirmId}`;
+      let itemsList = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
+      if (!Array.isArray(itemsList)) itemsList = [];
+
+      const itemId = editingItem ? String(editingItem.id || editingItem.item_id || '').trim() : null;
+      const existingIndex = itemId ? itemsList.findIndex(i => i && String(i.id || i.item_id || '').trim() === itemId) : -1;
+
+      const parsedRate = round2(parseFloat(purchasePrice) || 0);
+
+      if (existingIndex !== -1) {
+        itemsList[existingIndex] = {
+          ...itemsList[existingIndex],
+          name: cleanName,
+          item_name: cleanName,
+          unit: unit.trim() || 'Pcs',
+          item_type: itemType,
+          is_service: itemType === 'SERVICE',
+          unit_purchase_price: parsedRate,
+          purchase_price: parsedRate,
+          rate: parsedRate,
+          hsn_sac: hsnSac.trim(),
+          updated_at: new Date().toISOString()
+        };
+      } else {
+        const newItem = {
+          id: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          firm_id: activeFirmId,
+          name: cleanName,
+          item_name: cleanName,
+          unit: unit.trim() || 'Pcs',
+          item_type: itemType,
+          is_service: itemType === 'SERVICE',
+          unit_purchase_price: parsedRate,
+          purchase_price: parsedRate,
+          rate: parsedRate,
+          hsn_sac: hsnSac.trim(),
+          current_stock: 0,
+          stock: 0,
+          qty: 0,
+          created_at: new Date().toISOString()
+        };
+        itemsList.unshift(newItem);
+      }
+
+      StorageService.setItem(inventoryKey, itemsList);
+      StorageService.setItem(`app_stock_${activeFirmId}`, itemsList);
+      localStorage.setItem(inventoryKey, JSON.stringify(itemsList));
+      localStorage.setItem(`app_stock_${activeFirmId}`, JSON.stringify(itemsList));
+      localStorage.setItem('inventory_items', JSON.stringify(itemsList));
+
+      if (itemType !== 'SERVICE') {
+        const oldName = editingItem ? (editingItem.name || editingItem.item_name) : null;
+        autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
+      }
+
+      window.dispatchEvent(new Event('app_accounts_updated'));
+      window.dispatchEvent(new Event('app_inventory_updated'));
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('storage'));
 
       setStatusMessage({
         type: 'success',
@@ -249,9 +194,7 @@ export default function InventoryStockView({ firm, onClose }) {
       setItemName('');
       setUnit('Pcs');
       setItemType('GOODS');
-      setOpeningStock('');
       setPurchasePrice('');
-      setSellingPrice('');
       setHsnSac('');
       loadStockItems();
     } catch (err) {
@@ -268,9 +211,7 @@ export default function InventoryStockView({ firm, onClose }) {
     setItemName(item.name || item.item_name || '');
     setUnit(item.unit || 'Pcs');
     setItemType(item.item_type || (item.is_service ? 'SERVICE' : 'GOODS'));
-    setOpeningStock(String(item.current_stock || item.stock || item.qty || 0));
     setPurchasePrice(String(item.unit_purchase_price || item.purchase_price || item.rate || ''));
-    setSellingPrice(String(item.unit_selling_price || item.selling_price || ''));
     setHsnSac(item.hsn_sac || '');
     setStatusMessage(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -284,7 +225,16 @@ export default function InventoryStockView({ firm, onClose }) {
     const name = item.name || item.item_name;
     if (!window.confirm(`Kya aap "${name}" ko inventory se delete karna chahte hain?`)) return;
 
-    deleteFirmInventory(firm, item.id);
+    const inventoryKey = `inventory_items_${activeFirmId}`;
+    let itemsList = StorageService.getItem(inventoryKey, []) || [];
+    const updatedList = itemsList.filter(i => String(i.id || i.item_id) !== String(item.id || item.item_id));
+
+    StorageService.setItem(inventoryKey, updatedList);
+    StorageService.setItem(`app_stock_${activeFirmId}`, updatedList);
+    localStorage.setItem(inventoryKey, JSON.stringify(updatedList));
+
+    window.dispatchEvent(new Event('app_inventory_updated'));
+    window.dispatchEvent(new Event('app_storage_updated'));
     loadStockItems();
   };
 
@@ -439,9 +389,8 @@ export default function InventoryStockView({ firm, onClose }) {
                 setItemName('');
                 setUnit('Pcs');
                 setItemType('GOODS');
-                setOpeningStock('');
                 setPurchasePrice('');
-                setSellingPrice('');
+                setHsnSac('');
                 setStatusMessage(null);
               }} 
               style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -482,7 +431,7 @@ export default function InventoryStockView({ firm, onClose }) {
 
               return (
                 <div 
-                  key={item.id} 
+                  key={item.id || item.item_id || stockName} 
                   onClick={(e) => handleDownloadStockPDF(e, item)}
                   title="Click to download complete Stock Movement PDF Statement"
                   style={{ 
