@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
 import { generateStockItemLedgerStatement, exportStockLedgerPDF } from '../utils/inventoryLedgerReport';
-import { getStockItemsByFirm, getFirmItemStock } from '../utils/stockInventoryEngine';
+import { getFirmItemStock } from '../utils/stockInventoryEngine';
 import { StorageService } from '../utils/storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
@@ -16,7 +16,6 @@ const resolveActiveFirmId = (firmInput) => {
 
 const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) => {
   if (!firmId || !rawItemName) return null;
-
   const cleanItemName = String(rawItemName).trim();
   const targetAccountName = `${cleanItemName} Stock Account`;
 
@@ -78,10 +77,35 @@ export default function InventoryStockView({ firm, onClose }) {
 
   const loadStockItems = useCallback(() => {
     try {
-      const stock = getStockItemsByFirm(activeFirmId);
-      setItems(Array.isArray(stock) ? [...stock] : []);
+      const inventoryKey = `inventory_items_${activeFirmId}`;
+      let storedItems = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
+      
+      if (!Array.isArray(storedItems) || storedItems.length === 0) {
+        storedItems = [
+          { id: 'DEF-DIESEL', name: 'Diesel', item_name: 'Diesel', unit: 'Liters', unit_purchase_price: 96.06 },
+          { id: 'DEF-MITTI-A', name: 'Mitti Grade A', item_name: 'Mitti Grade A', unit: 'Quintal', unit_purchase_price: 14.20 },
+          { id: 'DEF-MITTI-B', name: 'Mitti Grade B', item_name: 'Mitti Grade B', unit: 'Quintal', unit_purchase_price: 10.50 }
+        ];
+      }
+
+      const formatted = storedItems.map(i => {
+        if (!i) return i;
+        const name = i.name || i.item_name;
+        const stockQty = getFirmItemStock(activeFirmId, name);
+        return {
+          ...i,
+          name,
+          item_name: name,
+          current_stock: stockQty,
+          stock: stockQty,
+          qty: stockQty
+        };
+      });
+
+      setItems(formatted);
     } catch (err) {
       console.error('Error loading inventory items:', err);
+      setItems([]);
     }
   }, [activeFirmId]);
 
@@ -113,7 +137,6 @@ export default function InventoryStockView({ firm, onClose }) {
       const editingId = editingItem ? String(editingItem.id || editingItem.item_id || '').trim() : null;
       const oldName = editingItem ? String(editingItem.name || editingItem.item_name || '').trim() : null;
 
-      // Update or Insert
       const existingIndex = itemsList.findIndex(i => {
         if (!i) return false;
         const iId = String(i.id || i.item_id || '').trim();
@@ -157,23 +180,26 @@ export default function InventoryStockView({ firm, onClose }) {
         });
       }
 
-      // Save directly
+      // Save atomically to storage
       StorageService.setItem(inventoryKey, itemsList);
+      StorageService.setItem(`app_stock_${activeFirmId}`, itemsList);
       localStorage.setItem(inventoryKey, JSON.stringify(itemsList));
+      localStorage.setItem(`app_stock_${activeFirmId}`, JSON.stringify(itemsList));
+      localStorage.setItem('inventory_items', JSON.stringify(itemsList));
 
       if (itemType !== 'SERVICE') {
         autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
       }
 
-      // Force immediate state update
       loadStockItems();
 
       window.dispatchEvent(new Event('app_inventory_updated'));
       window.dispatchEvent(new Event('app_accounts_updated'));
+      window.dispatchEvent(new Event('storage'));
 
       setStatusMessage({
         type: 'success',
-        text: `✓ "${cleanName}" successfully update ho gaya!`
+        text: editingItem ? `✓ "${cleanName}" successfully update ho gaya!` : `✓ "${cleanName}" inventory mein save ho gaya!`
       });
 
       setEditingItem(null);
@@ -211,20 +237,25 @@ export default function InventoryStockView({ firm, onClose }) {
     if (!window.confirm(`Kya aap "${name}" ko inventory se delete karna chahte hain?`)) return;
 
     const inventoryKey = `inventory_items_${activeFirmId}`;
-    let itemsList = StorageService.getItem(inventoryKey, []) || [];
+    let itemsList = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
     const targetName = String(name || '').trim().toLowerCase();
-    
+    const targetId = String(item.id || item.item_id || '').trim();
+
     const updatedList = itemsList.filter(i => {
       if (!i) return false;
       const iName = String(i.name || i.item_name || '').trim().toLowerCase();
-      return iName !== targetName;
+      const iId = String(i.id || i.item_id || '').trim();
+      return (targetId && iId !== targetId) || (!targetId && iName !== targetName);
     });
 
     StorageService.setItem(inventoryKey, updatedList);
+    StorageService.setItem(`app_stock_${activeFirmId}`, updatedList);
     localStorage.setItem(inventoryKey, JSON.stringify(updatedList));
+    localStorage.setItem(`app_stock_${activeFirmId}`, JSON.stringify(updatedList));
 
     loadStockItems();
     window.dispatchEvent(new Event('app_inventory_updated'));
+    window.dispatchEvent(new Event('storage'));
   };
 
   const handleDownloadStockPDF = async (e, item) => {
@@ -375,7 +406,7 @@ export default function InventoryStockView({ firm, onClose }) {
           ) : (
             filteredItems.map((item) => {
               const stockName = item.name || item.item_name;
-              const stockQty = getFirmItemStock(activeFirmId, stockName);
+              const stockQty = item.current_stock ?? getFirmItemStock(activeFirmId, stockName);
               const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
 
               return (
