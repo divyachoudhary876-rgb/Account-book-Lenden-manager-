@@ -1,6 +1,6 @@
 /**
  * Stock & Inventory Reconciliation Engine for Account Book Smart Manager
- * Single Source of Truth for Real-Time Item Stock Calculation (Zero Discrepancy & Negative Allowed).
+ * Single Source of Truth for Real-Time Item Stock Calculation (Zero Discrepancy & Multi-Key Sync).
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -14,8 +14,8 @@ const normalizeItemName = (name) => {
   if (!name) return '';
   return String(name)
     .toLowerCase()
-    .replace(/\b(stock account|account|stock)\b/gi, '') // Strip common suffix words if mismatched
-    .replace(/[^a-z0-9]/g, '') // Keep only alphanumeric characters for bulletproof matching
+    .replace(/\b(stock account|account|stock)\b/gi, '')
+    .replace(/[^a-z0-9]/g, '')
     .trim();
 };
 
@@ -27,7 +27,10 @@ export const getFirmItemStock = (firmId, itemName) => {
 
   try {
     // 1. Gather all Inward (Purchases) strictly for this firm
-    const purchases = IDBStorage.getItem(`purchase_bills_${cleanFirmId}`, []) || IDBStorage.getItem('purchase_bills', []) || [];
+    const purchases = [
+      ...(IDBStorage.getItem(`purchase_bills_${cleanFirmId}`, []) || []),
+      ...(IDBStorage.getItem('purchase_bills', []) || [])
+    ];
     
     // 2. Gather all Outward (Sales)
     const salesInvoices = [
@@ -79,7 +82,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // Calculate Outward Qty from Material Adjustments / Consumptions (-) with normalized comparison
+    // Calculate Outward Qty from Material Adjustments (-) with normalized comparison
     adjustments.forEach(a => {
       if (!a) return;
       const aName = normalizeItemName(a.item_name || a.itemName || '');
@@ -89,7 +92,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // Net Stock starting strictly from zero opening balance
+    // Net Stock calculation
     const netStock = round2(totalInward - totalOutward);
     return netStock; 
   } catch (err) {
@@ -101,8 +104,25 @@ export const getFirmItemStock = (firmId, itemName) => {
 export const getStockItemsByFirm = (firmId) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
   try {
-    const inventoryKey = `inventory_items_${cleanFirmId}`;
-    let items = IDBStorage.getItem(inventoryKey, []);
+    // Multi-key fallback scanning so edited or newly saved items are never missed
+    const possibleKeys = [
+      `inventory_items_${cleanFirmId}`,
+      `app_stock_${cleanFirmId}`,
+      `app_inventory_${cleanFirmId}`,
+      'inventory_items',
+      'app_stock'
+    ];
+
+    let items = [];
+    for (const key of possibleKeys) {
+      try {
+        const raw = IDBStorage.getItem(key, []) || JSON.parse(localStorage.getItem(key) || '[]');
+        if (Array.isArray(raw) && raw.length > 0) {
+          items = raw;
+          break;
+        }
+      } catch (e) {}
+    }
     
     if (!Array.isArray(items) || items.length === 0) {
       items = [
@@ -112,17 +132,27 @@ export const getStockItemsByFirm = (firmId) => {
       ];
     }
 
-    return items.map(i => {
-      if (!i) return i;
-      const itemName = i.name || i.item_name;
+    const uniqueMap = new Map();
+    items.forEach(i => {
+      if (!i) return;
+      const itemName = String(i.name || i.item_name || '').trim();
+      if (!itemName) return;
       const realStock = getFirmItemStock(cleanFirmId, itemName);
-      return {
-        ...i,
-        current_stock: realStock,
-        stock: realStock,
-        qty: realStock
-      };
+      const uid = String(i.id || itemName).toLowerCase();
+
+      if (!uniqueMap.has(uid)) {
+        uniqueMap.set(uid, {
+          ...i,
+          name: itemName,
+          item_name: itemName,
+          current_stock: realStock,
+          stock: realStock,
+          qty: realStock
+        });
+      }
     });
+
+    return Array.from(uniqueMap.values());
   } catch (e) {
     return [];
   }
@@ -136,7 +166,7 @@ export const syncInventoryItemStock = (firmId, itemId, itemName) => {
 
     const realStock = getFirmItemStock(cleanFirmId, itemName);
     const targetNorm = normalizeItemName(itemName);
-    const index = items.findIndex(i => i.id === itemId || normalizeItemName(i.name || i.item_name || '') === targetNorm);
+    const index = items.items ? -1 : items.findIndex(i => i.id === itemId || normalizeItemName(i.name || i.item_name || '') === targetNorm);
 
     if (index !== -1) {
       items[index].current_stock = realStock;
@@ -158,6 +188,7 @@ export const syncInventoryItemStock = (firmId, itemId, itemName) => {
     }
 
     IDBStorage.setItem(inventoryKey, items);
+    IDBStorage.setItem(`app_stock_${cleanFirmId}`, items);
     window.dispatchEvent(new Event('app_inventory_updated'));
   } catch (e) {
     console.error('[stockInventoryEngine] Error syncing item stock:', e);
