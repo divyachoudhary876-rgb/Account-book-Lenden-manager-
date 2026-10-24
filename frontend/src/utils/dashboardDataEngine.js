@@ -316,11 +316,14 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
   const payableRows = [];
   const cashBankRows = [];
 
+  // Pure nominal / internal operational expense / asset accounts to strictly exclude
   const systemInternalKeywords = [
     'factory manufacturing expenses', 'office expenses', 'kitchen expenses', 'electricity expense',
     'gadi kiraya expense', 'chimni construction expense', 'repair & maintenance', 'discount a/c',
     'mining duty & charges', 'royalty', 'stamp', 'registry', 'petrol', 'diesel stock account', 
-    'stock account', 'int 1 number stock account', 'mitti grade', 'greet & crusher stock account'
+    'stock account', 'int 1 number stock account', 'mitti grade', 'greet & crusher stock account',
+    'land development', 'electric item', 'tube well', 'bhatta temporary stock item', 'chimni construction',
+    'sonalika 60 tractor bhatta', 'bricks machine'
   ];
 
   Object.values(balanceMap).forEach(acc => {
@@ -335,7 +338,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     }
 
     const isCapital = grp.includes('capital') || lowerName.includes('capital') || grp.includes('equity') || grp.includes('proprietor') || lowerName.includes('proprietor');
-    const isPureExpense = type === 'EXPENSES' || type === 'INCOME' || grp.includes('expense') || grp.includes('income');
+    const isPureNominal = type === 'EXPENSES' || type === 'INCOME' || grp.includes('expense') || grp.includes('income');
 
     // 1. Cash & Bank
     if (
@@ -352,14 +355,15 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     // 2. Receivables: Net Debit balance (> 0)
     else if (rawNet > 0) {
       const isFixedAsset = type === 'FIXED ASSETS' || grp.includes('fixed asset');
-      if (!isFixedAsset && !isCapital && !isPureExpense) {
+      if (!isFixedAsset && !isCapital && !isPureNominal) {
         totalReceivables += rawNet;
         receivableRows.push({ name: acc.name, sub_group: acc.sub_group || 'Sundry Debtors', amount: rawNet });
       }
     } 
-    // 3. Payables: Net Credit balance (< 0) strictly for trade suppliers, creditors, workers, drivers, thekedar, munsari (Excluding Capital & Expenses)
+    // 3. Payables: Net Credit balance (< 0) - Pure balance-driven classification for all trade creditors, suppliers, and workers with credit balances
     else if (rawNet < 0) {
-      if (!isPureExpense && !isCapital) {
+      const isFixedAsset = type === 'FIXED ASSETS' || grp.includes('fixed asset');
+      if (!isPureNominal && !isCapital && !isFixedAsset) {
         const absVal = Math.abs(rawNet);
         totalPayables += absVal;
         payableRows.push({ name: acc.name, sub_group: acc.sub_group || 'Sundry Creditors', amount: absVal });
