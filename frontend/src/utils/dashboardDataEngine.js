@@ -133,29 +133,51 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     } catch (e) {}
   });
 
-  // Ingest Material Consumption
-  const consumptionKeys = [`material_consumption_records_${firmId}`, `universal_material_adjustments_${firmId}`];
+  // Ingest Material Consumption (Robust amount & quantity parser to fix 0.00 issue)
+  const consumptionKeys = [
+    `material_consumption_records_${firmId}`, 
+    `universal_material_adjustments_${firmId}`,
+    `material_adjustments_${firmId}`,
+    `app_consumption_${firmId}`,
+    'material_consumption_records',
+    'universal_material_adjustments'
+  ];
+
+  const consumptionRecordsList = [];
   consumptionKeys.forEach(ck => {
     try {
       const cVal = JSON.parse(localStorage.getItem(ck) || '[]');
       if (Array.isArray(cVal)) {
         cVal.forEach(c => {
           if (!c) return;
-          const cDate = c.date || new Date().toISOString().slice(0, 10);
-          const cAmt = parseFloat(c.total_value || c.amount || 0);
-          const expAcc = String(c.expense_account || 'Factory Manufacturing Expenses').trim();
-          const stockAcc = String(c.item_name || c.name || 'Raw Material Stock').trim() + ' Stock Account';
+          consumptionRecordsList.push(c);
+          const cDate = c.date || c.voucher_date || new Date().toISOString().slice(0, 10);
+          
+          // Robust amount detection across all schemas
+          const cAmt = parseFloat(
+            c.total_value || 
+            c.amount || 
+            c.value || 
+            c.total || 
+            c.total_amount || 
+            (Number(c.qty || c.quantity || 0) * Number(c.rate || c.unit_rate || 0)) ||
+            (Array.isArray(c.items) && c.items.reduce((s, it) => s + Number(it.total || it.amount || (Number(it.qty || it.quantity || 0) * Number(it.rate || it.unit_rate || 0)) || 0), 0)) ||
+            0
+          );
+
+          const expAcc = String(c.expense_category || c.expense_account || 'Factory Manufacturing Expenses').trim();
+          const stockAcc = String(c.item_name || c.name || (c.items && c.items[0] && (c.items[0].name || c.items[0].item_name)) || 'Raw Material').trim() + ' Stock Account';
 
           if (cAmt > 0) {
             rawVouchers.push({
               id: c.id || `CONS-${Math.random()}`,
               voucher_date: cDate,
               voucher_type: 'CONSUMPTION',
-              reference_no: 'CONS',
+              reference_no: c.reference_no || 'CONS',
               dr_account: expAcc,
               cr_account: stockAcc,
               amount: cAmt,
-              narration: c.uses_for || c.remarks || 'Material Issue'
+              narration: c.uses_for || c.remarks || c.description || 'Material Issue'
             });
           }
         });
@@ -430,6 +452,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     totalSales: round2(totalSales),
     totalPurchases: round2(totalPurchases),
     totalStockValuation: round2(totalStockValuation),
+    consumptionCount: consumptionRecordsList.length || vouchers.filter(v => String(v.voucher_type || '').toUpperCase() === 'CONSUMPTION').length,
     receivableRows,
     payableRows,
     cashBankRows,
