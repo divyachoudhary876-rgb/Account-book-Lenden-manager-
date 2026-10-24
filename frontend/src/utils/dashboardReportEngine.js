@@ -348,7 +348,7 @@ export const downloadDashboardPayablesReportPDF = async (...args) => {
 };
 
 /**
- * 5. MATERIAL CONSUMPTION REPORT PDF (Fixed Amount & Total Valuation Scanner)
+ * 5. MATERIAL CONSUMPTION REPORT PDF (Robust Amount & Qty Parser fixing 0.00 issue)
  */
 export const downloadDashboardConsumptionReportPDF = async (...args) => {
   try {
@@ -385,7 +385,7 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
               date: v.voucher_date || v.date,
               uses_for: v.narration || v.description || 'Factory Material Issue',
               expense_account: v.dr_account || 'Factory Manufacturing Expenses',
-              items: v.items || [{ name: v.cr_account || 'Material', qty: 1, unit: 'Units' }],
+              items: v.items || [{ name: v.cr_account || 'Material', qty: v.qty || v.quantity || 1, unit: 'Units' }],
               total_value: v.amount || v.total_amount || 0
             });
           }
@@ -433,12 +433,24 @@ export const downloadDashboardConsumptionReportPDF = async (...args) => {
       if (!rec) return;
       if (y > 275) { doc.addPage(); y = 18; }
       const date = rec.date || rec.voucher_date || '';
-      const location = rec.uses_for || rec.narration || '';
+      const location = rec.uses_for || rec.narration || rec.description || '';
       const expenseAcc = cleanAccountTitle(rec.expense_category || rec.expense_account || 'Factory Expense');
       const itemsList = Array.isArray(rec.items) ? rec.items : [];
-      const itemsStr = itemsList.map(i => `${i.name || i.item_name || 'Item'} (${i.qty || i.quantity || 0} ${i.unit || 'Units'})`).join(', ');
+      const itemsStr = itemsList.length > 0 
+        ? itemsList.map(i => `${i.name || i.item_name || 'Item'} (${i.qty || i.quantity || 0} ${i.unit || 'Units'})`).join(', ')
+        : `${rec.item_name || rec.name || 'Material'} (${rec.qty || rec.quantity || 0} ${rec.unit || 'Units'})`;
       
-      const val = parseFloat(rec.total_value || rec.amount || rec.value || rec.total || (Number(rec.qty || 0) * Number(rec.rate || 0)) || 0);
+      const val = parseFloat(
+        rec.total_value || 
+        rec.amount || 
+        rec.value || 
+        rec.total || 
+        rec.total_amount || 
+        (Number(rec.qty || rec.quantity || 0) * Number(rec.rate || rec.unit_rate || 0)) || 
+        (itemsList.reduce((s, it) => s + Number(it.total || it.amount || (Number(it.qty || it.quantity || 0) * Number(it.rate || it.unit_rate || 0)) || 0), 0)) ||
+        0
+      );
+      
       totalConsumption += val;
 
       if (idx % 2 === 0) {
