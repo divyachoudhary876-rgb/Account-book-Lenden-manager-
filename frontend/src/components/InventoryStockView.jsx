@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
 import { generateStockItemLedgerStatement, exportStockLedgerPDF } from '../utils/inventoryLedgerReport';
-import { getFirmItemStock } from '../utils/stockInventoryEngine';
+import { getFirmItemStock } from '../utils/inventoryPostingEngine';
 import { StorageService } from '../utils/storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
@@ -21,6 +21,8 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
 
   try {
     const masterAccounts = getFirmMasterAccounts(firmId) || [];
+    
+    // Strict case-insensitive duplicate check to prevent duplicate ledgers
     const existingIndex = masterAccounts.findIndex(acc => {
       const name = (acc.account_name || acc.name || '').trim().toLowerCase();
       return name === targetAccountName.toLowerCase() ||
@@ -28,14 +30,7 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
     });
 
     if (existingIndex !== -1) {
-      const matchedAcc = masterAccounts[existingIndex];
-      if ((matchedAcc.account_name || matchedAcc.name) !== targetAccountName) {
-        matchedAcc.account_name = targetAccountName;
-        matchedAcc.name = targetAccountName;
-        matchedAcc.updated_at = new Date().toISOString();
-        saveMasterAccount(firmId, matchedAcc);
-      }
-      return matchedAcc;
+      return masterAccounts[existingIndex];
     }
 
     const newAccountObj = {
@@ -182,10 +177,6 @@ export default function InventoryStockView({ firm, onClose }) {
 
       // Save atomically to storage
       StorageService.setItem(inventoryKey, itemsList);
-      StorageService.setItem(`app_stock_${activeFirmId}`, itemsList);
-      localStorage.setItem(inventoryKey, JSON.stringify(itemsList));
-      localStorage.setItem(`app_stock_${activeFirmId}`, JSON.stringify(itemsList));
-      localStorage.setItem('inventory_items', JSON.stringify(itemsList));
 
       if (itemType !== 'SERVICE') {
         autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
@@ -193,9 +184,11 @@ export default function InventoryStockView({ firm, onClose }) {
 
       loadStockItems();
 
-      window.dispatchEvent(new Event('app_inventory_updated'));
-      window.dispatchEvent(new Event('app_accounts_updated'));
-      window.dispatchEvent(new Event('storage'));
+      window.setTimeout(() => {
+        window.dispatchEvent(new Event('app_inventory_updated'));
+        window.dispatchEvent(new Event('app_accounts_updated'));
+        window.dispatchEvent(new Event('storage'));
+      }, 10);
 
       setStatusMessage({
         type: 'success',
@@ -249,13 +242,12 @@ export default function InventoryStockView({ firm, onClose }) {
     });
 
     StorageService.setItem(inventoryKey, updatedList);
-    StorageService.setItem(`app_stock_${activeFirmId}`, updatedList);
-    localStorage.setItem(inventoryKey, JSON.stringify(updatedList));
-    localStorage.setItem(`app_stock_${activeFirmId}`, JSON.stringify(updatedList));
 
     loadStockItems();
-    window.dispatchEvent(new Event('app_inventory_updated'));
-    window.dispatchEvent(new Event('storage'));
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event('app_inventory_updated'));
+      window.dispatchEvent(new Event('storage'));
+    }, 10);
   };
 
   const handleDownloadStockPDF = async (e, item) => {
