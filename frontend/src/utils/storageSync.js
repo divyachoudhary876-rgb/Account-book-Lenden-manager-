@@ -21,7 +21,7 @@ export const StorageService = {
     }
   },
 
-  setItem: (key, value) => {
+  setItem: (key, value, suppressEvents = false) => {
     try {
       const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-001';
       const serialized = JSON.stringify(value);
@@ -32,9 +32,14 @@ export const StorageService = {
         localStorage.setItem(`${key}_${activeFirmId}`, serialized);
       }
 
-      window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value } }));
-      window.dispatchEvent(new Event('app_state_updated'));
-      window.dispatchEvent(new Event('storage'));
+      if (!suppressEvents) {
+        // Consolidated single batch dispatch to prevent mobile UI lag / freezing
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value } }));
+          window.dispatchEvent(new Event('app_state_updated'));
+          window.dispatchEvent(new Event('storage'));
+        }, 10);
+      }
     } catch (e) {
       console.error(`Storage write error for ${key}:`, e);
     }
@@ -59,10 +64,12 @@ export const StorageService = {
     localStorage.setItem('inventory_items', serialized);
     localStorage.setItem('app_inventory', serialized);
 
-    window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key: 'inventory_items', value: items } }));
-    window.dispatchEvent(new Event('app_inventory_updated'));
-    window.dispatchEvent(new Event('app_state_updated'));
-    window.dispatchEvent(new Event('storage'));
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key: 'inventory_items', value: items } }));
+      window.dispatchEvent(new Event('app_inventory_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
+    }, 10);
   },
 
   // Firm-Scoped Material Consumptions
@@ -79,7 +86,7 @@ export const StorageService = {
   // Firm-Scoped Ledger Accounts
   getLedgerAccounts: (firmId) => {
     const fId = firmId || StorageService.getActiveFirmId();
-    return StorageService.getItem(`app_accounts_${fId}`, []) || StorageService.getItem(`account_heads_${fId}`, []);
+    return StorageService.getItem(`app_accounts_${firmId}`, []) || StorageService.getItem(`account_heads_${firmId}`, []);
   },
 
   saveLedgerAccounts: (accounts, firmId) => {
@@ -89,8 +96,10 @@ export const StorageService = {
     localStorage.setItem(`account_heads_${fId}`, serialized);
     localStorage.setItem('app_account_heads', serialized);
 
-    window.dispatchEvent(new Event('app_storage_updated'));
-    window.dispatchEvent(new Event('app_state_updated'));
-    window.dispatchEvent(new Event('storage'));
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event('app_storage_updated'));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
+    }, 10);
   }
 };
