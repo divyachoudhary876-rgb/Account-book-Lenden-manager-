@@ -133,7 +133,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     } catch (e) {}
   });
 
-  // Ingest Material Consumption (Robust amount & quantity parser to fix 0.00 issue)
+  // Ingest Material Consumption (Strictly parsed without phantom fallback accounts)
   const consumptionKeys = [
     `material_consumption_records_${firmId}`, 
     `universal_material_adjustments_${firmId}`,
@@ -153,7 +153,6 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
           consumptionRecordsList.push(c);
           const cDate = c.date || c.voucher_date || new Date().toISOString().slice(0, 10);
           
-          // Robust amount detection across all schemas
           const cAmt = parseFloat(
             c.total_value || 
             c.amount || 
@@ -165,10 +164,10 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
             0
           );
 
-          const expAcc = String(c.expense_category || c.expense_account || 'Factory Manufacturing Expenses').trim();
+          const expAcc = String(c.expense_category || c.expense_account || '').trim();
           const stockAcc = String(c.item_name || c.name || (c.items && c.items[0] && (c.items[0].name || c.items[0].item_name)) || 'Raw Material').trim() + ' Stock Account';
 
-          if (cAmt > 0) {
+          if (cAmt > 0 && expAcc) {
             rawVouchers.push({
               id: c.id || `CONS-${Math.random()}`,
               voucher_date: cDate,
@@ -336,11 +335,19 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       cashAndBank += rawNet;
       cashBankRows.push({ name: acc.name, sub_group: acc.sub_group, balance: rawNet, balance_type: rawNet < 0 ? 'Cr' : 'Dr' });
     } 
-    // 2. Receivables: Net Debit balance (> 0) strictly excluding Fixed Assets, Stock, Capital, Expenses, Income
+    // 2. Receivables: Net Debit balance (> 0) strictly excluding Fixed Assets, Stock, Expenses, Income, Factory & General Ledger
     else if (
       rawNet > 0 &&
       type !== 'FIXED ASSETS' &&
+      type !== 'EXPENSES' &&
+      type !== 'INCOME' &&
       !grp.includes('fixed asset') &&
+      !grp.includes('expense') &&
+      !grp.includes('income') &&
+      !grp.includes('general ledger') &&
+      !lowerName.includes('factory') &&
+      !lowerName.includes('expense') &&
+      !lowerName.includes('expenditure') &&
       !lowerName.includes('machine') &&
       !lowerName.includes('tractor') &&
       !lowerName.includes('chimni') &&
@@ -352,9 +359,7 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       !grp.includes('inventory') &&
       !grp.includes('capital') &&
       !lowerName.includes('capital') &&
-      !grp.includes('equity') &&
-      type !== 'EXPENSES' &&
-      type !== 'INCOME'
+      !grp.includes('equity')
     ) {
       totalReceivables += rawNet;
       receivableRows.push({ name: acc.name, sub_group: acc.sub_group, amount: rawNet });
@@ -363,13 +368,18 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     else if (
       rawNet < 0 &&
       type !== 'FIXED ASSETS' &&
-      !grp.includes('fixed asset') &&
-      !grp.includes('capital') &&
-      !lowerName.includes('capital') &&
-      !grp.includes('equity') &&
       type !== 'EXPENSES' &&
       type !== 'INCOME' &&
-      type !== 'ASSETS'
+      type !== 'ASSETS' &&
+      !grp.includes('fixed asset') &&
+      !grp.includes('expense') &&
+      !grp.includes('income') &&
+      !grp.includes('general ledger') &&
+      !lowerName.includes('factory') &&
+      !lowerName.includes('expense') &&
+      !grp.includes('capital') &&
+      !lowerName.includes('capital') &&
+      !grp.includes('equity')
     ) {
       const isPayableCreditor = type === 'LIABILITIES' || grp.includes('creditor') || grp.includes('supplier') || grp.includes('vendor') || grp.includes('thekedar') || grp.includes('dena') || grp.includes('labor') || grp.includes('labour') || grp.includes('driver') || grp.includes('staff') || grp.includes('munsari');
       if (isPayableCreditor) {
