@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Unified Inventory Posting Engine
- * Handles automatic stock adjustment for Purchases, Sales, and Material Consumptions.
+ * Handles automatic stock adjustment for Purchases, Sales, and Material Consumptions with Strict Exact-Match Inventory Reconciliation.
  */
 
 import { StorageService } from './storageSync';
@@ -8,41 +8,123 @@ import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine'
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
+const normalizeItemName = (name) => {
+  if (!name) return '';
+  return String(name)
+    .toLowerCase()
+    .replace(/\b(stock account|account|stock)\b/gi, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+};
+
 /**
- * Ensures an Inventory Stock Item always has a corresponding Financial Asset Account
+ * Ensures an Inventory Stock Item always has a corresponding Financial Asset Account (Strict Duplicate Prevention)
  */
 const ensureStockLedger = (firmId, rawItemName) => {
   if (!firmId || !rawItemName) return `${rawItemName} Stock Account`;
   const cleanItemName = String(rawItemName).trim();
-  const stockAccountName = `${cleanItemName} Stock Account`;
+  const targetAccountName = `${cleanItemName} Stock Account`;
 
   try {
     const masterAccounts = getFirmMasterAccounts(firmId) || [];
-    const exists = masterAccounts.some(
-      acc => (acc.account_name || acc.name || '').trim().toLowerCase() === stockAccountName.toLowerCase()
+    const existingIndex = masterAccounts.findIndex(
+      acc => (acc.account_name || acc.name || '').trim().toLowerCase() === targetAccountName.toLowerCase()
     );
 
-    if (!exists) {
-      saveMasterAccount(firmId, {
-        id: `ACC-STK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        firm_id: firmId,
-        account_name: stockAccountName,
-        name: stockAccountName,
-        primary_type: 'ASSETS',
-        type: 'Assets',
-        sub_group: 'Raw Material Inventory (कच्चा माल)',
-        group: 'Current Assets',
-        balance_type: 'Dr',
-        opening_balance: 0,
-        is_system_generated: true,
-        created_at: new Date().toISOString()
-      });
+    if (existingIndex !== -1) {
+      return (masterAccounts[existingIndex].account_name || masterAccounts[existingIndex].name || targetAccountName);
     }
+
+    saveMasterAccount(firmId, {
+      id: `ACC-STK-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      firm_id: firmId,
+      account_name: targetAccountName,
+      name: targetAccountName,
+      primary_type: 'ASSETS',
+      type: 'Assets',
+      sub_group: 'Raw Material Inventory (कच्चा माल)',
+      group: 'Current Assets',
+      balance_type: 'Dr',
+      opening_balance: 0,
+      is_system_generated: true,
+      created_at: new Date().toISOString()
+    });
   } catch (e) {
     console.error("Error creating stock ledger in inventoryPostingEngine:", e);
   }
 
-  return stockAccountName;
+  return targetAccountName;
+};
+
+/**
+ * Calculates strict exact-match item stock
+ */
+export const getFirmItemStock = (firmId, itemName) => {
+  const cleanFirmId = firmId || StorageService.getActiveFirmId();
+  const targetNorm = normalizeItemName(itemName);
+  if (!targetNorm) return 0;
+
+  try {
+    const purchases = StorageService.getItem(`purchase_bills_${cleanFirmId}`, []) || StorageService.getItem('purchase_bills', []) || [];
+    const salesInvoices = [
+      ...(StorageService.getItem(`sales_invoices_${cleanFirmId}`, []) || []),
+      ...(StorageService.getItem(`app_invoices_${cleanFirmId}`, []) || []),
+      ...(StorageService.getItem('sales_invoices', []) || [])
+    ];
+    const adjustments = [
+      ...(StorageService.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || []),
+      ...(StorageService.getItem('universal_material_adjustments', []) || []),
+      ...(StorageService.getItem(`material_consumptions_${cleanFirmId}`, []) || [])
+    ];
+
+    let totalInward = 0;
+    let totalOutward = 0;
+
+    purchases.forEach(p => {
+      if (!p) return;
+      if (Array.isArray(p.items) && p.items.length > 0) {
+        p.items.forEach(it => {
+          if (!it) return;
+          const itName = normalizeItemName(it.itemName || it.item_name || it.name || '');
+          if (itName === targetNorm) {
+            totalInward += parseFloat(it.qty || it.quantity || 0);
+          }
+        });
+      } else {
+        const pName = normalizeItemName(p.item_name || p.itemName || p.name || '');
+        if (pName === targetNorm) {
+          totalInward += parseFloat(p.quantity || p.qty || 0);
+        }
+      }
+    });
+
+    salesInvoices.forEach(s => {
+      if (!s) return;
+      if (Array.isArray(s.items) && s.items.length > 0) {
+        s.items.forEach(si => {
+          if (!si) return;
+          const sName = normalizeItemName(si.itemName || si.item_name || si.name || '');
+          if (sName === targetNorm) {
+            totalOutward += parseFloat(si.qty || si.quantity || 0);
+          }
+        });
+      }
+    });
+
+    adjustments.forEach(a => {
+      if (!a) return;
+      const aName = normalizeItemName(a.item_name || a.itemName || '');
+      const aStockId = normalizeItemName(a.stock_id || a.itemId || '');
+      if (aName === targetNorm || aStockId === targetNorm) {
+        totalOutward += parseFloat(a.quantity || a.qty || 0);
+      }
+    });
+
+    return round2(totalInward - totalOutward);
+  } catch (err) {
+    console.error('[inventoryPostingEngine] Error computing item stock:', err);
+    return 0;
+  }
 };
 
 /**
@@ -125,8 +207,6 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
   inventory[itemIndex] = stockItem;
 
   StorageService.setItem(inventoryKey, inventory);
-  localStorage.setItem(inventoryKey, JSON.stringify(inventory));
-  localStorage.setItem('inventory_items', JSON.stringify(inventory));
 
   let supplierName = 'Cash Supplier';
   const supplierIndex = accounts.findIndex(a => a && (
@@ -213,14 +293,15 @@ export const processPurchaseStockPosting = (purchasePayload, firmId = 'FIRM-001'
 
   const updatedPurchaseBills = [newVoucher, ...(Array.isArray(purchaseBills) ? purchaseBills.filter(filterFn) : [])];
   StorageService.setItem(purchaseBillsKey, updatedPurchaseBills);
-  localStorage.setItem(purchaseBillsKey, JSON.stringify(updatedPurchaseBills));
 
-  window.dispatchEvent(new CustomEvent('ACCOUNT_BOOK_VOUCHER_POSTED', { detail: newVoucher }));
-  window.dispatchEvent(new Event('app_accounts_updated'));
-  window.dispatchEvent(new Event('app_inventory_updated'));
-  window.dispatchEvent(new Event('app_storage_updated'));
-  window.dispatchEvent(new Event('app_state_updated'));
-  window.dispatchEvent(new Event('storage'));
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('ACCOUNT_BOOK_VOUCHER_POSTED', { detail: newVoucher }));
+    window.dispatchEvent(new Event('app_accounts_updated'));
+    window.dispatchEvent(new Event('app_inventory_updated'));
+    window.dispatchEvent(new Event('app_storage_updated'));
+    window.dispatchEvent(new Event('app_state_updated'));
+    window.dispatchEvent(new Event('storage'));
+  }, 10);
 
   return { voucherId, stockItem, totalPurchaseValue };
 };
@@ -267,10 +348,10 @@ export const processSalesOrConsumptionStockDeduction = (payload, firmId = 'FIRM-
     inventory[itemIndex] = stockItem;
 
     StorageService.setItem(inventoryKey, inventory);
-    localStorage.setItem(inventoryKey, JSON.stringify(inventory));
-    localStorage.setItem('inventory_items', JSON.stringify(inventory));
 
-    window.dispatchEvent(new Event('app_inventory_updated'));
-    window.dispatchEvent(new Event('app_storage_updated'));
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event('app_inventory_updated'));
+      window.dispatchEvent(new Event('app_storage_updated'));
+    }, 10);
   }
 };
