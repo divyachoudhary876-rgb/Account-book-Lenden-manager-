@@ -44,13 +44,14 @@ export const getFirmItemStock = (firmId, itemName) => {
         p.items.forEach(it => {
           if (!it) return;
           const itName = normalizeItemName(it.itemName || it.item_name || it.name || '');
-          if (itName === targetNorm || itName.includes(targetNorm) || targetNorm.includes(itName)) {
+          // Strict exact match to prevent short names like "Fa" from matching "Fan Tab"
+          if (itName === targetNorm) {
             totalInward += parseFloat(it.qty || it.quantity || 0);
           }
         });
       } else {
         const pName = normalizeItemName(p.item_name || p.itemName || p.name || '');
-        if (pName === targetNorm || pName.includes(targetNorm) || targetNorm.includes(pName)) {
+        if (pName === targetNorm) {
           totalInward += parseFloat(p.quantity || p.qty || 0);
         }
       }
@@ -62,7 +63,7 @@ export const getFirmItemStock = (firmId, itemName) => {
         s.items.forEach(si => {
           if (!si) return;
           const sName = normalizeItemName(si.itemName || si.item_name || si.name || '');
-          if (sName === targetNorm || sName.includes(targetNorm) || targetNorm.includes(sName)) {
+          if (sName === targetNorm) {
             totalOutward += parseFloat(si.qty || si.quantity || 0);
           }
         });
@@ -73,7 +74,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       if (!a) return;
       const aName = normalizeItemName(a.item_name || a.itemName || '');
       const aStockId = normalizeItemName(a.stock_id || a.itemId || '');
-      if (aName === targetNorm || aStockId === targetNorm || aName.includes(targetNorm) || targetNorm.includes(aName)) {
+      if (aName === targetNorm || aStockId === targetNorm) {
         totalOutward += parseFloat(a.quantity || a.qty || 0);
       }
     });
@@ -82,37 +83,5 @@ export const getFirmItemStock = (firmId, itemName) => {
   } catch (err) {
     console.error('[stockInventoryEngine] Error computing item stock:', err);
     return 0;
-  }
-};
-
-export const getStockItemsByFirm = (firmId) => {
-  const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
-  try {
-    const inventoryKey = `inventory_items_${cleanFirmId}`;
-    let items = IDBStorage.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
-    
-    if (!Array.isArray(items) || items.length === 0) {
-      items = [
-        { id: 'DEF-DIESEL', name: 'Diesel', item_name: 'Diesel', unit: 'Liters', unit_purchase_price: 96.06 },
-        { id: 'DEF-MITTI-A', name: 'Mitti Grade A', item_name: 'Mitti Grade A', unit: 'Quintal', unit_purchase_price: 14.20 },
-        { id: 'DEF-MITTI-B', name: 'Mitti Grade B', item_name: 'Mitti Grade B', unit: 'Quintal', unit_purchase_price: 10.50 }
-      ];
-    }
-
-    return items.map(i => {
-      if (!i) return i;
-      const itemName = i.name || i.item_name;
-      const realStock = getFirmItemStock(cleanFirmId, itemName);
-      return {
-        ...i,
-        name: itemName,
-        item_name: itemName,
-        current_stock: realStock,
-        stock: realStock,
-        qty: realStock
-      };
-    });
-  } catch (e) {
-    return [];
   }
 };
