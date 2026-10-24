@@ -1,6 +1,6 @@
 /**
- * Stock & Inventory Reconciliation Engine for Account Book Smart Manager
- * Single Source of Truth for Real-Time Item Stock Calculation.
+ * Frontend Utility: Stock Inventory Engine
+ * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -16,10 +16,12 @@ const normalizeItemName = (name) => {
     .trim();
 };
 
+/**
+ * Computes strict exact-match real-time stock for any inventory item within a firm
+ */
 export const getFirmItemStock = (firmId, itemName) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
-  const targetRaw = String(itemName || '').trim();
-  const targetNorm = normalizeItemName(targetRaw);
+  const targetNorm = normalizeItemName(itemName);
   if (!targetNorm) return 0;
 
   try {
@@ -44,7 +46,6 @@ export const getFirmItemStock = (firmId, itemName) => {
         p.items.forEach(it => {
           if (!it) return;
           const itName = normalizeItemName(it.itemName || it.item_name || it.name || '');
-          // Strict exact match to prevent short names like "Fa" from matching "Fan Tab"
           if (itName === targetNorm) {
             totalInward += parseFloat(it.qty || it.quantity || 0);
           }
@@ -83,5 +84,40 @@ export const getFirmItemStock = (firmId, itemName) => {
   } catch (err) {
     console.error('[stockInventoryEngine] Error computing item stock:', err);
     return 0;
+  }
+};
+
+/**
+ * Returns all stock items associated with a firm along with their reconciled live stock balances
+ */
+export const getStockItemsByFirm = (firmId) => {
+  const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
+  try {
+    const inventoryKey = `inventory_items_${cleanFirmId}`;
+    let items = IDBStorage.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
+    
+    if (!Array.isArray(items) || items.length === 0) {
+      items = [
+        { id: 'DEF-DIESEL', name: 'Diesel', item_name: 'Diesel', unit: 'Liters', unit_purchase_price: 96.06 },
+        { id: 'DEF-MITTI-A', name: 'Mitti Grade A', item_name: 'Mitti Grade A', unit: 'Quintal', unit_purchase_price: 14.20 },
+        { id: 'DEF-MITTI-B', name: 'Mitti Grade B', item_name: 'Mitti Grade B', unit: 'Quintal', unit_purchase_price: 10.50 }
+      ];
+    }
+
+    return items.map(i => {
+      if (!i) return i;
+      const itemName = i.name || i.item_name;
+      const realStock = getFirmItemStock(cleanFirmId, itemName);
+      return {
+        ...i,
+        name: itemName,
+        item_name: itemName,
+        current_stock: realStock,
+        stock: realStock,
+        qty: realStock
+      };
+    });
+  } catch (e) {
+    return [];
   }
 };
