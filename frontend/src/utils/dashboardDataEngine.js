@@ -316,11 +316,11 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
   const payableRows = [];
   const cashBankRows = [];
 
-  // Helper lists of pure operational overhead words that should never be treated as party payables/receivables
-  const pureExpenseKeywords = [
+  const systemInternalKeywords = [
     'factory manufacturing expenses', 'office expenses', 'kitchen expenses', 'electricity expense',
     'gadi kiraya expense', 'chimni construction expense', 'repair & maintenance', 'discount a/c',
-    'mining duty & charges', 'royalty', 'stamp', 'registry', 'petrol', 'diesel stock account', 'stock account'
+    'mining duty & charges', 'royalty', 'stamp', 'registry', 'petrol', 'diesel stock account', 
+    'stock account', 'int 1 number stock account', 'mitti grade', 'greet & crusher stock account'
   ];
 
   Object.values(balanceMap).forEach(acc => {
@@ -330,10 +330,12 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
     const grp = (acc.sub_group || '').toLowerCase();
     const type = acc.primary_type;
 
-    // Skip pure overhead expense names immediately
-    if (pureExpenseKeywords.some(kw => lowerName.includes(kw))) {
+    if (systemInternalKeywords.some(kw => lowerName.includes(kw))) {
       return;
     }
+
+    const isCapital = grp.includes('capital') || lowerName.includes('capital') || grp.includes('equity') || grp.includes('proprietor') || lowerName.includes('proprietor');
+    const isPureExpense = type === 'EXPENSES' || type === 'INCOME' || grp.includes('expense') || grp.includes('income');
 
     // 1. Cash & Bank
     if (
@@ -347,22 +349,17 @@ export const getDynamicDashboardMetrics = (firmInput, selectedFY = '2026-27') =>
       cashAndBank += rawNet;
       cashBankRows.push({ name: acc.name, sub_group: acc.sub_group, balance: rawNet, balance_type: rawNet < 0 ? 'Cr' : 'Dr' });
     } 
-    // 2. Receivables: Net Debit balance (> 0) strictly for customers, debtors, advances
+    // 2. Receivables: Net Debit balance (> 0)
     else if (rawNet > 0) {
-      const isOverhead = type === 'EXPENSES' || type === 'INCOME' || grp.includes('expense') || grp.includes('income') || grp.includes('general ledger');
-      const isAssetOrStock = type === 'FIXED ASSETS' || grp.includes('fixed asset') || lowerName.includes('stock') || grp.includes('stock') || grp.includes('inventory');
-      
-      if (!isOverhead && !isAssetOrStock) {
+      const isFixedAsset = type === 'FIXED ASSETS' || grp.includes('fixed asset');
+      if (!isFixedAsset && !isCapital && !isPureExpense) {
         totalReceivables += rawNet;
         receivableRows.push({ name: acc.name, sub_group: acc.sub_group || 'Sundry Debtors', amount: rawNet });
       }
     } 
-    // 3. Payables: Net Credit balance (< 0) strictly for suppliers, creditors, vendors, thekedar, workers, drivers, munsari
+    // 3. Payables: Net Credit balance (< 0) strictly for trade suppliers, creditors, workers, drivers, thekedar, munsari (Excluding Capital & Expenses)
     else if (rawNet < 0) {
-      const isOverhead = type === 'EXPENSES' || type === 'INCOME' || grp.includes('expense') || grp.includes('income') || grp.includes('general ledger');
-      const isAsset = type === 'FIXED ASSETS' || grp.includes('fixed asset');
-      
-      if (!isOverhead && !isAsset) {
+      if (!isPureExpense && !isCapital) {
         const absVal = Math.abs(rawNet);
         totalPayables += absVal;
         payableRows.push({ name: acc.name, sub_group: acc.sub_group || 'Sundry Creditors', amount: absVal });
