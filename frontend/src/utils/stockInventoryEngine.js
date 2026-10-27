@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Stock Inventory Engine
- * Single Source of Truth for Real-Time Item Stock Calculation with Strict Deduplication & Dual-Key Redundancy Protection.
+ * Single Source of Truth for Real-Time Item Stock Calculation, perfectly unified with PDF Report logic.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -12,12 +12,11 @@ const normalizeItemName = (name) => {
   return String(name)
     .toLowerCase()
     .replace(/\b(stock account|account|stock)\b/gi, '')
-    .replace(/[^a-z0-9]/g, '')
     .trim();
 };
 
 /**
- * Computes precise real-time stock with strict deduplication across storage keys
+ * Computes precise real-time stock unified with PDF report matching rules
  */
 export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
@@ -28,7 +27,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   if (!targetNorm && !cleanTargetId) return 0;
 
   try {
-    // 1. Gather Unique Purchase Bills (Inward Stock +) using a Map to prevent dual-key double-counting
+    // 1. Gather Unique Purchase Bills (Inward Stock +) with Deduplication
     const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
     const uniquePurchasesMap = new Map();
     purchaseKeys.forEach(k => {
@@ -37,9 +36,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
         raw.forEach(p => {
           if (p) {
             const uid = String(p.id || p.reference_no || p.voucher_number || `${p.date}-${p.amount}-${p.cr_account || p.supplier}`).trim();
-            if (!uniquePurchasesMap.has(uid)) {
-              uniquePurchasesMap.set(uid, p);
-            }
+            if (!uniquePurchasesMap.has(uid)) uniquePurchasesMap.set(uid, p);
           }
         });
       }
@@ -54,9 +51,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
         raw.forEach(s => {
           if (s) {
             const uid = String(s.id || s.reference_no || s.voucher_number || `${s.date}-${s.amount}-${s.dr_account || s.party}`).trim();
-            if (!uniqueSalesMap.has(uid)) {
-              uniqueSalesMap.set(uid, s);
-            }
+            if (!uniqueSalesMap.has(uid)) uniqueSalesMap.set(uid, s);
           }
         });
       }
@@ -77,9 +72,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
         raw.forEach(a => {
           if (a) {
             const uid = String(a.id || `${a.date}-${a.quantity || a.qty}-${a.item_name || a.itemName}`).trim();
-            if (!uniqueAdjustmentsMap.has(uid)) {
-              uniqueAdjustmentsMap.set(uid, a);
-            }
+            if (!uniqueAdjustmentsMap.has(uid)) uniqueAdjustmentsMap.set(uid, a);
           }
         });
       }
@@ -99,9 +92,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
         raw.forEach(v => {
           if (v) {
             const uid = String(v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.amount}`).trim();
-            if (!uniqueVouchersMap.has(uid)) {
-              uniqueVouchersMap.set(uid, v);
-            }
+            if (!uniqueVouchersMap.has(uid)) uniqueVouchersMap.set(uid, v);
           }
         });
       }
@@ -110,16 +101,15 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
     let totalInward = 0;
     let totalOutward = 0;
 
-    // Smart Adaptive Matcher
-    const isShortName = targetNorm.length <= 3;
-    const isMatch = (dbName) => {
+    const isMatch = (dbName, dbId = '') => {
+      const cleanDbId = String(dbId || '').trim();
+      if (cleanTargetId && cleanDbId && cleanDbId === cleanTargetId) return true;
       const dbNorm = normalizeItemName(dbName);
       if (!dbNorm) return false;
-      if (isShortName) return dbNorm === targetNorm;
       return dbNorm === targetNorm || dbNorm.includes(targetNorm) || targetNorm.includes(dbNorm);
     };
 
-    // Calculate Inward from Unique Purchases (+)
+    // Calculate Inward from Purchases (+)
     uniquePurchasesMap.forEach(p => {
       if (!p) return;
       if (Array.isArray(p.items) && p.items.length > 0) {
@@ -127,45 +117,45 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
           if (!it) return;
           const itId = String(it.itemId || it.item_id || it.id || '').trim();
           const itName = it.itemName || it.item_name || it.name || '';
-          if ((cleanTargetId && itId === cleanTargetId) || isMatch(itName)) {
+          if (isMatch(itName, itId)) {
             totalInward += parseFloat(it.qty || it.quantity || 0);
           }
         });
       } else {
         const pId = String(p.itemId || p.item_id || p.id || '').trim();
         const pName = p.item_name || p.itemName || p.name || '';
-        if ((cleanTargetId && pId === cleanTargetId) || isMatch(pName)) {
+        if (isMatch(pName, pId)) {
           totalInward += parseFloat(p.quantity || p.qty || 0);
         }
       }
     });
 
-    // Calculate Outward from Unique Sales (-)
+    // Calculate Outward from Sales (-)
     uniqueSalesMap.forEach(s => {
       if (!s) return;
       if (Array.isArray(s.items) && s.items.length > 0) {
         s.items.forEach(si => {
           if (!si) return;
-          const siId = String(si.itemId || si.item_id || si.id || '').trim();
+          const siId = String(si.itemId || si.item_id || '').trim();
           const siName = si.itemName || si.item_name || si.name || '';
-          if ((cleanTargetId && siId === cleanTargetId) || isMatch(siName)) {
+          if (isMatch(siName, siId)) {
             totalOutward += parseFloat(si.qty || si.quantity || 0);
           }
         });
       }
     });
 
-    // Calculate Outward from Unique Adjustments (-)
+    // Calculate Outward from Adjustments (-)
     uniqueAdjustmentsMap.forEach(a => {
       if (!a) return;
       const aId = String(a.stock_id || a.itemId || a.item_id || '').trim();
       const aName = a.item_name || a.itemName || '';
-      if ((cleanTargetId && aId === cleanTargetId) || isMatch(aName)) {
+      if (isMatch(aName, aId)) {
         totalOutward += parseFloat(a.quantity || a.qty || 0);
       }
     });
 
-    // Calculate Outward from Unique Journal Vouchers / Material Issues (-)
+    // Calculate Outward from Journal Vouchers / Material Issues (-)
     uniqueVouchersMap.forEach(v => {
       if (!v) return;
       const vType = String(v.voucher_type || v.type || '').toUpperCase();
