@@ -17,7 +17,7 @@ const normalizeItemName = (name) => {
 };
 
 /**
- * Computes strict exact & fuzzy matching real-time stock for any inventory item within a firm
+ * Computes strict exact-match real-time stock for any inventory item within a firm
  */
 export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
@@ -61,7 +61,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
     let totalInward = 0;
     let totalOutward = 0;
 
-    // Calculate Inward from Purchases
+    // Calculate Inward from Purchases (Strict Exact Match)
     purchases.forEach(p => {
       if (!p) return;
       if (Array.isArray(p.items) && p.items.length > 0) {
@@ -69,20 +69,20 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
           if (!it) return;
           const itId = String(it.itemId || it.item_id || it.id || '').trim();
           const itName = normalizeItemName(it.itemName || it.item_name || it.name || '');
-          if ((cleanTargetId && itId === cleanTargetId) || (targetNorm && (itName === targetNorm || itName.includes(targetNorm) || targetNorm.includes(itName)))) {
+          if ((cleanTargetId && itId === cleanTargetId) || (targetNorm && itName === targetNorm)) {
             totalInward += parseFloat(it.qty || it.quantity || 0);
           }
         });
       } else {
         const pId = String(p.itemId || p.item_id || p.id || '').trim();
         const pName = normalizeItemName(p.item_name || p.itemName || p.name || '');
-        if ((cleanTargetId && pId === cleanTargetId) || (targetNorm && (pName === targetNorm || pName.includes(targetNorm) || targetNorm.includes(pName)))) {
+        if ((cleanTargetId && pId === cleanTargetId) || (targetNorm && pName === targetNorm)) {
           totalInward += parseFloat(p.quantity || p.qty || 0);
         }
       }
     });
 
-    // Calculate Outward from Sales
+    // Calculate Outward from Sales (Strict Exact Match)
     salesInvoices.forEach(s => {
       if (!s) return;
       if (Array.isArray(s.items) && s.items.length > 0) {
@@ -90,19 +90,19 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
           if (!si) return;
           const siId = String(si.itemId || si.item_id || si.id || '').trim();
           const siName = normalizeItemName(si.itemName || si.item_name || si.name || '');
-          if ((cleanTargetId && siId === cleanTargetId) || (targetNorm && (siName === targetNorm || siName.includes(targetNorm) || targetNorm.includes(siName)))) {
+          if ((cleanTargetId && siId === cleanTargetId) || (targetNorm && siName === targetNorm)) {
             totalOutward += parseFloat(si.qty || si.quantity || 0);
           }
         });
       }
     });
 
-    // Calculate Outward from Material Consumptions / Adjustments
+    // Calculate Outward from Material Consumptions / Adjustments (Strict Exact Match)
     adjustments.forEach(a => {
       if (!a) return;
       const aId = String(a.stock_id || a.itemId || a.item_id || '').trim();
       const aName = normalizeItemName(a.item_name || a.itemName || '');
-      if ((cleanTargetId && aId === cleanTargetId) || (targetNorm && (aName === targetNorm || aName.includes(targetNorm) || targetNorm.includes(aName)))) {
+      if ((cleanTargetId && aId === cleanTargetId) || (targetNorm && aName === targetNorm)) {
         totalOutward += parseFloat(a.quantity || a.qty || 0);
       }
     });
