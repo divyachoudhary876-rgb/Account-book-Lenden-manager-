@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
 import { generateStockItemLedgerStatement, exportStockLedgerPDF } from '../utils/inventoryLedgerReport';
-import { getFirmItemStock } from '../utils/inventoryPostingEngine';
+import { getFirmItemStock } from '../utils/stockInventoryEngine';
 import { StorageService } from '../utils/storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
@@ -21,8 +21,6 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
 
   try {
     const masterAccounts = getFirmMasterAccounts(firmId) || [];
-    
-    // Strict case-insensitive duplicate check to prevent duplicate ledgers
     const existingIndex = masterAccounts.findIndex(acc => {
       const name = (acc.account_name || acc.name || '').trim().toLowerCase();
       return name === targetAccountName.toLowerCase() ||
@@ -30,7 +28,14 @@ const autoEnsureStockLedger = (firmId, rawItemName, existingAccountName = null) 
     });
 
     if (existingIndex !== -1) {
-      return masterAccounts[existingIndex];
+      const matchedAcc = masterAccounts[existingIndex];
+      if ((matchedAcc.account_name || matchedAcc.name) !== targetAccountName) {
+        matchedAcc.account_name = targetAccountName;
+        matchedAcc.name = targetAccountName;
+        matchedAcc.updated_at = new Date().toISOString();
+        saveMasterAccount(firmId, matchedAcc);
+      }
+      return matchedAcc;
     }
 
     const newAccountObj = {
@@ -86,6 +91,7 @@ export default function InventoryStockView({ firm, onClose }) {
       const formatted = storedItems.map(i => {
         if (!i) return i;
         const name = i.name || i.item_name;
+        // Hamesha dynamic calculation engine se live stock fetch karein
         const stockQty = getFirmItemStock(activeFirmId, name);
         return {
           ...i,
@@ -175,8 +181,11 @@ export default function InventoryStockView({ firm, onClose }) {
         });
       }
 
-      // Save atomically to storage
       StorageService.setItem(inventoryKey, itemsList);
+      StorageService.setItem(`app_stock_${activeFirmId}`, itemsList);
+      localStorage.setItem(inventoryKey, JSON.stringify(itemsList));
+      localStorage.setItem(`app_stock_${activeFirmId}`, JSON.stringify(itemsList));
+      localStorage.setItem('inventory_items', JSON.stringify(itemsList));
 
       if (itemType !== 'SERVICE') {
         autoEnsureStockLedger(activeFirmId, cleanName, oldName ? `${oldName} Stock Account` : null);
@@ -242,6 +251,9 @@ export default function InventoryStockView({ firm, onClose }) {
     });
 
     StorageService.setItem(inventoryKey, updatedList);
+    StorageService.setItem(`app_stock_${activeFirmId}`, updatedList);
+    localStorage.setItem(inventoryKey, JSON.stringify(updatedList));
+    localStorage.setItem(`app_stock_${activeFirmId}`, JSON.stringify(updatedList));
 
     loadStockItems();
     window.setTimeout(() => {
@@ -398,7 +410,8 @@ export default function InventoryStockView({ firm, onClose }) {
           ) : (
             filteredItems.map((item) => {
               const stockName = item.name || item.item_name;
-              const stockQty = item.current_stock ?? getFirmItemStock(activeFirmId, stockName);
+              // Force dynamic call to getFirmItemStock ensuring correct live stock calculation
+              const stockQty = getFirmItemStock(activeFirmId, stockName);
               const rate = parseFloat(item.unit_purchase_price || item.purchase_price || item.rate || 0);
 
               return (
