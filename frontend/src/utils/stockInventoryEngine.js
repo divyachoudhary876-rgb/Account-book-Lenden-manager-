@@ -1,9 +1,9 @@
 /**
  * Frontend Utility: Stock Inventory Engine
- * Single Source of Truth for Real-Time Item Stock Calculation, perfectly unified with PDF Report logic.
+ * Single Source of Truth for Real-Time Item Stock Calculation with Multi-Fallback Resilient Matching.
  */
 
-import { IDBStorage } from './indexedDbStorage.js';
+import { StorageService } from './storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
@@ -12,14 +12,15 @@ const normalizeItemName = (name) => {
   return String(name)
     .toLowerCase()
     .replace(/\b(stock account|account|stock)\b/gi, '')
+    .replace(/[^a-z0-9]/g, '')
     .trim();
 };
 
 /**
- * Computes precise real-time stock unified with PDF report matching rules
+ * Computes precise real-time stock with robust multi-fallback matching for IDs and names
  */
 export const getFirmItemStock = (firmId, itemName, itemId = null) => {
-  const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
+  const cleanFirmId = firmId || StorageService.getActiveFirmId() || 'FIRM-001';
   const targetRaw = String(itemName || '').trim();
   const targetNorm = normalizeItemName(targetRaw);
   const cleanTargetId = String(itemId || '').trim();
@@ -27,11 +28,11 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   if (!targetNorm && !cleanTargetId) return 0;
 
   try {
-    // 1. Gather Unique Purchase Bills (Inward Stock +) with Deduplication
+    // 1. Gather Unique Purchase Bills (Inward Stock +)
     const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
     const uniquePurchasesMap = new Map();
     purchaseKeys.forEach(k => {
-      const raw = IDBStorage.getItem(k, []) || [];
+      const raw = StorageService.getItem(k, []) || [];
       if (Array.isArray(raw)) {
         raw.forEach(p => {
           if (p) {
@@ -46,7 +47,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
     const salesKeys = [`sales_invoices_${cleanFirmId}`, `app_invoices_${cleanFirmId}`, 'sales_invoices', 'app_invoices'];
     const uniqueSalesMap = new Map();
     salesKeys.forEach(k => {
-      const raw = IDBStorage.getItem(k, []) || [];
+      const raw = StorageService.getItem(k, []) || [];
       if (Array.isArray(raw)) {
         raw.forEach(s => {
           if (s) {
@@ -67,7 +68,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
     ];
     const uniqueAdjustmentsMap = new Map();
     adjustmentKeys.forEach(k => {
-      const raw = IDBStorage.getItem(k, []) || [];
+      const raw = StorageService.getItem(k, []) || [];
       if (Array.isArray(raw)) {
         raw.forEach(a => {
           if (a) {
@@ -87,7 +88,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
     ];
     const uniqueVouchersMap = new Map();
     voucherKeys.forEach(k => {
-      const raw = IDBStorage.getItem(k, []) || [];
+      const raw = StorageService.getItem(k, []) || [];
       if (Array.isArray(raw)) {
         raw.forEach(v => {
           if (v) {
@@ -101,12 +102,19 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
     let totalInward = 0;
     let totalOutward = 0;
 
+    // Resilient Multi-Fallback Matcher
     const isMatch = (dbName, dbId = '') => {
       const cleanDbId = String(dbId || '').trim();
       if (cleanTargetId && cleanDbId && cleanDbId === cleanTargetId) return true;
+      
       const dbNorm = normalizeItemName(dbName);
       if (!dbNorm) return false;
-      return dbNorm === targetNorm || dbNorm.includes(targetNorm) || targetNorm.includes(dbNorm);
+
+      // Exact normalized match, substring match, or reverse substring match
+      return dbNorm === targetNorm || 
+             dbNorm.includes(targetNorm) || 
+             targetNorm.includes(dbNorm) ||
+             dbNorm.replace(/\b(grade|quality)\b/g, '').trim() === targetNorm.replace(/\b(grade|quality)\b/g, '').trim();
     };
 
     // Calculate Inward from Purchases (+)
@@ -199,10 +207,10 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
  * Returns all stock items associated with a firm along with their reconciled live stock balances
  */
 export const getStockItemsByFirm = (firmId) => {
-  const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
+  const cleanFirmId = firmId || StorageService.getActiveFirmId() || 'FIRM-001';
   try {
     const inventoryKey = `inventory_items_${cleanFirmId}`;
-    let items = IDBStorage.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
+    let items = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
     
     if (!Array.isArray(items) || items.length === 0) {
       items = [
