@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Stock Inventory Engine
- * Single Source of Truth for Real-Time Item Stock Calculation with Multi-Fallback Resilient Matching.
+ * Single Source of Truth for Real-Time Item Stock Calculation, 100% Unified with PDF Statement Logic.
  */
 
 import { StorageService } from './storageSync';
@@ -12,12 +12,11 @@ const normalizeItemName = (name) => {
   return String(name)
     .toLowerCase()
     .replace(/\b(stock account|account|stock)\b/gi, '')
-    .replace(/[^a-z0-9]/g, '')
     .trim();
 };
 
 /**
- * Computes precise real-time stock with robust multi-fallback matching for IDs and names
+ * Computes precise real-time stock perfectly synchronized with inventory ledger statement reports
  */
 export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   const cleanFirmId = firmId || StorageService.getActiveFirmId() || 'FIRM-001';
@@ -28,7 +27,7 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   if (!targetNorm && !cleanTargetId) return 0;
 
   try {
-    // 1. Gather Unique Purchase Bills (Inward Stock +)
+    // 1. Gather Unique Purchase Bills (Inward Stock +) with Deduplication
     const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
     const uniquePurchasesMap = new Map();
     purchaseKeys.forEach(k => {
@@ -79,63 +78,38 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
       }
     });
 
-    // 4. Gather Unique Journal Vouchers / Material Issues (Outward Stock -)
-    const voucherKeys = [
-      `account_book_vouchers_${cleanFirmId}`,
-      `app_vouchers_${cleanFirmId}`,
-      'account_book_vouchers',
-      'app_vouchers'
-    ];
-    const uniqueVouchersMap = new Map();
-    voucherKeys.forEach(k => {
-      const raw = StorageService.getItem(k, []) || [];
-      if (Array.isArray(raw)) {
-        raw.forEach(v => {
-          if (v) {
-            const uid = String(v.id || v.reference_no || v.voucher_number || `${v.voucher_date || v.date}-${v.amount}`).trim();
-            if (!uniqueVouchersMap.has(uid)) uniqueVouchersMap.set(uid, v);
-          }
-        });
-      }
-    });
-
     let totalInward = 0;
     let totalOutward = 0;
 
-    // Resilient Multi-Fallback Matcher
     const isMatch = (dbName, dbId = '') => {
       const cleanDbId = String(dbId || '').trim();
       if (cleanTargetId && cleanDbId && cleanDbId === cleanTargetId) return true;
-      
       const dbNorm = normalizeItemName(dbName);
       if (!dbNorm) return false;
-
-      // Exact normalized match, substring match, or reverse substring match
-      return dbNorm === targetNorm || 
-             dbNorm.includes(targetNorm) || 
-             targetNorm.includes(dbNorm) ||
-             dbNorm.replace(/\b(grade|quality)\b/g, '').trim() === targetNorm.replace(/\b(grade|quality)\b/g, '').trim();
+      return dbNorm === targetNorm || dbNorm.includes(targetNorm) || targetNorm.includes(dbNorm);
     };
 
     // Calculate Inward from Purchases (+)
     uniquePurchasesMap.forEach(p => {
       if (!p) return;
+      let matchedQty = 0;
       if (Array.isArray(p.items) && p.items.length > 0) {
         p.items.forEach(it => {
           if (!it) return;
           const itId = String(it.itemId || it.item_id || it.id || '').trim();
           const itName = it.itemName || it.item_name || it.name || '';
           if (isMatch(itName, itId)) {
-            totalInward += parseFloat(it.qty || it.quantity || 0);
+            matchedQty += parseFloat(it.qty || it.quantity || 0);
           }
         });
       } else {
         const pId = String(p.itemId || p.item_id || p.id || '').trim();
         const pName = p.item_name || p.itemName || p.name || '';
         if (isMatch(pName, pId)) {
-          totalInward += parseFloat(p.quantity || p.qty || 0);
+          matchedQty += parseFloat(p.quantity || p.qty || 0);
         }
       }
+      totalInward += matchedQty;
     });
 
     // Calculate Outward from Sales (-)
@@ -146,8 +120,9 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
           if (!si) return;
           const siId = String(si.itemId || si.item_id || '').trim();
           const siName = si.itemName || si.item_name || si.name || '';
-          if (isMatch(siName, siId)) {
-            totalOutward += parseFloat(si.qty || si.quantity || 0);
+          const qty = parseFloat(si?.quantity || si?.qty || 0);
+          if (qty > 0 && isMatch(siName, siId)) {
+            totalOutward += qty;
           }
         });
       }
@@ -158,41 +133,9 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
       if (!a) return;
       const aId = String(a.stock_id || a.itemId || a.item_id || '').trim();
       const aName = a.item_name || a.itemName || '';
-      if (isMatch(aName, aId)) {
-        totalOutward += parseFloat(a.quantity || a.qty || 0);
-      }
-    });
-
-    // Calculate Outward from Journal Vouchers / Material Issues (-)
-    uniqueVouchersMap.forEach(v => {
-      if (!v) return;
-      const vType = String(v.voucher_type || v.type || '').toUpperCase();
-      if (vType === 'JOURNAL' || vType === 'CONSUMPTION') {
-        const narration = String(v.narration || '').toLowerCase();
-        const crAcc = String(v.cr_account || '').toLowerCase();
-        
-        if (isMatch(crAcc) || isMatch(narration) || (v.items && v.items.some(vi => isMatch(vi.itemName || vi.item_name || vi.name)))) {
-          let extractedQty = parseFloat(v.qty || v.quantity || 0);
-          
-          if (extractedQty === 0 && v.items && Array.isArray(v.items)) {
-            v.items.forEach(vi => {
-              if (isMatch(vi.itemName || vi.item_name || vi.name)) {
-                extractedQty += parseFloat(vi.qty || vi.quantity || 0);
-              }
-            });
-          }
-
-          if (extractedQty === 0 && narration) {
-            const qtyMatch = narration.match(/(\d+(?:\.\d+)?)\s*(quintal|pcs|liters|kg|mt|trolley|bags)/i);
-            if (qtyMatch) {
-              extractedQty = parseFloat(qtyMatch[1]);
-            }
-          }
-
-          if (extractedQty > 0) {
-            totalOutward += extractedQty;
-          }
-        }
+      const qty = parseFloat(a?.quantity || a?.qty || 0);
+      if (qty > 0 && isMatch(aName, aId)) {
+        totalOutward += qty;
       }
     });
 
