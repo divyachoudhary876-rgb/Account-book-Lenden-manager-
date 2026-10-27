@@ -1,6 +1,6 @@
 /**
- * Frontend Utility: Stock Inventory Engine
- * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation.
+ * Stock & Inventory Reconciliation Engine for Account Book Smart Manager
+ * Single Source of Truth for Real-Time Item Stock Calculation with Smart Adaptive Matching.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -16,93 +16,76 @@ const normalizeItemName = (name) => {
     .trim();
 };
 
-/**
- * Computes strict exact-match real-time stock for any inventory item within a firm
- */
-export const getFirmItemStock = (firmId, itemName, itemId = null) => {
+export const getFirmItemStock = (firmId, itemName) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
   const targetRaw = String(itemName || '').trim();
   const targetNorm = normalizeItemName(targetRaw);
-  const cleanTargetId = String(itemId || '').trim();
-
-  if (!targetNorm && !cleanTargetId) return 0;
+  if (!targetNorm) return 0;
 
   try {
-    // 1. Gather all Purchase Bills (Inward Stock +)
-    const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
-    const purchases = [];
-    purchaseKeys.forEach(k => {
-      const raw = IDBStorage.getItem(k, []) || [];
-      if (Array.isArray(raw)) purchases.push(...raw);
-    });
-
-    // 2. Gather all Sales Invoices (Outward Stock -)
-    const salesKeys = [`sales_invoices_${cleanFirmId}`, `app_invoices_${cleanFirmId}`, 'sales_invoices', 'app_invoices'];
-    const salesInvoices = [];
-    salesKeys.forEach(k => {
-      const raw = IDBStorage.getItem(k, []) || [];
-      if (Array.isArray(raw)) salesInvoices.push(...raw);
-    });
-
-    // 3. Gather all Material Consumptions / Adjustments (Outward Stock -)
-    const adjustmentKeys = [
-      `material_consumption_records_${cleanFirmId}`,
-      `universal_material_adjustments_${cleanFirmId}`,
-      `material_adjustments_${cleanFirmId}`,
-      'material_consumption_records',
-      'universal_material_adjustments'
+    const purchases = IDBStorage.getItem(`purchase_bills_${cleanFirmId}`, []) || IDBStorage.getItem('purchase_bills', []) || [];
+    const salesInvoices = [
+      ...(IDBStorage.getItem(`sales_invoices_${cleanFirmId}`, []) || []),
+      ...(IDBStorage.getItem(`app_invoices_${cleanFirmId}`, []) || []),
+      ...(IDBStorage.getItem('sales_invoices', []) || [])
     ];
-    const adjustments = [];
-    adjustmentKeys.forEach(k => {
-      const raw = IDBStorage.getItem(k, []) || [];
-      if (Array.isArray(raw)) adjustments.push(...raw);
-    });
+    const adjustments = [
+      ...(IDBStorage.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || []),
+      ...(IDBStorage.getItem('universal_material_adjustments', []) || []),
+      ...(IDBStorage.getItem(`material_consumptions_${cleanFirmId}`, []) || [])
+    ];
 
     let totalInward = 0;
     let totalOutward = 0;
 
-    // Calculate Inward from Purchases (Strict Exact Match)
+    // Smart Adaptive Matcher: Strict for short names (<=3 chars), flexible substring for regular names
+    const isShortName = targetNorm.length <= 3;
+
+    const isMatch = (dbName) => {
+      const dbNorm = normalizeItemName(dbName);
+      if (!dbNorm) return false;
+      if (isShortName) {
+        return dbNorm === targetNorm;
+      }
+      return dbNorm === targetNorm || dbNorm.includes(targetNorm) || targetNorm.includes(dbNorm);
+    };
+
     purchases.forEach(p => {
       if (!p) return;
       if (Array.isArray(p.items) && p.items.length > 0) {
         p.items.forEach(it => {
           if (!it) return;
-          const itId = String(it.itemId || it.item_id || it.id || '').trim();
-          const itName = normalizeItemName(it.itemName || it.item_name || it.name || '');
-          if ((cleanTargetId && itId === cleanTargetId) || (targetNorm && itName === targetNorm)) {
+          const itName = it.itemName || it.item_name || it.name || '';
+          if (isMatch(itName)) {
             totalInward += parseFloat(it.qty || it.quantity || 0);
           }
         });
       } else {
-        const pId = String(p.itemId || p.item_id || p.id || '').trim();
-        const pName = normalizeItemName(p.item_name || p.itemName || p.name || '');
-        if ((cleanTargetId && pId === cleanTargetId) || (targetNorm && pName === targetNorm)) {
+        const pName = p.item_name || p.itemName || p.name || '';
+        if (isMatch(pName)) {
           totalInward += parseFloat(p.quantity || p.qty || 0);
         }
       }
     });
 
-    // Calculate Outward from Sales (Strict Exact Match)
     salesInvoices.forEach(s => {
       if (!s) return;
       if (Array.isArray(s.items) && s.items.length > 0) {
         s.items.forEach(si => {
           if (!si) return;
-          const siId = String(si.itemId || si.item_id || si.id || '').trim();
-          const siName = normalizeItemName(si.itemName || si.item_name || si.name || '');
-          if ((cleanTargetId && siId === cleanTargetId) || (targetNorm && siName === targetNorm)) {
+          const sName = si.itemName || si.item_name || si.name || '';
+          if (isMatch(sName)) {
             totalOutward += parseFloat(si.qty || si.quantity || 0);
           }
         });
       }
     });
 
-    // Calculate Outward from Material Consumptions / Adjustments (Strict Exact Match)
     adjustments.forEach(a => {
       if (!a) return;
-      const aId = String(a.stock_id || a.itemId || a.item_id || '').trim();
-      const aName = normalizeItemName(a.item_name || a.itemName || '');
-      if ((cleanTargetId && aId === cleanTargetId) || (targetNorm && aName === targetNorm)) {
+      const aName = a.item_name || a.itemName || '';
+      const aStockId = a.stock_id || a.itemId || '';
+      if (isMatch(aName) || isMatch(aStockId)) {
         totalOutward += parseFloat(a.quantity || a.qty || 0);
       }
     });
@@ -114,9 +97,6 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   }
 };
 
-/**
- * Returns all stock items associated with a firm along with their reconciled live stock balances
- */
 export const getStockItemsByFirm = (firmId) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
   try {
@@ -134,8 +114,7 @@ export const getStockItemsByFirm = (firmId) => {
     return items.map(i => {
       if (!i) return i;
       const itemName = i.name || i.item_name;
-      const itemId = i.id || i.item_id;
-      const realStock = getFirmItemStock(cleanFirmId, itemName, itemId);
+      const realStock = getFirmItemStock(cleanFirmId, itemName);
       return {
         ...i,
         name: itemName,
