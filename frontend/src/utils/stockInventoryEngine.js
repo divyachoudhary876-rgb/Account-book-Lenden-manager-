@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Stock Inventory Engine
- * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation & Zero Double-Counting.
+ * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -17,46 +17,34 @@ const normalizeItemName = (name) => {
 };
 
 /**
- * Computes strict exact-match real-time stock without double-counting between vouchers and adjustments
+ * Computes strict exact & fuzzy matching real-time stock for any inventory item within a firm
  */
-export const getFirmItemStock = (firmId, itemName) => {
+export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
-  const targetNorm = normalizeItemName(itemName);
-  if (!targetNorm) return 0;
+  const targetRaw = String(itemName || '').trim();
+  const targetNorm = normalizeItemName(targetRaw);
+  const cleanTargetId = String(itemId || '').trim();
+
+  if (!targetNorm && !cleanTargetId) return 0;
 
   try {
-    // 1. Fetch Unique Purchases (Inward Stock +)
+    // 1. Gather all Purchase Bills (Inward Stock +)
     const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
-    const uniquePurchasesMap = new Map();
+    const purchases = [];
     purchaseKeys.forEach(k => {
       const raw = IDBStorage.getItem(k, []) || [];
-      if (Array.isArray(raw)) {
-        raw.forEach(p => {
-          if (p) {
-            const uid = p.id || p.reference_no || `${p.date}-${p.amount}-${p.cr_account}`;
-            if (!uniquePurchasesMap.has(uid)) uniquePurchasesMap.set(uid, p);
-          }
-        });
-      }
+      if (Array.isArray(raw)) purchases.push(...raw);
     });
 
-    // 2. Fetch Unique Sales Invoices (Outward Stock -)
+    // 2. Gather all Sales Invoices (Outward Stock -)
     const salesKeys = [`sales_invoices_${cleanFirmId}`, `app_invoices_${cleanFirmId}`, 'sales_invoices', 'app_invoices'];
-    const uniqueSalesMap = new Map();
+    const salesInvoices = [];
     salesKeys.forEach(k => {
       const raw = IDBStorage.getItem(k, []) || [];
-      if (Array.isArray(raw)) {
-        raw.forEach(s => {
-          if (s) {
-            const uid = s.id || s.reference_no || `${s.date}-${s.amount}-${s.dr_account}`;
-            if (!uniqueSalesMap.has(uid)) uniqueSalesMap.set(uid, s);
-          }
-        });
-      }
+      if (Array.isArray(raw)) salesInvoices.push(...raw);
     });
 
-    // 3. Fetch Unique Material Consumptions / Adjustments (Outward Stock -)
-    // NOTE: We rely strictly on dedicated adjustment/consumption buckets to prevent double-counting from general vouchers.
+    // 3. Gather all Material Consumptions / Adjustments (Outward Stock -)
     const adjustmentKeys = [
       `material_consumption_records_${cleanFirmId}`,
       `universal_material_adjustments_${cleanFirmId}`,
@@ -64,58 +52,57 @@ export const getFirmItemStock = (firmId, itemName) => {
       'material_consumption_records',
       'universal_material_adjustments'
     ];
-    const uniqueAdjustmentsMap = new Map();
+    const adjustments = [];
     adjustmentKeys.forEach(k => {
       const raw = IDBStorage.getItem(k, []) || [];
-      if (Array.isArray(raw)) {
-        raw.forEach(a => {
-          if (a) {
-            const uid = a.id || `${a.date}-${a.quantity || a.qty}-${a.item_name || a.itemName}`;
-            if (!uniqueAdjustmentsMap.has(uid)) uniqueAdjustmentsMap.set(uid, a);
-          }
-        });
-      }
+      if (Array.isArray(raw)) adjustments.push(...raw);
     });
 
     let totalInward = 0;
     let totalOutward = 0;
 
     // Calculate Inward from Purchases
-    uniquePurchasesMap.forEach(p => {
+    purchases.forEach(p => {
+      if (!p) return;
       if (Array.isArray(p.items) && p.items.length > 0) {
         p.items.forEach(it => {
           if (!it) return;
+          const itId = String(it.itemId || it.item_id || it.id || '').trim();
           const itName = normalizeItemName(it.itemName || it.item_name || it.name || '');
-          if (itName === targetNorm) {
+          if ((cleanTargetId && itId === cleanTargetId) || (targetNorm && (itName === targetNorm || itName.includes(targetNorm) || targetNorm.includes(itName)))) {
             totalInward += parseFloat(it.qty || it.quantity || 0);
           }
         });
       } else {
+        const pId = String(p.itemId || p.item_id || p.id || '').trim();
         const pName = normalizeItemName(p.item_name || p.itemName || p.name || '');
-        if (pName === targetNorm) {
+        if ((cleanTargetId && pId === cleanTargetId) || (targetNorm && (pName === targetNorm || pName.includes(targetNorm) || targetNorm.includes(pName)))) {
           totalInward += parseFloat(p.quantity || p.qty || 0);
         }
       }
     });
 
     // Calculate Outward from Sales
-    uniqueSalesMap.forEach(s => {
+    salesInvoices.forEach(s => {
+      if (!s) return;
       if (Array.isArray(s.items) && s.items.length > 0) {
         s.items.forEach(si => {
           if (!si) return;
-          const sName = normalizeItemName(si.itemName || si.item_name || si.name || '');
-          if (sName === targetNorm) {
+          const siId = String(si.itemId || si.item_id || si.id || '').trim();
+          const siName = normalizeItemName(si.itemName || si.item_name || si.name || '');
+          if ((cleanTargetId && siId === cleanTargetId) || (targetNorm && (siName === targetNorm || siName.includes(targetNorm) || targetNorm.includes(siName)))) {
             totalOutward += parseFloat(si.qty || si.quantity || 0);
           }
         });
       }
     });
 
-    // Calculate Outward from Material Consumptions
-    uniqueAdjustmentsMap.forEach(a => {
+    // Calculate Outward from Material Consumptions / Adjustments
+    adjustments.forEach(a => {
+      if (!a) return;
+      const aId = String(a.stock_id || a.itemId || a.item_id || '').trim();
       const aName = normalizeItemName(a.item_name || a.itemName || '');
-      const aStockId = normalizeItemName(a.stock_id || a.itemId || '');
-      if (aName === targetNorm || aStockId === targetNorm) {
+      if ((cleanTargetId && aId === cleanTargetId) || (targetNorm && (aName === targetNorm || aName.includes(targetNorm) || targetNorm.includes(aName)))) {
         totalOutward += parseFloat(a.quantity || a.qty || 0);
       }
     });
@@ -147,7 +134,8 @@ export const getStockItemsByFirm = (firmId) => {
     return items.map(i => {
       if (!i) return i;
       const itemName = i.name || i.item_name;
-      const realStock = getFirmItemStock(cleanFirmId, itemName);
+      const itemId = i.id || i.item_id;
+      const realStock = getFirmItemStock(cleanFirmId, itemName, itemId);
       return {
         ...i,
         name: itemName,
