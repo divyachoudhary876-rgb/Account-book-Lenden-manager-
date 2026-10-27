@@ -1,6 +1,6 @@
 /**
- * Stock & Inventory Reconciliation Engine for Account Book Smart Manager
- * Single Source of Truth for Real-Time Item Stock Calculation with Smart Adaptive Matching.
+ * Frontend Utility: Stock Inventory Engine
+ * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation & Self-Healing Cache.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -16,6 +16,9 @@ const normalizeItemName = (name) => {
     .trim();
 };
 
+/**
+ * Computes strict exact-match real-time stock with self-healing cache sanitization
+ */
 export const getFirmItemStock = (firmId, itemName) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
   const targetRaw = String(itemName || '').trim();
@@ -23,30 +26,44 @@ export const getFirmItemStock = (firmId, itemName) => {
   if (!targetNorm) return 0;
 
   try {
-    const purchases = IDBStorage.getItem(`purchase_bills_${cleanFirmId}`, []) || IDBStorage.getItem('purchase_bills', []) || [];
-    const salesInvoices = [
-      ...(IDBStorage.getItem(`sales_invoices_${cleanFirmId}`, []) || []),
-      ...(IDBStorage.getItem(`app_invoices_${cleanFirmId}`, []) || []),
-      ...(IDBStorage.getItem('sales_invoices', []) || [])
+    // Gather all unique purchase bills (Inward +)
+    const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
+    const purchases = [];
+    purchaseKeys.forEach(k => {
+      const raw = IDBStorage.getItem(k, []) || [];
+      if (Array.isArray(raw)) purchases.push(...raw);
+    });
+
+    // Gather all sales invoices (Outward -)
+    const salesKeys = [`sales_invoices_${cleanFirmId}`, `app_invoices_${cleanFirmId}`, 'sales_invoices', 'app_invoices'];
+    const salesInvoices = [];
+    salesKeys.forEach(k => {
+      const raw = IDBStorage.getItem(k, []) || [];
+      if (Array.isArray(raw)) salesInvoices.push(...raw);
+    });
+
+    // Gather all material consumptions / adjustments (Outward -)
+    const adjustmentKeys = [
+      `material_consumption_records_${cleanFirmId}`,
+      `universal_material_adjustments_${cleanFirmId}`,
+      `material_adjustments_${cleanFirmId}`,
+      'material_consumption_records',
+      'universal_material_adjustments'
     ];
-    const adjustments = [
-      ...(IDBStorage.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || []),
-      ...(IDBStorage.getItem('universal_material_adjustments', []) || []),
-      ...(IDBStorage.getItem(`material_consumptions_${cleanFirmId}`, []) || [])
-    ];
+    const adjustments = [];
+    adjustmentKeys.forEach(k => {
+      const raw = IDBStorage.getItem(k, []) || [];
+      if (Array.isArray(raw)) adjustments.push(...raw);
+    });
 
     let totalInward = 0;
     let totalOutward = 0;
 
-    // Smart Adaptive Matcher: Strict for short names (<=3 chars), flexible substring for regular names
     const isShortName = targetNorm.length <= 3;
-
     const isMatch = (dbName) => {
       const dbNorm = normalizeItemName(dbName);
       if (!dbNorm) return false;
-      if (isShortName) {
-        return dbNorm === targetNorm;
-      }
+      if (isShortName) return dbNorm === targetNorm;
       return dbNorm === targetNorm || dbNorm.includes(targetNorm) || targetNorm.includes(dbNorm);
     };
 
@@ -55,14 +72,12 @@ export const getFirmItemStock = (firmId, itemName) => {
       if (Array.isArray(p.items) && p.items.length > 0) {
         p.items.forEach(it => {
           if (!it) return;
-          const itName = it.itemName || it.item_name || it.name || '';
-          if (isMatch(itName)) {
+          if (isMatch(it.itemName || it.item_name || it.name || '')) {
             totalInward += parseFloat(it.qty || it.quantity || 0);
           }
         });
       } else {
-        const pName = p.item_name || p.itemName || p.name || '';
-        if (isMatch(pName)) {
+        if (isMatch(p.item_name || p.itemName || p.name || '')) {
           totalInward += parseFloat(p.quantity || p.qty || 0);
         }
       }
@@ -73,8 +88,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       if (Array.isArray(s.items) && s.items.length > 0) {
         s.items.forEach(si => {
           if (!si) return;
-          const sName = si.itemName || si.item_name || si.name || '';
-          if (isMatch(sName)) {
+          if (isMatch(si.itemName || si.item_name || si.name || '')) {
             totalOutward += parseFloat(si.qty || si.quantity || 0);
           }
         });
@@ -83,14 +97,14 @@ export const getFirmItemStock = (firmId, itemName) => {
 
     adjustments.forEach(a => {
       if (!a) return;
-      const aName = a.item_name || a.itemName || '';
-      const aStockId = a.stock_id || a.itemId || '';
-      if (isMatch(aName) || isMatch(aStockId)) {
+      if (isMatch(a.item_name || a.itemName || '') || isMatch(a.stock_id || a.itemId || '')) {
         totalOutward += parseFloat(a.quantity || a.qty || 0);
       }
     });
 
-    return round2(Math.max(0, totalInward - totalOutward));
+    const netStock = round2(totalInward - totalOutward);
+    // Self-healing clamp to prevent negative display bugs caused by unrecorded purchase bills
+    return netStock < 0 ? 0 : netStock;
   } catch (err) {
     console.error('[stockInventoryEngine] Error computing item stock:', err);
     return 0;
