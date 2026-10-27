@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Stock Inventory Engine
- * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation & Deduplication.
+ * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation & Zero Double-Counting.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -17,7 +17,7 @@ const normalizeItemName = (name) => {
 };
 
 /**
- * Computes strict exact-match real-time stock with unique ID deduplication to prevent negative/inflated quantities
+ * Computes strict exact-match real-time stock without double-counting between vouchers and adjustments
  */
 export const getFirmItemStock = (firmId, itemName) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
@@ -25,7 +25,7 @@ export const getFirmItemStock = (firmId, itemName) => {
   if (!targetNorm) return 0;
 
   try {
-    // 1. Fetch Unique Purchases (Inward)
+    // 1. Fetch Unique Purchases (Inward Stock +)
     const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
     const uniquePurchasesMap = new Map();
     purchaseKeys.forEach(k => {
@@ -40,7 +40,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // 2. Fetch Unique Sales Invoices (Outward)
+    // 2. Fetch Unique Sales Invoices (Outward Stock -)
     const salesKeys = [`sales_invoices_${cleanFirmId}`, `app_invoices_${cleanFirmId}`, 'sales_invoices', 'app_invoices'];
     const uniqueSalesMap = new Map();
     salesKeys.forEach(k => {
@@ -55,7 +55,8 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // 3. Fetch Unique Material Consumptions / Adjustments (Outward)
+    // 3. Fetch Unique Material Consumptions / Adjustments (Outward Stock -)
+    // NOTE: We rely strictly on dedicated adjustment/consumption buckets to prevent double-counting from general vouchers.
     const adjustmentKeys = [
       `material_consumption_records_${cleanFirmId}`,
       `universal_material_adjustments_${cleanFirmId}`,
@@ -79,7 +80,7 @@ export const getFirmItemStock = (firmId, itemName) => {
     let totalInward = 0;
     let totalOutward = 0;
 
-    // Calculate Inward
+    // Calculate Inward from Purchases
     uniquePurchasesMap.forEach(p => {
       if (Array.isArray(p.items) && p.items.length > 0) {
         p.items.forEach(it => {
@@ -97,7 +98,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // Calculate Outward (Sales)
+    // Calculate Outward from Sales
     uniqueSalesMap.forEach(s => {
       if (Array.isArray(s.items) && s.items.length > 0) {
         s.items.forEach(si => {
@@ -110,7 +111,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    // Calculate Outward (Material Consumptions / Adjustments)
+    // Calculate Outward from Material Consumptions
     uniqueAdjustmentsMap.forEach(a => {
       const aName = normalizeItemName(a.item_name || a.itemName || '');
       const aStockId = normalizeItemName(a.stock_id || a.itemId || '');
