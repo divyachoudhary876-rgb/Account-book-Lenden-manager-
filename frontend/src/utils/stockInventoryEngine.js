@@ -1,6 +1,6 @@
 /**
  * Frontend Utility: Stock Inventory Engine
- * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation.
+ * Single Source of Truth for Real-Time Item Stock Calculation & Inventory Management with Strict Firm Isolation & Deduplication.
  */
 
 import { IDBStorage } from './indexedDbStorage.js';
@@ -17,7 +17,7 @@ const normalizeItemName = (name) => {
 };
 
 /**
- * Computes strict exact-match real-time stock for any inventory item within a firm
+ * Computes strict exact-match real-time stock with unique ID deduplication to prevent negative/inflated quantities
  */
 export const getFirmItemStock = (firmId, itemName) => {
   const cleanFirmId = firmId || IDBStorage.getItem('app_active_firm_id', 'FIRM-1790909076433');
@@ -25,23 +25,62 @@ export const getFirmItemStock = (firmId, itemName) => {
   if (!targetNorm) return 0;
 
   try {
-    const purchases = IDBStorage.getItem(`purchase_bills_${cleanFirmId}`, []) || IDBStorage.getItem('purchase_bills', []) || [];
-    const salesInvoices = [
-      ...(IDBStorage.getItem(`sales_invoices_${cleanFirmId}`, []) || []),
-      ...(IDBStorage.getItem(`app_invoices_${cleanFirmId}`, []) || []),
-      ...(IDBStorage.getItem('sales_invoices', []) || [])
+    // 1. Fetch Unique Purchases (Inward)
+    const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
+    const uniquePurchasesMap = new Map();
+    purchaseKeys.forEach(k => {
+      const raw = IDBStorage.getItem(k, []) || [];
+      if (Array.isArray(raw)) {
+        raw.forEach(p => {
+          if (p) {
+            const uid = p.id || p.reference_no || `${p.date}-${p.amount}-${p.cr_account}`;
+            if (!uniquePurchasesMap.has(uid)) uniquePurchasesMap.set(uid, p);
+          }
+        });
+      }
+    });
+
+    // 2. Fetch Unique Sales Invoices (Outward)
+    const salesKeys = [`sales_invoices_${cleanFirmId}`, `app_invoices_${cleanFirmId}`, 'sales_invoices', 'app_invoices'];
+    const uniqueSalesMap = new Map();
+    salesKeys.forEach(k => {
+      const raw = IDBStorage.getItem(k, []) || [];
+      if (Array.isArray(raw)) {
+        raw.forEach(s => {
+          if (s) {
+            const uid = s.id || s.reference_no || `${s.date}-${s.amount}-${s.dr_account}`;
+            if (!uniqueSalesMap.has(uid)) uniqueSalesMap.set(uid, s);
+          }
+        });
+      }
+    });
+
+    // 3. Fetch Unique Material Consumptions / Adjustments (Outward)
+    const adjustmentKeys = [
+      `material_consumption_records_${cleanFirmId}`,
+      `universal_material_adjustments_${cleanFirmId}`,
+      `material_adjustments_${cleanFirmId}`,
+      'material_consumption_records',
+      'universal_material_adjustments'
     ];
-    const adjustments = [
-      ...(IDBStorage.getItem(`universal_material_adjustments_${cleanFirmId}`, []) || []),
-      ...(IDBStorage.getItem('universal_material_adjustments', []) || []),
-      ...(IDBStorage.getItem(`material_consumptions_${cleanFirmId}`, []) || [])
-    ];
+    const uniqueAdjustmentsMap = new Map();
+    adjustmentKeys.forEach(k => {
+      const raw = IDBStorage.getItem(k, []) || [];
+      if (Array.isArray(raw)) {
+        raw.forEach(a => {
+          if (a) {
+            const uid = a.id || `${a.date}-${a.quantity || a.qty}-${a.item_name || a.itemName}`;
+            if (!uniqueAdjustmentsMap.has(uid)) uniqueAdjustmentsMap.set(uid, a);
+          }
+        });
+      }
+    });
 
     let totalInward = 0;
     let totalOutward = 0;
 
-    purchases.forEach(p => {
-      if (!p) return;
+    // Calculate Inward
+    uniquePurchasesMap.forEach(p => {
       if (Array.isArray(p.items) && p.items.length > 0) {
         p.items.forEach(it => {
           if (!it) return;
@@ -58,8 +97,8 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    salesInvoices.forEach(s => {
-      if (!s) return;
+    // Calculate Outward (Sales)
+    uniqueSalesMap.forEach(s => {
       if (Array.isArray(s.items) && s.items.length > 0) {
         s.items.forEach(si => {
           if (!si) return;
@@ -71,8 +110,8 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    adjustments.forEach(a => {
-      if (!a) return;
+    // Calculate Outward (Material Consumptions / Adjustments)
+    uniqueAdjustmentsMap.forEach(a => {
       const aName = normalizeItemName(a.item_name || a.itemName || '');
       const aStockId = normalizeItemName(a.stock_id || a.itemId || '');
       if (aName === targetNorm || aStockId === targetNorm) {
@@ -80,7 +119,7 @@ export const getFirmItemStock = (firmId, itemName) => {
       }
     });
 
-    return round2(totalInward - totalOutward);
+    return round2(Math.max(0, totalInward - totalOutward));
   } catch (err) {
     console.error('[stockInventoryEngine] Error computing item stock:', err);
     return 0;
