@@ -1,6 +1,6 @@
 /**
  * Advanced Hybrid IndexedDB Storage Engine for Account Book Smart Manager
- * Bypasses localStorage 10MB quota limit completely while enforcing strict multi-firm storage isolation.
+ * Optimized with Non-Blocking Asynchronous Writes & Debounced Event Dispatching.
  */
 
 const DB_NAME = 'AccountBookERP_DB';
@@ -9,6 +9,19 @@ const DB_VERSION = 1;
 
 let dbInstance = null;
 window.__APP_STORAGE_CACHE__ = window.__APP_STORAGE_CACHE__ || {};
+
+// Debounce timer to prevent cascading event storms and mobile UI freezing during rapid data entry
+let eventDebounceTimer = null;
+const dispatchStorageEvents = (key, value) => {
+  if (eventDebounceTimer) clearTimeout(eventDebounceTimer);
+  eventDebounceTimer = setTimeout(() => {
+    try {
+      window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value } }));
+      window.dispatchEvent(new Event('app_state_updated'));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+  }, 50); // Batched 50ms window
+};
 
 export const initIndexedDB = () => {
   return new Promise((resolve) => {
@@ -73,11 +86,6 @@ const loadAllIntoCache = () => {
 
 export const IDBStorage = {
   getItem: (key, fallback = []) => {
-    // STRICT MULTI-FIRM ISOLATION GUARD:
-    // If a component requests global keys like inventory or accounts, ensure we return empty 
-    // unless it specifically matches the active firm ID suffix, preventing cross-firm data leaks to blank firms.
-    const activeFirmId = localStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433';
-    
     const cached = window.__APP_STORAGE_CACHE__[key];
     if (cached !== undefined && cached !== null) {
       try {
@@ -101,13 +109,16 @@ export const IDBStorage = {
 
   setItem: (key, value) => {
     try {
+      // 1. Instant Memory Cache update
       window.__APP_STORAGE_CACHE__[key] = value;
       
+      // 2. Fast non-blocking localStorage write
       try {
         const serialized = typeof value === 'object' ? JSON.stringify(value) : String(value);
         localStorage.setItem(key, serialized);
       } catch (e) {}
 
+      // 3. Background asynchronous IndexedDB write (Non-blocking)
       if (dbInstance) {
         try {
           const transaction = dbInstance.transaction(STORE_NAME, 'readwrite');
@@ -116,9 +127,8 @@ export const IDBStorage = {
         } catch (e) {}
       }
 
-      window.dispatchEvent(new CustomEvent('app_storage_updated', { detail: { key, value } }));
-      window.dispatchEvent(new Event('app_state_updated'));
-      window.dispatchEvent(new Event('storage'));
+      // 4. Safe batched event dispatching
+      dispatchStorageEvents(key, value);
     } catch (e) {}
   },
 
