@@ -1,5 +1,3 @@
-// frontend/src/utils/autoRolloverEngine.js
-
 import { StorageService } from './storageSync';
 import { getFirmMasterAccounts } from './accountMasterEngine.js';
 
@@ -16,7 +14,6 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
     const currentStartYear = parseInt(match[0], 10);
     const fyStartDate = `${currentStartYear}-04-01`;
 
-    // Force clear rollover lock cache to allow real-time backdated entry sync
     const rolloverKey = `rollover_done_${activeFirmId}_${cleanFY}`;
     localStorage.removeItem(rolloverKey);
 
@@ -90,16 +87,16 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
         const grp = (acc.sub_group || acc.group || '').toLowerCase();
         const nLower = name.toLowerCase();
 
-        const isBalanceSheetAccount = 
-          type === 'ASSETS' || 
-          type === 'LIABILITIES' || 
-          grp.includes('asset') || 
-          grp.includes('liability') || 
-          grp.includes('capital') || 
-          grp.includes('creditor') || 
-          grp.includes('debtor') || 
+        const isBalanceSheetAccount =
+          type === 'ASSETS' ||
+          type === 'LIABILITIES' ||
+          grp.includes('asset') ||
+          grp.includes('liability') ||
+          grp.includes('capital') ||
+          grp.includes('creditor') ||
+          grp.includes('debtor') ||
           grp.includes('thekedar') ||
-          grp.includes('cash') || 
+          grp.includes('cash') ||
           grp.includes('bank') ||
           grp.includes('loan') ||
           nLower.includes('cash') ||
@@ -132,10 +129,6 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
     }
 
     localStorage.setItem(rolloverKey, 'true');
-
-    window.dispatchEvent(new Event('app_storage_updated'));
-    window.dispatchEvent(new Event('app_state_updated'));
-    window.dispatchEvent(new Event('storage'));
 
     return { success: true, message: `✓ FY ${cleanFY} balances successfully synced & rolled over!` };
   } catch (err) {
