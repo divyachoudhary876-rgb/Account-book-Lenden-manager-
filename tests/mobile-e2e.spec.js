@@ -205,7 +205,6 @@ async function clickPrimaryAction(page, isFirmSetup = false) {
       ];
 
   for (const selector of candidates) {
-    // Pick the last matching visible button (which belongs to the topmost active modal/view)
     const btn = page.locator(selector).last();
     if (await btn.isVisible().catch(() => false)) {
       await btn.scrollIntoViewIfNeeded().catch(() => {});
@@ -217,28 +216,28 @@ async function clickPrimaryAction(page, isFirmSetup = false) {
   return null;
 }
 
-async function closeModalOrReturnDashboard(page) {
+async function ensureBackOnDashboard(page) {
   const closeSelectors = [
     'button:visible:has-text("← Dashboard")',
     'button:visible:has-text("✕")',
     'button:visible:has-text("Close")',
-    'button:visible:has-text("Cancel")',
     'button:visible:has-text("Back")',
   ];
 
   for (const sel of closeSelectors) {
     const btn = page.locator(sel).last();
     if (await btn.isVisible().catch(() => false)) {
-      await btn.scrollIntoViewIfNeeded().catch(() => {});
       await btn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(700);
-      // Verify if dashboard modules are visible again
-      const isDashBack = await page.locator('text="All Accounting & ERP Modules"').isVisible().catch(() => false);
-      if (isDashBack) return;
+      await page.waitForTimeout(500);
     }
   }
-  await page.keyboard.press('Escape').catch(() => {});
-  await page.waitForTimeout(500);
+
+  // Check if dashboard modules are visible; if still stuck in a modal, reload to return cleanly to Dashboard
+  const isDashBack = await page.locator('text="All Accounting & ERP Modules"').isVisible().catch(() => false);
+  if (!isDashBack) {
+    await page.reload({ waitUntil: 'networkidle' }).catch(() => {});
+    await page.waitForTimeout(800);
+  }
 }
 
 async function inspectLayoutMetrics(page) {
@@ -288,7 +287,6 @@ async function inspectLayoutMetrics(page) {
 test('Professional business user E2E across all accounting modules & aspects', async ({ page }) => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  // Auto-accept any browser alert/confirm popups (like "Firm Created Successfully!")
   page.on('dialog', async (dialog) => {
     await dialog.accept().catch(() => {});
   });
@@ -402,7 +400,7 @@ test('Professional business user E2E across all accounting modules & aspects', a
       uiChanged: textAfter !== textBefore,
     });
 
-    await closeModalOrReturnDashboard(page);
+    await ensureBackOnDashboard(page);
   }
 
   // 5. Reload Persistence & Balance Check
