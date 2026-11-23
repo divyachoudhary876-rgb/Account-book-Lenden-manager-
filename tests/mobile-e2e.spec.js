@@ -70,6 +70,8 @@ async function fillFormSmartly(page, mode = 'transaction') {
         .toLowerCase();
     });
 
+    if (labelMeta.includes('search')) continue;
+
     if (type === 'date' || labelMeta.includes('date')) {
       await input.fill(BUSINESS_DATA.transaction.date);
       continue;
@@ -114,7 +116,7 @@ async function fillFormSmartly(page, mode = 'transaction') {
       continue;
     }
 
-    if (labelMeta.includes('address') || labelMeta.includes('location')) {
+    if (labelMeta.includes('address') || labelMeta.includes('location') || labelMeta.includes('shahar')) {
       await input.fill(BUSINESS_DATA.firm.address);
       continue;
     }
@@ -139,8 +141,8 @@ async function fillFormSmartly(page, mode = 'transaction') {
       continue;
     }
 
-    if (labelMeta.includes('party') || labelMeta.includes('customer') || labelMeta.includes('supplier') || labelMeta.includes('account')) {
-      await input.fill(BUSINESS_DATA.transaction.party);
+    if (labelMeta.includes('party') || labelMeta.includes('customer') || labelMeta.includes('supplier') || labelMeta.includes('account') || labelMeta.includes('khate')) {
+      await input.fill(mode === 'ledger' ? BUSINESS_DATA.ledger.name : BUSINESS_DATA.transaction.party);
       continue;
     }
 
@@ -190,6 +192,7 @@ async function fillFormSmartly(page, mode = 'transaction') {
 async function clickPrimaryAction(page) {
   const candidates = [
     'button:visible:has-text("Create Enterprise")',
+    'button:visible:has-text("Save & Create Account")',
     'button:visible:has-text("Save")',
     'button:visible:has-text("Submit")',
     'button:visible:has-text("Create")',
@@ -212,6 +215,9 @@ async function clickPrimaryAction(page) {
 
 async function closeModalOrReturnDashboard(page) {
   const closeSelectors = [
+    'button:visible:has-text("← Dashboard")',
+    'button:visible:has-text("Dashboard")',
+    'button:visible:has-text("✕")',
     'button:visible:has-text("Close")',
     'button:visible:has-text("Cancel")',
     'button:visible:has-text("Back")',
@@ -223,7 +229,7 @@ async function closeModalOrReturnDashboard(page) {
     const btn = page.locator(sel).first();
     if (await btn.isVisible().catch(() => false)) {
       await btn.click();
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(700);
       return;
     }
   }
