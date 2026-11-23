@@ -108,7 +108,13 @@ async function fillVisibleInputs(page, mode = 'transaction') {
       await inp.fill(BUSINESS_DATA.transaction.voucherNo).catch(() => {});
     } else if (meta.includes('item') || meta.includes('material')) {
       await inp.fill(BUSINESS_DATA.transaction.item).catch(() => {});
-    } else if (meta.includes('party') || meta.includes('customer') || meta.includes('supplier') || meta.includes('account') || meta.includes('khate')) {
+    } else if (
+      meta.includes('party') ||
+      meta.includes('customer') ||
+      meta.includes('supplier') ||
+      meta.includes('account') ||
+      meta.includes('khate')
+    ) {
       await inp.fill(mode === 'ledger' ? BUSINESS_DATA.ledger.name : BUSINESS_DATA.transaction.party).catch(() => {});
     } else if (meta.includes('narration') || meta.includes('remark') || meta.includes('note')) {
       await inp.fill(BUSINESS_DATA.transaction.narration).catch(() => {});
@@ -156,7 +162,7 @@ async function resetToDashboard(page) {
   await page.waitForTimeout(450);
 }
 
-test('Professional E2E & detect where Register New Business Enterprise / Firm opens unexpectedly', async ({ page }) => {
+test('Professional E2E & capture exact 404 URLs across all modules', async ({ page }) => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   page.on('dialog', async (dialog) => {
@@ -165,6 +171,7 @@ test('Professional E2E & detect where Register New Business Enterprise / Firm op
 
   const consoleErrors = [];
   const pageErrors = [];
+  const failedRequests = [];
   const moduleResults = [];
   let currentStep = '01-initial-load';
 
@@ -176,78 +183,23 @@ test('Professional E2E & detect where Register New Business Enterprise / Firm op
   page.on('pageerror', (err) => {
     pageErrors.push({ step: currentStep, message: err.message });
   });
+  page.on('response', (res) => {
+    if (res.status() >= 400) {
+      failedRequests.push({
+        step: currentStep,
+        status: res.status(),
+        url: res.url(),
+      });
+    }
+  });
+  page.on('requestfailed', (req) => {
+    failedRequests.push({
+      step: currentStep,
+      status: 'REQUEST_FAILED',
+      url: req.url(),
+      reason: req.failure()?.errorText || 'failed',
+    });
+  });
 
   // 1. Initial Load & Firm Setup
-  currentStep = '01-initial-load';
-  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: path.join(OUT_DIR, '01-initial-screen.png'), fullPage: true });
-
-  currentStep = '02-firm-setup';
-  await fillVisibleInputs(page, 'firm');
-  const firmSubmit = await submitCurrentFormIfAny(page, true);
-  await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUT_DIR, '02-dashboard-after-firm.png'), fullPage: true });
-
-  // 2. Test each module cleanly and check if Register New Firm opens unexpectedly
-  const modules = [
-    { step: 3, name: 'Account Head / Ledger', mode: 'ledger', text: 'Add Account Head' },
-    { step: 4, name: 'Sales / Tax Invoice', mode: 'transaction', text: 'Sales / Tax Invoice' },
-    { step: 5, name: 'Purchase & Inward Stock', mode: 'transaction', text: 'Purchase & Inward Stock' },
-    { step: 6, name: 'Voucher Entry', mode: 'transaction', text: 'Voucher Entry' },
-    { step: 7, name: 'Material Issue', mode: 'transaction', text: 'Material Issue' },
-    { step: 8, name: 'Production & Pakai', mode: 'transaction', text: 'Production & Pakai' },
-    { step: 9, name: 'Labour, Wages & Tractor', mode: 'transaction', text: 'Labour, Wages & Tractor' },
-    { step: 10, name: 'Bill Settlement', mode: 'transaction', text: 'Bill Settlement' },
-    { step: 11, name: 'Financial Reports', mode: 'transaction', text: 'Financial Reports' },
-  ];
-
-  for (const mod of modules) {
-    currentStep = `module:${mod.name}`;
-    const btn = page.locator(`button:visible:has-text("${mod.text}")`).first();
-    const found = await btn.isVisible().catch(() => false);
-    let clickedLabel = null;
-    let actionStatus = null;
-    let unexpectedRegisterFirmForm = false;
-
-    if (found) {
-      clickedLabel = sanitizeText(await btn.innerText().catch(() => mod.text));
-      await btn.scrollIntoViewIfNeeded().catch(() => {});
-      await btn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
-
-      unexpectedRegisterFirmForm = await page
-        .locator('text="Register New Business Enterprise / Firm"')
-        .isVisible()
-        .catch(() => false);
-
-      await fillVisibleInputs(page, mod.mode);
-      actionStatus = await submitCurrentFormIfAny(page, false);
-    }
-
-    const shotName = `${String(mod.step).padStart(2, '0')}-${mod.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 28)}.png`;
-    await page.screenshot({ path: path.join(OUT_DIR, shotName), fullPage: true });
-
-    moduleResults.push({
-      step: mod.step,
-      module: mod.name,
-      found,
-      clickedLabel,
-      unexpectedRegisterFirmForm,
-      actionStatus,
-    });
-
-    await resetToDashboard(page);
-  }
-
-  const report = {
-    url: APP_URL,
-    firmSubmit,
-    moduleResults,
-    consoleErrors,
-    pageErrors,
-  };
-
-  fs.writeFileSync(path.join(OUT_DIR, 'e2e-report.json'), JSON.stringify(report, null, 2));
-  expect(pageErrors).toEqual([]);
-});
+  currentStep = '0
