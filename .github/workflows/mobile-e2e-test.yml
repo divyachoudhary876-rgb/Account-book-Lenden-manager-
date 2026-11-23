@@ -1,0 +1,48 @@
+name: Mobile E2E Real-User Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: 'Live Vercel App URL'
+        required: true
+        default: 'https://account-book-lenden-manager.vercel.app'
+  push:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - 'tests/**'
+      - '.github/workflows/mobile-e2e-test.yml'
+
+jobs:
+  mobile-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright & Chromium
+        run: |
+          npm init -y
+          npm install -D @playwright/test
+          npx playwright install chromium --with-deps
+
+      - name: Run Mobile E2E Tests
+        env:
+          APP_URL: ${{ github.event.inputs.app_url || 'https://account-book-lenden-manager.vercel.app' }}
+        run: npx playwright test tests/mobile-e2e.spec.js --reporter=list
+
+      - name: Upload Screenshots & Error Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-report
+          path: test-results/
+          retention-days: 7
