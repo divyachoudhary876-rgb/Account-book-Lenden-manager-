@@ -28,11 +28,11 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Playwright & Chromium
+      - name: Install Playwright & Browsers
         run: |
           npm init -y
           npm install -D @playwright/test
-          npx playwright install chromium --with-deps
+          npx playwright install chromium webkit --with-deps
 
       - name: Run Mobile E2E Tests
         env:
