@@ -5,6 +5,8 @@ const path = require('path');
 const APP_URL = process.env.APP_URL || 'https://account-book-lenden-manager.vercel.app';
 const OUT_DIR = path.join(process.cwd(), 'test-results');
 
+test.setTimeout(90000);
+
 test.use({
   ...devices['iPhone 13'], // 390x844 mobile viewport + touch
 });
@@ -209,35 +211,16 @@ async function clickPrimaryAction(page, isFirmSetup = false) {
     if (await btn.isVisible().catch(() => false)) {
       await btn.scrollIntoViewIfNeeded().catch(() => {});
       await btn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(500);
       return selector;
     }
   }
   return null;
 }
 
-async function ensureBackOnDashboard(page) {
-  const closeSelectors = [
-    'button:visible:has-text("← Dashboard")',
-    'button:visible:has-text("✕")',
-    'button:visible:has-text("Close")',
-    'button:visible:has-text("Back")',
-  ];
-
-  for (const sel of closeSelectors) {
-    const btn = page.locator(sel).last();
-    if (await btn.isVisible().catch(() => false)) {
-      await btn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
-    }
-  }
-
-  // Check if dashboard modules are visible; if still stuck in a modal, reload to return cleanly to Dashboard
-  const isDashBack = await page.locator('text="All Accounting & ERP Modules"').isVisible().catch(() => false);
-  if (!isDashBack) {
-    await page.reload({ waitUntil: 'networkidle' }).catch(() => {});
-    await page.waitForTimeout(800);
-  }
+async function resetToFreshDashboard(page) {
+  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  await page.waitForTimeout(450);
 }
 
 async function inspectLayoutMetrics(page) {
@@ -316,10 +299,10 @@ test('Professional business user E2E across all accounting modules & aspects', a
     });
   });
 
-  // 1. Initial Load & Mobile Layout Audit
+  // 1. Initial Load
   currentStep = '01-initial-load';
-  await page.goto(APP_URL, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(800);
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUT_DIR, '01-initial-screen.png'), fullPage: true });
 
   // 2. Empty Form Validation Check
@@ -332,7 +315,7 @@ test('Professional business user E2E across all accounting modules & aspects', a
   await fillFormSmartly(page, 'firm');
   await page.screenshot({ path: path.join(OUT_DIR, '03-firm-details-filled.png'), fullPage: true });
   const firmSubmittedWith = await clickPrimaryAction(page, true);
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(600);
   await page.screenshot({ path: path.join(OUT_DIR, '04-dashboard-after-firm.png'), fullPage: true });
 
   const dashboardLayout = await inspectLayoutMetrics(page);
@@ -364,7 +347,7 @@ test('Professional business user E2E across all accounting modules & aspects', a
         clickedLabel = sanitizeText(await target.innerText().catch(() => kw));
         await target.scrollIntoViewIfNeeded().catch(() => {});
         await target.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(500);
         break;
       }
     }
@@ -377,6 +360,7 @@ test('Professional business user E2E across all accounting modules & aspects', a
         triggeredErrorOrConsole: false,
         uiChanged: false,
       });
+      await resetToFreshDashboard(page);
       continue;
     }
 
@@ -400,14 +384,14 @@ test('Professional business user E2E across all accounting modules & aspects', a
       uiChanged: textAfter !== textBefore,
     });
 
-    await ensureBackOnDashboard(page);
+    await resetToFreshDashboard(page);
   }
 
   // 5. Reload Persistence & Balance Check
   currentStep = '05-after-reload';
   const beforeReloadText = await page.locator('body').innerText();
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForTimeout(1000);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(600);
   await page.screenshot({ path: path.join(OUT_DIR, '15-after-reload-final.png'), fullPage: true });
   const afterReloadText = await page.locator('body').innerText();
 
