@@ -280,27 +280,40 @@ test('Professional business user E2E across all accounting modules & aspects', a
   const pageErrors = [];
   const failedRequests = [];
   const moduleResults = [];
+  let currentStep = '01-initial-load';
 
   page.on('console', (msg) => {
-    if (msg.type() === 'error') consoleErrors.push(msg.text());
+    if (msg.type() === 'error') {
+      consoleErrors.push({ step: currentStep, text: msg.text() });
+    }
   });
   page.on('pageerror', (err) => {
-    pageErrors.push(err.message);
+    pageErrors.push({
+      step: currentStep,
+      message: err.message,
+      stack: (err.stack || '').split('\n').slice(0, 6),
+    });
   });
   page.on('requestfailed', (req) => {
-    failedRequests.push(`${req.method()} ${req.url()} -> ${req.failure()?.errorText || 'failed'}`);
+    failedRequests.push({
+      step: currentStep,
+      entry: `${req.method()} ${req.url()} -> ${req.failure()?.errorText || 'failed'}`,
+    });
   });
 
   // 1. Initial Load & Mobile Layout Audit
+  currentStep = '01-initial-load';
   await page.goto(APP_URL, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
   await page.screenshot({ path: path.join(OUT_DIR, '01-initial-screen.png'), fullPage: true });
 
   // 2. Empty Form Validation Check (if form present)
+  currentStep = '02-empty-submit-validation';
   const initialAction = await clickPrimaryAction(page);
   await page.screenshot({ path: path.join(OUT_DIR, '02-empty-submit-validation.png'), fullPage: true });
 
   // 3. Professional Firm Setup
+  currentStep = '03-firm-setup';
   await fillFormSmartly(page, 'firm');
   await page.screenshot({ path: path.join(OUT_DIR, '03-firm-details-filled.png'), fullPage: true });
   const firmSubmittedWith = await clickPrimaryAction(page);
@@ -325,6 +338,10 @@ test('Professional business user E2E across all accounting modules & aspects', a
   let shotIndex = 5;
 
   for (const aspect of aspectsToTest) {
+    currentStep = `module:${aspect.name}`;
+    const errorsBefore = pageErrors.length + consoleErrors.length;
+    const textBefore = await page.locator('body').innerText().catch(() => '');
+
     let clickedLabel = null;
     for (const kw of aspect.keywords) {
       const target = page
@@ -344,12 +361,16 @@ test('Professional business user E2E across all accounting modules & aspects', a
         aspect: aspect.name,
         found: false,
         actionTriggered: null,
+        triggeredErrorOrConsole: false,
+        uiChanged: false,
       });
       continue;
     }
 
     await fillFormSmartly(page, aspect.mode);
     const actionUsed = await clickPrimaryAction(page);
+    const textAfter = await page.locator('body').innerText().catch(() => '');
+    const errorsAfter = pageErrors.length + consoleErrors.length;
 
     if (shotIndex <= 14) {
       const fileName = `${String(shotIndex).padStart(2, '0')}-${aspect.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 28)}.png`;
@@ -362,12 +383,15 @@ test('Professional business user E2E across all accounting modules & aspects', a
       found: true,
       clickedLabel,
       actionTriggered: actionUsed,
+      triggeredErrorOrConsole: errorsAfter > errorsBefore,
+      uiChanged: textAfter !== textBefore,
     });
 
     await closeModalOrReturnDashboard(page);
   }
 
   // 5. Reload Persistence & Balance Check
+  currentStep = '05-after-reload';
   const beforeReloadText = await page.locator('body').innerText();
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(1000);
@@ -394,5 +418,5 @@ test('Professional business user E2E across all accounting modules & aspects', a
 
   fs.writeFileSync(path.join(OUT_DIR, 'e2e-report.json'), JSON.stringify(report, null, 2));
 
-  expect(pageErrors, `Uncaught page errors: ${pageErrors.join(' | ')}`).toEqual([]);
+  expect(pageErrors, `Uncaught page errors: ${pageErrors.map((e) => e.message).join(' | ')}`).toEqual([]);
 });
