@@ -1,5 +1,3 @@
-// frontend/src/components/EnterpriseDashboard.jsx
-
 import React, { useState, useEffect } from 'react';
 import CashFlowStatementView from './CashFlowStatementView.jsx';
 import FinancialReportsView from './FinancialReportsView.jsx';
@@ -33,8 +31,8 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
   const [summaryStats, setSummaryStats] = useState({
     totalProduction: 0,
-    totalConsumption: 56,
-    consumptionCount: 56
+    totalConsumption: 0,
+    consumptionCount: 0
   });
 
   const loadDashboardData = () => {
@@ -48,7 +46,6 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         console.warn("dashboardDataEngine fallback triggered:", err);
       }
 
-      // Real-time stock valuation check
       const stockRaw = localStorage.getItem(`inventory_items_${firmId}`) || localStorage.getItem(`app_stock_${firmId}`) || '[]';
       const stockItems = JSON.parse(stockRaw);
 
@@ -60,11 +57,11 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
       stockItems.forEach(item => {
         const qty = parseFloat(item.current_stock || item.stock || 0);
         const rate = parseFloat(
-          item.unit_purchase_price || 
-          item.purchase_price || 
-          item.cost_price || 
-          item.unit_valuation || 
-          item.rate || 
+          item.unit_purchase_price ||
+          item.purchase_price ||
+          item.cost_price ||
+          item.unit_valuation ||
+          item.rate ||
           0
         );
         const iName = String(item.name || item.item_name || '').toLowerCase();
@@ -75,7 +72,7 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         if (iName.includes('coal') || iName.includes('fuel') || iName.includes('diesel')) fuelQty += qty;
       });
 
-      if (dynamicData && (dynamicData.cashAndBank !== 0 || dynamicData.receivables !== 0)) {
+      if (dynamicData && (dynamicData.cashAndBank !== 0 || dynamicData.receivables !== 0 || dynamicData.payables !== 0)) {
         setMetrics({
           ...dynamicData,
           totalStockValuation: round2(stockVal > 0 ? stockVal : dynamicData.totalStockValuation)
@@ -141,7 +138,6 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         });
       }
 
-      // Summary stats & consumption records count
       const prodKeys = [
         `production_batches_${firmId}`,
         `bhatta_production_${firmId}_${effectiveFY}`,
@@ -158,12 +154,13 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         } catch (e) {}
       }
 
-      const totalProd = prodData.reduce((sum, item) => 
+      const totalProd = prodData.reduce((sum, item) =>
         sum + (Number(item.produced_qty || item.producedQty || item.quantity || item.qty) || 0), 0
       );
 
       const consKeys = [
         `material_consumption_records_${firmId}`,
+        `material_consumptions_${firmId}`,
         `universal_material_adjustments_${firmId}`,
         `fuel_consumption_${firmId}_${effectiveFY}`
       ];
@@ -177,10 +174,9 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
       setSummaryStats({
         totalProduction: totalProd,
-        totalConsumption: consCount > 0 ? consCount : 56,
-        consumptionCount: consCount > 0 ? consCount : 56
+        totalConsumption: consCount,
+        consumptionCount: consCount
       });
-
     } catch (e) {
       console.error("Dashboard metrics calculation error:", e);
     }
@@ -190,11 +186,9 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
     loadDashboardData();
     window.addEventListener('app_state_updated', loadDashboardData);
     window.addEventListener('app_storage_updated', loadDashboardData);
-    window.addEventListener('storage', loadDashboardData);
     return () => {
       window.removeEventListener('app_state_updated', loadDashboardData);
       window.removeEventListener('app_storage_updated', loadDashboardData);
-      window.removeEventListener('storage', loadDashboardData);
     };
   }, [firmId, effectiveFY, firm]);
 
@@ -216,59 +210,38 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
 
   return (
     <div style={{ padding: '12px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: '850px', margin: '0 auto', boxSizing: 'border-box', color: '#0f172a' }}>
-      
-      {/* Header Banner */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', backgroundColor: '#ffffff', padding: '14px 16px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)' }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '10px', color: '#0284c7', fontWeight: '800', textTransform: 'uppercase' }}>
             Enterprise Smart Manager • FY {effectiveFY}
           </div>
-          <h2 style={{ margin: '2px 0 0 0', fontSize: '17px', fontWeight: '900', color: '#0f172a' }}>
+          <h2 style={{ margin: '2px 0 0 0', fontSize: '17px', fontWeight: '900', color: '#0f172a', wordBreak: 'break-word' }}>
             {firm?.legal_name || firm?.trade_name || firm?.name || 'Neelkanth Int Udyog'}
           </h2>
         </div>
         {onClose && (
-          <button onClick={onClose} style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}>
+          <button onClick={onClose} style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer', flexShrink: 0 }}>
             ✕ Close
           </button>
         )}
       </div>
 
-      {/* SECTION 1: INTERACTIVE CLICK-TO-PDF SUMMARY CARDS */}
       <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span>📈</span> Financial Position (वित्तीय स्थिति) — Click card to download PDF Report
       </div>
 
       <div style={{ marginBottom: '14px' }}>
-        <DashboardSummaryCards 
-          firm={firm} 
+        <DashboardSummaryCards
+          firm={firm}
           summaryData={{
             ...metrics,
             totalProduction: summaryStats.totalProduction,
             consumptionCount: summaryStats.consumptionCount
-          }} 
-          activeFY={effectiveFY} 
+          }}
+          activeFY={effectiveFY}
         />
       </div>
 
-      {/* SECTION 2: PRODUCTION & CONSUMPTION STATS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px', marginBottom: '14px' }}>
-        <div style={{ ...kpiCardStyle, backgroundColor: '#f0f9ff', borderColor: '#bae6fd' }}>
-          <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: '700', textTransform: 'uppercase' }}>🧱 Total Production Qty</div>
-          <div style={{ fontSize: '16px', fontWeight: '900', color: '#0284c7', marginTop: '4px' }}>
-            {summaryStats.totalProduction.toLocaleString('en-IN')} Units
-          </div>
-        </div>
-
-        <div style={{ ...kpiCardStyle, backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}>
-          <div style={{ fontSize: '10px', color: '#15803d', fontWeight: '700', textTransform: 'uppercase' }}>🚜 Consumption / Issue Records</div>
-          <div style={{ fontSize: '16px', fontWeight: '900', color: '#16a34a', marginTop: '4px' }}>
-            {summaryStats.totalConsumption} Records
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 3: INDUSTRY SPECIFIC CARDS */}
       {specCards.length > 0 && (
         <>
           <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -289,7 +262,6 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
         </>
       )}
 
-      {/* SECTION 4: QUICK OPERATIONS */}
       {specActions.length > 0 && (
         <>
           <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -297,8 +269,8 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', marginBottom: '16px' }}>
             {specActions.map((act) => (
-              <button 
-                key={act.key} 
+              <button
+                key={act.key}
                 onClick={() => {
                   if (act.key === 'sales') onNavigate && onNavigate('sales');
                   else if (act.key === 'purchase') onNavigate && onNavigate('purchase');
@@ -308,87 +280,99 @@ export default function EnterpriseDashboard({ firm, selectedFY, onNavigate, onCl
                 }}
                 style={{ backgroundColor: act.bg || '#0284c7', color: '#ffffff', border: 'none', padding: '10px 12px', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
               >
-                <span style={{ fontSize: '16px' }}>{act.icon}</span>
-                <span style={{ lineHeight: '1.2' }}>{act.label}</span>
+                <span style={{ fontSize: '16px', flexShrink: 0 }}>{act.icon}</span>
+                <span style={{ lineHeight: '1.2', wordBreak: 'break-word' }}>{act.label}</span>
               </button>
             ))}
           </div>
         </>
       )}
 
-      {/* SECTION 5: ALL ACCOUNTING & ERP MODULES */}
       <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span>🗂️</span> All Accounting & ERP Modules
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
-        
         <button onClick={() => onNavigate && onNavigate('add_account')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>➕</span> Add Account Head (नया खाता बनाएं)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>➕</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Add Account Head (नया खाता बनाएं)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('sales')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📄</span> Sales / Tax Invoice (बिक्री बिल)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📄</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Sales / Tax Invoice (बिक्री बिल)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('purchase')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📦</span> Purchase & Inward Stock (खरीद बिल)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📦</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Purchase & Inward Stock (खरीद बिल)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('vouchers')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📝</span> Voucher Entry (Payment / Receipt / JV)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📝</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Voucher Entry (Payment / Receipt / JV)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('material_adjustment')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📦</span> Material Issue & Adjustment (सामग्री निकासी व कटौती)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📦</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Material Issue & Adjustment (सामग्री निकासी व कटौती)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('production')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>🧱</span> Production & Pakai (ईंट पकाई व लागत)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>🧱</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Production & Pakai (ईंट पकाई व लागत)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('payroll')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>👷</span> Labour, Wages & Tractor (मजदूरी)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>👷</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Labour, Wages & Tractor (मजदूरी)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('settlement')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>⚖️</span> Bill Settlement / Khata Milan
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>⚖️</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Bill Settlement / Khata Milan</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('inventory')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📋</span> Inventory & Stock Register (स्टॉक)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📋</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Inventory & Stock Register (स्टॉक)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('milan')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📖</span> Account Milan & Ledger (खाता बही)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📖</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Account Milan & Ledger (खाता बही)</span>
         </button>
 
         <button onClick={() => setActiveView('JOURNAL_REGISTER')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📑</span> General Journal Register (रोज़नामचा)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📑</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>General Journal Register (रोज़नामचा)</span>
         </button>
 
         <button onClick={() => setActiveView('FINANCIAL_REPORTS')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📈</span> Financial Reports (P&L / Balance Sheet)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📈</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Financial Reports (P&L / Balance Sheet)</span>
         </button>
 
         <button onClick={() => setActiveView('CASH_FLOW')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>📊</span> Cash Flow Statement (नकदी प्रवाह विवरण)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>📊</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Cash Flow Statement (नकदी प्रवाह विवरण)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('firm_settings')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>⚙️</span> Firm Profile & Settings (फर्म विवरण)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>⚙️</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Firm Profile & Settings (फर्म विवरण)</span>
         </button>
 
         <button onClick={() => setActiveView('BACKUP_CENTER')} style={menuButtonStyle}>
-          <span style={{ fontSize: '15px' }}>🔒</span> Backup & Restore Center (डाटा बैकअप)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>🔒</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Backup & Restore Center (डाटा बैकअप)</span>
         </button>
 
         <button onClick={() => onNavigate && onNavigate('purge')} style={{ ...menuButtonStyle, backgroundColor: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>
-          <span style={{ fontSize: '15px' }}>🗑️</span> Factory Reset / Clear Data (डेटा रीसेट)
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>🗑️</span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>Factory Reset / Clear Data (डेटा रीसेट)</span>
         </button>
-
       </div>
-
     </div>
   );
 }
