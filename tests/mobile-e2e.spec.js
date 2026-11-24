@@ -52,7 +52,76 @@ const ACCOUNTANT_DATA = {
 };
 
 function sanitizeText(text = '') {
-  return text.replace(/\s+/g, ' ').trim();
+  return String(text).replace(/\s+/g, ' ').trim();
+}
+
+async function selectCustomDropdownOptionIfPresent(page, preferredText = '') {
+  // Custom dropdown triggers in SearchableAccountDropdown & SearchableStockDropdown
+  // show a downward/upward triangle indicator inside a clickable box.
+  const triggers = page.locator('div').filter({ hasText: /^[▼▲]$/ });
+  const triggerCount = await triggers.count();
+
+  for (let i = 0; i < triggerCount; i++) {
+    const arrow = triggers.nth(i);
+    if (!(await arrow.isVisible().catch(() => false))) continue;
+
+    const box = arrow.locator('..');
+    if (!(await box.isVisible().catch(() => false))) continue;
+
+    // Skip if already has a non-placeholder selection
+    const currentText = sanitizeText(await box.innerText().catch(() => ''));
+    if (currentText && !currentText.includes('--') && !currentText.startsWith('▼') && !currentText.startsWith('▲')) {
+      continue;
+    }
+
+    await box.scrollIntoViewIfNeeded().catch(() => {});
+    await box.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(250);
+
+    const searchBox = page.locator('input:visible').last();
+    if (preferredText && (await searchBox.isVisible().catch(() => false))) {
+      const ph = ((await searchBox.getAttribute('placeholder')) || '').toLowerCase();
+      if (ph.includes('search')) {
+        await searchBox.fill(preferredText).catch(() => {});
+        await page.waitForTimeout(200);
+      }
+    }
+
+    // Click first matching option row in floating dropdown
+    const optionRows = page.locator('div').filter({
+      has: page.locator('div'),
+    });
+    const rowCount = await optionRows.count();
+    let picked = false;
+
+    for (let r = 0; r < rowCount; r++) {
+      const candidate = optionRows.nth(r);
+      if (!(await candidate.isVisible().catch(() => false))) continue;
+      const txt = sanitizeText(await candidate.innerText().catch(() => ''));
+      if (
+        txt &&
+        txt.length < 90 &&
+        !txt.includes('Type name to search') &&
+        !txt.includes('Search item...') &&
+        !txt.includes('-- Clear Selection --') &&
+        !txt.includes('Koi khata nahi mila') &&
+        !txt.includes('Koi stock item uplabdh nahi hai') &&
+        !txt.includes('Select Account') &&
+        !txt.includes('Select Stock Item')
+      ) {
+        if (!preferredText || txt.toLowerCase().includes(preferredText.toLowerCase())) {
+          await candidate.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(200);
+          picked = true;
+          break;
+        }
+      }
+    }
+
+    if (!picked) {
+      await page.keyboard.press('Escape').catch(() => {});
+    }
+  }
 }
 
 async function fillSmartInputs(page, context = {}) {
@@ -61,6 +130,7 @@ async function fillSmartInputs(page, context = {}) {
     overrideName = null,
     overrideAmount = null,
     overrideNarration = null,
+    preferredDropdownText = '',
   } = context;
 
   const inputs = page.locator(
@@ -183,6 +253,25 @@ async function fillSmartInputs(page, context = {}) {
       }
     }
   }
+
+  if (mode !== 'firm') {
+    await selectCustomDropdownOptionIfPresent(page, preferredDropdownText);
+  }
+}
+
+async function addLineItemIfPresent(page) {
+  const addButtons = [
+    page.locator('button:visible:has-text("Add Item to Cart")').first(),
+    page.locator('button:visible:has-text("+ Add Item")').first(),
+  ];
+
+  for (const btn of addButtons) {
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.scrollIntoViewIfNeeded().catch(() => {});
+      await btn.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+  }
 }
 
 async function submitFormIfPresent(page, allowCreateFirm = false) {
@@ -195,8 +284,14 @@ async function submitFormIfPresent(page, allowCreateFirm = false) {
     return 'WRONG_MODAL_OPENED:Register New Business Enterprise / Firm';
   }
 
+  await addLineItemIfPresent(page);
+
   const submitBtn = page.locator('form button[type="submit"]:visible').last();
   if (await submitBtn.isVisible().catch(() => false)) {
+    const isDisabled = await submitBtn.isDisabled().catch(() => false);
+    if (isDisabled) {
+      return 'SUBMIT_DISABLED';
+    }
     await submitBtn.scrollIntoViewIfNeeded().catch(() => {});
     await submitBtn.click({ force: true }).catch(() => {});
     await page.waitForTimeout(550);
@@ -210,8 +305,15 @@ async function returnToDashboard(page) {
   await page.waitForTimeout(450);
 }
 
+async function openMenuIfNeeded(page) {
+  const menuBtn = page.locator('button:visible:has-text("Menu")').first();
+  if (await menuBtn.isVisible().catch(() => false)) {
+    await menuBtn.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(300);
+  }
+}
+
 async function openAndRunModule(page, stepInfo, consoleErrors, pageErrors, failedRequests) {
-  const stepTag = `step-${stepInfo.step}:${stepInfo.name}`;
   const errorsBefore = pageErrors.length + consoleErrors.length + failedRequests.length;
   const textBefore = await page.locator('body').innerText().catch(() => '');
 
@@ -221,7 +323,12 @@ async function openAndRunModule(page, stepInfo, consoleErrors, pageErrors, faile
   let unexpectedRegisterFirmForm = false;
 
   for (const kw of stepInfo.keywords || []) {
-    const btn = page.locator(`button:visible:has-text("${kw}")`).first();
+    let btn = page.locator(`button:visible:has-text("${kw}")`).first();
+    if (!(await btn.isVisible().catch(() => false))) {
+      await openMenuIfNeeded(page);
+      btn = page.locator(`button:visible:has-text("${kw}")`).first();
+    }
+
     if (await btn.isVisible().catch(() => false)) {
       found = true;
       clickedLabel = sanitizeText(await btn.innerText().catch(() => kw));
@@ -244,6 +351,7 @@ async function openAndRunModule(page, stepInfo, consoleErrors, pageErrors, faile
         overrideName: stepInfo.overrideName || null,
         overrideAmount: stepInfo.overrideAmount || null,
         overrideNarration: stepInfo.overrideNarration || null,
+        preferredDropdownText: stepInfo.preferredDropdownText || '',
       });
       submitStatus = await submitFormIfPresent(page, false);
     } else {
@@ -276,7 +384,7 @@ async function openAndRunModule(page, stepInfo, consoleErrors, pageErrors, faile
     await returnToDashboard(page);
   }
 
-  return { result, stepTag };
+  return { result };
 }
 
 test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', async ({ page }) => {
@@ -339,7 +447,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: ACCOUNTANT_DATA.ledgers[0].name,
       overrideAmount: ACCOUNTANT_DATA.ledgers[0].openingBalance,
       overrideNarration: 'Debtor opening balance entry by accountant',
-      keywords: ['Add Account Head'],
+      keywords: ['Add Account Head', 'naye account', 'account'],
     },
     {
       step: 4,
@@ -349,7 +457,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: ACCOUNTANT_DATA.ledgers[1].name,
       overrideAmount: ACCOUNTANT_DATA.ledgers[1].openingBalance,
       overrideNarration: 'Creditor opening balance entry by accountant',
-      keywords: ['Add Account Head'],
+      keywords: ['Add Account Head', 'naye account', 'account'],
     },
     {
       step: 5,
@@ -359,7 +467,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: ACCOUNTANT_DATA.entries.supplier,
       overrideAmount: ACCOUNTANT_DATA.entries.amount,
       overrideNarration: 'Fuel & raw material inward bill entry',
-      keywords: ['Purchase & Inward Stock', 'Fuel & Raw Purchases'],
+      keywords: ['Purchase & Inward Stock', 'Fuel & Raw Purchases', 'Purchase'],
     },
     {
       step: 6,
@@ -369,7 +477,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: ACCOUNTANT_DATA.entries.party,
       overrideAmount: ACCOUNTANT_DATA.entries.amount,
       overrideNarration: 'Sales tax invoice entry by accountant',
-      keywords: ['Sales / Tax Invoice', 'Brick Dispatch / Sales'],
+      keywords: ['Sales / Tax Invoice', 'Brick Dispatch / Sales', 'Sales'],
     },
     {
       step: 7,
@@ -379,7 +487,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: ACCOUNTANT_DATA.entries.party,
       overrideAmount: ACCOUNTANT_DATA.entries.receiptAmount,
       overrideNarration: 'Accounting voucher entry by accountant',
-      keywords: ['Voucher Entry'],
+      keywords: ['Voucher Entry', 'Voucher'],
     },
     {
       step: 8,
@@ -389,7 +497,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: ACCOUNTANT_DATA.entries.item,
       overrideAmount: '200',
       overrideNarration: 'Material issue & stock adjustment entry',
-      keywords: ['Material Issue'],
+      keywords: ['Material Issue', 'Adjustment'],
     },
     {
       step: 9,
@@ -399,7 +507,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: 'Kiln Batch #01',
       overrideAmount: '10000',
       overrideNarration: 'Production & pakai entry by accountant',
-      keywords: ['Production & Pakai', 'Bhatta Production Entry'],
+      keywords: ['Production & Pakai', 'Bhatta Production Entry', 'Production'],
     },
     {
       step: 10,
@@ -409,7 +517,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: 'Ramesh Kumar Pathai Thekedar',
       overrideAmount: ACCOUNTANT_DATA.entries.wagesAmount,
       overrideNarration: 'Labour wages & tractor entry by accountant',
-      keywords: ['Labour, Wages & Tractor'],
+      keywords: ['Labour, Wages & Tractor', 'Wages', 'Payroll'],
     },
     {
       step: 11,
@@ -419,7 +527,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       overrideName: ACCOUNTANT_DATA.entries.party,
       overrideAmount: ACCOUNTANT_DATA.entries.receiptAmount,
       overrideNarration: 'Bill settlement & khata milan entry',
-      keywords: ['Bill Settlement'],
+      keywords: ['Bill Settlement', 'Settlement'],
     },
     {
       step: 12,
@@ -427,7 +535,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       name: 'Account Milan & Ledger',
       mode: 'transaction',
       readOnly: true,
-      keywords: ['Account Milan & Ledger', 'Customer/Labour Milan'],
+      keywords: ['Account Milan & Ledger', 'Customer/Labour Milan', 'Milan'],
     },
     {
       step: 13,
@@ -435,7 +543,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       name: 'Inventory & Stock Register',
       mode: 'transaction',
       readOnly: true,
-      keywords: ['Inventory & Stock Register'],
+      keywords: ['Inventory & Stock Register', 'Stock Register', 'Inventory'],
     },
     {
       step: 14,
@@ -443,7 +551,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
       name: 'Financial Reports (P&L / BS)',
       mode: 'transaction',
       readOnly: true,
-      keywords: ['Financial Reports'],
+      keywords: ['Financial Reports', 'Reports'],
     },
   ];
 
@@ -467,7 +575,11 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
     totalAspectsTested: auditResults.length,
     foundCount: auditResults.filter((r) => r.found).length,
     submittedCount: auditResults.filter(
-      (r) => r.submitStatus && r.submitStatus !== 'READ_ONLY_VIEW_INSPECTED' && !String(r.submitStatus).startsWith('WRONG_MODAL')
+      (r) =>
+        r.submitStatus &&
+        r.submitStatus !== 'READ_ONLY_VIEW_INSPECTED' &&
+        r.submitStatus !== 'SUBMIT_DISABLED' &&
+        !String(r.submitStatus).startsWith('WRONG_MODAL')
     ).length,
     persistedFirmName: bodyAfterReload.includes('Neelkanth Int Udyog'),
     auditResults,
