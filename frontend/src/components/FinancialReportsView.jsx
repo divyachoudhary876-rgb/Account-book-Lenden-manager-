@@ -134,7 +134,9 @@ export default function FinancialReportsView({ firm, onClose }) {
     });
 
     const netProfit = Number(reportData.balanceSheet?.netProfit || 0);
-    const totalAssets = round2(assets.reduce((s, a) => s + a.amount, 0));
+    const totalAssets = round2(
+      assets.reduce((s, a) => s + a.amount, 0) + (netProfit < 0 ? Math.abs(netProfit) : 0)
+    );
     const totalLiabilitiesAndEquity = round2(
       liabilities.reduce((s, l) => s + l.amount, 0) + (netProfit > 0 ? netProfit : 0)
     );
@@ -227,7 +229,8 @@ export default function FinancialReportsView({ firm, onClose }) {
           <h3 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>व्यापार खाता (Trading Account)</h3>
           <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div>Total Sales (बिक्री): <strong>₹{reportData.tradingAccount.sales.toFixed(2)}</strong></div>
-            <div>Purchases & Direct Expenses: <strong>₹{reportData.tradingAccount.purchases.toFixed(2)}</strong></div>
+            <div>Purchases (खरीद): <strong>₹{reportData.tradingAccount.purchases.toFixed(2)}</strong></div>
+            <div>Direct Expenses (प्रत्यक्ष खर्च): <strong>₹{reportData.tradingAccount.directExpenses.toFixed(2)}</strong></div>
             <div>Closing Stock Valuation: <strong>₹{reportData.tradingAccount.closingStock.toFixed(2)}</strong></div>
             <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f0fdf4', borderRadius: '8px', color: '#166534', fontWeight: 'bold' }}>
               Gross Profit: ₹{reportData.tradingAccount.grossProfit.toFixed(2)}
@@ -268,12 +271,12 @@ export default function FinancialReportsView({ firm, onClose }) {
                   </div>
                 ))
               )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', marginTop: '6px', borderTop: '1px solid #cbd5e1', fontWeight: 'bold' }}>
-                <span>Net Profit / Loss (P&L)</span>
-                <span style={{ color: balanceSheetBreakdown.netProfit >= 0 ? '#059669' : '#dc2626' }}>
-                  ₹{balanceSheetBreakdown.netProfit.toFixed(2)}
-                </span>
-              </div>
+              {balanceSheetBreakdown.netProfit >= 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', marginTop: '6px', borderTop: '1px solid #cbd5e1', fontWeight: 'bold' }}>
+                  <span>Net Profit (P&L)</span>
+                  <span style={{ color: '#059669' }}>₹{balanceSheetBreakdown.netProfit.toFixed(2)}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', fontWeight: '900', color: '#0f172a' }}>
                 <span>Total Liabilities Side</span>
                 <span>₹{balanceSheetBreakdown.totalLiabilitiesAndEquity.toFixed(2)}</span>
@@ -291,6 +294,12 @@ export default function FinancialReportsView({ firm, onClose }) {
                     <strong>₹{a.amount.toFixed(2)}</strong>
                   </div>
                 ))
+              )}
+              {balanceSheetBreakdown.netProfit < 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', marginTop: '6px', borderTop: '1px solid #cbd5e1', fontWeight: 'bold' }}>
+                  <span>Net Loss (P&L)</span>
+                  <span style={{ color: '#dc2626' }}>₹{Math.abs(balanceSheetBreakdown.netProfit).toFixed(2)}</span>
+                </div>
               )}
               <div style={{ marginTop: '8px', fontSize: '11px', color: '#64748b' }}>
                 Closing Stock Valuation (Ref): <strong>₹{Number(reportData.balanceSheet?.closingStock || 0).toFixed(2)}</strong>
