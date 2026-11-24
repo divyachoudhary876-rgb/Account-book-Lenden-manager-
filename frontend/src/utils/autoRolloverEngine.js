@@ -1,7 +1,11 @@
 import { StorageService } from './storageSync';
-import { getFirmMasterAccounts } from './accountMasterEngine.js';
+import { getFirmMasterAccounts, normalizeAccountNameMatch } from './accountMasterEngine.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+const canonicalAccountKey = (name = '') => {
+  return String(name).replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+};
 
 export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '2026-27') => {
   const activeFirmId = String(firmId || 'FIRM-001').trim();
@@ -33,6 +37,12 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
 
     const accountNetBalances = {};
 
+    const addAccountDelta = (accName, delta) => {
+      const key = canonicalAccountKey(accName);
+      if (!key) return;
+      accountNetBalances[key] = round2((accountNetBalances[key] || 0) + delta);
+    };
+
     rawTx.forEach(vch => {
       if (!vch) return;
       const vFirm = String(vch.firm_id || vch.firmId || '').trim();
@@ -45,11 +55,8 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
           const expName = String(vch.expense_ledger).trim();
           const amt = Number(vch.total_amount || 0);
 
-          if (!accountNetBalances[wName]) accountNetBalances[wName] = 0;
-          if (!accountNetBalances[expName]) accountNetBalances[expName] = 0;
-
-          accountNetBalances[expName] += amt;
-          accountNetBalances[wName] -= amt;
+          addAccountDelta(expName, amt);
+          addAccountDelta(wName, -amt);
           return;
         }
 
@@ -57,24 +64,20 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
           vch.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
             if (!accName) return;
-            if (!accountNetBalances[accName]) accountNetBalances[accName] = 0;
 
             const dr = Number(e.debit || (e.type === 'DR' || e.type === 'Dr' ? e.amount : 0) || 0);
             const cr = Number(e.credit || (e.type === 'CR' || e.type === 'Cr' ? e.amount : 0) || 0);
 
-            if (dr > 0) accountNetBalances[accName] += dr;
-            if (cr > 0) accountNetBalances[accName] -= cr;
+            if (dr > 0) addAccountDelta(accName, dr);
+            if (cr > 0) addAccountDelta(accName, -cr);
           });
         } else if (vch.dr_account && vch.cr_account && (vch.amount || vch.total_amount)) {
           const drName = String(vch.dr_account).trim();
           const crName = String(vch.cr_account).trim();
           const amt = Number(vch.amount || vch.total_amount || 0);
 
-          if (!accountNetBalances[drName]) accountNetBalances[drName] = 0;
-          if (!accountNetBalances[crName]) accountNetBalances[crName] = 0;
-
-          accountNetBalances[drName] += amt;
-          accountNetBalances[crName] -= amt;
+          addAccountDelta(drName, amt);
+          addAccountDelta(crName, -amt);
         }
       }
     });
@@ -111,7 +114,9 @@ export const performFinancialYearRollover = (firmId = 'FIRM-001', selectedFY = '
         const isDebitInitial = (acc.balance_type || acc.balanceType || 'Dr') === 'Dr';
         const initialNet = isDebitInitial ? currentOpening : -currentOpening;
 
-        const txNet = accountNetBalances[name] !== undefined ? accountNetBalances[name] : 0;
+        const key = canonicalAccountKey(name);
+        const matchedKey = Object.keys(accountNetBalances).find(k => k === key || normalizeAccountNameMatch(k, key));
+        const txNet = matchedKey !== undefined ? accountNetBalances[matchedKey] : 0;
         const finalNet = round2(initialNet + txNet);
 
         return {
