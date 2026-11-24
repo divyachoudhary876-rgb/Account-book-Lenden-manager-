@@ -13,13 +13,22 @@ class DayBookScreen extends StatelessWidget {
       ),
       body: ListView(
         padding: const EdgeInsets.all(12),
-        children: [
+        children: const [
           Card(
-            color: const Color(0xFF1E293B),
-            child: const ListTile(
-              title: Text('By Cash Account (Dr.)', style: TextStyle(color: Colors.emeraldAccent, fontWeight: FontWeight.bold)),
-              subtitle: Text('To Sales Account (Cr.)\nVoucher: V-1001', style: TextStyle(color: Colors.grey)),
-              trailing: Text('₹15,000.00', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            color: Color(0xFF1E293B),
+            child: ListTile(
+              title: Text(
+                'By Cash Account (Dr.)',
+                style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                'To Sales Account (Cr.)\nVoucher: V-1001',
+                style: TextStyle(color: Colors.grey),
+              ),
+              trailing: Text(
+                '₹15,000.00',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
             ),
           ),
         ],
