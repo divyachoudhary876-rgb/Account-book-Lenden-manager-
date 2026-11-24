@@ -8,18 +8,18 @@ class VoucherEntryScreen extends StatefulWidget {
 }
 
 class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
-  final List<Map<String, dynamic>> _entries = [
+  final List> _entries = [
     {'type': 'DEBIT', 'account': '', 'amount': 0.0},
     {'type': 'CREDIT', 'account': '', 'amount': 0.0},
   ];
 
   double get _totalDebit => _entries
       .where((e) => e['type'] == 'DEBIT')
-      .fold(0.0, (sum, e) => sum + (e['amount'] ?? 0.0));
+      .fold(0.0, (sum, e) => sum + ((e['amount'] as double?) ?? 0.0));
 
   double get _totalCredit => _entries
       .where((e) => e['type'] == 'CREDIT')
-      .fold(0.0, (sum, e) => sum + (e['amount'] ?? 0.0));
+      .fold(0.0, (sum, e) => sum + ((e['amount'] as double?) ?? 0.0));
 
   bool get _isBalanced => (_totalDebit - _totalCredit).abs() < 0.001 && _totalDebit > 0;
 
@@ -48,11 +48,15 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    _isBalanced ? '✓ Journal Balanced' : '⚠ Difference: ₹${(_totalDebit - _totalCredit).abs().toStringAsFixed(2)}',
+                    _isBalanced
+                        ? '✓ Journal Balanced'
+                        : '⚠ Difference: ₹${(_totalDebit - _totalCredit).abs().toStringAsFixed(2)}',
                     style: TextStyle(color: _isBalanced ? emeraldColor : Colors.amberAccent, fontWeight: FontWeight.bold),
                   ),
-                  Text('Dr: ₹${_totalDebit.toStringAsFixed(2)} | Cr: ₹${_totalCredit.toStringAsFixed(2)}',
-                      style: const TextStyle(color: Colors.white, fontFamily: 'monospace')),
+                  Text(
+                    'Dr: ₹${_totalDebit.toStringAsFixed(2)} | Cr: ₹${_totalCredit.toStringAsFixed(2)}',
+                    style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+                  ),
                 ],
               ),
             ),
@@ -68,7 +72,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                       child: Row(
                         children: [
                           DropdownButton<String>(
-                            value: _entries[index]['type'],
+                            value: _entries[index]['type'] as String,
                             dropdownColor: const Color(0xFF0F172A),
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                             items: const [
@@ -76,7 +80,9 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                               DropdownMenuItem(value: 'CREDIT', child: Text('To (Cr.)')),
                             ],
                             onChanged: (val) {
-                              setState(() => _entries[index]['type'] = val);
+                              if (val != null) {
+                                setState(() => _entries[index]['type'] = val);
+                              }
                             },
                           ),
                           const SizedBox(width: 8),
@@ -87,7 +93,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                                 hintText: 'Account ID/Name',
                                 hintStyle: TextStyle(color: Colors.grey),
                               ),
-                              onChanged: (val) => _entries[index]['account'] = val,
+                              onChanged: (val) => _entries[index]['account'] = val.trim(),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -115,7 +121,13 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: _isBalanced ? () {} : null,
+              onPressed: _isBalanced
+                  ? () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Journal Voucher validated & ready for posting.')),
+                      );
+                    }
+                  : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: emeraldColor,
                 minimumSize: const Size.fromHeight(48),
