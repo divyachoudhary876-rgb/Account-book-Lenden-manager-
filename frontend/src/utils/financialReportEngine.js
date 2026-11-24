@@ -1,7 +1,4 @@
-// frontend/src/utils/financialReportEngine.js
-
 import { getFirmMasterAccounts } from './accountMasterEngine.js';
-import { StorageService } from './storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
@@ -18,7 +15,7 @@ const getFYDateRange = (fyString = '2026-27') => {
       let endYear = startYear + 1;
       if (startYear < 100) startYear += 2000;
       if (endYear < 100) endYear += 2000;
-      
+
       return {
         startDate: `${startYear}-04-01`,
         endDate: `${endYear}-03-31`,
@@ -46,12 +43,9 @@ export const getSafeAccounts = (firmId = 'FIRM-001', selectedFY = '2026-27') => 
   return [];
 };
 
-/**
- * Strict Non-Duplicate Voucher Fetcher for Financial Reports
- */
 const getUniqueFirmVouchersForReports = (activeFirmId = 'FIRM-001') => {
   let rawTx = [];
-  
+
   const primaryKeys = [
     `app_vouchers_${activeFirmId}`,
     `account_book_vouchers_${activeFirmId}`,
@@ -83,9 +77,9 @@ const getUniqueFirmVouchersForReports = (activeFirmId = 'FIRM-001') => {
     const txFirm = String(tx.firm_id || tx.firmId || '').trim();
     if (txFirm && txFirm !== activeFirmId && txFirm !== 'FIRM-001' && activeFirmId !== 'FIRM-001') return;
 
-    const uId = String(tx.id || tx.voucher_number || tx.reference_no || '').trim() || 
-                `${tx.voucher_date || tx.date || ''}-${tx.amount || tx.total_amount || 0}-${tx.dr_account || ''}-${tx.cr_account || ''}`;
-    
+    const uId = String(tx.id || tx.voucher_number || tx.reference_no || '').trim() ||
+      `${tx.voucher_date || tx.date || ''}-${tx.amount || tx.total_amount || 0}-${tx.dr_account || ''}-${tx.cr_account || ''}`;
+
     if (!uniqueMap.has(uId)) {
       uniqueMap.set(uId, tx);
     }
@@ -94,9 +88,6 @@ const getUniqueFirmVouchersForReports = (activeFirmId = 'FIRM-001') => {
   return Array.from(uniqueMap.values());
 };
 
-/**
- * Comprehensive Ledger Lines Normalizer with Strict Deduplication
- */
 export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026-27') => {
   const { startDate, endDate } = getFYDateRange(selectedFY);
   const activeFirmId = String(firmId || 'FIRM-001').trim();
@@ -104,7 +95,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
   const uniqueVouchers = getUniqueFirmVouchersForReports(activeFirmId);
   const flatLines = [];
 
-  // 1. Ingest Payroll / Wages records safely
   const payrollKeys = [`payroll_records_${activeFirmId}`, `worker_wages_${activeFirmId}`, `worker_ledgers_${activeFirmId}`];
   payrollKeys.forEach(pk => {
     try {
@@ -117,7 +107,7 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
           const pAmt = parseFloat(p.amount || p.total_amount || p.kul_amount || p.earned || 0);
           const workerName = String(p.worker_name || p.worker || p.party || 'Labour Wages').trim();
           const expenseAcc = String(p.expense_account || p.category || 'Pathai & Labour Expenses').trim();
-          
+
           if (pAmt > 0 && workerName && expenseAcc) {
             flatLines.push({ voucher_id: p.id, date: pDate, voucher_number: 'WAGE', voucher_type: 'PAYROLL', account_name: expenseAcc, entry_type: 'Dr', amount: pAmt, narration: 'Wages' });
             flatLines.push({ voucher_id: p.id, date: pDate, voucher_number: 'WAGE', voucher_type: 'PAYROLL', account_name: workerName, entry_type: 'Cr', amount: pAmt, narration: 'Wages' });
@@ -127,7 +117,6 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
     } catch (e) {}
   });
 
-  // 2. Ingest Material Consumption Records safely
   const consumptionKeys = [`material_consumption_records_${activeFirmId}`, `universal_material_adjustments_${activeFirmId}`];
   consumptionKeys.forEach(ck => {
     try {
@@ -173,8 +162,7 @@ export const getNormalizedLedgerLines = (firmId = 'FIRM-001', selectedFY = '2026
           }
         }
       });
-    } 
-    else if ((vch.dr_account || vch.debit_account) && (vch.cr_account || vch.credit_account) && (vch.amount || vch.total_amount || vch.grand_total)) {
+    } else if ((vch.dr_account || vch.debit_account) && (vch.cr_account || vch.credit_account) && (vch.amount || vch.total_amount || vch.grand_total)) {
       const amt = parseFloat(vch.amount || vch.total_amount || vch.grand_total || 0);
       const drAcc = String(vch.dr_account || vch.debit_account || '').trim();
       const crAcc = String(vch.cr_account || vch.credit_account || '').trim();
@@ -217,7 +205,7 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
   flatLines.forEach((line) => {
     const rawName = line.account_name.trim();
     const normKey = normalizeKey(rawName);
-    
+
     let targetName = canonicalMap[normKey];
     if (!targetName) {
       targetName = rawName;
@@ -250,7 +238,6 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
     const totalCr = round2(acc.credit);
     const net = round2(totalDr - totalCr);
 
-    // STRICT RULE: Exclude zero-balance accounts
     if (Math.abs(net) > 0.01 || Math.abs(totalDr) > 0.01 || Math.abs(totalCr) > 0.01) {
       let finalDr = 0;
       let finalCr = 0;
@@ -297,9 +284,11 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
     if (type === 'INCOME') {
       if (group.includes('direct') || name.includes('sale') || name.includes('revenue')) salesTotal += row.credit;
       else indirectIncomes += row.credit;
-    } else if (type === 'EXPENSES') {
-      if (group.includes('direct') || name.includes('purchase') || name.includes('raw') || name.includes('pathai') || name.includes('diesel') || name.includes('labour') || name.includes('wages')) {
+    } else if (type === 'EXPENSES' || type === 'EXPENSE') {
+      if (name.includes('purchase') || name.includes('raw')) {
         purchasesTotal += row.debit;
+      } else if (group.includes('direct') || name.includes('pathai') || name.includes('diesel') || name.includes('labour') || name.includes('wages')) {
+        directExpenses += row.debit;
       } else {
         indirectExpenses += row.debit;
       }
@@ -314,11 +303,11 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
       if (!stk.is_service && stk.item_type !== 'SERVICE') {
         const qty = parseFloat(stk.current_stock || stk.stock || stk.qty || 0);
         const rate = parseFloat(
-          stk.unit_purchase_price || 
-          stk.purchase_price || 
-          stk.cost_price || 
-          stk.unit_valuation || 
-          stk.rate || 
+          stk.unit_purchase_price ||
+          stk.purchase_price ||
+          stk.cost_price ||
+          stk.unit_valuation ||
+          stk.rate ||
           0
         );
         if (qty > 0 && rate > 0) closingStockValuation += (qty * rate);
@@ -332,7 +321,13 @@ export const generateFinancialStatements = (firmId = 'FIRM-001', selectedFY = '2
 
   return {
     trialBalance: { rows: trialBalances, totalDebit, totalCredit, difference, isBalanced },
-    tradingAccount: { sales: round2(salesTotal), purchases: round2(purchasesTotal), directExpenses: round2(directExpenses), closingStock: closingStockValuation, grossProfit },
+    tradingAccount: {
+      sales: round2(salesTotal),
+      purchases: round2(purchasesTotal),
+      directExpenses: round2(directExpenses),
+      closingStock: closingStockValuation,
+      grossProfit
+    },
     profitAndLoss: { grossProfit, indirectIncomes: round2(indirectIncomes), indirectExpenses: round2(indirectExpenses), netProfit },
     balanceSheet: { netProfit, closingStock: closingStockValuation }
   };
