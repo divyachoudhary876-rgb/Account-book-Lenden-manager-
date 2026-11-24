@@ -1,8 +1,3 @@
-/**
- * Frontend Utility: Stock Inventory Engine
- * Single Source of Truth for Real-Time Item Stock Calculation, 100% Unified with PDF Statement Logic.
- */
-
 import { StorageService } from './storageSync';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
@@ -15,9 +10,6 @@ const normalizeItemName = (name) => {
     .trim();
 };
 
-/**
- * Computes precise real-time stock perfectly synchronized with inventory ledger statement reports
- */
 export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   const cleanFirmId = firmId || StorageService.getActiveFirmId() || 'FIRM-001';
   const targetRaw = String(itemName || '').trim();
@@ -27,7 +19,6 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
   if (!targetNorm && !cleanTargetId) return 0;
 
   try {
-    // 1. Gather Unique Purchase Bills (Inward Stock +) with Deduplication
     const purchaseKeys = [`purchase_bills_${cleanFirmId}`, 'purchase_bills', `app_purchase_bills_${cleanFirmId}`];
     const uniquePurchasesMap = new Map();
     purchaseKeys.forEach(k => {
@@ -42,7 +33,6 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
       }
     });
 
-    // 2. Gather Unique Sales Invoices (Outward Stock -)
     const salesKeys = [`sales_invoices_${cleanFirmId}`, `app_invoices_${cleanFirmId}`, 'sales_invoices', 'app_invoices'];
     const uniqueSalesMap = new Map();
     salesKeys.forEach(k => {
@@ -57,7 +47,6 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
       }
     });
 
-    // 3. Gather Unique Material Consumptions / Adjustments (Outward Stock -)
     const adjustmentKeys = [
       `material_consumption_records_${cleanFirmId}`,
       `universal_material_adjustments_${cleanFirmId}`,
@@ -89,7 +78,6 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
       return dbNorm === targetNorm || dbNorm.includes(targetNorm) || targetNorm.includes(dbNorm);
     };
 
-    // Calculate Inward from Purchases (+)
     uniquePurchasesMap.forEach(p => {
       if (!p) return;
       let matchedQty = 0;
@@ -112,7 +100,6 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
       totalInward += matchedQty;
     });
 
-    // Calculate Outward from Sales (-)
     uniqueSalesMap.forEach(s => {
       if (!s) return;
       if (Array.isArray(s.items) && s.items.length > 0) {
@@ -128,7 +115,6 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
       }
     });
 
-    // Calculate Outward from Adjustments (-)
     uniqueAdjustmentsMap.forEach(a => {
       if (!a) return;
       const aId = String(a.stock_id || a.itemId || a.item_id || '').trim();
@@ -139,22 +125,19 @@ export const getFirmItemStock = (firmId, itemName, itemId = null) => {
       }
     });
 
-    return round2(Math.max(0, totalInward - totalOutward));
+    return round2(totalInward - totalOutward);
   } catch (err) {
     console.error('[stockInventoryEngine] Error computing item stock:', err);
     return 0;
   }
 };
 
-/**
- * Returns all stock items associated with a firm along with their reconciled live stock balances
- */
 export const getStockItemsByFirm = (firmId) => {
   const cleanFirmId = firmId || StorageService.getActiveFirmId() || 'FIRM-001';
   try {
     const inventoryKey = `inventory_items_${cleanFirmId}`;
     let items = StorageService.getItem(inventoryKey, []) || JSON.parse(localStorage.getItem(inventoryKey) || '[]');
-    
+
     if (!Array.isArray(items) || items.length === 0) {
       items = [
         { id: 'DEF-DIESEL', name: 'Diesel', item_name: 'Diesel', unit: 'Liters', unit_purchase_price: 96.06 },
