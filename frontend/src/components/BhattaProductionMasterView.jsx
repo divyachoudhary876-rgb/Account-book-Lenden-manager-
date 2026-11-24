@@ -1,9 +1,7 @@
-// frontend/src/components/BhattaProductionMasterView.jsx
-
 import React, { useState, useEffect } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getCurrentActiveFY } from '../utils/financialYearLockEngine';
-import { saveUniversalVoucher } from '../utils/voucherPostingEngine';
+import { saveUniversalVoucher, deleteUniversalVoucher } from '../utils/voucherPostingEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine';
 import SearchableStockDropdown from './SearchableStockDropdown';
 import BhattaCostAuditView from './BhattaCostAuditView';
@@ -19,15 +17,50 @@ const STANDARD_BRICK_GRADES = [
   { key: 'TUKDA', name: 'Tukda / Rodi (रोड़ा / खंडा)', unit: 'Trolley', costFactor: 0.35 }
 ];
 
+const revertBatchInventoryChanges = (batchObj, inventoryList) => {
+  if (!batchObj || !Array.isArray(inventoryList)) return inventoryList || [];
+
+  return inventoryList.map(inv => {
+    const invId = String(inv.id);
+    const invName = String(inv.name || inv.item_name || '').trim().toLowerCase();
+    let curStock = Number(inv.current_stock || inv.stock || inv.qty || 0);
+
+    const oldConsumed = (batchObj.consumed_materials || []).find(
+      m => String(m.itemId) === invId || (m.name && String(m.name).trim().toLowerCase() === invName)
+    );
+    if (oldConsumed) {
+      curStock += Number(oldConsumed.qty || 0);
+    }
+
+    if (batchObj.is_multi_grade && Array.isArray(batchObj.output_grades)) {
+      const matchedGrade = batchObj.output_grades.find(
+        g => String(g.itemId) === invId || (g.name && String(g.name).trim().toLowerCase() === invName)
+      );
+      if (matchedGrade) {
+        curStock = Math.max(0, curStock - Number(matchedGrade.qty || 0));
+      }
+    } else {
+      const singleOutId = String(batchObj.output_item_id || batchObj.output_grades?.[0]?.itemId || '');
+      const singleOutName = String(batchObj.output_item_name || '').trim().toLowerCase();
+      if ((singleOutId && invId === singleOutId) || (singleOutName && invName === singleOutName)) {
+        curStock = Math.max(0, curStock - Number(batchObj.produced_qty || 0));
+      }
+    }
+
+    const cleanQty = round2(curStock);
+    return { ...inv, current_stock: cleanQty, stock: cleanQty, qty: cleanQty };
+  });
+};
+
 export default function BhattaProductionMasterView({ firm, onClose }) {
   const activeFY = getCurrentActiveFY();
-  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const activeFirmId = String(firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
 
   const [activeTab, setActiveTab] = useState('STAGE_PROD');
 
   const [productionDate, setProductionDate] = useState(new Date().toISOString().slice(0, 10));
   const [useForLocation, setUseForLocation] = useState('');
-  
+
   const [productionStage, setProductionStage] = useState('STAGE_1_PATHAI');
   const [labourStartDate, setLabourStartDate] = useState('');
   const [labourEndDate, setLabourEndDate] = useState(new Date().toISOString().slice(0, 10));
@@ -118,7 +151,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     ];
 
     baseDefaults.forEach(std => {
-      const exists = currentInventory.some(i => 
+      const exists = currentInventory.some(i =>
         (i.name || i.item_name || '').toLowerCase().includes(std.name.split(' ')[0].toLowerCase())
       );
 
@@ -209,7 +242,10 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     if (!selectedMaterial || !materialQty || Number(materialQty) <= 0) {
       return alert('Kripya material chunein aur valid quantity darj karein.');
     }
-    const itemObj = inventoryItems.find(i => String(i.id) === String(selectedMaterial));
+    const itemObj = inventoryItems.find(i =>
+      String(i.id) === String(selectedMaterial) ||
+      String(i.name || i.item_name || '').trim().toLowerCase() === String(selectedMaterial).trim().toLowerCase()
+    );
     if (!itemObj) return alert('Selected inventory item not found.');
 
     const qty = Number(materialQty);
@@ -218,7 +254,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     setConsumedMaterials([
       ...consumedMaterials,
       {
-        id: Date.now(),
+        id: Date.now() + Math.random(),
         itemId: itemObj.id,
         name: itemObj.name || itemObj.item_name,
         qty,
@@ -269,31 +305,19 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       if (editingBatchId) {
         const oldBatch = batchesList.find(b => b.id === editingBatchId);
         if (oldBatch) {
-          workingInventory = workingInventory.map(inv => {
-            const invId = String(inv.id);
-            const oldConsumed = (oldBatch.consumed_materials || []).find(m => String(m.itemId) === invId);
-            let curStock = Number(inv.current_stock || inv.stock || inv.qty || 0);
-
-            if (oldConsumed) curStock += Number(oldConsumed.qty);
-
-            if (oldBatch.is_multi_grade && Array.isArray(oldBatch.output_grades)) {
-              const matchedGrade = oldBatch.output_grades.find(g => String(g.itemId) === invId);
-              if (matchedGrade) curStock = Math.max(0, curStock - Number(matchedGrade.qty));
-            } else if (invId === String(oldBatch.output_item_id)) {
-              curStock = Math.max(0, curStock - Number(oldBatch.produced_qty));
-            }
-
-            return { ...inv, current_stock: round2(curStock), stock: round2(curStock), qty: round2(curStock) };
-          });
+          workingInventory = revertBatchInventoryChanges(oldBatch, workingInventory);
         }
       }
 
       workingInventory = workingInventory.map(inv => {
         const invId = String(inv.id);
-        const consumedMatch = consumedMaterials.find(m => String(m.itemId) === invId);
+        const invName = String(inv.name || inv.item_name || '').trim().toLowerCase();
+        const consumedMatch = consumedMaterials.find(
+          m => String(m.itemId) === invId || (m.name && String(m.name).trim().toLowerCase() === invName)
+        );
         if (consumedMatch) {
           const cur = Number(inv.current_stock || inv.stock || inv.qty || 0);
-          const newQty = round2(Math.max(0, cur - Number(consumedMatch.qty)));
+          const newQty = round2(Math.max(0, cur - Number(consumedMatch.qty || 0)));
           return { ...inv, current_stock: newQty, stock: newQty, qty: newQty };
         }
         return inv;
@@ -301,12 +325,13 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
       let finalOutputsList = [];
       let totalAssignedBatchCost = totalProductionCost;
+      let resolvedSingleOutputId = '';
 
       if (productionStage === 'STAGE_3_NIKASI' && isMultiGradeOutput) {
         STANDARD_BRICK_GRADES.forEach(std => {
           const gradeQty = Number(multiGradeQuantities[std.key] || 0);
           if (gradeQty > 0) {
-            let invIndex = workingInventory.findIndex(i => 
+            let invIndex = workingInventory.findIndex(i =>
               (i.name || i.item_name || '').toLowerCase().includes(std.name.split(' ')[0].toLowerCase())
             );
 
@@ -318,11 +343,12 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
               targetItemId = workingInventory[invIndex].id;
               targetItemName = workingInventory[invIndex].name || workingInventory[invIndex].item_name;
               const cur = Number(workingInventory[invIndex].current_stock || workingInventory[invIndex].stock || 0);
+              const nextStock = round2(cur + gradeQty);
               workingInventory[invIndex] = {
                 ...workingInventory[invIndex],
-                current_stock: round2(cur + gradeQty),
-                stock: round2(cur + gradeQty),
-                qty: round2(cur + gradeQty),
+                current_stock: nextStock,
+                stock: nextStock,
+                qty: nextStock,
                 cost_price: unitVal,
                 unit_purchase_price: unitVal
               };
@@ -353,19 +379,27 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
           }
         });
       } else {
-        const outItemObj = workingInventory.find(i => String(i.id) === String(outputItem));
-        const outName = (outItemObj?.name || outItemObj?.item_name || 'Finished Goods').trim();
+        const outItemObj = workingInventory.find(
+          i => String(i.id) === String(outputItem) ||
+            String(i.name || i.item_name || '').trim().toLowerCase() === String(outputItem || '').trim().toLowerCase()
+        );
+        resolvedSingleOutputId = outItemObj?.id || outputItem;
+        const outName = (outItemObj?.name || outItemObj?.item_name || outputItem || 'Finished Goods').trim();
         const pQty = Number(producedQty);
         const unitVal = round2(baseAverageUnitCost);
 
         workingInventory = workingInventory.map(inv => {
-          if (String(inv.id) === String(outputItem)) {
+          if (
+            String(inv.id) === String(resolvedSingleOutputId) ||
+            String(inv.name || inv.item_name || '').trim().toLowerCase() === outName.toLowerCase()
+          ) {
             const cur = Number(inv.current_stock || inv.stock || 0);
+            const nextStock = round2(cur + pQty);
             return {
               ...inv,
-              current_stock: round2(cur + pQty),
-              stock: round2(cur + pQty),
-              qty: round2(cur + pQty),
+              current_stock: nextStock,
+              stock: nextStock,
+              qty: nextStock,
               cost_price: unitVal,
               unit_purchase_price: unitVal
             };
@@ -375,7 +409,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
         finalOutputsList.push({
           gradeKey: 'SINGLE',
-          itemId: outputItem,
+          itemId: resolvedSingleOutputId,
           name: outName,
           qty: pQty,
           unit: outItemObj?.unit || 'Units',
@@ -399,6 +433,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
         total_cost: totalAssignedBatchCost,
         is_multi_grade: productionStage === 'STAGE_3_NIKASI' && isMultiGradeOutput,
         output_grades: finalOutputsList,
+        output_item_id: resolvedSingleOutputId,
         output_item_name: (productionStage === 'STAGE_3_NIKASI' && isMultiGradeOutput) ? 'Multi-Grade Pakki Bricks' : finalOutputsList[0]?.name,
         produced_qty: (productionStage === 'STAGE_3_NIKASI' && isMultiGradeOutput) ? totalMultiGradeQty : Number(producedQty),
         unit_valuation: round2(baseAverageUnitCost),
@@ -439,7 +474,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
         }
 
         const outCostAmt = round2(out.totalCost || (out.qty * out.unitCost));
-        totalDebitCheck += outCostAmt;
+        totalDebitCheck = round2(totalDebitCheck + outCostAmt);
         jvEntries.push({
           account_name: finishedLedger,
           party: finishedLedger,
@@ -479,13 +514,13 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       window.dispatchEvent(new Event('app_state_updated'));
       window.dispatchEvent(new Event('storage'));
 
-      const successStageText = 
+      const successStageText =
         productionStage === 'STAGE_1_PATHAI' ? 'Kacchi Eent Pathai Batch' :
         productionStage === 'STAGE_2_PAKAI' ? 'Bhatti Chamber Bharai Batch' : 'Nikasi & Multi-Stock Grading Batch';
 
-      setFeedback({ 
-        type: 'success', 
-        message: `✓ ${successStageText} successfully saved! Stock update ho gaya aur Double-Entry voucher balance ho gaya.` 
+      setFeedback({
+        type: 'success',
+        message: `✓ ${successStageText} successfully saved! Stock update ho gaya aur Double-Entry voucher balance ho gaya.`
       });
 
       setEditingBatchId(null);
@@ -496,7 +531,6 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       setOutputItem('');
       setProducedQty('');
       setMultiGradeQuantities({ INT_1_NO: '', INT_2_NO: '', INT_PILA: '', KHORA: '', CHATTA: '', TUKDA: '' });
-
     } catch (err) {
       alert('Error saving production: ' + err.message);
     }
@@ -511,7 +545,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
     setConsumedMaterials(batch.consumed_materials || []);
     setDirectLaborCost(batch.direct_labor ? String(batch.direct_labor) : '');
     setMachineryOverheads(batch.machinery_overheads ? String(batch.machinery_overheads) : '');
-    
+
     if (batch.is_multi_grade && Array.isArray(batch.output_grades)) {
       setIsMultiGradeOutput(true);
       const newQtys = { INT_1_NO: '', INT_2_NO: '', INT_PILA: '', KHORA: '', CHATTA: '', TUKDA: '' };
@@ -521,7 +555,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       setMultiGradeQuantities(newQtys);
     } else {
       setIsMultiGradeOutput(false);
-      setOutputItem(batch.output_item_id || '');
+      setOutputItem(batch.output_item_id || batch.output_grades?.[0]?.itemId || batch.output_item_name || '');
       setProducedQty(batch.produced_qty ? String(batch.produced_qty) : '');
     }
 
@@ -535,23 +569,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       const batchToDelete = batchesList.find(b => b.id === batchId);
       if (!batchToDelete) return;
 
-      const revertedInventory = inventoryItems.map(inv => {
-        const invId = String(inv.id);
-        const oldConsumed = (batchToDelete.consumed_materials || []).find(m => String(m.itemId) === invId);
-        let curStock = Number(inv.current_stock || inv.stock || inv.qty || 0);
-
-        if (oldConsumed) curStock += Number(oldConsumed.qty);
-
-        if (batchToDelete.is_multi_grade && Array.isArray(batchToDelete.output_grades)) {
-          const matched = batchToDelete.output_grades.find(g => String(g.itemId) === invId);
-          if (matched) curStock = Math.max(0, curStock - Number(matched.qty));
-        } else if (invId === String(batchToDelete.output_item_id)) {
-          curStock = Math.max(0, curStock - Number(batchToDelete.produced_qty));
-        }
-
-        return { ...inv, current_stock: round2(curStock), stock: round2(curStock), qty: round2(curStock) };
-      });
-
+      const revertedInventory = revertBatchInventoryChanges(batchToDelete, inventoryItems);
       setInventoryItems(revertedInventory);
       saveFirmData('inventory_items', firm, revertedInventory);
 
@@ -559,11 +577,13 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
       setBatchesList(filteredBatches);
       saveFirmData('production_batches', firm, filteredBatches);
 
+      deleteUniversalVoucher(activeFirmId, `JV-${batchId}`);
+
       const vKey1 = `app_vouchers_${activeFirmId}`;
       const vKey2 = `account_book_vouchers_${activeFirmId}`;
       const vList1 = JSON.parse(localStorage.getItem(vKey1) || '[]');
       const vList2 = JSON.parse(localStorage.getItem(vKey2) || '[]');
-      
+
       const filterV = v => v && v.id !== `JV-${batchId}` && v.reference_no !== batchId;
       localStorage.setItem(vKey1, JSON.stringify(vList1.filter(filterV)));
       localStorage.setItem(vKey2, JSON.stringify(vList2.filter(filterV)));
@@ -591,7 +611,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
   return (
     <div style={{ padding: '8px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', boxSizing: 'border-box', color: '#0f172a' }}>
-      
+
       <div style={{ backgroundColor: '#ffffff', padding: '6px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '10px', display: 'flex', gap: '6px' }}>
         <button
           type="button"
@@ -644,7 +664,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
         <BhattaCostAuditView firm={firm} onClose={onClose} />
       ) : (
         <div style={{ backgroundColor: '#fff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-          
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '6px' }}>
             <h2 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
               {editingBatchId ? '✏️ Edit Production Batch' : `⚙️ Smart Production (${activeFY})`}
@@ -665,14 +685,14 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
           )}
 
           <form onSubmit={handleSaveProduction}>
-            
+
             <div style={{ marginBottom: '10px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
               <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#0f172a' }}>
                 🏭 Select Production Stage (उत्पादन का चरण चुनें) *
               </label>
-              <select 
-                value={productionStage} 
-                onChange={e => handleStageChange(e.target.value)} 
+              <select
+                value={productionStage}
+                onChange={e => handleStageChange(e.target.value)}
                 style={{ ...inputStyle, fontWeight: '700', backgroundColor: '#ffffff', color: '#0369a1', fontSize: '12px' }}
               >
                 <option value="STAGE_1_PATHAI">Stage 1: Pathai (मिट्टी ➔ कच्ची ईंट निर्माण)</option>
@@ -687,12 +707,12 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                 <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase', color: '#475569' }}>
                   Production Date *
                 </label>
-                <input 
-                  type="date" 
-                  value={productionDate} 
-                  onChange={e => setProductionDate(e.target.value)} 
-                  style={inputStyle} 
-                  required 
+                <input
+                  type="date"
+                  value={productionDate}
+                  onChange={e => setProductionDate(e.target.value)}
+                  style={inputStyle}
+                  required
                 />
               </div>
               <div>
@@ -700,16 +720,16 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                   {productionStage === 'STAGE_1_PATHAI' ? 'Pathai Location / Ground *' :
                    productionStage === 'STAGE_2_PAKAI' ? 'Bhatti Goli / Chamber *' : 'Nikasi Location / Chamber *'}
                 </label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder={
                     productionStage === 'STAGE_1_PATHAI' ? 'e.g. Ground No. 2' :
                     productionStage === 'STAGE_2_PAKAI' ? 'e.g. Goli No. 4 / Chamber 2' : 'e.g. Chamber 1 Nikasi'
-                  } 
-                  value={useForLocation} 
-                  onChange={e => setUseForLocation(e.target.value)} 
-                  style={inputStyle} 
-                  required 
+                  }
+                  value={useForLocation}
+                  onChange={e => setUseForLocation(e.target.value)}
+                  style={inputStyle}
+                  required
                 />
               </div>
             </div>
@@ -723,9 +743,9 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                 {productionStage === 'STAGE_2_PAKAI' && '👉 Pakai ke liye "Kacchi Eent (कच्ची ईंट)", "Koyla" aur "Turi" select karein.'}
                 {productionStage === 'STAGE_3_NIKASI' && '👉 Nikasi ke liye Chamber Pakai Batch / Kacchi eent input select karein.'}
               </div>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <SearchableStockDropdown 
+                <SearchableStockDropdown
                   firm={firm}
                   label=""
                   value={selectedMaterial}
@@ -738,18 +758,18 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      placeholder="Enter Qty" 
-                      value={materialQty} 
-                      onChange={e => setMaterialQty(e.target.value)} 
-                      style={inputStyle} 
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Enter Qty"
+                      value={materialQty}
+                      onChange={e => setMaterialQty(e.target.value)}
+                      style={inputStyle}
                     />
                   </div>
-                  <button 
-                    type="button" 
-                    onClick={handleAddMaterial} 
+                  <button
+                    type="button"
+                    onClick={handleAddMaterial}
                     style={{ padding: '8px 14px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                   >
                     + Add Item
@@ -782,21 +802,21 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
 
               <div style={{ backgroundColor: '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '8px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '6px' }}>
-                  <input 
-                    type="date" 
-                    value={labourStartDate} 
-                    onChange={e => setLabourStartDate(e.target.value)} 
-                    style={{ ...inputStyle, padding: '6px' }} 
+                  <input
+                    type="date"
+                    value={labourStartDate}
+                    onChange={e => setLabourStartDate(e.target.value)}
+                    style={{ ...inputStyle, padding: '6px' }}
                   />
-                  <input 
-                    type="date" 
-                    value={labourEndDate} 
-                    onChange={e => setLabourEndDate(e.target.value)} 
-                    style={{ ...inputStyle, padding: '6px' }} 
+                  <input
+                    type="date"
+                    value={labourEndDate}
+                    onChange={e => setLabourEndDate(e.target.value)}
+                    style={{ ...inputStyle, padding: '6px' }}
                   />
                 </div>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={handleAutoFetchLabour}
                   style={{ width: '100%', padding: '8px', backgroundColor: '#166534', color: '#ffffff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
@@ -809,24 +829,24 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px', color: '#166534' }}>
                     {productionStage === 'STAGE_1_PATHAI' ? 'Pathai Labour (₹)' : productionStage === 'STAGE_2_PAKAI' ? 'Bharai/Pakai Labour (₹)' : 'Nikasi Labour (₹)'}
                   </label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0" 
-                    value={directLaborCost} 
-                    onChange={e => setDirectLaborCost(e.target.value)} 
-                    style={inputStyle} 
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0"
+                    value={directLaborCost}
+                    onChange={e => setDirectLaborCost(e.target.value)}
+                    style={inputStyle}
                   />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', marginBottom: '3px', color: '#166534' }}>Tractor / Overheads (₹)</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0" 
-                    value={machineryOverheads} 
-                    onChange={e => setMachineryOverheads(e.target.value)} 
-                    style={inputStyle} 
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0"
+                    value={machineryOverheads}
+                    onChange={e => setMachineryOverheads(e.target.value)}
+                    style={inputStyle}
                   />
                 </div>
               </div>
@@ -837,7 +857,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
             </div>
 
             <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px', borderRadius: '10px', marginBottom: '12px' }}>
-              
+
               {productionStage === 'STAGE_1_PATHAI' && (
                 <div>
                   <div style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', marginBottom: '4px' }}>
@@ -848,7 +868,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <SearchableStockDropdown 
+                    <SearchableStockDropdown
                       firm={firm}
                       label="Output Stock Item *"
                       value={outputItem}
@@ -857,13 +877,13 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                     />
                     <div>
                       <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '3px', color: '#1e40af' }}>Kul Kacchi Eent Qty (संख्या) *</label>
-                      <input 
-                        type="number" 
-                        step="1" 
-                        placeholder="e.g. 100000" 
-                        value={producedQty} 
-                        onChange={e => setProducedQty(e.target.value)} 
-                        style={inputStyle} 
+                      <input
+                        type="number"
+                        step="1"
+                        placeholder="e.g. 100000"
+                        value={producedQty}
+                        onChange={e => setProducedQty(e.target.value)}
+                        style={inputStyle}
                         required
                       />
                     </div>
@@ -887,7 +907,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <SearchableStockDropdown 
+                    <SearchableStockDropdown
                       firm={firm}
                       label="Chamber Batch Stock Item *"
                       value={outputItem}
@@ -896,13 +916,13 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                     />
                     <div>
                       <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '3px', color: '#1e40af' }}>Bhatti Me Bhari Gayi Qty *</label>
-                      <input 
-                        type="number" 
-                        step="1" 
-                        placeholder="e.g. 80000" 
-                        value={producedQty} 
-                        onChange={e => setProducedQty(e.target.value)} 
-                        style={inputStyle} 
+                      <input
+                        type="number"
+                        step="1"
+                        placeholder="e.g. 80000"
+                        value={producedQty}
+                        onChange={e => setProducedQty(e.target.value)}
+                        style={inputStyle}
                         required
                       />
                     </div>
@@ -923,10 +943,10 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                       🧱 Step 3: Nikasi & Grading (पक्की ईंट का वर्गीकरण)
                     </span>
                     <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={isMultiGradeOutput} 
-                        onChange={e => setIsMultiGradeOutput(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={isMultiGradeOutput}
+                        onChange={e => setIsMultiGradeOutput(e.target.checked)}
                       />
                       <span>Multi-Grade Split</span>
                     </label>
@@ -944,13 +964,13 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                             <span style={{ display: 'block', fontSize: '9px', fontWeight: 'bold', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {std.name}
                             </span>
-                            <input 
-                              type="number" 
-                              step="1" 
-                              placeholder="0" 
-                              value={multiGradeQuantities[std.key]} 
-                              onChange={e => setMultiGradeQuantities({ ...multiGradeQuantities, [std.key]: e.target.value })} 
-                              style={{ ...inputStyle, padding: '5px 6px', fontSize: '11px', marginTop: '4px' }} 
+                            <input
+                              type="number"
+                              step="1"
+                              placeholder="0"
+                              value={multiGradeQuantities[std.key]}
+                              onChange={e => setMultiGradeQuantities({ ...multiGradeQuantities, [std.key]: e.target.value })}
+                              style={{ ...inputStyle, padding: '5px 6px', fontSize: '11px', marginTop: '4px' }}
                             />
                           </div>
                         ))}
@@ -963,7 +983,7 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <SearchableStockDropdown 
+                      <SearchableStockDropdown
                         firm={firm}
                         label="Output Item (From Inventory) *"
                         value={outputItem}
@@ -972,13 +992,13 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
                       />
                       <div>
                         <label style={{ display: 'block', fontSize: '10px', fontWeight: 'bold', marginBottom: '3px', color: '#1e40af' }}>Produced Qty *</label>
-                        <input 
-                          type="number" 
-                          step="0.01" 
-                          placeholder="e.g. 30000" 
-                          value={producedQty} 
-                          onChange={e => setProducedQty(e.target.value)} 
-                          style={inputStyle} 
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="e.g. 30000"
+                          value={producedQty}
+                          onChange={e => setProducedQty(e.target.value)}
+                          style={inputStyle}
                         />
                       </div>
                     </div>
@@ -989,31 +1009,31 @@ export default function BhattaProductionMasterView({ firm, onClose }) {
             </div>
 
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button 
-                type="submit" 
-                style={{ 
-                  flex: 1, 
-                  padding: '12px', 
-                  backgroundColor: 
+              <button
+                type="submit"
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor:
                     productionStage === 'STAGE_1_PATHAI' ? '#059669' :
-                    productionStage === 'STAGE_2_PAKAI' ? '#d97706' : '#0f172a', 
-                  color: '#fff', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  fontWeight: 'bold', 
-                  fontSize: '12px', 
-                  cursor: 'pointer' 
+                    productionStage === 'STAGE_2_PAKAI' ? '#d97706' : '#0f172a',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  cursor: 'pointer'
                 }}
               >
-                {editingBatchId ? '✓ Update Production Batch' : 
+                {editingBatchId ? '✓ Update Production Batch' :
                  productionStage === 'STAGE_1_PATHAI' ? '⚡ Save Pathai Batch & Add Kacchi Eent Stock' :
                  productionStage === 'STAGE_2_PAKAI' ? '⚡ Save Pakai Batch (Chamber Bharai)' :
                  '⚡ Save Nikasi & Update Multi-Grade Stock'}
               </button>
 
               {editingBatchId && (
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => {
                     setEditingBatchId(null);
                     setUseForLocation('');
