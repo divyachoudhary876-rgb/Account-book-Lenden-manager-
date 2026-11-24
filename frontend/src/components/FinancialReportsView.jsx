@@ -7,7 +7,8 @@ const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 
 
 export default function FinancialReportsView({ firm, onClose }) {
   const activeFirmId = String(firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
-  const selectedFY = localStorage.getItem(`app_active_fy_${activeFirmId}`) || '2026-27';
+  const rawFY = localStorage.getItem(`app_active_fy_${activeFirmId}`) || '2026-27';
+  const cleanFY = String(rawFY).replace(/^FY\s*/i, '').trim() || '2026-27';
 
   const [activeTab, setActiveTab] = useState('TRIAL_BALANCE');
   const [reportData, setReportData] = useState({
@@ -29,7 +30,7 @@ export default function FinancialReportsView({ firm, onClose }) {
 
   const computeFinancials = () => {
     try {
-      const statements = generateFinancialStatements(activeFirmId, selectedFY);
+      const statements = generateFinancialStatements(activeFirmId, cleanFY);
       setReportData(statements);
 
       const vKeys = [`sales_invoices_${activeFirmId}`, `app_invoices_${activeFirmId}`, `account_book_vouchers_${activeFirmId}`];
@@ -100,7 +101,7 @@ export default function FinancialReportsView({ firm, onClose }) {
       window.removeEventListener('app_state_updated', computeFinancials);
       window.removeEventListener('storage', computeFinancials);
     };
-  }, [activeFirmId, selectedFY]);
+  }, [activeFirmId, cleanFY]);
 
   const handleExportPDF = async () => {
     setIsExporting(true);
@@ -150,7 +151,7 @@ export default function FinancialReportsView({ firm, onClose }) {
       <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '16px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div>
-            <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>ENTERPRISE GENERAL LEDGER • FY {selectedFY}</div>
+            <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>ENTERPRISE GENERAL LEDGER • FY {cleanFY}</div>
             <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>📊 वित्तीय विवरण & रिपोर्ट्स (Financial Reports & GST)</h2>
           </div>
 
