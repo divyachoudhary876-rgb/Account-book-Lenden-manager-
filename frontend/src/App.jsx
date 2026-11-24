@@ -63,7 +63,7 @@ export default function App() {
         setFyList(availableYears);
 
         const savedFY = localStorage.getItem(`app_active_fy_${firm.id}`);
-        let activeTargetFY = savedFY && availableYears.some(y => y.label === savedFY)
+        const activeTargetFY = savedFY && availableYears.some(y => y.label === savedFY)
           ? savedFY
           : (availableYears[0]?.label || 'FY 2026-27');
 
@@ -99,7 +99,7 @@ export default function App() {
     };
   }, []);
 
-  const firmCat = String(activeFirm?.category || 'BRICK_KILN').toUpperCase();
+  const firmCat = String(activeFirm?.category || activeFirm?.business_category || 'BRICK_KILN').toUpperCase();
   const menuItems = getDynamicWorkflowMenu(firmCat);
 
   const handleNavigate = (rawKey) => {
@@ -200,11 +200,11 @@ export default function App() {
 
       {!isCreatingFirm && activeFirm && (
         <div style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', width: '100%', boxSizing: 'border-box', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             {currentView !== 'dashboard' ? (
               <button
                 onClick={() => setCurrentView('dashboard')}
-                style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', padding: '6px 9px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
                 ← Dashboard
               </button>
@@ -215,8 +215,8 @@ export default function App() {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: '220px', justifyContent: 'flex-end' }}>
-            <div style={{ flex: 1, minWidth: '110px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 auto', minWidth: '210px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 115px', minWidth: '105px' }}>
               <select
                 value={activeFirm?.id || ''}
                 onChange={(e) => {
@@ -230,7 +230,7 @@ export default function App() {
                     refreshState();
                   }
                 }}
-                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '6px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
               >
                 {firmsList.map(f => (
                   <option key={f.id} value={f.id}>🏢 {f.legal_name || f.trade_name || f.name}</option>
@@ -239,11 +239,11 @@ export default function App() {
               </select>
             </div>
 
-            <div style={{ width: '100px' }}>
+            <div style={{ width: '118px', flexShrink: 0 }}>
               <select
                 value={selectedFY}
                 onChange={handleFYSelectChange}
-                style={{ width: '100%', padding: '6px 4px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '6px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', fontWeight: '700', backgroundColor: '#f8fafc', color: '#334155', boxSizing: 'border-box', whiteSpace: 'nowrap' }}
               >
                 {fyList.map(fy => (
                   <option key={fy.id} value={fy.label}>{fy.label}</option>
@@ -254,7 +254,7 @@ export default function App() {
 
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              style={{ backgroundColor: isMenuOpen ? '#dc2626' : '#0f172a', color: '#ffffff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
             >
               {isMenuOpen ? '✕' : '☰ Menu'}
             </button>
