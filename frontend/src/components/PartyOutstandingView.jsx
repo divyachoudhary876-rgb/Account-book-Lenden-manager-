@@ -1,10 +1,9 @@
-// frontend/src/components/PartyOutstandingView.jsx
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { getFirmMasterAccounts } from '../utils/accountMasterEngine.js';
 
 export default function PartyOutstandingView({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || 'FIRM-001';
+  const activeFirmId = String(firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
   const [outstandingList, setOutstandingList] = useState([]);
 
   useEffect(() => {
@@ -12,7 +11,6 @@ export default function PartyOutstandingView({ firm, onClose }) {
       const accounts = getFirmMasterAccounts(activeFirmId) || [];
       const partyBalanceMap = {};
 
-      // 1. Load Master Accounts & Opening Balances
       accounts.forEach(acc => {
         const name = (acc.name || acc.account_name || '').trim();
         if (name) {
@@ -26,12 +24,10 @@ export default function PartyOutstandingView({ firm, onClose }) {
         }
       });
 
-      // 2. Scan all possible voucher keys
       let rawTx = [];
       const keys = [
         'account_book_vouchers',
         'app_vouchers',
-        'app_payroll_entries',
         `account_book_vouchers_${activeFirmId}`,
         `app_vouchers_${activeFirmId}`
       ];
@@ -42,7 +38,6 @@ export default function PartyOutstandingView({ firm, onClose }) {
         } catch (e) {}
       });
 
-      // Deduplication
       const uniqueMap = new Map();
       rawTx.forEach(v => {
         if (!v) return;
@@ -55,22 +50,7 @@ export default function PartyOutstandingView({ firm, onClose }) {
         }
       });
 
-      // 3. Process Vouchers & Transactions
       uniqueMap.forEach(v => {
-        // Handle Direct Payroll/Wages Entry
-        if (v.worker && v.total_amount) {
-          const workerKey = String(v.worker).trim().toLowerCase();
-          const amt = Number(v.total_amount || 0);
-          if (amt > 0) {
-            if (!partyBalanceMap[workerKey]) {
-              partyBalanceMap[workerKey] = { originalName: v.worker.trim(), category: 'WAGES WORKER', balance: 0 };
-            }
-            partyBalanceMap[workerKey].balance -= amt; // Credit liability
-          }
-          return;
-        }
-
-        // Handle Structured Entries Array
         if (Array.isArray(v.entries) && v.entries.length > 0) {
           v.entries.forEach(e => {
             const accName = (e.account_name || e.party || '').trim();
@@ -87,9 +67,7 @@ export default function PartyOutstandingView({ firm, onClose }) {
             if (isDr) partyBalanceMap[key].balance += amt;
             if (isCr) partyBalanceMap[key].balance -= amt;
           });
-        } 
-        // Handle Flat Format
-        else {
+        } else {
           const amt = Number(v.amount || v.total_amount || 0);
           if (amt <= 0) return;
           const dr = (v.dr_account || v.debit_account || '').trim();
@@ -124,9 +102,9 @@ export default function PartyOutstandingView({ firm, onClose }) {
 
   return (
     <div style={{ padding: '16px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: '800px', margin: '0 auto', boxSizing: 'border-box', color: '#0f172a' }}>
-      
+
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>â³ Party Ledger Outstanding & Due List</h2>
+        <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>⚖️ Party Ledger Outstanding & Due List</h2>
         {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Close</button>}
       </div>
 
@@ -135,9 +113,9 @@ export default function PartyOutstandingView({ firm, onClose }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
             <thead>
               <tr style={{ backgroundColor: '#0f172a', color: '#fff' }}>
-                <th style={{ padding: '8px' }}>Party Name (à¤ªà¤¾à¤°à¥à¤Ÿà¥€ à¤•à¤¾ à¤¨à¤¾à¤®)</th>
+                <th style={{ padding: '8px' }}>Party Name (पार्टी का नाम)</th>
                 <th style={{ padding: '8px' }}>Type / Group</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Net Balance (à¤¬à¤¾à¤•à¥€ à¤°à¤¾à¤¶à¤¿)</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Net Balance (बाकी राशि)</th>
               </tr>
             </thead>
             <tbody>
@@ -149,7 +127,7 @@ export default function PartyOutstandingView({ firm, onClose }) {
                     <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{p.name}</td>
                     <td style={{ padding: '8px', color: '#64748b' }}>{p.category}</td>
                     <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: p.balance >= 0 ? '#1d4ed8' : '#b91c1c' }}>
-                      â‚¹{Math.abs(p.balance).toFixed(2)} {p.balance >= 0 ? 'Dr' : 'Cr'}
+                      ₹{Math.abs(p.balance).toFixed(2)} {p.balance >= 0 ? 'Dr' : 'Cr'}
                     </td>
                   </tr>
                 ))
