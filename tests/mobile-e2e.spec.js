@@ -40,13 +40,13 @@ const ACCOUNTANT_DATA = {
     voucherNo: 'VCH-2026-101',
     party: 'Sharma Bricks & Traders',
     supplier: 'Rajasthan Coal & Fuel Suppliers',
-    item: 'High GCV Biomass Briquettes',
-    quantity: '500',
-    rate: '48',
-    amount: '24000',
-    receiptAmount: '12000',
-    paymentAmount: '10000',
-    wagesAmount: '8500',
+    item: 'Diesel',
+    quantity: '10',
+    rate: '96',
+    amount: '960',
+    receiptAmount: '500',
+    paymentAmount: '500',
+    wagesAmount: '1500',
     narration: 'Audit entry by Accountant - FY 2026-27 verification',
   },
 };
@@ -55,52 +55,52 @@ function sanitizeText(text = '') {
   return String(text).replace(/\s+/g, ' ').trim();
 }
 
-async function selectCustomDropdownOptionIfPresent(page, preferredText = '') {
-  // Custom dropdown triggers in SearchableAccountDropdown & SearchableStockDropdown
-  // show a downward/upward triangle indicator inside a clickable box.
+async function selectFirstDropdownOption(page, preferredQuery = '') {
+  // Click any visible dropdown trigger box containing ▼ or ▲
   const triggers = page.locator('div').filter({ hasText: /^[▼▲]$/ });
-  const triggerCount = await triggers.count();
+  const total = await triggers.count();
 
-  for (let i = 0; i < triggerCount; i++) {
+  for (let i = 0; i < total; i++) {
     const arrow = triggers.nth(i);
     if (!(await arrow.isVisible().catch(() => false))) continue;
 
-    const box = arrow.locator('..');
-    if (!(await box.isVisible().catch(() => false))) continue;
+    const triggerBox = arrow.locator('..');
+    if (!(await triggerBox.isVisible().catch(() => false))) continue;
 
-    // Skip if already has a non-placeholder selection
-    const currentText = sanitizeText(await box.innerText().catch(() => ''));
-    if (currentText && !currentText.includes('--') && !currentText.startsWith('▼') && !currentText.startsWith('▲')) {
+    const boxText = sanitizeText(await triggerBox.innerText().catch(() => ''));
+    if (boxText && !boxText.includes('--') && !boxText.includes('Search') && !/^[▼▲]$/.test(boxText)) {
       continue;
     }
 
-    await box.scrollIntoViewIfNeeded().catch(() => {});
-    await box.click({ force: true }).catch(() => {});
+    await triggerBox.scrollIntoViewIfNeeded().catch(() => {});
+    await triggerBox.click({ force: true }).catch(() => {});
     await page.waitForTimeout(250);
 
-    const searchBox = page.locator('input:visible').last();
-    if (preferredText && (await searchBox.isVisible().catch(() => false))) {
-      const ph = ((await searchBox.getAttribute('placeholder')) || '').toLowerCase();
+    const searchInput = page.locator('input:visible').last();
+    if (preferredQuery && (await searchInput.isVisible().catch(() => false))) {
+      const ph = ((await searchInput.getAttribute('placeholder')) || '').toLowerCase();
       if (ph.includes('search')) {
-        await searchBox.fill(preferredText).catch(() => {});
+        await searchInput.fill(preferredQuery).catch(() => {});
         await page.waitForTimeout(200);
       }
     }
 
-    // Click first matching option row in floating dropdown
-    const optionRows = page.locator('div').filter({
-      has: page.locator('div'),
-    });
-    const rowCount = await optionRows.count();
-    let picked = false;
+    // Look for clickable option items inside the floating list
+    const allDivs = page.locator('div');
+    const divCount = await allDivs.count();
+    let clickedOption = false;
 
-    for (let r = 0; r < rowCount; r++) {
-      const candidate = optionRows.nth(r);
-      if (!(await candidate.isVisible().catch(() => false))) continue;
-      const txt = sanitizeText(await candidate.innerText().catch(() => ''));
+    for (let d = divCount - 1; d >= 0; d--) {
+      const el = allDivs.nth(d);
+      if (!(await el.isVisible().catch(() => false))) continue;
+      const childDivCount = await el.locator('> div').count().catch(() => 0);
+      if (childDivCount > 0) continue;
+
+      const txt = sanitizeText(await el.innerText().catch(() => ''));
       if (
         txt &&
-        txt.length < 90 &&
+        txt.length > 1 &&
+        txt.length < 70 &&
         !txt.includes('Type name to search') &&
         !txt.includes('Search item...') &&
         !txt.includes('-- Clear Selection --') &&
@@ -109,16 +109,14 @@ async function selectCustomDropdownOptionIfPresent(page, preferredText = '') {
         !txt.includes('Select Account') &&
         !txt.includes('Select Stock Item')
       ) {
-        if (!preferredText || txt.toLowerCase().includes(preferredText.toLowerCase())) {
-          await candidate.click({ force: true }).catch(() => {});
-          await page.waitForTimeout(200);
-          picked = true;
-          break;
-        }
+        await el.click({ force: true }).catch(() => {});
+        await page.waitForTimeout(200);
+        clickedOption = true;
+        break;
       }
     }
 
-    if (!picked) {
+    if (!clickedOption) {
       await page.keyboard.press('Escape').catch(() => {});
     }
   }
@@ -130,7 +128,7 @@ async function fillSmartInputs(page, context = {}) {
     overrideName = null,
     overrideAmount = null,
     overrideNarration = null,
-    preferredDropdownText = '',
+    preferredQuery = '',
   } = context;
 
   const inputs = page.locator(
@@ -255,7 +253,7 @@ async function fillSmartInputs(page, context = {}) {
   }
 
   if (mode !== 'firm') {
-    await selectCustomDropdownOptionIfPresent(page, preferredDropdownText);
+    await selectFirstDropdownOption(page, preferredQuery);
   }
 }
 
@@ -351,7 +349,7 @@ async function openAndRunModule(page, stepInfo, consoleErrors, pageErrors, faile
         overrideName: stepInfo.overrideName || null,
         overrideAmount: stepInfo.overrideAmount || null,
         overrideNarration: stepInfo.overrideNarration || null,
-        preferredDropdownText: stepInfo.preferredDropdownText || '',
+        preferredQuery: stepInfo.preferredQuery || '',
       });
       submitStatus = await submitFormIfPresent(page, false);
     } else {
