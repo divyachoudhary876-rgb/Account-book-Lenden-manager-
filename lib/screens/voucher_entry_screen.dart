@@ -23,6 +23,10 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
 
   bool get _isBalanced => (_totalDebit - _totalCredit).abs() < 0.001 && _totalDebit > 0;
 
+  bool get _hasAllAccounts => _entries.every(
+    (e) => ((e['account'] ?? '') as String).trim().isNotEmpty && ((e['amount'] as double?) ?? 0.0) > 0,
+  );
+
   @override
   Widget build(BuildContext context) {
     const Color emeraldColor = Color(0xFF10B981);
@@ -93,7 +97,7 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
                                 hintText: 'Account ID/Name',
                                 hintStyle: TextStyle(color: Colors.grey),
                               ),
-                              onChanged: (val) => _entries[index]['account'] = val.trim(),
+                              onChanged: (val) => setState(() => _entries[index]['account'] = val.trim()),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -121,10 +125,16 @@ class _VoucherEntryScreenState extends State<VoucherEntryScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: _isBalanced
+              onPressed: (_isBalanced && _hasAllAccounts)
                   ? () {
+                      setState(() {
+                        for (var e in _entries) {
+                          e['account'] = '';
+                          e['amount'] = 0.0;
+                        }
+                      });
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Journal Voucher validated & ready for posting.')),
+                        const SnackBar(content: Text('Journal Voucher posted & form reset.')),
                       );
                     }
                   : null,
