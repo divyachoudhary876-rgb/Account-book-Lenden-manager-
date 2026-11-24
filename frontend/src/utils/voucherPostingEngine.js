@@ -1,6 +1,6 @@
-// frontend/src/utils/voucherPostingEngine.js
-
 import { IDBStorage } from './indexedDbStorage.js';
+
+const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 export const normalizeLedgerAccountMatch = (targetAccount = '', candidateAccount = '') => {
   if (!targetAccount || !candidateAccount) return false;
@@ -67,6 +67,67 @@ const getNextSequentialNumber = (existingVouchers, vType) => {
   return `${prefix}-${maxNum + 1}`;
 };
 
+const extractVoucherEntries = (voucherObj = {}) => {
+  if (Array.isArray(voucherObj.entries) && voucherObj.entries.length > 0) {
+    return voucherObj.entries.map(entry => {
+      const val = Math.abs(parseFloat(entry.amount || entry.debit || entry.credit || 0));
+      const isDebit = (entry.type || '').toUpperCase() === 'DR' || parseFloat(entry.debit || 0) > 0;
+      return {
+        account_name: String(entry.account_name || entry.party || '').trim(),
+        type: isDebit ? 'DR' : 'CR',
+        amount: round2(val)
+      };
+    }).filter(e => e.account_name && e.amount > 0);
+  }
+
+  const amt = round2(Math.abs(parseFloat(voucherObj.amount || voucherObj.total_amount || 0)));
+  const drAcc = String(voucherObj.dr_account || voucherObj.debit_account || '').trim();
+  const crAcc = String(voucherObj.cr_account || voucherObj.credit_account || '').trim();
+  const list = [];
+  if (drAcc && amt > 0) list.push({ account_name: drAcc, type: 'DR', amount: amt });
+  if (crAcc && amt > 0) list.push({ account_name: crAcc, type: 'CR', amount: amt });
+  return list;
+};
+
+const applyEntriesToAccounts = (accountsList, entriesToApply, directionSign = 1) => {
+  entriesToApply.forEach(entry => {
+    const accName = String(entry.account_name || '').trim();
+    if (!accName || !entry.amount) return;
+
+    let accObj = accountsList.find(
+      a => (a.name || a.account_name || '').trim().toLowerCase() === accName.toLowerCase()
+    );
+
+    if (!accObj) {
+      accObj = {
+        id: `ACC-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        firm_id: accName,
+        account_name: accName,
+        name: accName,
+        primary_type: entry.type === 'DR' ? 'EXPENSES' : 'INCOME',
+        sub_group: 'General Ledger',
+        opening_balance: 0,
+        current_balance: 0,
+        balance_type: entry.type === 'DR' ? 'Dr' : 'Cr'
+      };
+      accountsList.push(accObj);
+    }
+
+    const isAssetOrExpense = ['ASSETS', 'EXPENSES', 'ASSET', 'EXPENSE'].includes(
+      String(accObj.primary_type || accObj.type || '').toUpperCase()
+    );
+    const baseMultiplier = isAssetOrExpense
+      ? (entry.type === 'DR' ? 1 : -1)
+      : (entry.type === 'CR' ? 1 : -1);
+
+    const delta = round2(entry.amount * baseMultiplier * directionSign);
+    const currentBal = parseFloat(
+      accObj.current_balance !== undefined ? accObj.current_balance : (accObj.opening_balance || 0)
+    );
+    accObj.current_balance = round2(currentBal + delta);
+  });
+};
+
 export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
   const activeFirmId = String(firmId || IDBStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433').trim();
   const vouchersKey = `account_book_vouchers_${activeFirmId}`;
@@ -86,8 +147,8 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
     items = []
   } = voucherPayload;
 
-  const normalizedType = voucher_type.toUpperCase();
-  const cleanRef = (reference_no || '').trim();
+  const normalizedType = String(voucher_type || 'PAYMENT').toUpperCase();
+  const cleanRef = String(reference_no || '').trim();
   const vchNumber = cleanRef && !cleanRef.includes('MAT-ADJ') && !cleanRef.includes('BILL-')
     ? cleanRef
     : getNextSequentialNumber(existingVouchers, normalizedType);
@@ -100,14 +161,14 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
     let totalCr = 0;
 
     processedEntries = entries.map(entry => {
-      const val = Math.abs(parseFloat(entry.amount || entry.debit || entry.credit || 0));
+      const val = round2(Math.abs(parseFloat(entry.amount || entry.debit || entry.credit || 0)));
       const isDebit = (entry.type || '').toUpperCase() === 'DR' || parseFloat(entry.debit || 0) > 0;
-      if (isDebit) totalDr += val;
-      else totalCr += val;
+      if (isDebit) totalDr = round2(totalDr + val);
+      else totalCr = round2(totalCr + val);
 
       return {
-        account_name: (entry.account_name || entry.party || '').trim(),
-        party: (entry.account_name || entry.party || '').trim(),
+        account_name: String(entry.account_name || entry.party || '').trim(),
+        party: String(entry.account_name || entry.party || '').trim(),
         type: isDebit ? 'DR' : 'CR',
         debit: isDebit ? val : 0,
         credit: isDebit ? 0 : val,
@@ -115,15 +176,16 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
       };
     });
 
-    const diff = Math.round((totalDr - totalCr) * 100) / 100;
+    const diff = round2(totalDr - totalCr);
     if (Math.abs(diff) > 0.001) {
       if (Math.abs(diff) <= 0.99) {
+        const absDiff = round2(Math.abs(diff));
         if (diff > 0) {
-          processedEntries.push({ account_name: 'Round Off Account', party: 'Round Off Account', type: 'CR', debit: 0, credit: Math.abs(diff), amount: Math.abs(diff) });
-          totalCr += Math.abs(diff);
+          processedEntries.push({ account_name: 'Round Off Account', party: 'Round Off Account', type: 'CR', debit: 0, credit: absDiff, amount: absDiff });
+          totalCr = round2(totalCr + absDiff);
         } else {
-          processedEntries.push({ account_name: 'Round Off Account', party: 'Round Off Account', type: 'DR', debit: Math.abs(diff), credit: 0, amount: Math.abs(diff) });
-          totalDr += Math.abs(diff);
+          processedEntries.push({ account_name: 'Round Off Account', party: 'Round Off Account', type: 'DR', debit: absDiff, credit: 0, amount: absDiff });
+          totalDr = round2(totalDr + absDiff);
         }
       } else {
         throw new Error(`Unbalanced Voucher! Total Debit (₹${totalDr.toFixed(2)}) != Total Credit (₹${totalCr.toFixed(2)}).`);
@@ -140,9 +202,9 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
       voucher_type: normalizedType,
       type: normalizedType,
       reference_no: vchNumber,
-      narration: (narration || '').trim(),
-      amount: parseFloat(totalDr.toFixed(2)),
-      total_amount: parseFloat(totalDr.toFixed(2)),
+      narration: String(narration || '').trim(),
+      amount: round2(totalDr),
+      total_amount: round2(totalDr),
       is_compound: true,
       entries: processedEntries,
       items: items || [],
@@ -151,14 +213,14 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
       updated_at: new Date().toISOString()
     };
   } else {
-    const cleanAmt = parseFloat(amount || 0);
+    const cleanAmt = round2(parseFloat(amount || 0));
     if (!cleanAmt || cleanAmt <= 0) throw new Error('Transaction amount must be greater than zero.');
-    if (!dr_account || !dr_account.trim()) throw new Error('Debit Account is mandatory.');
-    if (!cr_account || !cr_account.trim()) throw new Error('Credit Account is mandatory.');
+    if (!dr_account || !String(dr_account).trim()) throw new Error('Debit Account is mandatory.');
+    if (!cr_account || !String(cr_account).trim()) throw new Error('Credit Account is mandatory.');
 
     processedEntries = [
-      { account_name: dr_account.trim(), party: dr_account.trim(), type: 'DR', amount: cleanAmt, debit: cleanAmt, credit: 0 },
-      { account_name: cr_account.trim(), party: cr_account.trim(), type: 'CR', amount: cleanAmt, debit: 0, credit: cleanAmt }
+      { account_name: String(dr_account).trim(), party: String(dr_account).trim(), type: 'DR', amount: cleanAmt, debit: cleanAmt, credit: 0 },
+      { account_name: String(cr_account).trim(), party: String(cr_account).trim(), type: 'CR', amount: cleanAmt, debit: 0, credit: cleanAmt }
     ];
 
     finalVoucher = {
@@ -171,57 +233,36 @@ export const saveUniversalVoucher = (firmId, voucherPayload = {}) => {
       voucher_type: normalizedType,
       type: normalizedType,
       reference_no: vchNumber,
-      narration: (narration || '').trim(),
+      narration: String(narration || '').trim(),
       amount: cleanAmt,
       total_amount: cleanAmt,
       is_compound: false,
-      dr_account: dr_account.trim(),
-      cr_account: cr_account.trim(),
+      dr_account: String(dr_account).trim(),
+      cr_account: String(cr_account).trim(),
       entries: processedEntries,
       items: items || [],
       updated_at: new Date().toISOString()
     };
   }
 
+  const accountsKey = `account_heads_${activeFirmId}`;
+  let accounts = IDBStorage.getItem(accountsKey, []) || IDBStorage.getItem(`app_accounts_${activeFirmId}`, []) || [];
+  if (!Array.isArray(accounts)) accounts = [];
+
   const existingIdx = existingVouchers.findIndex(v => v && String(v.id) === String(finalVoucher.id));
   if (existingIdx !== -1) {
+    const oldVoucher = existingVouchers[existingIdx];
+    const oldEntries = extractVoucherEntries(oldVoucher);
+    applyEntriesToAccounts(accounts, oldEntries, -1);
     existingVouchers[existingIdx] = finalVoucher;
   } else {
     existingVouchers.unshift(finalVoucher);
   }
+
+  applyEntriesToAccounts(accounts, processedEntries, 1);
+
   IDBStorage.setItem(vouchersKey, existingVouchers);
   IDBStorage.setItem(`app_vouchers_${activeFirmId}`, existingVouchers);
-
-  // Reconcile Master Accounts
-  const accountsKey = `account_heads_${activeFirmId}`;
-  let accounts = IDBStorage.getItem(accountsKey, []) || [];
-  
-  processedEntries.forEach(entry => {
-    const accName = entry.account_name.trim();
-    let accObj = accounts.find(a => (a.name || a.account_name || '').trim().toLowerCase() === accName.toLowerCase());
-
-    if (!accObj) {
-      accObj = {
-        id: `ACC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        firm_id: activeFirmId,
-        account_name: accName,
-        name: accName,
-        primary_type: entry.type === 'DR' ? 'EXPENSES' : 'INCOME',
-        sub_group: 'General Ledger',
-        opening_balance: 0,
-        current_balance: 0,
-        balance_type: entry.type === 'DR' ? 'Dr' : 'Cr'
-      };
-      accounts.push(accObj);
-    }
-
-    const isAssetOrExpense = ['ASSETS', 'EXPENSES'].includes((accObj.primary_type || accObj.type || '').toUpperCase());
-    const multiplier = isAssetOrExpense ? (entry.type === 'DR' ? 1 : -1) : (entry.type === 'CR' ? 1 : -1);
-    
-    const currentBal = parseFloat(accObj.current_balance !== undefined ? accObj.current_balance : (accObj.opening_balance || 0));
-    accObj.current_balance = Math.round((currentBal + (entry.amount * multiplier)) * 100) / 100;
-  });
-
   IDBStorage.setItem(accountsKey, accounts);
   IDBStorage.setItem(`app_accounts_${activeFirmId}`, accounts);
 
@@ -237,11 +278,27 @@ export const deleteUniversalVoucher = (firmId, voucherId) => {
   if (!voucherId) return false;
   const activeFirmId = String(firmId || IDBStorage.getItem('app_active_firm_id') || 'FIRM-1790909076433').trim();
   const vouchersKey = `account_book_vouchers_${activeFirmId}`;
-  
+
   const existingVouchers = IDBStorage.getItem(vouchersKey, []) || [];
-  const filtered = existingVouchers.filter(v => v && String(v.id) !== String(voucherId) && String(v.reference_no) !== String(voucherId));
+  const targetVoucher = existingVouchers.find(
+    v => v && (String(v.id) === String(voucherId) || String(v.reference_no) === String(voucherId))
+  );
+  const filtered = existingVouchers.filter(
+    v => v && String(v.id) !== String(voucherId) && String(v.reference_no) !== String(voucherId)
+  );
 
   if (filtered.length === existingVouchers.length) return false;
+
+  if (targetVoucher) {
+    const accountsKey = `account_heads_${activeFirmId}`;
+    let accounts = IDBStorage.getItem(accountsKey, []) || IDBStorage.getItem(`app_accounts_${activeFirmId}`, []) || [];
+    if (Array.isArray(accounts)) {
+      const oldEntries = extractVoucherEntries(targetVoucher);
+      applyEntriesToAccounts(accounts, oldEntries, -1);
+      IDBStorage.setItem(accountsKey, accounts);
+      IDBStorage.setItem(`app_accounts_${activeFirmId}`, accounts);
+    }
+  }
 
   IDBStorage.setItem(vouchersKey, filtered);
   IDBStorage.setItem(`app_vouchers_${activeFirmId}`, filtered);
