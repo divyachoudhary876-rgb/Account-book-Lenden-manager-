@@ -1,6 +1,4 @@
-// frontend/src/components/CreateInvoice.jsx
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StorageService } from '../utils/storageSync';
 import { loadFirmData } from '../utils/firmIsolationEngine';
 import SearchableAccountDropdown from './SearchableAccountDropdown.jsx';
@@ -11,9 +9,9 @@ import { processSalesInvoicePosting, revertSalesStockOnDeletion } from '../utils
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
 
 export default function CreateInvoice({ firm, onClose }) {
-  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const activeFirmId = String(firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
   const todayMaxDate = new Date().toISOString().split('T')[0];
-  
+
   const [allItems, setAllItems] = useState([]);
   const [accountsList, setAccountsList] = useState([]);
   const [invoiceList, setInvoiceList] = useState([]);
@@ -21,9 +19,9 @@ export default function CreateInvoice({ firm, onClose }) {
   const [editingId, setEditingId] = useState(null);
   const [invoiceDate, setInvoiceDate] = useState(todayMaxDate);
   const [invoiceNo, setInvoiceNo] = useState('1');
-  const [customerParty, setCustomerParty] = useState(''); 
+  const [customerParty, setCustomerParty] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
-  
+
   const [cart, setCart] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -33,10 +31,10 @@ export default function CreateInvoice({ firm, onClose }) {
   const [searchFilter, setSearchFilter] = useState('');
   const [feedback, setFeedback] = useState(null);
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     try {
       const rawInventory = loadFirmData('inventory_items', firm, []);
-      const validInventory = rawInventory.filter(i => i && (i.name || i.item_name));
+      const validInventory = (Array.isArray(rawInventory) ? rawInventory : []).filter(i => i && (i.name || i.item_name));
       setAllItems(validInventory);
 
       let accList = getFirmMasterAccounts(activeFirmId) || [];
@@ -47,26 +45,23 @@ export default function CreateInvoice({ firm, onClose }) {
 
       const scopedVouchersKey = `account_book_vouchers_${activeFirmId}`;
       const allVouchers = StorageService.getItem(scopedVouchersKey, []) || StorageService.getItem('account_book_vouchers', []);
-      
-      const salesInvoices = allVouchers.filter(v => 
-        v && (
-          String(v.firm_id || v.firmId || '').trim() === String(activeFirmId).trim() || 
-          !v.firm_id
-        ) && 
-        (String(v.voucher_type || v.type || '').toUpperCase() === 'SALES')
+
+      const salesInvoices = (Array.isArray(allVouchers) ? allVouchers : []).filter(v =>
+        v &&
+        (!v.firm_id && !v.firmId ? true : String(v.firm_id || v.firmId || '').trim() === activeFirmId) &&
+        String(v.voucher_type || v.type || '').toUpperCase() === 'SALES'
       );
-      
+
       salesInvoices.sort((a, b) => new Date(b.voucher_date || b.date || 0) - new Date(a.voucher_date || a.date || 0));
       setInvoiceList(salesInvoices);
 
       if (!editingId) {
-        const nextNum = salesInvoices.length + 1;
-        setInvoiceNo(String(nextNum));
+        setInvoiceNo(String(salesInvoices.length + 1));
       }
     } catch (err) {
       console.error("Error loading invoice data:", err);
     }
-  };
+  }, [firm, activeFirmId, editingId]);
 
   useEffect(() => {
     loadData();
@@ -78,30 +73,32 @@ export default function CreateInvoice({ firm, onClose }) {
       window.removeEventListener('app_storage_updated', loadData);
       window.removeEventListener('storage', loadData);
     };
-  }, [firm, activeFirmId]);
+  }, [loadData]);
 
   const handleAddToCart = () => {
     if (!selectedItemId || !quantity || !rate) return alert('Kripya item, matra aur rate darj karein.');
-    
-    const itemObj = allItems.find(i => 
-      String(i.id || i.item_id) === String(selectedItemId) || 
+
+    const itemObj = allItems.find(i =>
+      String(i.id || i.item_id) === String(selectedItemId) ||
       String(i.item_name || i.name || '').trim().toLowerCase() === String(selectedItemId).trim().toLowerCase()
     );
-    
+
     if (!itemObj) return alert('Chayanit item nahi mila.');
 
     const qty = Number(quantity);
     const rt = Number(rate);
+    if (qty <= 0 || rt <= 0) return alert('Quantity aur Rate zero se zyada hone chahiye.');
+
     const baseAmount = round2(qty * rt);
     const gRate = Number(gstRate);
-    
+
     const taxAmount = round2(baseAmount * (gRate / 100));
     const totalWithTax = round2(baseAmount + taxAmount);
     const cleanItemName = itemObj.item_name || itemObj.name || 'Stock Item';
     const cleanUnit = itemObj.unit || 'Pcs';
 
-    setCart([...cart, {
-      id: Date.now(),
+    setCart(prev => [...prev, {
+      id: Date.now() + Math.random(),
       itemId: itemObj.id || selectedItemId,
       itemName: cleanItemName,
       unit: cleanUnit,
@@ -115,10 +112,12 @@ export default function CreateInvoice({ firm, onClose }) {
       isService: itemObj.item_type === 'SERVICE' || String(cleanItemName).toLowerCase().includes('freight')
     }]);
 
-    setSelectedItemId(''); setQuantity(''); setRate('');
+    setSelectedItemId('');
+    setQuantity('');
+    setRate('');
   };
 
-  const removeCartItem = (id) => setCart(cart.filter(c => c.id !== id));
+  const removeCartItem = (id) => setCart(prev => prev.filter(c => c.id !== id));
 
   const totalTaxable = round2(cart.reduce((sum, i) => sum + (i.taxableAmount || 0), 0));
   const totalCgst = round2(cart.reduce((sum, i) => sum + (i.cgst || 0), 0));
@@ -165,15 +164,18 @@ export default function CreateInvoice({ firm, onClose }) {
 
       processSalesInvoicePosting(invoicePayload, activeFirmId);
 
-      setFeedback({ type: 'success', message: editingId ? '✓ Invoice Updated Successfully & Stock Adjusted!' : '✓ Invoice Generated, Saved & Stock Deducted!' });
-      loadData();
+      setFeedback({
+        type: 'success',
+        message: editingId ? '✓ Invoice Updated Successfully & Stock Adjusted!' : '✓ Invoice Generated, Saved & Stock Deducted!'
+      });
 
+      const expectedNextNo = editingId ? invoiceNo : String(invoiceList.length + 1);
       setEditingId(null);
       setCart([]);
       setCustomerParty('');
       setVehicleNo('');
-      setInvoiceNo(String(invoiceList.length + 2));
-
+      setInvoiceNo(expectedNextNo);
+      loadData();
     } catch (err) {
       alert('Error: ' + err.message);
     }
@@ -186,7 +188,7 @@ export default function CreateInvoice({ firm, onClose }) {
     setInvoiceNo(inv.reference_no || '');
     setCustomerParty(inv.dr_account || '');
     setVehicleNo(inv.vehicle_no || '');
-    
+
     const safeCart = (inv.items || []).map((ci, index) => ({
       id: ci.id || (Date.now() + index),
       itemId: ci.itemId || ci.item_id || ci.product_id || '',
@@ -219,16 +221,16 @@ export default function CreateInvoice({ firm, onClose }) {
       const filterOut = v => v && String(v.id) !== String(invId) && String(v.reference_no) !== String(invNo);
 
       const vchs1 = StorageService.getItem(scopedVouchersKey, []);
-      StorageService.setItem(scopedVouchersKey, vchs1.filter(filterOut));
+      StorageService.setItem(scopedVouchersKey, (Array.isArray(vchs1) ? vchs1 : []).filter(filterOut));
 
       const vchs2 = StorageService.getItem(scopedPrimaryVouchersKey, []);
-      StorageService.setItem(scopedPrimaryVouchersKey, vchs2.filter(filterOut));
+      StorageService.setItem(scopedPrimaryVouchersKey, (Array.isArray(vchs2) ? vchs2 : []).filter(filterOut));
 
       const invs1 = StorageService.getItem(scopedInvoicesKey, []);
-      StorageService.setItem(scopedInvoicesKey, invs1.filter(filterOut));
+      StorageService.setItem(scopedInvoicesKey, (Array.isArray(invs1) ? invs1 : []).filter(filterOut));
 
       const invs2 = StorageService.getItem(salesInvoicesKey, []);
-      StorageService.setItem(salesInvoicesKey, invs2.filter(filterOut));
+      StorageService.setItem(salesInvoicesKey, (Array.isArray(invs2) ? invs2 : []).filter(filterOut));
 
       window.dispatchEvent(new Event('app_storage_updated'));
       window.dispatchEvent(new Event('app_state_updated'));
@@ -236,7 +238,10 @@ export default function CreateInvoice({ firm, onClose }) {
       loadData();
 
       if (editingId === invId) {
-        setEditingId(null); setCart([]); setCustomerParty(''); setVehicleNo('');
+        setEditingId(null);
+        setCart([]);
+        setCustomerParty('');
+        setVehicleNo('');
       }
       alert('✓ Invoice deleted & stock successfully restored.');
     } catch (err) {
@@ -263,20 +268,20 @@ export default function CreateInvoice({ firm, onClose }) {
           </h2>
           {onClose && <button onClick={onClose} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Close</button>}
         </div>
-        
+
         {feedback && <div style={{ padding: '10px 14px', marginBottom: '14px', borderRadius: '8px', backgroundColor: '#f0fdf4', color: '#166534', fontWeight: '700', fontSize: '12px', border: '1px solid #bbf7d0' }}>{feedback.message}</div>}
 
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px', textTransform: 'uppercase', display: 'block' }}>Invoice Date *</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 max={todayMaxDate}
-                value={invoiceDate} 
-                onChange={e => setInvoiceDate(e.target.value)} 
-                style={inputStyle} 
-                required 
+                value={invoiceDate}
+                onChange={e => setInvoiceDate(e.target.value)}
+                style={inputStyle}
+                required
               />
             </div>
             <div style={{ flex: 1 }}>
@@ -305,7 +310,7 @@ export default function CreateInvoice({ firm, onClose }) {
           <div style={{ backgroundColor: '#f1f5f9', padding: '14px', borderRadius: '10px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div>
-                <SearchableStockDropdown 
+                <SearchableStockDropdown
                   firm={firm}
                   label="Select Stock Item *"
                   value={selectedItemId}
@@ -380,12 +385,12 @@ export default function CreateInvoice({ firm, onClose }) {
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>📜 Recent Sales Invoices ({filteredInvoices.length})</h3>
-          <input 
-            type="text" 
-            placeholder="Search invoice or party..." 
-            value={searchFilter} 
-            onChange={e => setSearchFilter(e.target.value)} 
-            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', width: '180px' }} 
+          <input
+            type="text"
+            placeholder="Search invoice or party..."
+            value={searchFilter}
+            onChange={e => setSearchFilter(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', width: '180px' }}
           />
         </div>
 
@@ -400,7 +405,7 @@ export default function CreateInvoice({ firm, onClose }) {
                   <div>
                     <div style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>#{inv.reference_no} — {inv.dr_account}</div>
                     <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Date: {inv.voucher_date || inv.date}</div>
-                    
+
                     <div style={{ marginTop: '4px', fontSize: '11px', color: '#334155' }}>
                       {itemsList.map((it, idx) => (
                         <div key={idx} style={{ fontWeight: '600' }}>
