@@ -1,5 +1,3 @@
-// frontend/src/components/PurchaseStockEntryForm.jsx
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { loadFirmData, saveFirmData } from '../utils/firmIsolationEngine';
 import { getFirmMasterAccounts, saveMasterAccount } from '../utils/accountMasterEngine.js';
@@ -40,12 +38,12 @@ const getCleanPurchaseItemName = (bill) => {
   const isGeneric = (str) => {
     if (!str) return true;
     const s = String(str).toLowerCase().trim();
-    return s === 'purchase a/c' || 
-           s === 'purchase account' || 
-           s.startsWith('purchase raw material') ||
-           s === 'material' ||
-           s === 'general purchase' ||
-           s === 'purchase';
+    return s === 'purchase a/c' ||
+      s === 'purchase account' ||
+      s.startsWith('purchase raw material') ||
+      s === 'material' ||
+      s === 'general purchase' ||
+      s === 'purchase';
   };
 
   if (bill.item_name && !isGeneric(bill.item_name)) {
@@ -83,9 +81,9 @@ const getCleanPurchaseItemName = (bill) => {
   return 'Stock Item';
 };
 
-export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
+export default function PurchaseStockEntryForm({ firm, onClose }) {
   const activeFirmId = useMemo(() => {
-    return firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+    return String(firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001').trim();
   }, [firm]);
 
   const todayMaxDate = new Date().toISOString().split('T')[0];
@@ -571,7 +569,7 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
   return (
     <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', boxSizing: 'border-box', padding: '12px 12px 60px 12px', display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      
+
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -605,28 +603,28 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
       )}
 
       <form onSubmit={handleSubmit} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <label style={labelStyle}>PURCHASE DATE *</label>
-            <input 
-              type="date" 
+            <input
+              type="date"
               max={todayMaxDate}
-              value={purchaseDate} 
-              onChange={e => setPurchaseDate(e.target.value)} 
-              style={inputStyle} 
-              required 
+              value={purchaseDate}
+              onChange={e => setPurchaseDate(e.target.value)}
+              style={inputStyle}
+              required
             />
           </div>
           <div>
             <label style={labelStyle}>BILL / REF NO *</label>
-            <input 
-              type="text" 
-              placeholder="e.g. 73" 
-              value={billNumber} 
-              onChange={e => setBillNumber(e.target.value)} 
-              style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0284c7' }} 
-              required 
+            <input
+              type="text"
+              placeholder="e.g. 73"
+              value={billNumber}
+              onChange={e => setBillNumber(e.target.value)}
+              style={{ ...inputStyle, fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#0284c7' }}
+              required
             />
           </div>
         </div>
@@ -656,26 +654,26 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <label style={labelStyle}>QUANTITY *</label>
-            <input 
-              type="number" 
-              step="0.01" 
-              placeholder="0.00" 
-              value={quantity} 
-              onChange={e => setQuantity(e.target.value)} 
-              style={inputStyle} 
-              required 
+            <input
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={quantity}
+              onChange={e => setQuantity(e.target.value)}
+              style={inputStyle}
+              required
             />
           </div>
           <div>
             <label style={labelStyle}>PURCHASE RATE (₹) *</label>
-            <input 
-              type="number" 
-              step="0.01" 
-              placeholder="0.00" 
-              value={purchaseRate} 
-              onChange={e => setPurchaseRate(e.target.value)} 
-              style={inputStyle} 
-              required 
+            <input
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={purchaseRate}
+              onChange={e => setPurchaseRate(e.target.value)}
+              style={inputStyle}
+              required
             />
           </div>
         </div>
@@ -687,46 +685,46 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
 
         <div>
           <label style={labelStyle}>Narration / Remarks</label>
-          <input 
-            type="text" 
-            placeholder="e.g. Received at chamber / tractor freight" 
-            value={narration} 
-            onChange={e => setNarration(e.target.value)} 
-            style={inputStyle} 
+          <input
+            type="text"
+            placeholder="e.g. Received at chamber / tractor freight"
+            value={narration}
+            onChange={e => setNarration(e.target.value)}
+            style={inputStyle}
           />
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-          <button 
-            type="submit" 
-            style={{ 
-              flex: 1, 
-              backgroundColor: '#059669', 
-              color: '#ffffff', 
-              border: 'none', 
-              padding: '12px', 
-              borderRadius: '8px', 
-              fontSize: '12px', 
-              fontWeight: 'bold', 
-              cursor: 'pointer' 
+          <button
+            type="submit"
+            style={{
+              flex: 1,
+              backgroundColor: '#059669',
+              color: '#ffffff',
+              border: 'none',
+              padding: '12px',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              cursor: 'pointer'
             }}
           >
             {editingBill ? `✓ Update Purchase #${billNumber}` : `💾 Save Purchase & Add Stock (#${billNumber})`}
           </button>
 
           {editingBill && (
-            <button 
-              type="button" 
-              onClick={handleCancelEdit} 
-              style={{ 
-                backgroundColor: '#f1f5f9', 
-                color: '#475569', 
-                border: '1px solid #cbd5e1', 
-                padding: '12px 16px', 
-                borderRadius: '8px', 
-                fontSize: '12px', 
-                fontWeight: 'bold', 
-                cursor: 'pointer' 
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              style={{
+                backgroundColor: '#f1f5f9',
+                color: '#475569',
+                border: '1px solid #cbd5e1',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
               }}
             >
               Cancel
@@ -743,12 +741,12 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
           </strong>
         </div>
 
-        <input 
-          type="text" 
-          placeholder="🔍 Search purchase bills by bill no, supplier, item..." 
-          value={searchFilter} 
-          onChange={e => setSearchFilter(e.target.value)} 
-          style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '10px' }} 
+        <input
+          type="text"
+          placeholder="🔍 Search purchase bills by bill no, supplier, item..."
+          value={searchFilter}
+          onChange={e => setSearchFilter(e.target.value)}
+          style={{ ...inputStyle, padding: '8px 12px', fontSize: '11px', marginBottom: '10px' }}
         />
 
         <div style={{ maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -759,20 +757,23 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
           ) : (
             filteredBills.map((bill) => {
               const totalAmt = parseFloat(bill.total_amount || 0);
-              const isSelected = editingBill && (editingBill.id === bill.id || String(bill.bill_number) === String(bill.bill_number));
+              const isSelected = Boolean(editingBill && (
+                (editingBill.id && bill.id && String(editingBill.id) === String(bill.id)) ||
+                String(editingBill.bill_number || '') === String(bill.bill_number || '')
+              ));
               const displayName = getBillSupplierName(bill);
               const displayItemName = getCleanPurchaseItemName(bill);
 
               return (
-                <div 
-                  key={bill.id || bill.bill_number} 
-                  style={{ 
-                    backgroundColor: isSelected ? '#ecfdf5' : '#f8fafc', 
-                    border: `1px solid ${isSelected ? '#059669' : '#e2e8f0'}`, 
-                    borderRadius: '8px', 
-                    padding: '10px 12px', 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
+                <div
+                  key={bill.id || bill.bill_number}
+                  style={{
+                    backgroundColor: isSelected ? '#ecfdf5' : '#f8fafc',
+                    border: `1px solid ${isSelected ? '#059669' : '#e2e8f0'}`,
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     boxSizing: 'border-box'
                   }}
@@ -801,16 +802,16 @@ export default function PurchaseStockEntryForm({ firm, selectedFY, onClose }) {
                       ₹{totalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </span>
                     <div style={{ display: 'flex', gap: '4px' }}>
-                      <button 
-                        type="button" 
-                        onClick={(e) => handleEditInit(e, bill)} 
+                      <button
+                        type="button"
+                        onClick={(e) => handleEditInit(e, bill)}
                         style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
                         Edit
                       </button>
-                      <button 
-                        type="button" 
-                        onClick={(e) => handleDeleteBill(e, bill)} 
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteBill(e, bill)}
                         style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
                         Delete
