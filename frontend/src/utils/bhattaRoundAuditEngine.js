@@ -1,11 +1,18 @@
-// frontend/src/utils/bhattaRoundAuditEngine.js
-
 import { loadFirmData, saveFirmData } from './firmIsolationEngine.js';
 import { getCurrentActiveFY } from './financialYearLockEngine.js';
 import { saveUniversalVoucher } from './voucherPostingEngine.js';
 import { getFirmMasterAccounts, saveMasterAccount } from './accountMasterEngine.js';
+import { StorageService } from './storageSync.js';
 
 const round2 = (num) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
+const resolveFirmId = (firmInput) => {
+  if (typeof firmInput === 'string' && firmInput.trim() !== '') return firmInput.trim();
+  if (firmInput && typeof firmInput === 'object') {
+    return String(firmInput.id || firmInput.firm_id || firmInput.firmId || '').trim();
+  }
+  return localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+};
 
 // Universal Standard Bhatta Items Directory
 export const STANDARD_BHATTA_ITEMS = [
@@ -25,44 +32,38 @@ export const STANDARD_BHATTA_ITEMS = [
 export const classifyBrickName = (rawName = '') => {
   const name = String(rawName || '').toLowerCase().trim();
 
-  // 1. Check Tukda / Rodi / Khanda first to avoid false number matches
   if (name.includes('tukda') || name.includes('tukada') || name.includes('rodi') || name.includes('roda') || name.includes('khanda')) {
     return 'TUKDA';
   }
-  // 2. Khora / Khangar
   if (name.includes('khora') || name.includes('khanghar') || name.includes('khangar') || name.includes('vitrified')) {
     return 'KHORA';
   }
-  // 3. Chatta
   if (name.includes('chatta') || name.includes('chatha')) {
     return 'CHATTA';
   }
-  // 4. Pila / Sawaya / 1.25
   if (name.includes('pila') || name.includes('peela') || name.includes('sawaya') || name.includes('1.25') || name.includes('sawai')) {
     return 'PILA';
   }
-  // 5. Int 2-Number / Doem
   if (
-    name.includes(' 2') || 
-    name.includes('2-') || 
-    name.includes('2nd') || 
-    name.includes('second') || 
-    name.includes('doem') || 
-    name.includes('doyam') || 
+    name.includes(' 2') ||
+    name.includes('2-') ||
+    name.includes('2nd') ||
+    name.includes('second') ||
+    name.includes('doem') ||
+    name.includes('doyam') ||
     name.includes('2 no') ||
     name.includes('2no')
   ) {
     return 'INT_2_NO';
   }
-  // 6. Int 1-Number / Awval
   if (
-    name.includes(' 1') || 
-    name.includes('1-') || 
-    name.includes('1st') || 
-    name.includes('first') || 
-    name.includes('awval') || 
-    name.includes('avval') || 
-    name.includes('1 no') || 
+    name.includes(' 1') ||
+    name.includes('1-') ||
+    name.includes('1st') ||
+    name.includes('first') ||
+    name.includes('awval') ||
+    name.includes('avval') ||
+    name.includes('1 no') ||
     name.includes('1no') ||
     name.includes('red brick') ||
     name.includes('lal eent')
@@ -70,7 +71,43 @@ export const classifyBrickName = (rawName = '') => {
     return 'INT_1_NO';
   }
 
-  return 'INT_1_NO'; // Safe default
+  return 'INT_1_NO';
+};
+
+const getUniqueSalesInvoicesForFirm = (firm, firmId) => {
+  const keys = [
+    `sales_invoices_${firmId}`,
+    `app_invoices_${firmId}`,
+    `account_book_vouchers_${firmId}`,
+    `app_vouchers_${firmId}`
+  ];
+
+  const collected = [];
+  keys.forEach(k => {
+    try {
+      const val = StorageService.getItem(k, []) || JSON.parse(localStorage.getItem(k) || '[]');
+      if (Array.isArray(val)) collected.push(...val);
+    } catch (e) {}
+  });
+
+  const legacyInvoices = loadFirmData('invoices', firm, []);
+  if (Array.isArray(legacyInvoices)) collected.push(...legacyInvoices);
+
+  const uniqueMap = new Map();
+  collected.forEach(inv => {
+    if (!inv) return;
+    const isSales =
+      String(inv.voucher_type || inv.type || '').toUpperCase() === 'SALES' ||
+      Boolean(inv.invoice_number || inv.items);
+    if (!isSales) return;
+
+    const uid = String(inv.id || inv.reference_no || inv.voucher_number || inv.invoice_number || '').trim();
+    if (uid && !uniqueMap.has(uid)) {
+      uniqueMap.set(uid, inv);
+    }
+  });
+
+  return Array.from(uniqueMap.values());
 };
 
 export const getFirmBhattaRounds = (firm) => {
@@ -101,6 +138,7 @@ export const saveFirmBhattaRound = (firm, roundData) => {
 };
 
 export const auditBhattaRoundData = (firm, config = {}) => {
+  const firmId = resolveFirmId(firm);
   const {
     bharaiStartDate = '',
     bharaiEndDate = '',
@@ -111,8 +149,11 @@ export const auditBhattaRoundData = (firm, config = {}) => {
   } = config;
 
   const payrollEntries = loadFirmData('app_payroll_entries', firm, []) || [];
-  const consumptionRecords = loadFirmData('material_consumption_records', firm, []) || [];
-  const salesInvoices = loadFirmData('invoices', firm, []) || [];
+  const consumptionRecords = [
+    ...(loadFirmData('material_consumption_records', firm, []) || []),
+    ...(loadFirmData('universal_material_adjustments', firm, []) || [])
+  ];
+  const salesInvoices = getUniqueSalesInvoicesForFirm(firm, firmId);
 
   let coalCost = 0;
   let biomassCost = 0;
@@ -120,13 +161,24 @@ export const auditBhattaRoundData = (firm, config = {}) => {
   let otherFuelCost = 0;
 
   consumptionRecords.forEach(rec => {
-    const d = rec.date || '';
-    if (bharaiStartDate && d < bharaiStartDate) return;
-    if (bharaiEndDate && d > bharaiEndDate) return;
+    if (!rec) return;
+    const d = rec.date || rec.voucher_date || '';
+    if (bharaiStartDate && d && d < bharaiStartDate) return;
+    if (bharaiEndDate && d && d > bharaiEndDate) return;
 
-    (rec.items || []).forEach(it => {
-      const nm = (it.name || '').toLowerCase();
-      const val = Number(it.totalCost || it.total_value || (Number(it.qty || 0) * Number(it.rate || 0)) || 0);
+    const itemsArr = Array.isArray(rec.items) && rec.items.length > 0
+      ? rec.items
+      : [{
+          name: rec.item_name || rec.name || '',
+          qty: rec.quantity || rec.qty || 0,
+          rate: rec.rate || 0,
+          total_value: rec.total_value || rec.amount || 0
+        }];
+
+    itemsArr.forEach(it => {
+      if (!it) return;
+      const nm = (it.name || it.item_name || '').toLowerCase();
+      const val = Number(it.totalCost || it.total_value || it.amount || (Number(it.qty || it.quantity || 0) * Number(it.rate || 0)) || 0);
 
       if (nm.includes('koyla') || nm.includes('coal')) coalCost += val;
       else if (nm.includes('turi') || nm.includes('briquette') || nm.includes('husk')) biomassCost += val;
@@ -143,6 +195,7 @@ export const auditBhattaRoundData = (firm, config = {}) => {
   let otherLabour = 0;
 
   payrollEntries.forEach(ent => {
+    if (!ent) return;
     const d = ent.date || ent.timestamp?.slice(0, 10) || '';
     const ldg = (ent.expense_ledger || '').toLowerCase();
     const amt = Number(ent.total_amount || 0);
@@ -177,36 +230,38 @@ export const auditBhattaRoundData = (firm, config = {}) => {
   };
 
   salesInvoices.forEach(inv => {
-    const invDate = inv.date || inv.invoice_date || '';
-    if (salesStartDate && invDate < salesStartDate) return;
-    if (salesEndDate && invDate > salesEndDate) return;
+    if (!inv) return;
+    const invDate = inv.date || inv.invoice_date || inv.voucher_date || '';
+    if (salesStartDate && invDate && invDate < salesStartDate) return;
+    if (salesEndDate && invDate && invDate > salesEndDate) return;
 
     salesBreakdown.salesInvoicesCount++;
 
     (inv.items || []).forEach(item => {
+      if (!item) return;
       const q = Number(item.qty || item.quantity || 0);
       const r = Number(item.rate || item.price || 0);
-      const itemRev = round2(q * r);
-      const grade = classifyBrickName(item.name || item.item_name);
+      const itemRev = item.taxableAmount !== undefined ? round2(Number(item.taxableAmount)) : round2(q * r);
+      const grade = classifyBrickName(item.name || item.item_name || item.itemName);
 
       if (grade === 'TUKDA') {
         salesBreakdown.tukda.qty += q;
-        salesBreakdown.tukda.revenue += itemRev;
+        salesBreakdown.tukda.revenue = round2(salesBreakdown.tukda.revenue + itemRev);
       } else if (grade === 'KHORA') {
         salesBreakdown.khora.qty += q;
-        salesBreakdown.khora.revenue += itemRev;
+        salesBreakdown.khora.revenue = round2(salesBreakdown.khora.revenue + itemRev);
       } else if (grade === 'CHATTA') {
         salesBreakdown.intChatta.qty += q;
-        salesBreakdown.intChatta.revenue += itemRev;
+        salesBreakdown.intChatta.revenue = round2(salesBreakdown.intChatta.revenue + itemRev);
       } else if (grade === 'PILA') {
         salesBreakdown.intPila.qty += q;
-        salesBreakdown.intPila.revenue += itemRev;
+        salesBreakdown.intPila.revenue = round2(salesBreakdown.intPila.revenue + itemRev);
       } else if (grade === 'INT_2_NO') {
         salesBreakdown.int2No.qty += q;
-        salesBreakdown.int2No.revenue += itemRev;
+        salesBreakdown.int2No.revenue = round2(salesBreakdown.int2No.revenue + itemRev);
       } else {
         salesBreakdown.int1No.qty += q;
-        salesBreakdown.int1No.revenue += itemRev;
+        salesBreakdown.int1No.revenue = round2(salesBreakdown.int1No.revenue + itemRev);
       }
 
       salesBreakdown.totalPcs += q;
@@ -240,9 +295,9 @@ export const auditBhattaRoundData = (firm, config = {}) => {
 };
 
 export const lockBhattaRoundAudit = (firm, roundId, auditResult) => {
-  const activeFirmId = firm?.id || firm?.firm_id || localStorage.getItem('app_active_firm_id') || 'FIRM-001';
+  const activeFirmId = resolveFirmId(firm);
   const lockDate = new Date().toISOString().slice(0, 10);
-  
+
   const cogsLedger = 'Cost of Goods Sold (Bhatta Finished Goods)';
   const wipLedger = 'Manufacturing / Work-in-Progress (WIP)';
 
