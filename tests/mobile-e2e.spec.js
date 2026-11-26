@@ -11,7 +11,7 @@ test.use({
   ...devices['iPhone 13'], // 390x844 mobile viewport + touch
 });
 
-const MULTI_FIRM_ACCOUNTANT_DATA = {
+const SUITE_DATA = {
   firms: [
     {
       legalName: 'Neelkanth Int Udyog',
@@ -47,7 +47,7 @@ const MULTI_FIRM_ACCOUNTANT_DATA = {
     receiptAmount: '1200',
     paymentAmount: '1000',
     wagesAmount: '3500',
-    narration: 'Professional accountant audit entry - FY 2026-27',
+    narration: 'Complete accountant E2E audit - FY 2026-27',
   },
 };
 
@@ -78,7 +78,13 @@ async function selectCustomDropdownOption(page, preferredText = '') {
     if (!(await box.isVisible().catch(() => false))) continue;
 
     const currentText = sanitizeText(await box.innerText().catch(() => ''));
-    if (currentText && !currentText.includes('--') && !currentText.includes('Search') && !/^[▼▲]$/.test(currentText)) {
+    if (
+      currentText &&
+      !currentText.includes('--') &&
+      !currentText.includes('Search') &&
+      !currentText.includes('Select') &&
+      !/^[▼▲]$/.test(currentText)
+    ) {
       continue;
     }
 
@@ -116,7 +122,10 @@ async function selectCustomDropdownOption(page, preferredText = '') {
         !txt.includes('Koi khata nahi mila') &&
         !txt.includes('Koi stock item uplabdh nahi hai') &&
         !txt.includes('Select Account') &&
-        !txt.includes('Select Stock Item')
+        !txt.includes('Select Stock Item') &&
+        !txt.includes('-- Choose Stock Item --') &&
+        !txt.includes('-- Select Debit Account --') &&
+        !txt.includes('-- Select Credit Account --')
       ) {
         await candidate.click({ force: true }).catch(() => {});
         await page.waitForTimeout(200);
@@ -168,7 +177,7 @@ async function fillSmartInputs(page, cfg = {}) {
     if (meta.includes('search')) continue;
 
     if (type === 'date' || meta.includes('date')) {
-      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.date).catch(() => {});
+      await inp.fill(SUITE_DATA.entries.date).catch(() => {});
     } else if (
       type === 'number' ||
       meta.includes('amount') ||
@@ -185,28 +194,28 @@ async function fillSmartInputs(page, cfg = {}) {
       meta.includes('received')
     ) {
       if (meta.includes('qty') || meta.includes('quantity') || meta.includes('units') || meta.includes('pcs')) {
-        await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.quantity).catch(() => {});
+        await inp.fill(SUITE_DATA.entries.quantity).catch(() => {});
       } else if (meta.includes('rate') || meta.includes('price')) {
-        await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.rate).catch(() => {});
+        await inp.fill(SUITE_DATA.entries.rate).catch(() => {});
       } else if (amountValue !== null) {
         await inp.fill(String(amountValue)).catch(() => {});
       } else {
-        await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.amount).catch(() => {});
+        await inp.fill(SUITE_DATA.entries.amount).catch(() => {});
       }
     } else if (type === 'tel' || meta.includes('mobile') || meta.includes('phone') || meta.includes('contact')) {
-      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.firms[0].mobile).catch(() => {});
+      await inp.fill(SUITE_DATA.firms[0].mobile).catch(() => {});
     } else if (meta.includes('gst')) {
-      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.firms[0].gstin).catch(() => {});
+      await inp.fill(SUITE_DATA.firms[0].gstin).catch(() => {});
     } else if (meta.includes('address') || meta.includes('location') || meta.includes('shahar')) {
-      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.firms[0].address).catch(() => {});
+      await inp.fill(SUITE_DATA.firms[0].address).catch(() => {});
     } else if (meta.includes('trade') || meta.includes('brand')) {
-      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.firms[0].tradeName).catch(() => {});
+      await inp.fill(SUITE_DATA.firms[0].tradeName).catch(() => {});
     } else if (meta.includes('invoice')) {
-      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.invoiceNo).catch(() => {});
+      await inp.fill(SUITE_DATA.entries.invoiceNo).catch(() => {});
     } else if (meta.includes('bill')) {
-      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.purchaseBillNo).catch(() => {});
+      await inp.fill(SUITE_DATA.entries.purchaseBillNo).catch(() => {});
     } else if (meta.includes('voucher') || meta.includes('receipt') || meta.includes('ref')) {
-      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.voucherNo).catch(() => {});
+      await inp.fill(SUITE_DATA.entries.voucherNo).catch(() => {});
     } else if (
       meta.includes('party') ||
       meta.includes('customer') ||
@@ -224,7 +233,7 @@ async function fillSmartInputs(page, cfg = {}) {
       meta.includes('note') ||
       meta.includes('description')
     ) {
-      await inp.fill(narrationValue || MULTI_FIRM_ACCOUNTANT_DATA.entries.narration).catch(() => {});
+      await inp.fill(narrationValue || SUITE_DATA.entries.narration).catch(() => {});
     }
   }
 
@@ -233,7 +242,7 @@ async function fillSmartInputs(page, cfg = {}) {
   for (let j = 0; j < taCount; j++) {
     const ta = textareas.nth(j);
     if (await ta.isEnabled().catch(() => false)) {
-      await ta.fill(narrationValue || MULTI_FIRM_ACCOUNTANT_DATA.entries.narration).catch(() => {});
+      await ta.fill(narrationValue || SUITE_DATA.entries.narration).catch(() => {});
     }
   }
 
@@ -297,7 +306,6 @@ async function submitFormIfPresent(page, allowFirmForm = false) {
 }
 
 async function createFirmFlow(page, firmObj) {
-  // Open "New Firm..." from firm dropdown if already on dashboard
   const firmSelect = page.locator('select:visible').first();
   if (await firmSelect.isVisible().catch(() => false)) {
     const hasNewFirmOpt = await firmSelect.locator('option[value="CREATE_NEW"]').count().catch(() => 0);
@@ -307,28 +315,20 @@ async function createFirmFlow(page, firmObj) {
     }
   }
 
-  await fillSmartInputs(page, {
-    mode: 'firm',
-    nameValue: firmObj.legalName,
-    narrationValue: firmObj.address,
-  });
-
-  // Explicitly set trade name / gstin / mobile / address if visible
   const inputs = page.locator('input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
   const count = await inputs.count();
   for (let i = 0; i < count; i++) {
     const inp = inputs.nth(i);
-    const meta = ((await inp.getAttribute('placeholder')) || '') + ' ' + ((await inp.getAttribute('name')) || '');
-    const m = meta.toLowerCase();
-    if (m.includes('neelkanth fuels') || m.includes('legal')) {
+    const meta = (((await inp.getAttribute('placeholder')) || '') + ' ' + ((await inp.getAttribute('name')) || '')).toLowerCase();
+    if (meta.includes('neelkanth fuels') || meta.includes('legal')) {
       await inp.fill(firmObj.legalName).catch(() => {});
-    } else if (m.includes('gro') || m.includes('trade')) {
+    } else if (meta.includes('gro') || meta.includes('trade')) {
       await inp.fill(firmObj.tradeName).catch(() => {});
-    } else if (m.includes('08aaaaa') || m.includes('gst')) {
+    } else if (meta.includes('08aaaaa') || meta.includes('gst')) {
       await inp.fill(firmObj.gstin).catch(() => {});
-    } else if (m.includes('98290xxxxx') || m.includes('mobile') || m.includes('phone')) {
+    } else if (meta.includes('98290xxxxx') || meta.includes('mobile') || meta.includes('phone')) {
       await inp.fill(firmObj.mobile).catch(() => {});
-    } else if (m.includes('hanumangarh') || m.includes('address')) {
+    } else if (meta.includes('hanumangarh') || meta.includes('address')) {
       await inp.fill(firmObj.address).catch(() => {});
     }
   }
@@ -414,11 +414,7 @@ async function runBackupAndRestoreCheck(page, outDir) {
     await page.waitForTimeout(450);
   }
 
-  // Try clicking a download/export backup button if visible
-  const exportBtn = page
-    .locator('button:visible')
-    .filter({ hasText: /backup|export|download/i })
-    .first();
+  const exportBtn = page.locator('button:visible').filter({ hasText: /backup|export|download/i }).first();
   if (await exportBtn.isVisible().catch(() => false)) {
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 5000 }).catch(() => null),
@@ -435,11 +431,7 @@ async function runBackupAndRestoreCheck(page, outDir) {
       sampleBackupPath,
       JSON.stringify(
         {
-          meta: {
-            app: 'AccountBook',
-            version: 'e2e-check',
-            exported_at: new Date().toISOString(),
-          },
+          meta: { app: 'AccountBook', version: 'e2e-check', exported_at: new Date().toISOString() },
           data: {},
         },
         null,
@@ -448,7 +440,6 @@ async function runBackupAndRestoreCheck(page, outDir) {
     );
   }
 
-  // Try restoring via file input if available
   const fileInput = page.locator('input[type="file"]').first();
   if ((await fileInput.count().catch(() => 0)) > 0) {
     restoreInputFound = true;
@@ -457,26 +448,23 @@ async function runBackupAndRestoreCheck(page, outDir) {
 
     const restoreBtn = page
       .locator('button:visible')
-      .filter({ hasText: /restore|import|upload/i })
+      .filter({ hasText: /restore|import|upload|confirm/i })
       .first();
     if (await restoreBtn.isVisible().catch(() => false)) {
       await restoreBtn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(550);
+      restoreTriggered = true;
+    } else {
       restoreTriggered = true;
     }
   }
 
   await page.screenshot({ path: path.join(outDir, '99-backup-restore-check.png'), fullPage: true });
 
-  return {
-    backupTriggered,
-    restoreInputFound,
-    restoreTriggered,
-    sampleBackupPath,
-  };
+  return { backupTriggered, restoreInputFound, restoreTriggered, sampleBackupPath };
 }
 
-test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', async ({ page }) => {
+test('Full 14-Aspect Multi-Firm Accountant E2E + Backup & Restore Verification', async ({ page }) => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   page.on('dialog', async (dialog) => {
@@ -490,17 +478,13 @@ test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', a
   let currentStep = '01-open-app';
 
   page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      consoleErrors.push({ step: currentStep, text: msg.text() });
-    }
+    if (msg.type() === 'error') consoleErrors.push({ step: currentStep, text: msg.text() });
   });
   page.on('pageerror', (err) => {
     pageErrors.push({ step: currentStep, message: err.message });
   });
   page.on('response', (res) => {
-    if (res.status() >= 400) {
-      failedRequests.push({ step: currentStep, status: res.status(), url: res.url() });
-    }
+    if (res.status() >= 400) failedRequests.push({ step: currentStep, status: res.status(), url: res.url() });
   });
   page.on('requestfailed', (req) => {
     failedRequests.push({
@@ -516,75 +500,74 @@ test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', a
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUT_DIR, '01-open-app.png'), fullPage: true });
 
-  // Firm 1 setup
   currentStep = '02-firm-1-setup';
-  const firm1Submitted = await createFirmFlow(page, MULTI_FIRM_ACCOUNTANT_DATA.firms[0]);
+  const firm1Submitted = await createFirmFlow(page, SUITE_DATA.firms[0]);
   await page.waitForTimeout(500);
 
   const firm1Steps = [
     {
       step: 3,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Masters / Ledgers',
       name: 'Customer Account Head',
       mode: 'ledger',
-      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.accounts[0].name,
-      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.accounts[0].openingBalance,
+      nameValue: SUITE_DATA.accounts[0].name,
+      amountValue: SUITE_DATA.accounts[0].openingBalance,
       keywords: ['Add Account Head'],
     },
     {
       step: 4,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Masters / Ledgers',
       name: 'Supplier Account Head',
       mode: 'ledger',
-      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.accounts[1].name,
-      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.accounts[1].openingBalance,
+      nameValue: SUITE_DATA.accounts[1].name,
+      amountValue: SUITE_DATA.accounts[1].openingBalance,
       keywords: ['Add Account Head'],
     },
     {
       step: 5,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Purchase & Stock',
       name: 'Purchase & Inward Stock',
       mode: 'transaction',
-      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.supplier,
-      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.amount,
+      nameValue: SUITE_DATA.entries.supplier,
+      amountValue: SUITE_DATA.entries.amount,
       keywords: ['Purchase & Inward Stock', 'Fuel & Raw Purchases'],
     },
     {
       step: 6,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Sales & Billing',
       name: 'Sales / Tax Invoice',
       mode: 'transaction',
-      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.party,
-      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.amount,
+      nameValue: SUITE_DATA.entries.party,
+      amountValue: SUITE_DATA.entries.amount,
       keywords: ['Sales / Tax Invoice', 'Brick Dispatch / Sales'],
     },
     {
       step: 7,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Vouchers',
       name: 'Voucher Entry (Dr/Cr)',
       mode: 'transaction',
-      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.party,
-      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.receiptAmount,
+      nameValue: SUITE_DATA.entries.party,
+      amountValue: SUITE_DATA.entries.receiptAmount,
       keywords: ['Voucher Entry'],
     },
     {
       step: 8,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Inventory & Consumption',
       name: 'Material Issue & Adjustment',
       mode: 'transaction',
-      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.item,
+      nameValue: SUITE_DATA.entries.item,
       amountValue: '500',
       keywords: ['Material Issue'],
     },
     {
       step: 9,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Production / Kiln',
       name: 'Production & Pakai',
       mode: 'transaction',
@@ -594,23 +577,41 @@ test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', a
     },
     {
       step: 10,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Payroll & Labour',
       name: 'Labour, Wages & Tractor',
       mode: 'transaction',
       nameValue: 'Ramesh Kumar Pathai Mistri',
-      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.wagesAmount,
+      amountValue: SUITE_DATA.entries.wagesAmount,
       keywords: ['Labour, Wages & Tractor'],
     },
     {
       step: 11,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
+      firmName: SUITE_DATA.firms[0].legalName,
       category: 'Reconciliation',
       name: 'Bill Settlement / Khata Milan',
       mode: 'transaction',
-      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.party,
-      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.receiptAmount,
+      nameValue: SUITE_DATA.entries.party,
+      amountValue: SUITE_DATA.entries.receiptAmount,
       keywords: ['Bill Settlement'],
+    },
+    {
+      step: 12,
+      firmName: SUITE_DATA.firms[0].legalName,
+      category: 'Registers & Statements',
+      name: 'Account Milan & Ledger',
+      mode: 'transaction',
+      readOnly: true,
+      keywords: ['Account Milan & Ledger', 'Customer/Labour Milan'],
+    },
+    {
+      step: 13,
+      firmName: SUITE_DATA.firms[0].legalName,
+      category: 'Registers & Statements',
+      name: 'Inventory & Stock Register',
+      mode: 'transaction',
+      readOnly: true,
+      keywords: ['Inventory & Stock Register', 'Stock Register'],
     },
   ];
 
@@ -619,15 +620,14 @@ test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', a
     auditResults.push(await runModuleStep(page, st, consoleErrors, pageErrors, failedRequests));
   }
 
-  // Firm 2 setup & entries
-  currentStep = '12-firm-2-setup';
-  const firm2Submitted = await createFirmFlow(page, MULTI_FIRM_ACCOUNTANT_DATA.firms[1]);
+  currentStep = '14-firm-2-setup';
+  const firm2Submitted = await createFirmFlow(page, SUITE_DATA.firms[1]);
   await page.waitForTimeout(500);
 
   const firm2Steps = [
     {
-      step: 13,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[1].legalName,
+      step: 15,
+      firmName: SUITE_DATA.firms[1].legalName,
       category: 'Masters / Ledgers',
       name: 'Firm 2 Customer Head',
       mode: 'ledger',
@@ -636,8 +636,8 @@ test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', a
       keywords: ['Add Account Head'],
     },
     {
-      step: 14,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[1].legalName,
+      step: 16,
+      firmName: SUITE_DATA.firms[1].legalName,
       category: 'Sales & Billing',
       name: 'Firm 2 Sales Invoice',
       mode: 'transaction',
@@ -646,8 +646,8 @@ test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', a
       keywords: ['Sales / Tax Invoice', 'Brick Dispatch / Sales'],
     },
     {
-      step: 15,
-      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[1].legalName,
+      step: 17,
+      firmName: SUITE_DATA.firms[1].legalName,
       category: 'Financial Statements',
       name: 'Financial Reports (TB/P&L/BS)',
       mode: 'transaction',
@@ -661,12 +661,10 @@ test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', a
     auditResults.push(await runModuleStep(page, st, consoleErrors, pageErrors, failedRequests));
   }
 
-  // Backup & Restore check
-  currentStep = '16-backup-and-restore';
+  currentStep = '18-backup-and-restore';
   const backupRestoreStatus = await runBackupAndRestoreCheck(page, OUT_DIR);
 
-  // Final reload check
-  currentStep = '17-final-reload';
+  currentStep = '19-final-reload';
   await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
   await page.waitForTimeout(500);
   const bodyText = await page.locator('body').innerText().catch(() => '');
@@ -677,8 +675,7 @@ test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', a
     firm1Submitted,
     firm2Submitted,
     backupRestoreStatus,
-    persistedFirmPresent:
-      bodyText.includes('Neelkanth Int Udyog') || bodyText.includes('Neelkanth Trading'),
+    persistedFirmPresent: bodyText.includes('Neelkanth Int Udyog') || bodyText.includes('Neelkanth Trading'),
     totalStepsTested: auditResults.length,
     foundCount: auditResults.filter((r) => r.found).length,
     submittedCount: auditResults.filter(
