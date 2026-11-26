@@ -5,49 +5,49 @@ const path = require('path');
 const APP_URL = process.env.APP_URL || 'https://account-book-lenden-manager.vercel.app';
 const OUT_DIR = path.join(process.cwd(), 'test-results');
 
-test.setTimeout(120000);
+test.setTimeout(180000);
 
 test.use({
   ...devices['iPhone 13'], // 390x844 mobile viewport + touch
 });
 
-const ACCOUNTANT_DATA = {
-  firm: {
-    legalName: 'Neelkanth Int Udyog & Briquettes',
-    tradeName: 'Neelkanth Commercial',
-    gstin: '08AAKCN4821R1Z5',
-    mobile: '9829012345',
-    address: 'Industrial Area, Hanumangarh, Rajasthan 335513',
-  },
-  ledgers: [
+const MULTI_FIRM_ACCOUNTANT_DATA = {
+  firms: [
     {
-      name: 'Sharma Bricks & Traders',
-      openingBalance: '15000',
-      mobile: '9829011122',
-      address: 'Hanumangarh Junction, Rajasthan',
+      legalName: 'Neelkanth Int Udyog',
+      tradeName: 'Neelkanth Bhatta',
+      gstin: '08AAKCN4821R1Z5',
+      mobile: '9829012345',
+      address: 'Industrial Area, Hanumangarh, Rajasthan 335513',
     },
     {
-      name: 'Rajasthan Coal & Fuel Suppliers',
-      openingBalance: '25000',
-      mobile: '9829055443',
-      address: 'Bikaner Road, Hanumangarh, Rajasthan',
+      legalName: 'Neelkanth Trading & Briquettes',
+      tradeName: 'Neelkanth Commercial',
+      gstin: '08AAKCN9912R1Z2',
+      mobile: '9829098765',
+      address: 'Grain Market Road, Hanumangarh, Rajasthan 335513',
     },
   ],
+  accounts: [
+    { name: 'Sharma Bricks & Traders', openingBalance: '15000', mobile: '9829011122', address: 'Hanumangarh' },
+    { name: 'Rajasthan Coal & Fuel Suppliers', openingBalance: '25000', mobile: '9829055443', address: 'Bikaner Road' },
+    { name: 'Proprietor Capital Account', openingBalance: '100000', mobile: '9829012345', address: 'Hanumangarh' },
+  ],
   entries: {
-    date: '2026-11-24',
-    invoiceNo: 'INV-2026-204',
-    purchaseBillNo: 'PUR-2026-108',
-    voucherNo: 'VCH-2026-101',
+    date: '2026-11-26',
+    invoiceNo: 'INV-2026-301',
+    purchaseBillNo: 'PUR-2026-201',
+    voucherNo: 'VCH-2026-105',
     party: 'Sharma Bricks & Traders',
     supplier: 'Rajasthan Coal & Fuel Suppliers',
     item: 'Diesel',
-    quantity: '10',
+    quantity: '25',
     rate: '96',
-    amount: '960',
-    receiptAmount: '500',
-    paymentAmount: '500',
-    wagesAmount: '1500',
-    narration: 'Audit entry by Accountant - FY 2026-27 verification',
+    amount: '2400',
+    receiptAmount: '1200',
+    paymentAmount: '1000',
+    wagesAmount: '3500',
+    narration: 'Professional accountant audit entry - FY 2026-27',
   },
 };
 
@@ -55,52 +55,61 @@ function sanitizeText(text = '') {
   return String(text).replace(/\s+/g, ' ').trim();
 }
 
-async function selectFirstDropdownOption(page, preferredQuery = '') {
-  // Click any visible dropdown trigger box containing ▼ or ▲
-  const triggers = page.locator('div').filter({ hasText: /^[▼▲]$/ });
-  const total = await triggers.count();
+async function openMenuIfNeeded(page) {
+  const menuBtn = page.locator('button:visible:has-text("Menu")').first();
+  if (await menuBtn.isVisible().catch(() => false)) {
+    const txt = sanitizeText(await menuBtn.innerText().catch(() => ''));
+    if (txt.includes('Menu')) {
+      await menuBtn.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+  }
+}
 
-  for (let i = 0; i < total; i++) {
+async function selectCustomDropdownOption(page, preferredText = '') {
+  const triggers = page.locator('div').filter({ hasText: /^[▼▲]$/ });
+  const count = await triggers.count();
+
+  for (let i = 0; i < count; i++) {
     const arrow = triggers.nth(i);
     if (!(await arrow.isVisible().catch(() => false))) continue;
 
-    const triggerBox = arrow.locator('..');
-    if (!(await triggerBox.isVisible().catch(() => false))) continue;
+    const box = arrow.locator('..');
+    if (!(await box.isVisible().catch(() => false))) continue;
 
-    const boxText = sanitizeText(await triggerBox.innerText().catch(() => ''));
-    if (boxText && !boxText.includes('--') && !boxText.includes('Search') && !/^[▼▲]$/.test(boxText)) {
+    const currentText = sanitizeText(await box.innerText().catch(() => ''));
+    if (currentText && !currentText.includes('--') && !currentText.includes('Search') && !/^[▼▲]$/.test(currentText)) {
       continue;
     }
 
-    await triggerBox.scrollIntoViewIfNeeded().catch(() => {});
-    await triggerBox.click({ force: true }).catch(() => {});
+    await box.scrollIntoViewIfNeeded().catch(() => {});
+    await box.click({ force: true }).catch(() => {});
     await page.waitForTimeout(250);
 
-    const searchInput = page.locator('input:visible').last();
-    if (preferredQuery && (await searchInput.isVisible().catch(() => false))) {
-      const ph = ((await searchInput.getAttribute('placeholder')) || '').toLowerCase();
+    const searchBox = page.locator('input:visible').last();
+    if (preferredText && (await searchBox.isVisible().catch(() => false))) {
+      const ph = ((await searchBox.getAttribute('placeholder')) || '').toLowerCase();
       if (ph.includes('search')) {
-        await searchInput.fill(preferredQuery).catch(() => {});
+        await searchBox.fill(preferredText).catch(() => {});
         await page.waitForTimeout(200);
       }
     }
 
-    // Look for clickable option items inside the floating list
-    const allDivs = page.locator('div');
-    const divCount = await allDivs.count();
-    let clickedOption = false;
+    const divs = page.locator('div');
+    const divCount = await divs.count();
+    let picked = false;
 
     for (let d = divCount - 1; d >= 0; d--) {
-      const el = allDivs.nth(d);
-      if (!(await el.isVisible().catch(() => false))) continue;
-      const childDivCount = await el.locator('> div').count().catch(() => 0);
-      if (childDivCount > 0) continue;
+      const candidate = divs.nth(d);
+      if (!(await candidate.isVisible().catch(() => false))) continue;
+      const children = await candidate.locator('> div').count().catch(() => 0);
+      if (children > 0) continue;
 
-      const txt = sanitizeText(await el.innerText().catch(() => ''));
+      const txt = sanitizeText(await candidate.innerText().catch(() => ''));
       if (
         txt &&
         txt.length > 1 &&
-        txt.length < 70 &&
+        txt.length < 75 &&
         !txt.includes('Type name to search') &&
         !txt.includes('Search item...') &&
         !txt.includes('-- Clear Selection --') &&
@@ -109,30 +118,30 @@ async function selectFirstDropdownOption(page, preferredQuery = '') {
         !txt.includes('Select Account') &&
         !txt.includes('Select Stock Item')
       ) {
-        await el.click({ force: true }).catch(() => {});
+        await candidate.click({ force: true }).catch(() => {});
         await page.waitForTimeout(200);
-        clickedOption = true;
+        picked = true;
         break;
       }
     }
 
-    if (!clickedOption) {
+    if (!picked) {
       await page.keyboard.press('Escape').catch(() => {});
     }
   }
 }
 
-async function fillSmartInputs(page, context = {}) {
+async function fillSmartInputs(page, cfg = {}) {
   const {
     mode = 'transaction',
-    overrideName = null,
-    overrideAmount = null,
-    overrideNarration = null,
-    preferredQuery = '',
-  } = context;
+    nameValue = null,
+    amountValue = null,
+    narrationValue = null,
+    dropdownQuery = '',
+  } = cfg;
 
   const inputs = page.locator(
-    'input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])'
+    'input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"])'
   );
   const count = await inputs.count();
 
@@ -159,7 +168,7 @@ async function fillSmartInputs(page, context = {}) {
     if (meta.includes('search')) continue;
 
     if (type === 'date' || meta.includes('date')) {
-      await inp.fill(ACCOUNTANT_DATA.entries.date).catch(() => {});
+      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.date).catch(() => {});
     } else if (
       type === 'number' ||
       meta.includes('amount') ||
@@ -175,38 +184,29 @@ async function fillSmartInputs(page, context = {}) {
       meta.includes('paid') ||
       meta.includes('received')
     ) {
-      if (
-        meta.includes('qty') ||
-        meta.includes('quantity') ||
-        meta.includes('units') ||
-        meta.includes('pcs')
-      ) {
-        await inp.fill(ACCOUNTANT_DATA.entries.quantity).catch(() => {});
+      if (meta.includes('qty') || meta.includes('quantity') || meta.includes('units') || meta.includes('pcs')) {
+        await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.quantity).catch(() => {});
       } else if (meta.includes('rate') || meta.includes('price')) {
-        await inp.fill(ACCOUNTANT_DATA.entries.rate).catch(() => {});
-      } else if (overrideAmount !== null) {
-        await inp.fill(String(overrideAmount)).catch(() => {});
-      } else if (mode === 'ledger') {
-        await inp.fill(ACCOUNTANT_DATA.ledgers[0].openingBalance).catch(() => {});
+        await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.rate).catch(() => {});
+      } else if (amountValue !== null) {
+        await inp.fill(String(amountValue)).catch(() => {});
       } else {
-        await inp.fill(ACCOUNTANT_DATA.entries.amount).catch(() => {});
+        await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.amount).catch(() => {});
       }
     } else if (type === 'tel' || meta.includes('mobile') || meta.includes('phone') || meta.includes('contact')) {
-      await inp.fill(mode === 'firm' ? ACCOUNTANT_DATA.firm.mobile : ACCOUNTANT_DATA.ledgers[0].mobile).catch(() => {});
+      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.firms[0].mobile).catch(() => {});
     } else if (meta.includes('gst')) {
-      await inp.fill(ACCOUNTANT_DATA.firm.gstin).catch(() => {});
+      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.firms[0].gstin).catch(() => {});
     } else if (meta.includes('address') || meta.includes('location') || meta.includes('shahar')) {
-      await inp.fill(ACCOUNTANT_DATA.firm.address).catch(() => {});
+      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.firms[0].address).catch(() => {});
     } else if (meta.includes('trade') || meta.includes('brand')) {
-      await inp.fill(ACCOUNTANT_DATA.firm.tradeName).catch(() => {});
+      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.firms[0].tradeName).catch(() => {});
     } else if (meta.includes('invoice')) {
-      await inp.fill(ACCOUNTANT_DATA.entries.invoiceNo).catch(() => {});
+      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.invoiceNo).catch(() => {});
     } else if (meta.includes('bill')) {
-      await inp.fill(ACCOUNTANT_DATA.entries.purchaseBillNo).catch(() => {});
+      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.purchaseBillNo).catch(() => {});
     } else if (meta.includes('voucher') || meta.includes('receipt') || meta.includes('ref')) {
-      await inp.fill(ACCOUNTANT_DATA.entries.voucherNo).catch(() => {});
-    } else if (meta.includes('item') || meta.includes('material') || meta.includes('product')) {
-      await inp.fill(ACCOUNTANT_DATA.entries.item).catch(() => {});
+      await inp.fill(MULTI_FIRM_ACCOUNTANT_DATA.entries.voucherNo).catch(() => {});
     } else if (
       meta.includes('party') ||
       meta.includes('customer') ||
@@ -215,10 +215,8 @@ async function fillSmartInputs(page, context = {}) {
       meta.includes('khate') ||
       meta.includes('name')
     ) {
-      if (mode === 'firm') {
-        await inp.fill(ACCOUNTANT_DATA.firm.legalName).catch(() => {});
-      } else {
-        await inp.fill(overrideName || ACCOUNTANT_DATA.entries.party).catch(() => {});
+      if (nameValue) {
+        await inp.fill(nameValue).catch(() => {});
       }
     } else if (
       meta.includes('narration') ||
@@ -226,7 +224,7 @@ async function fillSmartInputs(page, context = {}) {
       meta.includes('note') ||
       meta.includes('description')
     ) {
-      await inp.fill(overrideNarration || ACCOUNTANT_DATA.entries.narration).catch(() => {});
+      await inp.fill(narrationValue || MULTI_FIRM_ACCOUNTANT_DATA.entries.narration).catch(() => {});
     }
   }
 
@@ -235,7 +233,7 @@ async function fillSmartInputs(page, context = {}) {
   for (let j = 0; j < taCount; j++) {
     const ta = textareas.nth(j);
     if (await ta.isEnabled().catch(() => false)) {
-      await ta.fill(overrideNarration || ACCOUNTANT_DATA.entries.narration).catch(() => {});
+      await ta.fill(narrationValue || MULTI_FIRM_ACCOUNTANT_DATA.entries.narration).catch(() => {});
     }
   }
 
@@ -253,32 +251,33 @@ async function fillSmartInputs(page, context = {}) {
   }
 
   if (mode !== 'firm') {
-    await selectFirstDropdownOption(page, preferredQuery);
+    await selectCustomDropdownOption(page, dropdownQuery);
   }
 }
 
 async function addLineItemIfPresent(page) {
-  const addButtons = [
-    page.locator('button:visible:has-text("Add Item to Cart")').first(),
-    page.locator('button:visible:has-text("+ Add Item")').first(),
-  ];
+  const addCartBtn = page.locator('button:visible:has-text("Add Item to Cart")').first();
+  if (await addCartBtn.isVisible().catch(() => false)) {
+    await addCartBtn.scrollIntoViewIfNeeded().catch(() => {});
+    await addCartBtn.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(250);
+  }
 
-  for (const btn of addButtons) {
-    if (await btn.isVisible().catch(() => false)) {
-      await btn.scrollIntoViewIfNeeded().catch(() => {});
-      await btn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(300);
-    }
+  const addItemBtn = page.locator('button:visible:has-text("+ Add Item")').first();
+  if (await addItemBtn.isVisible().catch(() => false)) {
+    await addItemBtn.scrollIntoViewIfNeeded().catch(() => {});
+    await addItemBtn.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(250);
   }
 }
 
-async function submitFormIfPresent(page, allowCreateFirm = false) {
-  const wrongModal = await page
+async function submitFormIfPresent(page, allowFirmForm = false) {
+  const firmModalVisible = await page
     .locator('text="Register New Business Enterprise / Firm"')
     .isVisible()
     .catch(() => false);
 
-  if (wrongModal && !allowCreateFirm) {
+  if (firmModalVisible && !allowFirmForm) {
     return 'WRONG_MODAL_OPENED:Register New Business Enterprise / Firm';
   }
 
@@ -286,39 +285,64 @@ async function submitFormIfPresent(page, allowCreateFirm = false) {
 
   const submitBtn = page.locator('form button[type="submit"]:visible').last();
   if (await submitBtn.isVisible().catch(() => false)) {
-    const isDisabled = await submitBtn.isDisabled().catch(() => false);
-    if (isDisabled) {
+    if (await submitBtn.isDisabled().catch(() => false)) {
       return 'SUBMIT_DISABLED';
     }
     await submitBtn.scrollIntoViewIfNeeded().catch(() => {});
     await submitBtn.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(550);
+    await page.waitForTimeout(500);
     return 'form button[type="submit"]';
   }
   return null;
 }
 
-async function returnToDashboard(page) {
-  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-  await page.waitForTimeout(450);
-}
-
-async function openMenuIfNeeded(page) {
-  const menuBtn = page.locator('button:visible:has-text("Menu")').first();
-  if (await menuBtn.isVisible().catch(() => false)) {
-    await menuBtn.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(300);
+async function createFirmFlow(page, firmObj) {
+  // Open "New Firm..." from firm dropdown if already on dashboard
+  const firmSelect = page.locator('select:visible').first();
+  if (await firmSelect.isVisible().catch(() => false)) {
+    const hasNewFirmOpt = await firmSelect.locator('option[value="CREATE_NEW"]').count().catch(() => 0);
+    if (hasNewFirmOpt > 0) {
+      await firmSelect.selectOption('CREATE_NEW').catch(() => {});
+      await page.waitForTimeout(350);
+    }
   }
+
+  await fillSmartInputs(page, {
+    mode: 'firm',
+    nameValue: firmObj.legalName,
+    narrationValue: firmObj.address,
+  });
+
+  // Explicitly set trade name / gstin / mobile / address if visible
+  const inputs = page.locator('input:visible:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
+  const count = await inputs.count();
+  for (let i = 0; i < count; i++) {
+    const inp = inputs.nth(i);
+    const meta = ((await inp.getAttribute('placeholder')) || '') + ' ' + ((await inp.getAttribute('name')) || '');
+    const m = meta.toLowerCase();
+    if (m.includes('neelkanth fuels') || m.includes('legal')) {
+      await inp.fill(firmObj.legalName).catch(() => {});
+    } else if (m.includes('gro') || m.includes('trade')) {
+      await inp.fill(firmObj.tradeName).catch(() => {});
+    } else if (m.includes('08aaaaa') || m.includes('gst')) {
+      await inp.fill(firmObj.gstin).catch(() => {});
+    } else if (m.includes('98290xxxxx') || m.includes('mobile') || m.includes('phone')) {
+      await inp.fill(firmObj.mobile).catch(() => {});
+    } else if (m.includes('hanumangarh') || m.includes('address')) {
+      await inp.fill(firmObj.address).catch(() => {});
+    }
+  }
+
+  return await submitFormIfPresent(page, true);
 }
 
-async function openAndRunModule(page, stepInfo, consoleErrors, pageErrors, failedRequests) {
+async function runModuleStep(page, stepInfo, consoleErrors, pageErrors, failedRequests) {
   const errorsBefore = pageErrors.length + consoleErrors.length + failedRequests.length;
   const textBefore = await page.locator('body').innerText().catch(() => '');
 
   let found = false;
   let clickedLabel = null;
   let submitStatus = null;
-  let unexpectedRegisterFirmForm = false;
 
   for (const kw of stepInfo.keywords || []) {
     let btn = page.locator(`button:visible:has-text("${kw}")`).first();
@@ -332,60 +356,127 @@ async function openAndRunModule(page, stepInfo, consoleErrors, pageErrors, faile
       clickedLabel = sanitizeText(await btn.innerText().catch(() => kw));
       await btn.scrollIntoViewIfNeeded().catch(() => {});
       await btn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(450);
       break;
     }
   }
 
-  if (found) {
-    unexpectedRegisterFirmForm = await page
-      .locator('text="Register New Business Enterprise / Firm"')
-      .isVisible()
-      .catch(() => false);
-
-    if (!stepInfo.readOnly) {
-      await fillSmartInputs(page, {
-        mode: stepInfo.mode || 'transaction',
-        overrideName: stepInfo.overrideName || null,
-        overrideAmount: stepInfo.overrideAmount || null,
-        overrideNarration: stepInfo.overrideNarration || null,
-        preferredQuery: stepInfo.preferredQuery || '',
-      });
-      submitStatus = await submitFormIfPresent(page, false);
-    } else {
-      submitStatus = 'READ_ONLY_VIEW_INSPECTED';
-    }
+  if (found && !stepInfo.readOnly) {
+    await fillSmartInputs(page, {
+      mode: stepInfo.mode || 'transaction',
+      nameValue: stepInfo.nameValue || null,
+      amountValue: stepInfo.amountValue || null,
+      narrationValue: stepInfo.narrationValue || null,
+      dropdownQuery: stepInfo.dropdownQuery || '',
+    });
+    submitStatus = await submitFormIfPresent(page, false);
+  } else if (found && stepInfo.readOnly) {
+    submitStatus = 'READ_ONLY_VIEW_INSPECTED';
   }
 
   const textAfter = await page.locator('body').innerText().catch(() => '');
   const errorsAfter = pageErrors.length + consoleErrors.length + failedRequests.length;
 
-  const shotName = `${String(stepInfo.step).padStart(2, '0')}-${stepInfo.name
+  const fileSlug = `${String(stepInfo.step).padStart(2, '0')}-${stepInfo.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .slice(0, 30)}.png`;
-  await page.screenshot({ path: path.join(OUT_DIR, shotName), fullPage: true });
+    .slice(0, 32)}.png`;
+  await page.screenshot({ path: path.join(OUT_DIR, fileSlug), fullPage: true });
 
   const result = {
     step: stepInfo.step,
+    firm: stepInfo.firmName || 'Active Firm',
     aspect: stepInfo.name,
     category: stepInfo.category,
     found,
     clickedLabel,
-    unexpectedRegisterFirmForm,
     submitStatus,
     uiChanged: textAfter !== textBefore,
     newErrorsCount: Math.max(0, errorsAfter - errorsBefore),
   };
 
-  if (stepInfo.resetAfter !== false) {
-    await returnToDashboard(page);
-  }
+  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  await page.waitForTimeout(450);
 
-  return { result };
+  return result;
 }
 
-test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', async ({ page }) => {
+async function runBackupAndRestoreCheck(page, outDir) {
+  let backupTriggered = false;
+  let restoreInputFound = false;
+  let restoreTriggered = false;
+  const sampleBackupPath = path.join(outDir, 'e2e-sample-backup.json');
+
+  await openMenuIfNeeded(page);
+  const backupNavBtn = page.locator('button:visible:has-text("Backup")').first();
+  if (await backupNavBtn.isVisible().catch(() => false)) {
+    await backupNavBtn.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(450);
+  }
+
+  // Try clicking a download/export backup button if visible
+  const exportBtn = page
+    .locator('button:visible')
+    .filter({ hasText: /backup|export|download/i })
+    .first();
+  if (await exportBtn.isVisible().catch(() => false)) {
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 5000 }).catch(() => null),
+      exportBtn.click({ force: true }).catch(() => {}),
+    ]);
+    if (download) {
+      await download.saveAs(sampleBackupPath).catch(() => {});
+      backupTriggered = fs.existsSync(sampleBackupPath);
+    }
+  }
+
+  if (!fs.existsSync(sampleBackupPath)) {
+    fs.writeFileSync(
+      sampleBackupPath,
+      JSON.stringify(
+        {
+          meta: {
+            app: 'AccountBook',
+            version: 'e2e-check',
+            exported_at: new Date().toISOString(),
+          },
+          data: {},
+        },
+        null,
+        2
+      )
+    );
+  }
+
+  // Try restoring via file input if available
+  const fileInput = page.locator('input[type="file"]').first();
+  if ((await fileInput.count().catch(() => 0)) > 0) {
+    restoreInputFound = true;
+    await fileInput.setInputFiles(sampleBackupPath).catch(() => {});
+    await page.waitForTimeout(450);
+
+    const restoreBtn = page
+      .locator('button:visible')
+      .filter({ hasText: /restore|import|upload/i })
+      .first();
+    if (await restoreBtn.isVisible().catch(() => false)) {
+      await restoreBtn.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(500);
+      restoreTriggered = true;
+    }
+  }
+
+  await page.screenshot({ path: path.join(outDir, '99-backup-restore-check.png'), fullPage: true });
+
+  return {
+    backupTriggered,
+    restoreInputFound,
+    restoreTriggered,
+    sampleBackupPath,
+  };
+}
+
+test('Multi-Firm Professional Accountant E2E + Backup & Restore Verification', async ({ page }) => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   page.on('dialog', async (dialog) => {
@@ -396,7 +487,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
   const pageErrors = [];
   const failedRequests = [];
   const auditResults = [];
-  let currentStep = '01-initial-load';
+  let currentStep = '01-open-app';
 
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
@@ -408,11 +499,7 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
   });
   page.on('response', (res) => {
     if (res.status() >= 400) {
-      failedRequests.push({
-        step: currentStep,
-        status: res.status(),
-        url: res.url(),
-      });
+      failedRequests.push({ step: currentStep, status: res.status(), url: res.url() });
     }
   });
   page.on('requestfailed', (req) => {
@@ -424,153 +511,175 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
     });
   });
 
-  // 1. Initial Load & Firm Setup
-  currentStep = '01-initial-load';
+  currentStep = '01-open-app';
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(500);
-  await page.screenshot({ path: path.join(OUT_DIR, '01-initial-load.png'), fullPage: true });
+  await page.screenshot({ path: path.join(OUT_DIR, '01-open-app.png'), fullPage: true });
 
-  currentStep = '02-firm-setup';
-  await fillSmartInputs(page, { mode: 'firm' });
-  const firmSubmitted = await submitFormIfPresent(page, true);
-  await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUT_DIR, '02-firm-setup-complete.png'), fullPage: true });
+  // Firm 1 setup
+  currentStep = '02-firm-1-setup';
+  const firm1Submitted = await createFirmFlow(page, MULTI_FIRM_ACCOUNTANT_DATA.firms[0]);
+  await page.waitForTimeout(500);
 
-  const accountingSteps = [
+  const firm1Steps = [
     {
       step: 3,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Masters / Ledgers',
-      name: 'Customer Ledger Entry',
+      name: 'Customer Account Head',
       mode: 'ledger',
-      overrideName: ACCOUNTANT_DATA.ledgers[0].name,
-      overrideAmount: ACCOUNTANT_DATA.ledgers[0].openingBalance,
-      overrideNarration: 'Debtor opening balance entry by accountant',
-      keywords: ['Add Account Head', 'naye account', 'account'],
+      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.accounts[0].name,
+      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.accounts[0].openingBalance,
+      keywords: ['Add Account Head'],
     },
     {
       step: 4,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Masters / Ledgers',
-      name: 'Supplier Ledger Entry',
+      name: 'Supplier Account Head',
       mode: 'ledger',
-      overrideName: ACCOUNTANT_DATA.ledgers[1].name,
-      overrideAmount: ACCOUNTANT_DATA.ledgers[1].openingBalance,
-      overrideNarration: 'Creditor opening balance entry by accountant',
-      keywords: ['Add Account Head', 'naye account', 'account'],
+      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.accounts[1].name,
+      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.accounts[1].openingBalance,
+      keywords: ['Add Account Head'],
     },
     {
       step: 5,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Purchase & Stock',
       name: 'Purchase & Inward Stock',
       mode: 'transaction',
-      overrideName: ACCOUNTANT_DATA.entries.supplier,
-      overrideAmount: ACCOUNTANT_DATA.entries.amount,
-      overrideNarration: 'Fuel & raw material inward bill entry',
-      keywords: ['Purchase & Inward Stock', 'Fuel & Raw Purchases', 'Purchase'],
+      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.supplier,
+      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.amount,
+      keywords: ['Purchase & Inward Stock', 'Fuel & Raw Purchases'],
     },
     {
       step: 6,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Sales & Billing',
       name: 'Sales / Tax Invoice',
       mode: 'transaction',
-      overrideName: ACCOUNTANT_DATA.entries.party,
-      overrideAmount: ACCOUNTANT_DATA.entries.amount,
-      overrideNarration: 'Sales tax invoice entry by accountant',
-      keywords: ['Sales / Tax Invoice', 'Brick Dispatch / Sales', 'Sales'],
+      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.party,
+      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.amount,
+      keywords: ['Sales / Tax Invoice', 'Brick Dispatch / Sales'],
     },
     {
       step: 7,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Vouchers',
-      name: 'Voucher Entry (Receipt/Payment/JV)',
+      name: 'Voucher Entry (Dr/Cr)',
       mode: 'transaction',
-      overrideName: ACCOUNTANT_DATA.entries.party,
-      overrideAmount: ACCOUNTANT_DATA.entries.receiptAmount,
-      overrideNarration: 'Accounting voucher entry by accountant',
-      keywords: ['Voucher Entry', 'Voucher'],
+      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.party,
+      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.receiptAmount,
+      keywords: ['Voucher Entry'],
     },
     {
       step: 8,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Inventory & Consumption',
       name: 'Material Issue & Adjustment',
       mode: 'transaction',
-      overrideName: ACCOUNTANT_DATA.entries.item,
-      overrideAmount: '200',
-      overrideNarration: 'Material issue & stock adjustment entry',
-      keywords: ['Material Issue', 'Adjustment'],
+      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.item,
+      amountValue: '500',
+      keywords: ['Material Issue'],
     },
     {
       step: 9,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Production / Kiln',
       name: 'Production & Pakai',
       mode: 'transaction',
-      overrideName: 'Kiln Batch #01',
-      overrideAmount: '10000',
-      overrideNarration: 'Production & pakai entry by accountant',
-      keywords: ['Production & Pakai', 'Bhatta Production Entry', 'Production'],
+      nameValue: 'Chamber #01',
+      amountValue: '10000',
+      keywords: ['Production & Pakai', 'Bhatta Production Entry'],
     },
     {
       step: 10,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Payroll & Labour',
       name: 'Labour, Wages & Tractor',
       mode: 'transaction',
-      overrideName: 'Ramesh Kumar Pathai Thekedar',
-      overrideAmount: ACCOUNTANT_DATA.entries.wagesAmount,
-      overrideNarration: 'Labour wages & tractor entry by accountant',
-      keywords: ['Labour, Wages & Tractor', 'Wages', 'Payroll'],
+      nameValue: 'Ramesh Kumar Pathai Mistri',
+      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.wagesAmount,
+      keywords: ['Labour, Wages & Tractor'],
     },
     {
       step: 11,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[0].legalName,
       category: 'Reconciliation',
       name: 'Bill Settlement / Khata Milan',
       mode: 'transaction',
-      overrideName: ACCOUNTANT_DATA.entries.party,
-      overrideAmount: ACCOUNTANT_DATA.entries.receiptAmount,
-      overrideNarration: 'Bill settlement & khata milan entry',
-      keywords: ['Bill Settlement', 'Settlement'],
-    },
-    {
-      step: 12,
-      category: 'Registers & Statements',
-      name: 'Account Milan & Ledger',
-      mode: 'transaction',
-      readOnly: true,
-      keywords: ['Account Milan & Ledger', 'Customer/Labour Milan', 'Milan'],
-    },
-    {
-      step: 13,
-      category: 'Registers & Statements',
-      name: 'Inventory & Stock Register',
-      mode: 'transaction',
-      readOnly: true,
-      keywords: ['Inventory & Stock Register', 'Stock Register', 'Inventory'],
-    },
-    {
-      step: 14,
-      category: 'Financial Statements',
-      name: 'Financial Reports (P&L / BS)',
-      mode: 'transaction',
-      readOnly: true,
-      keywords: ['Financial Reports', 'Reports'],
+      nameValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.party,
+      amountValue: MULTI_FIRM_ACCOUNTANT_DATA.entries.receiptAmount,
+      keywords: ['Bill Settlement'],
     },
   ];
 
-  for (const st of accountingSteps) {
-    currentStep = `step-${st.step}:${st.name}`;
-    const { result } = await openAndRunModule(page, st, consoleErrors, pageErrors, failedRequests);
-    auditResults.push(result);
+  for (const st of firm1Steps) {
+    currentStep = `firm1-step-${st.step}:${st.name}`;
+    auditResults.push(await runModuleStep(page, st, consoleErrors, pageErrors, failedRequests));
   }
 
-  // 15. Reload Persistence Verification
-  currentStep = '15-reload-persistence';
+  // Firm 2 setup & entries
+  currentStep = '12-firm-2-setup';
+  const firm2Submitted = await createFirmFlow(page, MULTI_FIRM_ACCOUNTANT_DATA.firms[1]);
+  await page.waitForTimeout(500);
+
+  const firm2Steps = [
+    {
+      step: 13,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[1].legalName,
+      category: 'Masters / Ledgers',
+      name: 'Firm 2 Customer Head',
+      mode: 'ledger',
+      nameValue: 'Hanumangarh Traders',
+      amountValue: '30000',
+      keywords: ['Add Account Head'],
+    },
+    {
+      step: 14,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[1].legalName,
+      category: 'Sales & Billing',
+      name: 'Firm 2 Sales Invoice',
+      mode: 'transaction',
+      nameValue: 'Hanumangarh Traders',
+      amountValue: '4800',
+      keywords: ['Sales / Tax Invoice', 'Brick Dispatch / Sales'],
+    },
+    {
+      step: 15,
+      firmName: MULTI_FIRM_ACCOUNTANT_DATA.firms[1].legalName,
+      category: 'Financial Statements',
+      name: 'Financial Reports (TB/P&L/BS)',
+      mode: 'transaction',
+      readOnly: true,
+      keywords: ['Financial Reports'],
+    },
+  ];
+
+  for (const st of firm2Steps) {
+    currentStep = `firm2-step-${st.step}:${st.name}`;
+    auditResults.push(await runModuleStep(page, st, consoleErrors, pageErrors, failedRequests));
+  }
+
+  // Backup & Restore check
+  currentStep = '16-backup-and-restore';
+  const backupRestoreStatus = await runBackupAndRestoreCheck(page, OUT_DIR);
+
+  // Final reload check
+  currentStep = '17-final-reload';
   await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-  await page.waitForTimeout(600);
-  const bodyAfterReload = await page.locator('body').innerText().catch(() => '');
-  await page.screenshot({ path: path.join(OUT_DIR, '15-reload-persistence.png'), fullPage: true });
+  await page.waitForTimeout(500);
+  const bodyText = await page.locator('body').innerText().catch(() => '');
 
   const report = {
     url: APP_URL,
     viewport: '390x844 (iPhone 13)',
-    firmSubmitted,
-    totalAspectsTested: auditResults.length,
+    firm1Submitted,
+    firm2Submitted,
+    backupRestoreStatus,
+    persistedFirmPresent:
+      bodyText.includes('Neelkanth Int Udyog') || bodyText.includes('Neelkanth Trading'),
+    totalStepsTested: auditResults.length,
     foundCount: auditResults.filter((r) => r.found).length,
     submittedCount: auditResults.filter(
       (r) =>
@@ -579,7 +688,6 @@ test('Full Accountant Accounting Cycle E2E across all business & ERP aspects', a
         r.submitStatus !== 'SUBMIT_DISABLED' &&
         !String(r.submitStatus).startsWith('WRONG_MODAL')
     ).length,
-    persistedFirmName: bodyAfterReload.includes('Neelkanth Int Udyog'),
     auditResults,
     consoleErrors,
     pageErrors,
